@@ -96,18 +96,13 @@ protected:
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
 
-    /// Compute the compressed bytes per mark this part contributes to the query-wide columns
-    /// cache write estimate. Called per part after the read task info is built, so the
-    /// estimate covers all columns the readers will actually read (result, prewhere, mutation
-    /// and patch-part columns). The bytes themselves are charged per task in
-    /// `chargeColumnsCacheWriteEstimate`.
-    void prepareColumnsCacheWriteEstimate(
-        const RangesInDataPart & part_with_ranges, MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const;
-
-    /// Charge the marks of one read task against the query-wide columns cache write estimate
-    /// budget and disable further cache writes for the query once it is exceeded. Called when
-    /// the ranges of the task are final, that is after `refineReadRanges`.
-    void chargeColumnsCacheWriteEstimate(const MergeTreeReadTaskInfo & read_info, const MarkRanges & ranges) const;
+    /// Charge the columns cache write estimate of one part - the uncompressed size of the columns
+    /// its readers can write to the cache (result, prewhere, mutation and patch-part columns),
+    /// scaled to the selected mark ranges - against the query-wide budget, and disable cache
+    /// writes for the query once the budget is exceeded. Called per part after the read task
+    /// info is built, before any task is handed out.
+    void chargeColumnsCacheWriteEstimate(
+        const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;

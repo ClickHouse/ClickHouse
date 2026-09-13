@@ -340,11 +340,19 @@ private:
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 
+/// The size of the columns cache when `columns_cache_size` is not set in the server configuration:
+/// `columns_cache_size_to_ram_ratio` of the memory available to the server, so that the cache scales
+/// with the machine - a fixed size that suits a small server holds none of the working sets of the
+/// heavier queries on a large one, and a cache that cannot hold what a query reads is pure overhead:
+/// the query copies its data into the cache only to evict it again. Falls back to the built-in
+/// default when the amount of memory is unknown.
+size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_ram_ratio);
+
 /// Per-query shared accounting for columns cache writes.
 /// One instance is created per query (in Context::makeQueryContext) and shared
 /// by all of that query's read pools, so the documented per-query budgets
 /// (`columns_cache_max_bytes_to_write_to_cache` and
-/// `columns_cache_max_estimated_compressed_bytes_to_write_to_cache`) apply to the
+/// `columns_cache_max_estimated_bytes_to_write_to_cache`) apply to the
 /// query as a whole rather than to each `MergeTreeReadPoolBase` independently.
 /// Without this, a query with several MergeTree read pipelines (for example a
 /// `JOIN`, `UNION`, or subqueries) would let each pool write up to the full cap,
@@ -354,8 +362,8 @@ struct ColumnsCacheWriteBudget
     /// Running total of bytes actually written to the cache by this query.
     std::atomic<size_t> bytes_written{0};
 
-    /// Running total of compressed bytes this query's read pools estimate they
-    /// will read, accumulated as the pools are constructed.
+    /// Running total of uncompressed bytes this query's read pools estimate they
+    /// will read, accumulated part by part as the pools are constructed.
     std::atomic<size_t> estimated_bytes{0};
 
     /// Latches to true once `estimated_bytes` exceeds the estimate budget, after

@@ -55,7 +55,7 @@ SETTINGS
     enable_writes_to_columns_cache = 1,
     enable_reads_from_columns_cache = 1,
     columns_cache_max_bytes_to_write_to_cache = 0,
-    columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 0,
+    columns_cache_max_estimated_bytes_to_write_to_cache = 0,
     max_threads = 1
 FORMAT Null;
 

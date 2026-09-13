@@ -79,11 +79,12 @@ struct MergeTreeReaderSettings
     /// Shared across all readers of a single pool so the cap applies to the whole read.
     std::shared_ptr<std::atomic<size_t>> columns_cache_bytes_written_so_far;
     /// Per-query flag that disables further columns cache writes once the
-    /// estimated compressed bytes read by the query exceed the estimate budget
-    /// (`columns_cache_max_estimated_compressed_bytes_to_write_to_cache`). The
-    /// estimate is accumulated as read tasks are built, after the full
-    /// set of read columns (including prewhere, mutation and patch-part columns)
-    /// is known, so readers must consult it dynamically at write time.
+    /// estimated uncompressed bytes read by the query exceed the estimate budget
+    /// (`columns_cache_max_estimated_bytes_to_write_to_cache`). The estimate is
+    /// charged part by part as the read pools of the query are built, after the
+    /// full set of read columns (including prewhere, mutation and patch-part
+    /// columns) is known, so a pool built later in the query can latch it after
+    /// this reader was created: readers must consult it dynamically at write time.
     std::shared_ptr<std::atomic<bool>> columns_cache_writes_disabled;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;

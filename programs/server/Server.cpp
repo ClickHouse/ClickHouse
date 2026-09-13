@@ -99,6 +99,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -235,6 +236,7 @@ namespace ServerSetting
     extern const ServerSettingsString columns_cache_policy;
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -2227,7 +2229,9 @@ try
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
     String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
-    size_t columns_cache_size = server_settings[ServerSetting::columns_cache_size];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
     double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
     if (columns_cache_size > max_cache_size)
     {
@@ -2865,7 +2869,10 @@ try
                     static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateColumnsCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateColumnsCacheConfiguration(
+                    config(),
+                    getDefaultColumnsCacheSize(current_physical_server_memory, new_server_settings[ServerSetting::columns_cache_size_to_ram_ratio]),
+                    max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);

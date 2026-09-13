@@ -52,7 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
-            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
+            {"columns_cache_max_estimated_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated uncompressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
             {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},

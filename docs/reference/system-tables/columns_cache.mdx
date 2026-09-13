@@ -24,9 +24,12 @@ without UUIDs are silently excluded from the cache; this includes legacy
 ClickHouse Cloud. Only wide parts participate in the cache; compact parts are silently
 excluded.
 
-The cache is controlled by the server settings `columns_cache_size` and
+The cache is controlled by the server settings `columns_cache_size` (by default
+`columns_cache_size_to_ram_ratio` of the memory available to the server) and
 `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`,
-`enable_reads_from_columns_cache`, and `enable_writes_to_columns_cache`. It can
+`enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`,
+`columns_cache_max_estimated_bytes_to_write_to_cache`, and
+`columns_cache_max_bytes_to_write_to_cache`. It can
 be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
 
 ## Columns {#columns}

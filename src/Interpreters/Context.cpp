@@ -4611,14 +4611,14 @@ void Context::setColumnsCache(const String & cache_policy, size_t max_size_in_by
     shared->columns_cache = std::make_shared<ColumnsCache>(cache_policy, CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, 0, size_ratio);
 }
 
-void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->columns_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache was not created yet.");
 
-    size_t size = config.getUInt64("columns_cache_size", DEFAULT_COLUMNS_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("columns_cache_size", default_size);
     if (size > max_cache_size)
     {
         size = max_cache_size;

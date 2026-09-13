@@ -895,10 +895,10 @@ Whether to read from the columns cache when `use_columns_cache` is enabled. Acce
     DECLARE(Bool, enable_writes_to_columns_cache, true, R"(
 Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 )", BETA) \
-    DECLARE(UInt64, columns_cache_max_estimated_compressed_bytes_to_write_to_cache, 0, R"(
-If the total compressed bytes estimated to be read by a query exceeds this value, writes to the columns cache are inhibited for the entire query. Keeps a single large scan from displacing useful data from the cache.
+    DECLARE(UInt64, columns_cache_max_estimated_bytes_to_write_to_cache, 0, R"(
+If the estimated size of the data a query reads from `MergeTree` parts exceeds this value, writes to the columns cache are inhibited for the entire query. The estimate is made in uncompressed bytes, which is what the cache is charged for, from the size of the columns the query reads (including `PREWHERE`, mutation and patch-part columns) scaled to the selected mark ranges, and the query is charged for all of it before it reads anything. This keeps a single large scan from displacing useful data from the cache, and from copying data into the cache that cannot stay there.
 
-A value of `0` means use half of the server-level `columns_cache_size`.
+A value of `0` means use half of the server-level `columns_cache_size`. With the default `columns_cache_size_ratio`, that is the size of the probationary segment of the cache, so the data of a query that passes the gate can be cached completely in one pass.
 )", BETA) \
     DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
 Soft per-query threshold on the bytes a single query writes to the columns cache. The bytes written during the query are counted, and once the counter reaches this value, further cache writes for the rest of the query are skipped. This is an advisory threshold, not a hard cap: the write that crosses it is still stored in full and the counter is only charged afterwards, so the actual amount written may exceed this value by up to one cache entry (and slightly more under concurrency). The purpose is to keep a single large scan from displacing useful data from the cache, not to bound cache usage exactly.

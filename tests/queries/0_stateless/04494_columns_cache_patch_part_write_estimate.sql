@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
 -- The columns cache write estimate budget
--- (columns_cache_max_estimated_compressed_bytes_to_write_to_cache) must account
+-- (columns_cache_max_estimated_bytes_to_write_to_cache) must account
 -- for the bytes read from patch parts (lightweight updates), sized against the
 -- patch parts themselves, not only the base part. Otherwise a lightweight update
 -- with a large updated column that is tiny (or absent) in the base part passes the
@@ -35,7 +35,7 @@ SYSTEM DROP COLUMNS CACHE;
 -- the budget and would not exercise the estimate gate at all.
 SELECT max(payload) != '' FROM t_cc_patch_estimate
 SETTINGS use_columns_cache = 1,
-    columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 2000000;
+    columns_cache_max_estimated_bytes_to_write_to_cache = 2000000;
 
 SELECT count() FROM system.columns_cache WHERE database = currentDatabase();
 
@@ -45,7 +45,7 @@ SYSTEM DROP COLUMNS CACHE;
 
 SELECT max(payload) != '' FROM t_cc_patch_estimate
 SETTINGS use_columns_cache = 1,
-    columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 1000000000;
+    columns_cache_max_estimated_bytes_to_write_to_cache = 1000000000;
 
 SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase();
 

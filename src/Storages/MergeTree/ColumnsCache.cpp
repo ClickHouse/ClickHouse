@@ -1,11 +1,20 @@
 #include <algorithm>
 
+#include <Core/Defines.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
 namespace DB
 {
 
 template class CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
+
+size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_ram_ratio)
+{
+    if (physical_server_memory == 0)
+        return DEFAULT_COLUMNS_CACHE_MAX_SIZE;
+
+    return static_cast<size_t>(static_cast<double>(physical_server_memory) * size_to_ram_ratio);
+}
 
 ColumnsCache::ColumnsCache(
     const String & cache_policy,

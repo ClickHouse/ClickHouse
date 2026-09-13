@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
 -- The columns cache write estimate budget
--- (columns_cache_max_estimated_compressed_bytes_to_write_to_cache) must account
+-- (columns_cache_max_estimated_bytes_to_write_to_cache) must account
 -- for all columns the query reads, including PREWHERE columns, not only the
 -- result columns.
 
@@ -26,7 +26,7 @@ SYSTEM DROP COLUMNS CACHE;
 -- the whole `payload` column rather than the small `payload.size0` subcolumn.
 SELECT sum(k) > 0 FROM t_cc_estimate PREWHERE length(payload) > 0
 SETTINGS use_columns_cache = 1, optimize_functions_to_subcolumns = 0,
-    columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 150000;
+    columns_cache_max_estimated_bytes_to_write_to_cache = 150000;
 
 SELECT count() FROM system.columns_cache WHERE database = currentDatabase();
 
@@ -45,7 +45,7 @@ SYSTEM DROP COLUMNS CACHE;
 
 SELECT sum(k) > 0 FROM t_cc_estimate
 SETTINGS use_columns_cache = 1,
-    columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 150000;
+    columns_cache_max_estimated_bytes_to_write_to_cache = 150000;
 
 SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase();
 
