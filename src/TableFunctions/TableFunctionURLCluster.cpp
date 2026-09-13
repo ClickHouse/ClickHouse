@@ -119,6 +119,8 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 
+The addresses are generated one by one as tasks are handed to the nodes of the cluster, so `glob_expansion_max_elements` limits how many addresses a single query may read rather than how large the pattern is, as described for the [url](/reference/functions/table-functions/url#globs-in-url) function. A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the matching ones are dispatched.
+
 ## Related {#related}
 
 -   [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
