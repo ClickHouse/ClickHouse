@@ -1,17 +1,11 @@
-#include <Core/SettingsTierType.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemEngineSettings.h>
-#include <Storages/System/SettingsTableColumns.h>
-#include <Interpreters/Context.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/System/SettingsTableColumns.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -34,8 +28,8 @@ Block StorageSystemEngineSettings::getFilterSampleBlock() const
 }
 
 /// The engines a query can still be interested in. Enumerating a settings struct is not free - the
-/// `MergeTree` family alone is 366 rows per engine - so a query naming one engine should not pay
-/// for the other 56.
+/// `MergeTree` family alone has hundreds of settings per engine - so a query naming one engine should
+/// not pay for all the others.
 static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr engine_column = ColumnString::create();

@@ -19,7 +19,6 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -3119,50 +3118,6 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
-}
-
-void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
-{
-    const auto & constraints = params.constraints;
-    MutableColumns & res_columns = params.res_columns;
-
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        size_t col = 0;
-        res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.isValueChanged());
-        res_columns[col++]->insert(setting.getDescription());
-        Field min;
-        Field max;
-        std::vector<Field> disallowed_values;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
-
-        /// Certain merge tree settings are unconditionally read-only
-        if (isReadonlySetting(setting_name))
-            writability = SettingConstraintWritability::CONST;
-
-        /// These two columns can accept strings only.
-        if (!min.isNull())
-            min = MergeTreeSettings::valueToStringUtil(setting_name, min);
-        if (!max.isNull())
-            max = MergeTreeSettings::valueToStringUtil(setting_name, max);
-
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
-
-        res_columns[col++]->insert(min);
-        res_columns[col++]->insert(max);
-        res_columns[col++]->insert(disallowed_array);
-        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[col++]->insert(setting.getTypeName());
-        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[col++]->insert(setting.getTier());
-    }
 }
 
 void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const

@@ -17,9 +17,7 @@ namespace DB
 /// `readonly`, `type`, `is_obsolete`, `tier`, `alias_for`.
 ///
 /// The descriptions say what is true of a *setting*, not of a *table*, because the same text has to
-/// read correctly in a table describing one engine family and in one describing every engine. A
-/// caller needing something more specific overrides that column with `ColumnsDescription::modify`
-/// rather than declaring the whole set again.
+/// read correctly in a table describing one engine family and in one describing every engine.
 ColumnsDescription sharedSettingColumns();
 
 /// Writes those thirteen columns, in the order `sharedSettingColumns` declares them.

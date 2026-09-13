@@ -2,11 +2,8 @@
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 
-
 namespace DB
 {
-
-class Context;
 
 /// Implements system table "engine_settings" which shows all settings for all table engines.
 class StorageSystemEngineSettings final : public IStorageSystemOneBlock

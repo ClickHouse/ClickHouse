@@ -1,14 +1,5 @@
-#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-#include <Core/SettingsTierType.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/SettingsTableColumns.h>
 
@@ -26,9 +17,8 @@ template <bool replicated>
 void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// The same enumeration `system.engine_settings` reads, so the two tables cannot drift apart -
-    /// this one is that one restricted to a single engine family. It carries the settings
-    /// constraints of the current user already, which is what `dumpToSystemMergeTreeSettingsColumns`
-    /// used to do here.
+    /// this one is that one restricted to a single engine family, with the current user's settings
+    /// constraints already applied.
     const auto settings = replicated
         ? MergeTreeSettings::enumerateReplicatedEngineSettings(context)
         : MergeTreeSettings::enumerateEngineSettings(context);

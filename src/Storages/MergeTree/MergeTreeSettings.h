@@ -33,7 +33,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-struct MutableColumnsAndConstraints;
 class SettingsConstraints;
 class ASTStorage;
 class Context;
@@ -113,7 +112,6 @@ struct MergeTreeSettings
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
-    void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
     /// The engine's own settings, for `system.engine_settings`.
     static SettingDescriptions enumerateEngineSettings(ContextPtr context);
