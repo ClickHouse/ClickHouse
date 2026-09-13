@@ -1518,6 +1518,8 @@ An `AggregateFunction` column is `Binary` in `text` mode as well, because its te
 
 A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Set `output_format_arrow_string_as_string = 0` for a byte-exact text form in a `Binary` column, or use `binary` mode.
 
+The same applies to an aggregate state held in a `Dynamic`: the column is typed from `Dynamic`, which says nothing about what its rows hold, and the Arrow schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own the way an `AggregateFunction` column is. In `text` mode it is therefore lossy. `binary` mode keeps it. A `Variant` is not affected - it lists its alternatives, so an `AggregateFunction` among them gets its own `Binary` child.
+
 In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
 
 Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
