@@ -648,18 +648,7 @@ static std::optional<bool> tryGetUniformFilterValue(const FilterWithCachedCount 
         return {};
     }
 
-    const auto & data = filter.getData();
-    if (data.empty())
-        return true;
-
-    const bool value = data[0] != 0;
-    for (size_t i = 1; i < data.size(); ++i)
-    {
-        if ((data[i] != 0) != value)
-            return {};
-    }
-
-    return value;
+    return {};
 }
 
 void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount & filter)
