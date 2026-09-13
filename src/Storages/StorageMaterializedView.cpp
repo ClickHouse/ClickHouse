@@ -831,8 +831,11 @@ void StorageMaterializedView::alter(
     for (const auto & column : view_metadata->columns)
         if (new_metadata.columns.has(column.name))
             new_metadata.columns.setComment(column.name, column.comment);
+    /// Any command carrying a comment sets it, not just a comment-only one: `ADD COLUMN ... COMMENT`
+    /// and a `MODIFY COLUMN` that also restates the type are not comment alters, and the restore above
+    /// would otherwise put the old comment back over the one this ALTER just set.
     for (const auto & command : params)
-        if (!command.ignore && command.isCommentAlter() && new_metadata.columns.has(command.column_name))
+        if (!command.ignore && command.comment.has_value() && new_metadata.columns.has(command.column_name))
             new_metadata.columns.setComment(command.column_name, *command.comment);
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
