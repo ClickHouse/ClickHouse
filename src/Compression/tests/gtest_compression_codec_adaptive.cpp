@@ -10,7 +10,6 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
@@ -24,7 +23,6 @@ using namespace DB;
 namespace
 {
 
-constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
 
@@ -56,7 +54,7 @@ std::vector<char> bytesOf(const std::vector<T> & values)
 void expectPool(const char * name, std::initializer_list<std::string_view> extras)
 {
     Codecs pool;
-    ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*type(name), defaultCodec())) << "type " << name;
+    ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(type(name), defaultCodec())) << "type " << name;
     ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
     EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
     EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
@@ -70,7 +68,7 @@ void expectPool(const char * name, std::initializer_list<std::string_view> extra
 uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & bytes)
 {
     const UInt32 size = static_cast<UInt32>(bytes.size());
-    CompressionCodecAdaptive adaptive(*type(type_name), defaultCodec());
+    CompressionCodecAdaptive adaptive(type(type_name), defaultCodec());
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
     const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
@@ -168,13 +166,15 @@ TEST(CompressionCodecAdaptive, MonotonicNarrowIntegersPickT64)
 
 TEST(CompressionCodecAdaptive, RepeatingWideValuesPickDefault)
 {
-    /// A short pattern of full-range values, repeated: LZ4 crushes the repetition, but T64 sees a wide min/max cannot shrink it.
+    /// A short pattern of full-range values, repeated: a general-purpose codec crushes the repetition,
+    /// but T64 sees a wide min/max and cannot shrink it. The winner must be the default anchor, whatever
+    /// the built-in default codec is (`ZSTD(3)` today).
     const std::vector<UInt32> pattern = {0u, 0xFFFFFFFFu, 0x0F0F0F0Fu, 0xF0F0F0F0u, 0x12345678u, 0x9ABCDEF0u, 0xDEADBEEFu, 0xCAFEBABEu};
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = pattern[i % pattern.size()];
 
-    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), LZ4);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), defaultCodec()->getMethodByte());
 }
 
 TEST(CompressionCodecAdaptive, ConstantColumnPicksT64)
@@ -198,16 +198,16 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
 {
     /// getHash() identifies the codec when the Compact writer groups column streams. CompressionCodecAdaptive and CompressionCodecMultiple
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
+    auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
     ASSERT_EQ(pool.size(), 3u);
     CompressionCodecMultiple multiple(pool);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
-    CompressionCodecAdaptive adaptive_string(*type("String"), defaultCodec());
+    CompressionCodecAdaptive adaptive_string(type("String"), defaultCodec());
     EXPECT_NE(adaptive_string.getHash(), defaultCodec()->getHash());
 
-    CompressionCodecAdaptive adaptive_int64(*type("Int64"), defaultCodec());
+    CompressionCodecAdaptive adaptive_int64(type("Int64"), defaultCodec());
     EXPECT_NE(adaptive.getHash(), adaptive_int64.getHash());
 }
 
@@ -216,7 +216,7 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
     EXPECT_ANY_THROW(adaptive.getMethodByte());
 #endif
@@ -224,7 +224,7 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 
 TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
 {
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
 
     constexpr size_t num_threads = 8;
     std::vector<std::thread> threads;
@@ -263,7 +263,7 @@ TEST(TryGetCompressedSize, MatchesCompressForT64)
     auto bytes = bytesOf(values);
     const UInt32 size = static_cast<UInt32>(bytes.size());
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
+    auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
     ASSERT_EQ(pool.size(), 3u);
     const auto & t64 = pool[2];
     ASSERT_EQ(t64->getMethodByte(), T64);

@@ -106,6 +106,10 @@ protected:
 
     virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
+    /// Codec for one substream of a column whose codec is `effective_codec_desc`.
+    CompressionCodecPtr getSubstreamCodec(
+        const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const;
+
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
     /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
     /// set of streams.

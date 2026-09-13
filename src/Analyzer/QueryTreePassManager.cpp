@@ -105,7 +105,7 @@ public:
 private:
     void visitColumn(ColumnNode * column) const
     {
-        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
+        if (column->getColumnSourceOrNull() == nullptr && !column->mayHaveNoSource())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} {} query tree node does not have valid source node after running {} pass",
                 column->getColumnName(), column->getColumnType(), pass_name);

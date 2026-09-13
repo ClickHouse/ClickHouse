@@ -19,6 +19,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -96,53 +97,20 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-        return left == right[i];
-#pragma clang diagnostic pop
+        return accurate::equalsOp(left, right[i]);
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right;
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] == right;
-#pragma clang diagnostic pop
-        }
+        return accurate::equalsOp(left[i], right);
     }
 
-    static constexpr bool compare(
+    static bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right[j]);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right[j];
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] == right[j];
-#pragma clang diagnostic pop
-        }
+        return accurate::equalsOp(left[i], right[j]);
     }
 
     /// LowCardinality
@@ -162,24 +130,9 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] >= static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) >= right;
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] >= right;
-#pragma clang diagnostic pop
-        }
+        return accurate::greaterOrEqualsOp(left[i], right);
     }
 
     static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
@@ -630,6 +583,66 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
+    /// What a date or time type counts. Two types that count different things are told apart by a
+    /// cast between them, and not by the comparison of the raw numbers they are stored as.
+    enum class DateTimeUnit : uint8_t
+    {
+        NotDateTime,
+        Days,
+        EpochSeconds,
+        TimeOfDay,
+    };
+
+    static DateTimeUnit dateTimeUnitOf(const DataTypePtr & type)
+    {
+        if (isDateOrDate32(type))
+            return DateTimeUnit::Days;
+        if (isDateTimeOrDateTime64(type))
+            return DateTimeUnit::EpochSeconds;
+        if (isTimeOrTime64(type))
+            return DateTimeUnit::TimeOfDay;
+        return DateTimeUnit::NotDateTime;
+    }
+
+    /// A `Date` counts days, a `DateTime` counts seconds since the epoch and a `Time` counts seconds
+    /// within a day, and every comparison below reads both sides as the raw numbers they are stored
+    /// as, where 19723 days is not 1704067200 seconds. So `has` did not find
+    /// `toDateTime('2024-01-01 00:00:00')` in an `Array(Date)` holding that same instant, although
+    /// `equals` -- which brings such a pair to the type the two meet in -- does consider them equal,
+    /// and although the `Array(LowCardinality(Date))` encoding of the same haystack, which resolves
+    /// the needle by a cast, did find it. Bring the pair to that type first, so that what is compared
+    /// here is what `equals` compares, whichever way the haystack is encoded.
+    ColumnPtr executeDifferentDateTimeUnits(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        const auto & element_type = array_type->getNestedType();
+        const auto & needle_type = arguments[1].type;
+
+        const auto element_unit = dateTimeUnitOf(removeNullable(element_type));
+        const auto needle_unit = dateTimeUnitOf(removeNullable(needle_type));
+
+        if (element_unit == DateTimeUnit::NotDateTime || needle_unit == DateTimeUnit::NotDateTime
+            || element_unit == needle_unit)
+            return nullptr;
+
+        /// A pair of date or time types always has a common type, which `allowArguments` has already
+        /// required of it: neither side is a native number, so it took the `getLeastSupertype` branch.
+        const auto common_type = getLeastSupertype(DataTypes{element_type, needle_type});
+        const auto common_array_type = std::make_shared<DataTypeArray>(common_type);
+
+        ColumnsWithTypeAndName new_arguments = arguments;
+        new_arguments[0].column = castColumn(arguments[0], common_array_type);
+        new_arguments[0].type = common_array_type;
+        new_arguments[1].column = castColumn(arguments[1], common_type);
+        new_arguments[1].type = common_type;
+
+        return executeArrayImpl(new_arguments, result_type);
+    }
+
     /** If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
@@ -645,6 +658,9 @@ private:
       */
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
+        if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
+            return res;
+
         const ColumnPtr & ptr = arguments[0].column;
 
         /** The columns here have two general cases, either being Array(T) or Const(Array(T)).

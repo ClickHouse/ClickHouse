@@ -26,6 +26,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -303,6 +304,7 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
+    checkTimeSeriesVersionIsWritable(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
