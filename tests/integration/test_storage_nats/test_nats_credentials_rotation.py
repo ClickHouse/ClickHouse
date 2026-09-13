@@ -20,6 +20,7 @@ BROKER_LOG = "/var/log/clickhouse-server/nats_fake_broker.log"
 def started_cluster():
     try:
         cluster.start()
+        start_fake_broker()
         yield cluster
     finally:
         cluster.shutdown()
@@ -29,6 +30,16 @@ def set_broker_state(state):
     instance.exec_in_container(
         ["bash", "-c", "echo {} > {}".format(state, BROKER_STATE)], user="root"
     )
+
+
+def broker_log():
+    return instance.exec_in_container(
+        ["bash", "-c", "cat {} 2>/dev/null || true".format(BROKER_LOG)], user="root"
+    )
+
+
+def broker_log_count(needle):
+    return broker_log().count(needle)
 
 
 def start_fake_broker():
@@ -51,16 +62,38 @@ def start_fake_broker():
 
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        broker_log = instance.exec_in_container(
-            ["bash", "-c", "cat {} 2>/dev/null || true".format(BROKER_LOG)],
-            user="root",
-        )
-        if "listening" in broker_log:
+        if "listening" in broker_log():
             logging.debug("The fake NATS broker is listening")
             return
         time.sleep(0.2)
 
     raise Exception("The fake NATS broker did not start")
+
+
+def create_pipeline(subject):
+    instance.query("DROP DATABASE IF EXISTS test SYNC")
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = '127.0.0.1:{}',
+                     nats_subjects = '{}',
+                     nats_format = 'JSONEachRow',
+                     nats_username = 'clickhouse',
+                     nats_password = 'the_original_one',
+                     nats_reconnect_wait = 500,
+                     nats_startup_connect_tries = 1;
+
+        CREATE TABLE test.destination (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.destination AS
+            SELECT * FROM test.nats;
+        """.format(
+            BROKER_PORT, subject
+        )
+    )
 
 
 def consumed():
@@ -82,8 +115,8 @@ def wait_for_consumed_above(consumed_before, time_limit_sec=120):
 def wait_for_consumption_to_stop(time_limit_sec=60):
     """Returns the number of consumed messages once it has stopped growing.
 
-    A streaming cycle which was in flight when the broker dropped the connection still inserts
-    what it had, so the count is only a usable baseline once it has settled.
+    A streaming cycle which was in flight when the table stopped consuming still inserts what it
+    had, so the count is only a usable baseline once it has settled.
     """
     previous = None
     deadline = time.monotonic() + time_limit_sec
@@ -94,35 +127,26 @@ def wait_for_consumption_to_stop(time_limit_sec=60):
         previous = current
         time.sleep(3)
 
-    raise Exception("The table kept consuming while the broker was rejecting its credentials")
+    raise Exception("The table kept consuming after it was supposed to stop")
+
+
+def wait_for_broker_log_count(needle, at_least, time_limit_sec=120):
+    deadline = time.monotonic() + time_limit_sec
+    while time.monotonic() < deadline:
+        if broker_log_count(needle) >= at_least:
+            return
+        time.sleep(0.5)
+
+    raise Exception(
+        "The broker log holds {} occurrences of {!r}, expected {}".format(
+            broker_log_count(needle), needle, at_least
+        )
+    )
 
 
 def test_nats_credentials_rejected_after_rotation(started_cluster):
-    start_fake_broker()
-
-    instance.query("DROP DATABASE IF EXISTS test SYNC")
-    instance.query("CREATE DATABASE test")
-    instance.query(
-        """
-        CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = '127.0.0.1:{}',
-                     nats_subjects = 'rotated_subject',
-                     nats_format = 'JSONEachRow',
-                     nats_username = 'clickhouse',
-                     nats_password = 'the_original_one',
-                     nats_reconnect_wait = 500,
-                     nats_startup_connect_tries = 1;
-
-        CREATE TABLE test.destination (key UInt64, value UInt64)
-            ENGINE = MergeTree ORDER BY key;
-
-        CREATE MATERIALIZED VIEW test.consumer TO test.destination AS
-            SELECT * FROM test.nats;
-        """.format(
-            BROKER_PORT
-        )
-    )
+    set_broker_state("accept")
+    create_pipeline("rotated_subject")
 
     # The pipeline is live: the broker delivers a message to every subscription it holds.
     wait_for_consumed_above(0)
@@ -146,5 +170,42 @@ def test_nats_credentials_rejected_after_rotation(started_cluster):
     # detached and attached again.
     set_broker_state("accept")
     wait_for_consumed_above(consumed_before)
+
+    instance.query("DROP DATABASE test SYNC")
+
+
+def test_stopped_nats_table_does_not_resubscribe_after_rotation(started_cluster):
+    """A table recovering from a closed connection must still honour `SYSTEM STOP`.
+
+    Replacing the connection also resubscribes, and a stopped table must hold no subscription:
+    with core NATS a message delivered to it is dropped, and in a queue group it is taken away
+    from the members which are still running.
+    """
+    set_broker_state("accept")
+    create_pipeline("stopped_subject")
+    wait_for_consumed_above(0)
+
+    instance.query("SYSTEM STOP test.nats")
+    consumed_while_stopped = wait_for_consumption_to_stop()
+
+    # Reject the credentials until the client library gives up on the connection, then accept
+    # them again, which is when a table which is not stopped rebuilds its connection.
+    rejections_before = broker_log_count("rejecting the credentials")
+    set_broker_state("reject")
+    wait_for_broker_log_count("rejecting the credentials", rejections_before + 2)
+
+    subscriptions_before = broker_log_count("subscribed sid")
+    set_broker_state("accept")
+
+    time.sleep(15)
+    assert (
+        broker_log_count("subscribed sid") == subscriptions_before
+    ), "A stopped table subscribed while recovering from a closed connection"
+    assert consumed() == consumed_while_stopped, "A stopped table consumed a message"
+    assert instance.query("SELECT 1") == "1\n"
+
+    # The table is released, and only now is it allowed to rebuild the connection and resume.
+    instance.query("SYSTEM START test.nats")
+    wait_for_consumed_above(consumed_while_stopped)
 
     instance.query("DROP DATABASE test SYNC")

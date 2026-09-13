@@ -745,7 +745,13 @@ void StorageNATS::threadFunc()
 
     /// A closed connection is dead for good, and this task only waits for one to reconnect. Hand
     /// the table back to the initialization task, which builds a new connection and new consumers.
-    if (!shutdown_called && consumers_connection && consumers_connection->isClosed())
+    ///
+    /// Not while the table is stopped or paused: reinitialization subscribes, and a stopped table
+    /// must hold no subscription - with core NATS a message delivered to it is dropped, and in a
+    /// queue group it is taken away from the members which are still running. This task keeps
+    /// running while the table is blocked, so the connection is rebuilt on the tick after
+    /// `SYSTEM START`.
+    if (!shutdown_called && !stream_control.isBlocked() && consumers_connection && consumers_connection->isClosed())
     {
         LOG_INFO(log, "The connection to {} is closed, reinitializing the consumers",
             consumers_connection->connectionInfoForLog());
