@@ -271,6 +271,13 @@ public:
     std::vector<JoinActionRef> getArguments(bool recursive = false) const;
 
     void setSourceRelations(const BitSet & source_relations) const;
+    /// Returns a reference into the memo of the shared expression data, so it is only for the planner,
+    /// which owns that data single-threaded. Everything that can run while the plan is shared - the
+    /// shape predicates of `JoinOperator`, consulted during query plan serialization - must use
+    /// `fromLeft` / `fromRight` / `fromNone` instead, which take a copy under the memo's mutex: a
+    /// reference would alias a `BitSet` the planner can rewrite through `setSourceRelations`, which the
+    /// thread sanitizer caught on `boost::dynamic_bitset`. The reference itself stays valid - the memo is
+    /// a node-based `unordered_map`, so a rehash never moves the values.
     const BitSet & getSourceRelations() const;
     bool fromLeft() const;
     bool fromRight() const;

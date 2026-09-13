@@ -180,12 +180,12 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-/// `JoinExpressionActions::Data` is a private type, so the memo and its mutex are passed separately.
-static const BitSet & getExpressionSourcesImpl(
-    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+/// Fills in the source relations of `action` and of every node below it, and returns the entry for
+/// `action`. The memo's mutex must already be held; `JoinExpressionActions::Data` is a private type, so
+/// the memo and its mutex are passed separately.
+static const BitSet & getExpressionSourcesLocked(
+    std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
-    std::lock_guard lock(expression_sources_mutex);
-
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
         return it->second;
@@ -225,6 +225,24 @@ static const BitSet & getExpressionSourcesImpl(
             stack.push({child, 0});
     }
     return expression_sources.at(node);
+}
+
+/// A copy, taken under the mutex, for every caller that can run while the plan is shared.
+static BitSet getExpressionSourcesCopy(
+    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+{
+    std::lock_guard lock(expression_sources_mutex);
+    return getExpressionSourcesLocked(expression_sources, action);
+}
+
+/// A reference into the memo, for the planner, which owns the expression data single-threaded. The
+/// reference outlives the lock, which is safe for the memo's structure (a node-based `unordered_map` does
+/// not move its values on a rehash) but not against a concurrent `setSourceRelations`.
+static const BitSet & getExpressionSourcesRef(
+    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+{
+    std::lock_guard lock(expression_sources_mutex);
+    return getExpressionSourcesLocked(expression_sources, action);
 }
 
 std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
@@ -315,7 +333,10 @@ String JoinActionRef::dump() const
         return "";
     const auto * node = getNode();
 
-    return fmt::format("{}: {{{}}}", node->result_name, fmt::join(getSourceRelations(), ", "));
+    auto data_ptr = getData();
+    /// A diagnostic can be formatted from any thread, so take the copy rather than the planner reference.
+    const auto source_relations = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    return fmt::format("{}: {{{}}}", node->result_name, fmt::join(source_relations, ", "));
 }
 
 JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool is_input, bool throw_if_not_found) const
@@ -390,7 +411,7 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
 const BitSet & JoinActionRef::getSourceRelations() const
 {
     auto data_ptr = getData();
-    return getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    return getExpressionSourcesRef(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
 }
 
 void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
@@ -456,20 +477,21 @@ bool JoinActionRef::isFunction(JoinConditionOperator op) const
 bool JoinActionRef::fromLeft() const
 {
     auto data_ptr = getData();
-    auto src_rels = getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    auto src_rels = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(0);
 }
 
 bool JoinActionRef::fromRight() const
 {
     auto data_ptr = getData();
-    auto src_rels = getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    auto src_rels = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(1);
 }
 
 bool JoinActionRef::fromNone() const
 {
-    return getSourceRelations().none();
+    auto data_ptr = getData();
+    return getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this).none();
 }
 
 bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
