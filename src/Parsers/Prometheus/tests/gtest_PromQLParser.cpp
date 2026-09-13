@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <fmt/format.h>
@@ -461,14 +462,120 @@ PrometheusQueryTree(INSTANT_VECTOR):
         end EQ 'y'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_THROW(parse(R"(
         {__name__=~".*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job=~".*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job!="demo"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus accepts a negated equality matcher against empty string because it cannot match the empty string.
+    EXPECT_EQ(parse(R"(
+        {job!=""}
         )"), R"(
-{__name__=~".*"}
+{job!=""}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
-        __name__ RE '.*'
+        job NE ''
+)");
+
+    /// Behavior: Prometheus accepts a negated regex matcher that rejects the empty string because the matcher itself cannot match empty.
+    EXPECT_EQ(parse(R"(
+        {job!~".*"}
+        )"), R"(
+{job!~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        job NRE '.*'
+)");
+
+    /// Behavior: Prometheus rejects selectors where every matcher can match the empty string.
+    EXPECT_THROW(parse(R"(
+        {job=""}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus treats `!~ ".+"` as matching the empty string, so it is not a non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {job!~".+"}
+        )"), DB::Exception);
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+"}
+        )"), R"(
+{__name__=~".+"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+)");
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+", job=~".*"}
+        )"), R"(
+{__name__=~".+",job=~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+        job RE '.*'
+)");
+
+    EXPECT_THROW(parse(R"(
+        demo_memory_usage_bytes{job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {__name__=~".+", job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job=~"(.*", __name__=~".+"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates later regex matchers even when an earlier equality matcher is already non-empty.
+    EXPECT_THROW(parse(R"(
+        {__name__="demo_memory_usage_bytes", instance=~"(.*"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates earlier regex matchers before observing a later non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {instance=~"(.*", __name__="demo_memory_usage_bytes"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with any in-brace `__name__` equality matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="foo"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects conflicting outside and in-brace metric names at parse/type-check time.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="bar"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with an in-brace regex metric-name matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__=~"foo"}
+        )"), DB::Exception);
+
+    /// Round-trip: a valid selector with more than one in-brace `__name__` matcher keeps the metric name
+    /// inside the braces (as a quoted metric name). Hoisting it (`foo{__name__!="bar"}`) would set the metric
+    /// name twice and fail to reparse, which breaks lowering of such selectors into a `timeSeriesSelector` call.
+    EXPECT_EQ(parse(R"(
+        {__name__="foo", __name__!="bar"}
+        )"), R"(
+{"foo",__name__!="bar"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'foo'
+        __name__ NE 'bar'
 )");
 
     /// Aggregation operators.
@@ -1590,6 +1697,29 @@ TEST(PromQLParser, ErrorPosition)
 
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
         EXPECT_EQ(error_pos, expected_error_pos);
+    }
+}
+
+
+/// Selector-validation errors must report the position as a UTF-8 byte offset, like all other
+/// parser errors. `метрика` takes 7 code points but 14 bytes, so the invalid selector below
+/// starts at code point 24 and byte offset 31.
+TEST(PromQLParser, SelectorValidationErrorPositionIsByteOffset)
+{
+    for (const auto & [query, expected_error_pos, expected_error_message] :
+         std::initializer_list<std::tuple<std::string_view, size_t, std::string_view>>{
+             {R"({__name__="метрика"} or {job=~".*"})", 31, "vector selector must contain at least one non-empty matcher"},
+             {R"({__name__="метрика"} or {job=~"(.*"})", 31, "invalid regular expression in label matcher: missing ): (.*"},
+             {R"({__name__="метрика"} or foo{__name__="foo"})", 31, "metric name must not be set twice"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+        EXPECT_EQ(error_message, expected_error_message) << query;
     }
 }
 
