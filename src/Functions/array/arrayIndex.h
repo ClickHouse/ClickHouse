@@ -238,13 +238,17 @@ private:
     {
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
-          *   2. Target is not a column or an array.
+          *   2. Target is not a generic column.
+          *   3. For a row-varying vector target, the array type is integral.
           */
         if constexpr (
-            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>
-            && !std::is_same_v<Target, IColumn> && Case == 1)
+            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, IColumn> && Case == 1
+            && (!std::is_same_v<Target, PaddedPODArray<Result>> || std::is_integral_v<Initial>))
         {
-            return lowerBound(data, target, array_size, current_offset);
+            if constexpr (std::is_same_v<Target, PaddedPODArray<Result>>)
+                return lowerBound(data, target[row_index], array_size, current_offset);
+            else
+                return lowerBound(data, target, array_size, current_offset);
         }
         return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset);
     }
@@ -1268,11 +1272,24 @@ private:
 
         auto & data = col_res->getData();
 
+        [[maybe_unused]] const bool array_is_nullable =
+            isColumnNullableOrLowCardinalityNullable(
+                assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData());
+
         for (size_t row = 0; row < size; ++row)
         {
             const auto & value = (*item_arg)[row];
 
             data[row] = 0;
+
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            {
+                if (!array_is_nullable && (!null_map || !(*null_map)[row]))
+                {
+                    data[row] = Impl::Main<ConcreteAction, false>::lowerBound(arr, value, arr.size(), 0);
+                    continue;
+                }
+            }
 
             for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
             {
