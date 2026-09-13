@@ -21,6 +21,13 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_leader_election_s3"
 # can briefly desync the cache view of a freshly inserted part, surfacing as
 # `FILE_DOESNT_EXIST` for `data.bin` on the very next read. A per-database
 # endpoint isolates this test's bucket prefix and metadata cache.
+# The leader-election timeouts are left at their defaults on purpose. The write-admission gate
+# refuses a write whose last successful lease renewal is older than 2x
+# `leader_election_heartbeat_interval`, so a 1 s interval leaves only a 2 s margin and any
+# heartbeat jitter on a loaded or sanitized build turns the statements below into
+# `TABLE_IS_READ_ONLY`. Shortening the interval buys nothing here: the first heartbeat is
+# scheduled immediately at startup, so leadership is acquired just as fast either way, and this
+# test never fails over.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE test_leader_election_s3 (x UInt64, s String)
     ENGINE = MergeTree ORDER BY x
@@ -31,8 +38,7 @@ $CLICKHOUSE_CLIENT -q "
             endpoint = 'http://localhost:11111/test/04065_le_${CLICKHOUSE_DATABASE}/',
             access_key_id = clickhouse,
             secret_access_key = clickhouse),
-        leader_election = true,
-        leader_election_heartbeat_interval = 1, leader_election_session_timeout = 5
+        leader_election = true
 "
 
 # Wait until the leader election heartbeat completes and the instance becomes leader.
