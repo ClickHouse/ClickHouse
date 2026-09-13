@@ -76,12 +76,22 @@ static std::optional<fs::path> getLocalMetadataRoot(const DiskPtr & disk)
     if (description.type != DataSourceType::ObjectStorage || description.metadata_type != MetadataStorageType::Local)
         return std::nullopt;
 
-    /// An encrypting wrapper keeps its files under a prefix inside the delegate disk, and its own
-    /// metadata storage view reports a path that is not a location in the filesystem. Resolve the
-    /// metadata root through the delegate and re-apply the prefix, which by construction is the
-    /// wrapper's absolute path minus the delegate's.
+    /// An encrypting wrapper's own metadata storage view reports a path that is not a location in the
+    /// filesystem, so the root is the one of the disk that stores the files.
     DiskPtr inner = disk;
-    fs::path prefix;
+    while (auto delegate = inner->getDelegateDiskIfExists())
+        inner = delegate;
+
+    return fs::path(inner->getMetadataStorage()->getPath());
+}
+
+/// A disk-relative path as the innermost delegate disk sees it: each encrypting wrapper on the way
+/// prepends the prefix it keeps its files under, except when the path already starts with that
+/// prefix, which the wrapper treats as an already wrapped path (`DiskEncryptedTransaction::wrappedPath`).
+static fs::path getPathInInnermostDelegate(const DiskPtr & disk, const fs::path & path)
+{
+    String result = path;
+    DiskPtr inner = disk;
     while (auto delegate = inner->getDelegateDiskIfExists())
     {
         const String & inner_path = inner->getPath();
@@ -91,11 +101,13 @@ static std::optional<fs::path> getLocalMetadataRoot(const DiskPtr & disk)
                 ErrorCodes::LOGICAL_ERROR,
                 "Disk {} at {} is not located inside its delegate disk {} at {}",
                 inner->getName(), inner_path, delegate->getName(), delegate_path);
-        prefix = fs::path(inner_path.substr(delegate_path.size())) / prefix;
+        const String prefix = inner_path.substr(delegate_path.size());
+        if (!result.starts_with(prefix))
+            result = prefix + result;
         inner = delegate;
     }
 
-    return fs::path(inner->getMetadataStorage()->getPath()) / prefix;
+    return result;
 }
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
@@ -239,7 +251,7 @@ std::optional<fs::path> BackupWriterDisk::getLocalPathToSync(const fs::path & pa
     if (destination_is_plain_local_files)
         return getLocalBlobPath(*disk, path);
     if (local_metadata_root)
-        return *local_metadata_root / path;
+        return *local_metadata_root / getPathInInnermostDelegate(disk, path);
     return std::nullopt;
 }
 
@@ -252,15 +264,16 @@ void BackupWriterDisk::syncFileToDisk(const String & file_name)
 
     fsyncBackupFileContents(*local_path);
 
-    /// Remember the disk-relative ancestor directories of this file (down to the disk root ""),
-    /// so `syncDirectoriesToDisk` can persist their entries.
+    /// The directories holding this file, so `syncDirectoriesToDisk` can persist their entries: one
+    /// per component of the disk-relative path, which reaches the disk's own root. Taken from the
+    /// resolved path, as a wrapper does not map the parent of `<prefix>/x` to the directory holding it.
     std::lock_guard lock{dirs_to_sync_mutex};
-    for (auto dir = file_path.parent_path(); ; dir = dir.parent_path())
+    auto local_dir = local_path->parent_path();
+    for (auto dir = file_path; !dir.empty(); dir = dir.parent_path())
     {
-        if (!dirs_to_sync.emplace(dir).second)
+        if (!dirs_to_sync.emplace(local_dir).second)
             break; /// this dir and all its ancestors are already recorded
-        if (dir.empty())
-            break; /// reached the disk root
+        local_dir = local_dir.parent_path();
     }
 }
 
@@ -271,19 +284,9 @@ void BackupWriterDisk::syncDirectoriesToDisk()
         std::lock_guard lock{dirs_to_sync_mutex};
         dirs = dirs_to_sync;
     }
-    if (dirs.empty())
-        return;
-
     /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
-    /// The disk-relative path (including the disk root "") resolves to the directory holding the
-    /// files on a plain-local disk, or the one holding their metadata files.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
-    {
-        auto local_path = getLocalPathToSync(*it);
-        if (!local_path)
-            return;
-        fsyncBackupDirectory(*local_path);
-    }
+        fsyncBackupDirectory(*it);
 }
 
 }

@@ -74,9 +74,9 @@ private:
     /// live in: the backup is reached through them, so they are what has to be fsynced there.
     const std::optional<std::filesystem::path> local_metadata_root;
 
-    /// Directories that received a file synced via `syncFileToDisk`, collected so they can be
-    /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent backup
-    /// write path, hence guarded. Only used for local disks.
+    /// Absolute local directories that received a file synced via `syncFileToDisk`, collected so
+    /// they can be fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent
+    /// backup write path, hence guarded. Only used for local disks.
     std::mutex dirs_to_sync_mutex;
     std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 };

@@ -393,6 +393,18 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     assert backup_events["FileSync"] >= 2, backup_events
     assert backup_events["DirectorySync"] >= 1, backup_events
 
+    # That wrapper keeps its files under `encrypted/` inside disk_s3 but leaves a path that already
+    # starts with that prefix alone, so a backup named `encrypted/...` must not have the prefix
+    # applied a second time, neither for the metadata files nor for the directories holding them.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_encrypted', 'encrypted/{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert backup_events["FileSync"] >= 2, backup_events
+    assert backup_events["DirectorySync"] >= 1, backup_events
+
 
 @pytest.mark.parametrize(
     "storage_policy, to_disk",
