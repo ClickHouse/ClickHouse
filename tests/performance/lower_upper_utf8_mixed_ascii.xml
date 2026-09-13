@@ -1,0 +1,68 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <max_block_size>65536</max_block_size>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>function</name>
+            <values>
+                <value>lowerUTF8</value>
+                <value>upperUTF8</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>column</name>
+            <values>
+                <value>ascii</value>
+                <value>mixed_01</value>
+                <value>mixed_01_clustered</value>
+                <value>mixed_10</value>
+                <value>mixed_50</value>
+                <value>unicode</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE lower_upper_utf8_mixed_ascii
+        (
+            ascii String,
+            mixed_01 String,
+            mixed_01_clustered String,
+            mixed_10 String,
+            mixed_50 String,
+            unicode String
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lower_upper_utf8_mixed_ascii
+        SELECT
+            ascii,
+            if(number % 1000 = 0, unicode, ascii),
+            if(number &lt; 500, unicode, ascii),
+            if(number % 10 = 0, unicode, ascii),
+            if(number % 2 = 0, unicode, ascii),
+            unicode
+        FROM
+        (
+            SELECT
+                number,
+                concat(
+                    repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
+                    rightPad(toString(number), 20, 'x')) AS ascii,
+                concat(
+                    repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
+                    'é',
+                    rightPad(toString(number), 18, 'x')) AS unicode
+            FROM numbers(500000)
+        )
+    </fill_query>
+
+    <query>SELECT {function}({column}) FROM lower_upper_utf8_mixed_ascii FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lower_upper_utf8_mixed_ascii</drop_query>
+</test>
