@@ -6,6 +6,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -147,10 +148,28 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
         for (UInt32 i = 1; i < scale; ++i)
             scaler *= 10;
 
-        /// The bound is stored as raw bytes and is never checked against the declared precision, so
-        /// widening it can leave the type. A value that has no widened form is not a usable bound.
-        if (common::addOverflow(unscaled_value, scaler, unscaled_value))
-            return std::nullopt;
+        NativeType widened_value;
+        if (common::addOverflow(unscaled_value, scaler, widened_value))
+        {
+            /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly
+            /// 0.7 needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`. A bound only has to
+            /// stay on the outer side of every value in the file, and the largest magnitude the
+            /// precision of the type allows is outside all of them, so it stands in for the widened
+            /// bound. Dropping the bound instead would cost min/max pruning for the whole column,
+            /// and `Decimal(38, 38)` is the one width where a bound the column can hold gets here.
+            ///
+            /// A bound is stored as raw bytes that are never checked against a precision, so it can
+            /// also be a magnitude the column cannot hold. Nothing then vouches for the values in
+            /// the file, so there is no stand-in for such a bound and it is not usable.
+            const NativeType limit
+                = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
+            if (unscaled_value > limit || unscaled_value < -limit)
+                return std::nullopt;
+
+            widened_value = lower_bound ? -limit : limit;
+        }
+
+        unscaled_value = widened_value;
     }
 
     return DecimalField<DecimalType>(unscaled_value, scale);
