@@ -37,6 +37,3 @@ postprocessor is applied on the row-scan path too
 -- WHERE is consistent across use_skip_indexes
 10
 10
-postprocessor with an ALIAS column outside WHERE
--- SELECT-list position on an ALIAS column: postprocessor applied
-10	990

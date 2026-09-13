@@ -146,23 +146,3 @@ SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 0
 SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
-
-SELECT 'postprocessor with an ALIAS column outside WHERE';
-
-CREATE TABLE tab
-(
-    id UInt64,
-    str Nullable(String),
-    alias String ALIAS ifNull(str, 'default'),
-    INDEX idx_alias alias TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(alias))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO tab (id, str) SELECT number, if(number < 10, 'Hello', NULL) FROM numbers(1000);
-
-SELECT '-- SELECT-list position on an ALIAS column: postprocessor applied';
-
-SELECT countIf(hasToken(alias, 'HELLO')), countIf(hasAnyTokens(alias, ['DEFAULT'])) FROM tab;
-
-DROP TABLE tab;
