@@ -10178,6 +10178,9 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
         for (auto kind : affordable_kinds)
         {
             auto range = getDataPartsStateRange(state, kind);
+            if (range.empty())
+                continue;
+
             std::swap(buf, res);
             res.clear();
             std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
