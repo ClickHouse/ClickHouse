@@ -7,6 +7,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -24,9 +26,15 @@ public:
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * hudi_metadata = dynamic_cast<const HudiMetadata *>(&other);
-        return hudi_metadata
-            && !data_files.empty() && !hudi_metadata->data_files.empty()
-            && data_files == hudi_metadata->data_files;
+        if (!hudi_metadata)
+            return false;
+
+        /// Both file lists are read under their own object's mutex, and never both at once, so a
+        /// comparison of an object with itself does not deadlock either.
+        auto this_data_files = getDataFilesIfListed();
+        auto other_data_files = hudi_metadata->getDataFilesIfListed();
+
+        return !this_data_files.empty() && !other_data_files.empty() && this_data_files == other_data_files;
     }
 
     static void createInitial(
@@ -62,10 +70,20 @@ private:
     const ObjectStoragePtr object_storage;
     const String table_path;
     const String format;
-    mutable Strings data_files;
+
+    /** One metadata object is shared by the queries that run on the table (see
+      * `DataLakeConfiguration::update`), and this list is filled on first use, so every access to it
+      * is synchronized. Listing the data files of a table takes a listing of the object storage, and
+      * the mutex is held across it, so that a second query waits for the first list instead of
+      * making its own.
+      */
+    mutable std::mutex data_files_mutex;
+    mutable Strings data_files TSA_GUARDED_BY(data_files_mutex);
 
     Strings getDataFilesImpl() const;
     Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    /// The listed data files, or an empty list when nothing has listed them yet.
+    Strings getDataFilesIfListed() const;
 };
 
 }
