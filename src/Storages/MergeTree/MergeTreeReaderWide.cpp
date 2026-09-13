@@ -264,6 +264,7 @@ size_t MergeTreeReaderWide::readRows(
         if (cache_serving)
         {
             read_rows = serveRowsFromColumnsCache(res_columns, max_rows_to_read);
+            readPartiallyReadColumnsWhileServing(res_columns, from_mark, continue_reading, max_rows_to_read);
         }
         else
         {
@@ -399,9 +400,10 @@ MergeTreeReaderWide::findColumnsCacheEntriesForRange(size_t row_begin, size_t ro
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         /// Columns dropped by pending mutations, invalidated system columns, and columns that
-        /// `fillMissingColumns` synthesizes after the read don't need cache entries: they are not
-        /// read from the part at all. Requiring one for them would make every read of a table
-        /// with such a column miss forever, because the write path never produces one.
+        /// `fillMissingColumns` synthesizes after the read don't need cache entries: the write
+        /// path never produces one for them, so requiring one would make every read of a table
+        /// with such a column miss forever. A partially read column is still read from the part
+        /// while the rest of the range is served, see `readPartiallyReadColumnsWhileServing`.
         if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isColumnFilledAfterReading(pos))
             continue;
 
@@ -484,8 +486,76 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
 
 bool MergeTreeReaderWide::isColumnFilledAfterReading(size_t pos) const
 {
-    const auto & name = columns_to_read[pos].name;
-    return columns_absent_from_part.contains(name) || partially_read_columns.contains(name);
+    return isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos);
+}
+
+bool MergeTreeReaderWide::isColumnAbsentFromPart(size_t pos) const
+{
+    return columns_absent_from_part.contains(columns_to_read[pos].name);
+}
+
+bool MergeTreeReaderWide::isColumnPartiallyRead(size_t pos) const
+{
+    return partially_read_columns.contains(columns_to_read[pos].name);
+}
+
+void MergeTreeReaderWide::readPartiallyReadColumnsWhileServing(
+    MutableColumns & res_columns, size_t from_mark, bool continue_reading, size_t max_rows_to_read)
+{
+    if (partially_read_columns.empty())
+        return;
+
+    const size_t num_columns = res_columns.size();
+
+    /// The prefixes of every column, as the disk path deserializes them: the call is idempotent
+    /// for the lifetime of the reader, and the streams of the columns served from the cache are
+    /// not read past their prefix.
+    deserializePrefixForAllColumns(num_columns, from_mark);
+
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        if (!isColumnPartiallyRead(pos) || isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            continue;
+
+        const auto & column_to_read = columns_to_read[pos];
+
+        auto & column = res_columns[pos];
+        if (!column)
+            column = column_to_read.type->createColumn(*serializations[pos]);
+
+        try
+        {
+            /// With shared `Nested` offsets every member of a group has the same name in storage,
+            /// so one substreams cache serves the whole group: the first member read below takes
+            /// the offsets off the shared stream and the rest of them reuse those. This is the
+            /// same reuse the disk path relies on, minus the members served from the cache, whose
+            /// streams this loop never touches.
+            auto & cache = caches[column_to_read.getNameInStorage()];
+            auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+
+            readData(
+                column_to_read,
+                serializations[pos],
+                *column,
+                from_mark,
+                continue_reading,
+                max_rows_to_read,
+                cache,
+                deserialize_states_cache);
+        }
+        catch (Exception & e)
+        {
+            /// Better diagnostics.
+            e.addMessage("(while reading column " + column_to_read.name + ")");
+            throw;
+        }
+
+        if (column->empty() && max_rows_to_read > 0)
+            res_columns[pos] = nullptr;
+    }
+
+    prefetched_streams.clear();
+    caches.clear();
 }
 
 bool MergeTreeReaderWide::canServeFirstRangeFromCache()
@@ -540,15 +610,22 @@ size_t MergeTreeReaderWide::serveRowsFromColumnsCache(MutableColumns & res_colum
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         /// Column was dropped by a pending mutation or invalidated - don't serve stale data from
-        /// the cache - or it is one `fillMissingColumns` synthesizes after the read, which has no
-        /// entry to serve. Leaving it null is what the disk path does with both (see the
-        /// `column->empty()` case of the read loop), and `fillMissingColumns` runs after every
-        /// read, whether its rows came from the cache or from disk.
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isColumnFilledAfterReading(pos))
+        /// the cache - or not a single one of its streams is in the part, so it has no entry to
+        /// serve. Leaving it null is what the disk path does with both (see the `column->empty()`
+        /// case of the read loop), and `fillMissingColumns` runs after every read, whether its
+        /// rows came from the cache or from disk.
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isColumnAbsentFromPart(pos))
         {
             res_columns[pos] = nullptr;
             continue;
         }
+
+        /// A partially read column has no entry either, but reading it is not a no-op: its
+        /// offsets are in the part, and `fillMissingColumns` sizes every re-added member of its
+        /// `Nested` group from them. `readPartiallyReadColumnsWhileServing` reads it right after
+        /// this loop; leave whatever rows it has already appended alone.
+        if (isColumnPartiallyRead(pos))
+            continue;
 
         const bool append = res_columns[pos] != nullptr;
 

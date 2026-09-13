@@ -198,9 +198,19 @@ private:
     /// `ALTER` after the part was written), or only some of its streams are there (a `Nested`
     /// member whose offsets come from a sibling). Such a column never gets a cache entry, so a
     /// lookup must not require one - otherwise a table holding one could never be served from
-    /// the cache - and the serve path must leave it as the disk path does, for
-    /// `fillMissingColumns` to build.
+    /// the cache - and it is never accumulated for a write.
     bool isColumnFilledAfterReading(size_t pos) const;
+
+    /// Not a single stream of the column at `pos` is in the part, so reading it produces nothing
+    /// and both paths leave it null for `fillMissingColumns`.
+    bool isColumnAbsentFromPart(size_t pos) const;
+
+    /// Only some of the streams of the column at `pos` are in the part - in practice a `Nested`
+    /// member added by an `ALTER`, whose offsets are read from the shared stream of its group
+    /// while its elements stay empty. Reading it does produce data: `fillMissingColumns`
+    /// discards its values but takes those offsets to size every re-added member of the group,
+    /// so it has to be read from the part even when the rest of the range is served from cache.
+    bool isColumnPartiallyRead(size_t pos) const;
 
     /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
     /// Filled by `addStreams`.
@@ -212,6 +222,11 @@ private:
 
     /// Serve the next rows of the range from the columns held by `lookupColumnsCache`.
     size_t serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read);
+
+    /// Read the columns the cache cannot hold - the partially read ones - from the part, while
+    /// the rest of the block is served from the cache. See `isColumnPartiallyRead`.
+    void readPartiallyReadColumnsWhileServing(
+        MutableColumns & res_columns, size_t from_mark, bool continue_reading, size_t max_rows_to_read);
 
     /// Whether the deferred write of the current range may go on: the query-wide budgets may
     /// have run out while the range was being read, and a range larger than the whole cache
