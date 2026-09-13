@@ -88,7 +88,9 @@ def test_empty_multi_request(started_cluster):
         zk.create("/after_empty_multi", b"1")
         assert zk.get("/after_empty_multi")[0] == b"1"
         # A multi transaction with subrequests keeps working.
-        zk.transaction().create("/after_empty_multi/child", b"2").commit()
+        transaction = zk.transaction()
+        transaction.create("/after_empty_multi/child", b"2")
+        transaction.commit()
         assert zk.get("/after_empty_multi/child")[0] == b"2"
     finally:
         zk.stop()
