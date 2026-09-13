@@ -906,13 +906,13 @@ namespace
 ///
 /// Which columns are carried through is left to `* EXCEPT`, so the rewrite does not need to know
 /// what the table's columns are - it only knows the ones the query named.
-ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression)
+ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression, const ASTUnpivot & unpivot)
 {
     /// Two parallel arrays that ARRAY JOIN zips into one row per listed column.
     static constexpr auto name_column_name = "__unpivot_name";
     static constexpr auto value_column_name = "__unpivot_value";
 
-    const auto & columns = table_expression.unpivot_columns->as<const ASTExpressionList &>();
+    const auto & columns = unpivot.columns->as<const ASTExpressionList &>();
     if (columns.children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNPIVOT requires at least one column");
 
@@ -951,25 +951,24 @@ ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression)
     asterisk->children.push_back(transformers);
 
     auto name_column = make_intrusive<ASTIdentifier>(name_column_name);
-    name_column->setAlias(table_expression.unpivot_name_name->as<ASTIdentifier &>().name());
+    name_column->setAlias(unpivot.name_name->as<ASTIdentifier &>().name());
     auto value_column = make_intrusive<ASTIdentifier>(value_column_name);
-    value_column->setAlias(table_expression.unpivot_value_name->as<ASTIdentifier &>().name());
+    value_column->setAlias(unpivot.value_name->as<ASTIdentifier &>().name());
 
     auto projection = make_intrusive<ASTExpressionList>();
     projection->children.push_back(std::move(asterisk));
     projection->children.push_back(std::move(name_column));
     projection->children.push_back(std::move(value_column));
 
-    /// The source, with the UNPIVOT taken off it so the rewrite does not apply again.
+    /// The source, with the UNPIVOT taken off it so the rewrite does not apply again. FINAL, SAMPLE
+    /// and STREAM stay on it, which is where they belong: they modify the source, not the result.
     auto source = table_expression.clone();
     auto & source_typed = source->as<ASTTableExpression &>();
-    source_typed.unpivot_value_name.reset();
-    source_typed.unpivot_name_name.reset();
-    source_typed.unpivot_columns.reset();
-    source_typed.unpivot_include_nulls = false;
-    source_typed.children.erase(
-        std::remove_if(source_typed.children.begin(), source_typed.children.end(), [](const ASTPtr & child) { return !child; }),
-        source_typed.children.end());
+    auto & source_children = source_typed.children;
+    source_children.erase(
+        std::remove(source_children.begin(), source_children.end(), source_typed.unpivot),
+        source_children.end());
+    source_typed.unpivot.reset();
 
     auto source_element = make_intrusive<ASTTablesInSelectQueryElement>();
     source_element->table_expression = source;
@@ -996,7 +995,7 @@ ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression)
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
     /// A row whose value is NULL is not a row of the unpivoted table unless asked for.
-    if (!table_expression.unpivot_include_nulls)
+    if (!unpivot.include_nulls)
         select->setExpression(
             ASTSelectQuery::Expression::WHERE,
             makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>(value_column_name)));
@@ -1056,21 +1055,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
         {
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
 
-            if (table_expression.unpivot_columns)
-            {
-                if (!context->getSettingsRef()[Setting::allow_experimental_unpivot])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "UNPIVOT is experimental. Set 'allow_experimental_unpivot = 1' to enable it");
-
-                auto unpivot_subquery = buildUnpivotSubquery(table_expression);
-                auto node = buildSelectWithUnionExpression(
-                    unpivot_subquery, true /*is_subquery*/, {} /*cte*/, select_query.aliases(), context);
-                node->setAlias(table_expression.unpivot_alias);
-                node->setOriginalAST(unpivot_subquery);
-                table_expressions.push_back(std::move(node));
-                continue;
-            }
-
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
             if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)
@@ -1105,7 +1089,37 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
             }
 
-            if (table_expression.database_and_table_name)
+            /// UNPIVOT wraps the source into a subquery of its own, and `table_expression_modifiers`
+            /// stay on that source rather than on the result, so this branch does not use them.
+            if (table_expression.unpivot)
+            {
+                const auto & unpivot = table_expression.unpivot->as<const ASTUnpivot &>();
+
+                if (!context->getSettingsRef()[Setting::allow_experimental_unpivot])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "UNPIVOT is experimental. Set 'allow_experimental_unpivot = 1' to enable it");
+
+                auto unpivot_subquery = buildUnpivotSubquery(table_expression, unpivot);
+                auto node = buildSelectWithUnionExpression(
+                    unpivot_subquery, true /*is_subquery*/, {} /*cte*/, select_query.aliases(), context);
+
+                /// `t AS s UNPIVOT (...)` names the result `s`: the source becomes an inner subquery,
+                /// so its alias would otherwise stop resolving. An alias on the clause itself wins.
+                String result_alias = unpivot.result_alias;
+                if (result_alias.empty())
+                {
+                    const auto & source = table_expression.database_and_table_name
+                        ? table_expression.database_and_table_name
+                        : (table_expression.table_function ? table_expression.table_function : table_expression.subquery);
+                    if (source)
+                        result_alias = source->tryGetAlias();
+                }
+                node->setAlias(result_alias);
+                node->setOriginalAST(unpivot_subquery);
+
+                table_expressions.push_back(std::move(node));
+            }
+            else if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);

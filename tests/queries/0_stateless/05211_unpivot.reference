@@ -31,6 +31,25 @@ number	0
 number	1
 1	electronics	200	300	jan	100
 2	clothes	\N	30	jan	10
+-- the clause composes with joins on either side, and with ARRAY JOIN
+1	jan	1
+2	jan	1
+jan	1	jan
+jan	2	jan
+4
+jan	10	1
+jan	10	2
+jan	100	1
+jan	100	2
+-- an alias on the source names the result, and an alias on the clause wins over it
+jan	10
+jan	100
+mar	30
+mar	300
+1	jan
+2	jan
+jan
+jan
 -- the clause survives formatting
 SELECT *\nFROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))
 SELECT *\nFROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u

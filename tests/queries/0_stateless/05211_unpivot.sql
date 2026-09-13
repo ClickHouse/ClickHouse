@@ -30,6 +30,17 @@ SELECT * FROM (SELECT 1 AS a, 2 AS b) UNPIVOT (value FOR name IN (a, b)) ORDER B
 SELECT * FROM numbers(2) UNPIVOT (value FOR name IN (number)) ORDER BY value;
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan)) ORDER BY empid;
 
+SELECT '-- the clause composes with joins on either side, and with ARRAY JOIN';
+SELECT u.empid, u.month, t.w FROM monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) AS u JOIN (SELECT 'jan' AS k, 1 AS w) AS t ON u.month = t.k ORDER BY ALL;
+SELECT t.k, u.empid, u.month FROM (SELECT 'jan' AS k) AS t JOIN monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) AS u ON u.month = t.k ORDER BY ALL;
+SELECT count() FROM (SELECT 1 AS x) AS t, monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) AS u;
+SELECT month, sales, a FROM monthly_sales UNPIVOT (sales FOR month IN (jan)) ARRAY JOIN [1, 2] AS a ORDER BY ALL;
+
+SELECT '-- an alias on the source names the result, and an alias on the clause wins over it';
+SELECT s.month, s.sales FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
+SELECT s.empid, s.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
+SELECT u.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) AS u ORDER BY ALL;
+
 SELECT '-- the clause survives formatting';
 SELECT formatQuery('SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))');
 SELECT formatQuery('SELECT * FROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u');
@@ -42,9 +53,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM monthly_sales UNPIVOT
 
 -- A partial or misshapen clause in hand-written `clickhouse_json` is rejected instead of being
 -- silently dropped on formatting or dereferenced as null by the analyzer.
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b))'), '"unpivot_columns"', '"unpivot_columns_typo"')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b))'), '"unpivot_name_name"', '"unpivot_name_name_typo"')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b)) AS u'), '"unpivot_alias":"u"', '"unpivot_alias":1')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b))'), '"columns"', '"columns_typo"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b))'), '"name_name"', '"name_name_typo"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b)) AS u'), '"result_alias":"u"', '"result_alias":1')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v FOR k IN (a, b))'), '"name":"a"', '"number":1')); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- errors';
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (nope)); -- { serverError UNKNOWN_IDENTIFIER }
