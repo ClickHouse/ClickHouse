@@ -43,6 +43,9 @@ public:
         const UUID & uuid;
         ContextPtr & context;
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
+        /// True only when the server replays a definition it stored itself, during startup metadata loading.
+        /// A user statement never sets it, not even one a wrapper such as `PARALLEL WITH` runs internally.
+        bool is_metadata_replay = false;
     };
 
     struct EngineFeatures
@@ -60,7 +63,7 @@ public:
         EngineFeatures features;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool is_metadata_replay = false);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -83,7 +86,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool is_metadata_replay);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.
