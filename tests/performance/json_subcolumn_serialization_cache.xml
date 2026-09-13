@@ -105,6 +105,7 @@
     <!-- The declared typed path avoids dynamic-path type resolution and isolates serialization lookup. -->
     <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache FORMAT Null</query>
     <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache_compact FORMAT Null</query>
+    <query>SELECT json, json.p510 FROM json_subcolumn_serialization_cache_compact FORMAT Null</query>
     <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache_compact_substreams FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS json_subcolumn_serialization_cache</drop_query>

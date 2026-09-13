@@ -81,16 +81,20 @@ IMergeTreeReader::IMergeTreeReader(
     for (const auto & column : getColumns())
     {
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
-
-        if (column.isSubcolumn()
-            && data_part_info_for_read->isCompactPart()
-            && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams
-            && !serializations_of_full_columns.contains(column_to_read.getNameInStorage()))
+        if (data_part_info_for_read->isCompactPart()
+            && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
+            if (it == serializations_of_full_columns.end())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                it = serializations_of_full_columns.emplace(
+                    column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage)).first;
+            }
+            serializations.emplace_back(column.isSubcolumn() ? getSerializationInPart(column) : it->second);
         }
+        else
+            serializations.emplace_back(getSerializationInPart(column));
     }
 }
 
