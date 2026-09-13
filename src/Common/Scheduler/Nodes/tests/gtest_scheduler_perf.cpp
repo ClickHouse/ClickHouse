@@ -111,6 +111,8 @@ struct PerfEnv
     size_t threads = 0;
     uint64_t duration_ms = 0;
     size_t rounds = 0;
+    String only_sched;  // SCHED_PERF_SCHED: restrict to one algorithm (e.g. profiling a single scheduler)
+    String only_load;   // SCHED_PERF_LOAD:  restrict to one load ("cpu_like" / "io_like")
 
     PerfEnv()
     {
@@ -121,6 +123,8 @@ struct PerfEnv
                                                    : (stress ? 2000 : 50);
         rounds = std::getenv("SCHED_PERF_ROUNDS") ? std::stoul(std::getenv("SCHED_PERF_ROUNDS"))
                                                   : (stress ? 5 : 1);
+        if (const char * s = std::getenv("SCHED_PERF_SCHED")) only_sched = s;
+        if (const char * l = std::getenv("SCHED_PERF_LOAD")) only_load = l;
     }
 };
 
@@ -165,6 +169,8 @@ double measureRps(WorkloadResourceManager & manager, const String & workload, co
 
 void runLoad(const PerfEnv & env, const char * load, const String & resource_ddl, const String & resource, ResourceCost cost)
 {
+    if (!env.only_load.empty() && env.only_load != load)
+        return;
     BenchStorage storage;
     auto manager = std::make_shared<WorkloadResourceManager>(
         std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
@@ -172,6 +178,8 @@ void runLoad(const PerfEnv & env, const char * load, const String & resource_ddl
     storage.executeQuery("CREATE WORKLOAD all SETTINGS scheduler = 'fifo'");
     for (const char * sched : {"fifo", "fair", "las", "priority"})
     {
+        if (!env.only_sched.empty() && env.only_sched != sched)
+            continue;
         storage.executeQuery(fmt::format("CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = '{}'", sched));
         for (size_t r = 0; r < env.rounds; ++r)
         {
