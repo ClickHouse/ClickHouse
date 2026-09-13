@@ -145,50 +145,9 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query \
     "EXPLAIN PIPELINE SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_log);" 2>&1 |
     grep -o "ACCESS_DENIED\|BAD_ARGUMENTS" | uniq
 
-# `CREATE TABLE ... AS mergeTreeCodecBlockCounts(...)` stores the function and materialises it under the global
-# context, lazily, on the first read of the created table. The checks therefore have to run when the created table
-# is read, under the reader's context: otherwise a user who may read the created table but not the source could
-# tell a hidden source from a missing one, and learn its engine once it is recreated under the same name.
-
-${CLICKHOUSE_CLIENT} -m --query "
-    CREATE TABLE t_codec_access_dst AS mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_hidden);
-    GRANT SELECT ON t_codec_access_dst TO ${username};
-"
-
-echo "Through a table created from the function, hidden source table"
-${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT count() FROM t_codec_access_dst;" 2>&1 |
-    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE\|BAD_ARGUMENTS" | uniq
-
-echo "Through a table created from the function, missing source table"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_codec_access_hidden;"
-${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT count() FROM t_codec_access_dst;" 2>&1 |
-    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE\|BAD_ARGUMENTS" | uniq
-
-echo "Through a table created from the function, non-MergeTree source table recreated, without SELECT on it"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_codec_access_hidden (a UInt64) ENGINE = Log;"
-${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT count() FROM t_codec_access_dst;" 2>&1 |
-    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE\|BAD_ARGUMENTS" | uniq
-
-echo "Through a table created from the function, non-MergeTree source table recreated, with SELECT on it"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON t_codec_access_hidden TO ${username};"
-${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT count() FROM t_codec_access_dst;" 2>&1 |
-    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE\|BAD_ARGUMENTS" | uniq
-
-echo "Through a table created from the function, MergeTree source table recreated, with SELECT on it"
-${CLICKHOUSE_CLIENT} -m --query "
-    DROP TABLE t_codec_access_hidden;
-    CREATE TABLE t_codec_access_hidden (a UInt64 CODEC(LZ4))
-    ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_bytes_for_wide_part = 0;
-    INSERT INTO t_codec_access_hidden SELECT number FROM numbers(1000);
-"
-${CLICKHOUSE_CLIENT} --user="${username}" --query \
-    "SELECT DISTINCT column, mapKeys(codec_block_counts) FROM t_codec_access_dst ORDER BY column;"
-
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER ${username};
     DROP TABLE t_codec_access;
     DROP TABLE t_codec_access_log;
     DROP TABLE t_codec_access_hidden;
-    DROP TABLE t_codec_access_dst;
 "

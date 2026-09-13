@@ -36,13 +36,3 @@ EXPLAIN PLAN of a hidden source table
 ACCESS_DENIED
 EXPLAIN PIPELINE of a non-MergeTree source table
 BAD_ARGUMENTS
-Through a table created from the function, hidden source table
-ACCESS_DENIED
-Through a table created from the function, missing source table
-ACCESS_DENIED
-Through a table created from the function, non-MergeTree source table recreated, without SELECT on it
-ACCESS_DENIED
-Through a table created from the function, non-MergeTree source table recreated, with SELECT on it
-BAD_ARGUMENTS
-Through a table created from the function, MergeTree source table recreated, with SELECT on it
-a	['LZ4']

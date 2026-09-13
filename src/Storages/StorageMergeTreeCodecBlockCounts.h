@@ -12,10 +12,8 @@ class StorageMergeTreeCodecBlockCounts final : public IStorage
 {
 public:
     /// Holds only the name of the source table. It is resolved and checked on every read, under the context of the
-    /// user who reads, because the storage may be created under the global context: `CREATE TABLE ... AS
-    /// mergeTreeCodecBlockCounts(...)` stores the function and materialises it lazily on the first read of the created
-    /// table. Resolving the source there would let a user who may read the created table but not the source tell
-    /// a hidden source from a missing one, and learn its engine once it is recreated under the same name.
+    /// user who reads, so that the checks run where the data is disclosed rather than where the storage is built,
+    /// and so that the storage keeps no reference to the source table between reads.
     StorageMergeTreeCodecBlockCounts(const StorageID & table_id_, StorageID source_table_id_, const ColumnsDescription & columns_);
 
     std::string getName() const override { return "MergeTreeCodecBlockCounts"; }

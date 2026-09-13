@@ -26,7 +26,9 @@ public:
     static constexpr auto name = "mergeTreeCodecBlockCounts";
     std::string getName() const override { return name; }
 
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    /// Refused in line with the other `MergeTree` introspection table functions. This storage holds only the source
+    /// table's name and resolves it on every read, so it pins nothing, but the persisted form has no uses and is
+    /// refused for all of them alike, so that none of them has to stay correct while outliving its query.
     bool canBeUsedToCreateTable() const override { return false; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -76,7 +78,7 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
 {
     /// The structure is fixed, so nothing in it depends on the source table. The table is still resolved here, because
     /// resolving the structure is a read of it and needs the same access as reading it: this is what `DESCRIBE`
-    /// and `CREATE TABLE ... AS` go through, under the context of the user who asks.
+    /// goes through, under the context of the user who asks.
     StorageMergeTreeCodecBlockCounts::resolveSourceTable(source_table_id, context);
     return getColumns();
 }
@@ -111,10 +113,10 @@ StoragePtr TableFunctionMergeTreeCodecBlockCounts::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool /*is_insert_query*/) const
 {
-    /// Deliberately does not resolve the source table. `CREATE TABLE ... AS mergeTreeCodecBlockCounts(...)` runs this
-    /// under the global context, lazily, on the first read of the created table, so a check here would either pass
-    /// for everyone or, for a missing or non-`MergeTree` source, fail with an error that names the reason. The source is
-    /// resolved and checked by `StorageMergeTreeCodecBlockCounts::read`, under the context of the user who reads.
+    /// Deliberately does not resolve the source table. Building the storage discloses nothing, because its structure
+    /// is fixed, and the storage may be built and read under different contexts (`EXPLAIN` builds it without reading).
+    /// The source is resolved and checked by `StorageMergeTreeCodecBlockCounts::read`, on the path that reads its data,
+    /// under the context of the user who reads.
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeCodecBlockCounts>(std::move(storage_id), source_table_id, getColumns());
 
