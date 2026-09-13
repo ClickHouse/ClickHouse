@@ -2,6 +2,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
+from multiprocessing.dummy import Pool
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -1514,6 +1515,142 @@ def test_select_racing_drop(started_cluster):
         assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
+def test_drop_when_registry_is_gone(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+
+    table_name = f"test_registry_gone_{uuid.uuid4().hex[:8]}"
+    db_name = f"db_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        f"{table_name}_data",
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    assert zk.exists(f"{keeper_path}/registry") is not None
+
+    # Another server sharing this keeper_path removes the whole subtree once it is the last one
+    # to unregister, so this is the state its drop leaves behind for a table still live here.
+    zk.delete(keeper_path, recursive=True)
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
+    assert node.query("SELECT 1").strip() == "1"
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables WHERE database = '{db_name}'"
+        ).strip()
+        == "0"
+    )
+    assert node.contains_in_log(f"registry {keeper_path}/registry does not exist")
+
+
+def test_no_registration_while_metadata_is_removed(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    node2 = started_cluster.instances["instance2"]
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_drop_lock_{suffix}"
+    keeper_path = f"/clickhouse/test_drop_lock_{suffix}"
+    table_1 = f"t1_{suffix}"
+    table_2 = f"t2_{suffix}"
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    for instance in (node, node2):
+        instance.query(f"DROP DATABASE IF EXISTS {db_name}")
+        instance.query(f"CREATE DATABASE {db_name}")
+
+    create_table(
+        started_cluster,
+        node,
+        table_1,
+        "unordered",
+        f"data_{suffix}",
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+
+    failpoints = [
+        # The atomic removal is one version-checked request and cannot be interleaved, so the
+        # non-atomic path is what needs the lock and what this test drives.
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_after_drop_lock",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_1} SYNC", timeout=180)
+        )
+
+        # The lock is taken and the subtree is still intact, so a registration coming from
+        # another server gets as far as the registry write and has to be refused there.
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_after_drop_lock PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/drop") is not None
+        assert zk.exists(f"{keeper_path}/metadata") is not None
+
+        # Registrations are stored in the data of this one node, so its bytes and version are
+        # what say whether one was added. They name tables by uuid, never by table name.
+        registry_before, stat_before = zk.get(f"{keeper_path}/registry")
+
+        error = create_table(
+            started_cluster,
+            node2,
+            table_2,
+            "unordered",
+            f"data_{suffix}",
+            additional_settings={"keeper_path": keeper_path},
+            database_name=db_name,
+            expect_error=True,
+        )
+        # A CREATE that died before it got to the registry would also return an error, so the
+        # error has to name the lock, and the registry has to be untouched.
+        assert "Coordination::Exception" in error, error
+        assert f"{keeper_path}/drop" in error, error
+        registry_after, stat_after = zk.get(f"{keeper_path}/registry")
+        assert registry_after == registry_before, (registry_before, registry_after)
+        assert stat_after.version == stat_before.version
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_after_drop_lock"
+        )
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        # The children are gone by now and the lock is still held, so no registration can slip
+        # into a path whose contents have already been removed.
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.exists(f"{keeper_path}/drop") is not None
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert zk.exists(keeper_path) is None
+    for instance in (node, node2):
+        assert instance.query("SELECT 1").strip() == "1"
+        instance.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_create_or_replace_table(started_cluster):
     node1 = started_cluster.instances["instance"]
     node2 = started_cluster.instances["instance2"]
@@ -2406,3 +2543,4 @@ def test_failed_commit_after_success_select(started_cluster):
         assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+
