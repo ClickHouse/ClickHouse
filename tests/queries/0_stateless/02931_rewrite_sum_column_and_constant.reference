@@ -357,3 +357,6 @@ SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
 25	30
 EXPLAIN SYNTAX SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
 SELECT\n    sum(plus(uint64, 2)) AS j,\n    plus(j, 5) AS t\nFROM test_table
+SELECT plus(multiply(3, count(number)), sum(number))\nFROM numbers(20)
+250
+250

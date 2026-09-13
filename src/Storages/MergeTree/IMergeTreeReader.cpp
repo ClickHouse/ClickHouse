@@ -82,7 +82,9 @@ IMergeTreeReader::IMergeTreeReader(
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
 
-        if (column.isSubcolumn())
+        if (column.isSubcolumn()
+            && data_part_info_for_read->isCompactPart()
+            && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
             NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
@@ -396,7 +398,7 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
 
-    if (alter_conversions->isColumnRenamed(name_in_storage, [&](const auto & name) { return part_columns.has(name); }))
+    if (alter_conversions->isColumnRenamed(name_in_storage))
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
 
     /// A special case when we read subcolumn of shared offsets of Nested.
