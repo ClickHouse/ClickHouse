@@ -25,6 +25,11 @@ SerializationObjectCombinedPath::SerializationObjectCombinedPath(
 {
 }
 
+bool SerializationObjectCombinedPath::isCombinedPathSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ObjectCombinedPath;
+}
+
 UInt128 SerializationObjectCombinedPath::getHash(
     const SerializationPtr & literal_serialization_,
     const SerializationPtr & sub_object_serialization_,
