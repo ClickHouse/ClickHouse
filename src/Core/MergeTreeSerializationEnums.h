@@ -57,5 +57,14 @@ enum class MergeTreeMapBucketsStrategy : uint8_t
     LINEAR = 2,
 };
 
+/// The maximum number of buckets in the shared data of a `JSON` / `Object` column
+/// (`MAP_WITH_BUCKETS` / `ADVANCED` shared-data serialization). Legitimate bucket counts are written
+/// from the small MergeTree settings `object_shared_data_buckets_for_compact_part` /
+/// `object_shared_data_buckets_for_wide_part`, both non-zero and capped at this value, so a bucket
+/// count read from a stream that is outside `1 .. MAX_OBJECT_SHARED_DATA_BUCKETS` can only be data
+/// corruption. This constant is the single source of truth for both the writer-side setting bound
+/// and the reader-side validation.
+inline constexpr uint64_t MAX_OBJECT_SHARED_DATA_BUCKETS = 256;
+
 
 }

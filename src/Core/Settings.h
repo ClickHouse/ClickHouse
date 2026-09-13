@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -150,7 +151,7 @@ struct Settings
     void setDefaultValue(std::string_view name);
 
     std::vector<String> getHints(const String & name) const;
-    String toString() const;
+    String toString(bool show_secrets) const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
@@ -159,8 +160,8 @@ struct Settings
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
 
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
+    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
     NameToNameMap toNameToNameMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
@@ -178,6 +179,7 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 

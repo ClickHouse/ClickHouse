@@ -254,14 +254,14 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         /// If the posting list is completely in the buffer, avoid copying.
         if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
         {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
+            auto result = std::make_shared<PostingList>(PostingList::readSafe(istr.position(), num_bytes));
             istr.position() += num_bytes;
             return result;
         }
 
         deserialization_buffer.resize(num_bytes);
         istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
+        return std::make_shared<PostingList>(PostingList::readSafe(deserialization_buffer.data(), num_bytes));
     }
 }
 

@@ -2832,6 +2832,8 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
             "kafka_handle_error_mode": "stream",
         },
     )
+    # Because we want to make sure the kafka table is streaming to both tables, let's detach and re-attach it before starting sending messages,
+    # otherwise it might happen that a streaming loop is started before the second materialized view is created.
     instance.query(
         f"""
         DROP TABLE IF EXISTS test.{kafka_table};
@@ -2852,6 +2854,9 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
                _raw_message AS raw,
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
+
+        DETACH TABLE test.{kafka_table};
+        ATTACH TABLE test.{kafka_table};
         """
     )
 
@@ -2916,6 +2921,8 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
         },
     )
 
+    # Because we want to make sure the kafka table is streaming to both tables, let's detach and re-attach it before starting sending messages,
+    # otherwise it might happen that a streaming loop is started before the second materialized view is created.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table};
         DROP TABLE IF EXISTS test.{kafka_table}_data;
@@ -2935,6 +2942,9 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
                _raw_message AS raw,
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
+
+        DETACH TABLE test.{kafka_table};
+        ATTACH TABLE test.{kafka_table};
     """)
 
     messages = []
