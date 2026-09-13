@@ -245,7 +245,7 @@ void FilterTransform::transform(Chunk & chunk)
 namespace
 {
 
-static std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
+std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
 {
     if (const auto * sparse_filter_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
     {
@@ -404,7 +404,11 @@ void FilterTransform::doTransform(Chunk & chunk)
     }
     (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
-    if (const auto uniform_filter_value = tryGetUniformFilterValue(*filter_description, num_rows_before_filtration))
+    std::optional<bool> uniform_filter_value;
+    if (first_non_constant_column != num_columns)
+        uniform_filter_value = tryGetUniformFilterValue(*filter_description, num_rows_before_filtration);
+
+    if (uniform_filter_value)
     {
         if (!*uniform_filter_value)
         {

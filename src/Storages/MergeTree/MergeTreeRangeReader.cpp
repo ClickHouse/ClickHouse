@@ -749,7 +749,11 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         if (current_filter_uniform && *current_filter_uniform)
         {
             if (current_filter.size() != final_filter.size())
+            {
                 checkCombinedFiltersSize(final_filter.countBytesInFilter(), current_filter.size());
+                /// The previous filter has already been applied and the current filter is a no-op.
+                return;
+            }
 
             filter = final_filter;
         }
