@@ -11,7 +11,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -99,7 +98,6 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
-
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 

@@ -35,11 +35,7 @@ struct WorkloadSettings
     Float64 max_queries_per_second = 0; // Zero means unlimited
     Float64 max_burst_queries = 0; // default is `default_burst_seconds * max_queries_per_second`
 
-    /// Scheduling algorithm run by the time-shared leaf (`RequestQueue`) of this workload:
-    /// "fifo" (default, first-come-first-served), "fair" (weighted fair queueing that can lower a
-    /// query's weight as it runs), "las" (least-attained-service; favours short queries, may starve
-    /// long ones), or "priority" (strict order by the query `priority` setting; may starve).
-    /// Changing it on an existing workload swaps the algorithm in place.
+    /// Intra-workload scheduling algorithm for the time-shared leaf: "fifo" (default), "fair", "las", or "priority".
     String scheduler = "fifo";
 
     /// Limits total number of concurrent resource requests that are allowed to consume

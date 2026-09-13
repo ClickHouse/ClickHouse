@@ -226,8 +226,7 @@ void ThreadGroup::unlinkThread()
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    const auto & settings = query_context_->getSettingsRef();
-    const Int32 os_threads_nice_value = settings[Setting::os_threads_nice_value_query];
+    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
     return group;
