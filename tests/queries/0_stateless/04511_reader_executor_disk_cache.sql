@@ -1,8 +1,9 @@
 -- Tags: no-fasttest, no-parallel, no-parallel-replicas
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
--- Tag no-parallel-replicas: the checks below read the INITIATOR's `ProfileEvents` out of
--- `system.query_log`, and parallel replicas move the reading to the remote replicas, whose events do
--- not land in that row - so all three counters come back 0, not just the warm one.
+-- Tag no-parallel-replicas: the checks below read the `ProfileEvents` of the two `SELECT`s out of
+-- `system.query_log`. With parallel replicas the reading moves off the initiator, and the executor's
+-- counters no longer land in the rows those checks sum, so all three come back 0 - not just the warm
+-- one. Seen in `Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)`.
 -- Tag no-parallel: the cold->warm assertion needs the cold read's populate to reserve cache space
 -- and survive to the warm read. The dedicated `s3_cache_04511` policy isolates it from other tests'
 -- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments
@@ -11,18 +12,17 @@
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
--- `min_bytes_for_full_part_storage = 0` gives every file of the part its own object, and therefore
--- its own cache key. A PACKED part - which the randomized MergeTree settings produce whenever
--- `min_bytes_for_full_part_storage` lands above the part size - keeps the whole part in ONE object,
--- so `primary.idx`, the marks and `k.bin` are slices of a single file segment. Those files are read
--- concurrently even at `max_threads = 1`, so their readers contend for that one segment's fill role,
--- and `DiskCacheWriter` appends only at the segment's live write offset: whichever reader loses the
--- race reads its bytes from source and drops them, leaving the segment PARTIALLY populated after the
--- cold read. The warm read then has to fetch the uncommitted tail from source, which breaks the
--- `warm = 0` assertion below.
+-- Full (not Packed) part storage, so every stream of the part is its own object and therefore its own
+-- cache key. With Packed storage the whole part is ONE object: the marks streams and the data stream
+-- resolve to the SAME cache segment and race for its single downloader role, and only the role winner
+-- writes. Each stream is bounded to its own slice of the archive (see `ReadBufferFromFileView`), so
+-- the winner fills only that slice and the cold read leaves the segment with holes, which the warm
+-- read then goes back to the source for. `min_bytes_for_full_part_storage` is randomized by the test
+-- harness, so leaving it unpinned made the assertion below fail in about a third of the runs.
 CREATE TABLE t_re_disk_cache (k UInt64, v String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0;
 
 -- No cache-on-write, so the first SELECT below is a genuine cold read that must populate the cache.
 INSERT INTO t_re_disk_cache SELECT number, toString(number) FROM numbers(200000)
@@ -39,13 +39,13 @@ SET remote_filesystem_read_method = 'read';
 SET enable_filesystem_cache = 1;
 SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
 
--- One reading thread, so the column's data is read by a single `ReaderExecutor` and the cold read
--- populates its segment completely. With several threads each stream gets its own executor over the
--- same file and they contend for that segment's fill role exactly as the packed-part case above does:
--- the loser contributes nothing, the segment stays PARTIALLY populated, and the warm read re-fetches
--- it from its start (`claimLeadRole`'s `available` prefix is deliberately unused - see the "Coarse
--- fetch, fine serve" note in `ReaderExecutor::readThroughCaches`), which can cost MORE source bytes
--- than the cold read did.
+-- One reading thread, so the cold read populates the cache completely and the warm read is a pure
+-- cache hit. With several threads each stream gets its own `ReaderExecutor` over the same file, and
+-- `DiskCacheWriter` appends only at the segment's live write offset: whichever stream loses the
+-- downloader race contributes nothing, so the cold read leaves the segment PARTIALLY populated. The
+-- warm read then re-fetches such a segment from its start (`claimLeadRole`'s `available` prefix is
+-- deliberately unused - see the "Coarse by design" note in `ReaderExecutor::readThroughCaches`), which
+-- can cost MORE source bytes than the cold read did and made the assertion below flaky.
 SET max_threads = 1;
 
 -- Cold read: nothing cached yet, so the executor reads from source and populates the cache. Warm read:

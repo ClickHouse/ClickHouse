@@ -17,6 +17,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -2789,7 +2790,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+    if (expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct
