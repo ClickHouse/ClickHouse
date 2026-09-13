@@ -1,0 +1,20 @@
+Time zones with a UTC offset that is not a whole number of hours
+2020-06-15 13:00:00
+2020-06-15 13:00:05
+2020-06-15 12:50:00
+1902-06-15 13:00:00
+1902-06-15 12:00:40
+The grid does not restart on every local day
+2024-03-10 04:00:00
+2024-03-10 04:00:00
+2024-03-08 00:00:00
+The distance from the origin is a whole number of intervals, whatever the time zone
+86400	86400	86400	86400	86400
+A summer time transition inside the interval does not move the grid
+2024-03-31 07:00:00
+Sub-second scales
+2020-06-15 13:00:00.000
+2020-06-15 13:00:00.000000000
+Date and Date32 arguments
+2026-07-24
+2026-07-24

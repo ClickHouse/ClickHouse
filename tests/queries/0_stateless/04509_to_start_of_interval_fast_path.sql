@@ -54,7 +54,7 @@ SELECT toStartOfInterval(toDateTime('2024-04-07 01:45:10', 'Australia/Lord_Howe'
 SELECT toStartOfInterval(toDateTime('2024-04-07 03:10:00', 'Australia/Lord_Howe'), INTERVAL 2 HOUR);
 
 -- Values outside the lookup table (before 1900, after 2299): the offset is extrapolated there and can have
--- a sub-minute component (`Asia/Kolkata` is +5:53:28 before 1906), so they must keep the generic path.
+-- a sub-minute component (`Asia/Kolkata` is +5:21:10 before 1906), so they must keep the generic path.
 -- Extended results are required here: the standard-precision result is a DateTime, and every value in these
 -- ranges saturates to a bound of it, which would compare equal on both sides whatever the rounding did.
 SET enable_extended_results_for_datetime_functions = 1;

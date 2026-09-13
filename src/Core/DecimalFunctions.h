@@ -54,6 +54,14 @@ inline auto scaleMultiplier(UInt32 scale)
  *  0.123 represents  0 /  0.123
  * -0.123 represents  0 / -0.123
  * -1.123 represents -1 /  0.123
+ *
+ * The struct itself does not pin down the sign convention for a negative value - it carries whichever one
+ * its producer used, and the matching inverse has to be used to reassemble it:
+ * - `splitWithScaleMultiplier` truncates towards zero, as shown above, and its inverse is
+ *   `decimalFromComponentsWithMultiplier`, which re-derives the sign of the fractional part from `whole`.
+ * - `splitFlooringNegative` rounds towards negative infinity, so -1.123 represents -2 / 0.875 and the
+ *   fractional part is always a non-negative offset upwards from `whole`. Its inverse is
+ *   `decimalFromFlooredComponents`, which adds the fractional part without flipping its sign.
  */
 template <typename DecimalType>
 struct DecimalComponents
@@ -309,6 +317,67 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
         fractional *= T(-1);
 
     return {whole, fractional};
+}
+
+/** Split decimal into whole and fractional parts with given scale_multiplier, rounding the whole part
+ * towards negative infinity: -1.125 splits to -2 / 0.875 instead of -1 / 0.125.
+ *
+ * `splitWithScaleMultiplier` truncates towards zero, which for a negative value moves the whole part into
+ * the future. Date/time transforms that round down to a boundary have to floor it first: otherwise a
+ * scale > 0 argument disagrees with the same instant at scale 0, the result can be greater than the
+ * argument, and the monotonicity factor that `KeyCondition` evaluates disagrees with the execution path,
+ * which prunes granules that hold matching rows.
+ */
+template <typename DecimalType>
+inline DecimalComponents<DecimalType> splitFlooringNegative(
+        const DecimalType & decimal,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+
+    if (scale_multiplier == T(1))
+        return {decimal.value, T(0)};
+
+    auto components = splitWithScaleMultiplier(decimal, scale_multiplier);
+    /// `fractional` is non-zero only at scale > 0, where `whole` is at most a tenth of `decimal` in
+    /// magnitude, so it is nowhere near the minimum of the type and cannot underflow here.
+    if (decimal.value < T(0) && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? T(-1) : T(1)) * components.fractional;
+        --components.whole;
+    }
+    return components;
+}
+
+/** Make a decimal value from components produced by `splitFlooringNegative`.
+ *
+ * There `fractional` is a non-negative offset upwards from `whole`, so it is added as is. This is what
+ * separates it from `decimalFromComponentsWithMultiplier`, which takes the sign of the fractional part
+ * from `whole` and is therefore the inverse of `splitWithScaleMultiplier` instead.
+ *
+ * `fractional` is expected to be already reduced - 0 <= fractional < scale_multiplier - which is what
+ * `splitFlooringNegative` produces. It is asserted rather than reduced here: the modulo would be a
+ * run-time division on every row, and silently reducing an out-of-range component would mask a bug in
+ * the caller instead of reporting it.
+ */
+template <typename DecimalType>
+inline DecimalType decimalFromFlooredComponents(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+    chassert(fractional >= T(0) && fractional < scale_multiplier);
+
+    return DecimalType(multiplyAdd<T>(whole, scale_multiplier, fractional));
+}
+
+template <typename DecimalType>
+inline DecimalType decimalFromFlooredComponents(
+        const DecimalComponents<DecimalType> & components,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    return decimalFromFlooredComponents<DecimalType>(components.whole, components.fractional, scale_multiplier);
 }
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.

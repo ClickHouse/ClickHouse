@@ -61,6 +61,27 @@ FieldType saturatingResultCast(Int64 value)
         return static_cast<FieldType>(value);
 }
 
+/// Seconds per unit of the fixed-length units, nothing for the calendar ones, whose length depends on where
+/// they start. Their buckets with an `origin` are `origin + k * num_units * unit_seconds`, i.e. arithmetic on
+/// the difference from the origin: the `DateLUTImpl` helpers must not see that difference, as they would align
+/// it to the local midnight of the time point it is not.
+template <IntervalKind::Kind unit>
+constexpr std::optional<Int64> fixedUnitSeconds()
+{
+    if constexpr (unit == IntervalKind::Kind::Second)
+        return 1;
+    else if constexpr (unit == IntervalKind::Kind::Minute)
+        return 60;
+    else if constexpr (unit == IntervalKind::Kind::Hour)
+        return 3600;
+    else if constexpr (unit == IntervalKind::Kind::Day)
+        return 86'400;
+    else if constexpr (unit == IntervalKind::Kind::Week)
+        return 7 * 86'400;
+    else
+        return std::nullopt;
+}
+
 class FunctionToStartOfInterval final : public IFunction
 {
 private:
@@ -251,7 +272,7 @@ private:
         const DateLUTImpl & time_zone,
         Int64 scale_multiplier)
     {
-        std::optional<Int64> modular_divisor;
+        std::optional<DateLUTImpl::ModularDivisor> modular_divisor;
         if constexpr (unit == IntervalKind::Kind::Minute)
             modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
         else if constexpr (unit == IntervalKind::Kind::Second)
@@ -263,7 +284,8 @@ private:
         }
         if (!modular_divisor)
             return false;
-        const Int64 divisor = *modular_divisor;
+        const Int64 divisor = modular_divisor->divisor;
+        const bool valid_before_epoch = modular_divisor->valid_before_epoch;
 
         const size_t size = time_data.size();
         using ResultFieldType = typename ResultContainer::value_type;
@@ -294,17 +316,19 @@ private:
                 /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
+                        scaleDivideFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier));
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
 #pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
-                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                const Int64 t = scaleDivideFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier);
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
-                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
+                /// (e.g. `Asia/Kolkata` is +5:21:10 before 1906), so the rounding is not modular there, nor
+                /// before the epoch unless `valid_before_epoch`.
+                if (!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)) [[unlikely]]
                 {
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
@@ -337,12 +361,23 @@ private:
 
         if (origin_column.column) // Overload: Origin
         {
-            const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
+            constexpr bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
             const bool is_result_date = isDateOrDate32(result_type);
 
             /// For large intervals the result scale equals the argument scale: seconds for the non-DateTime64
             /// argument types and scale_multiplier for DateTime64 arguments.
             const Int64 result_scale = (isDateTime64(result_type) && !is_small_interval) ? scale_multiplier : 1;
+
+            constexpr std::optional<Int64> unit_seconds = fixedUnitSeconds<unit>();
+
+            [[maybe_unused]] Int64 interval_seconds = 0;
+            if constexpr (unit_seconds.has_value())
+            {
+                if (common::mulOverflow(num_units, *unit_seconds, interval_seconds))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "The length of the {} interval ({} units) of function {} does not fit into Int64",
+                        IntervalKind(unit).toString(), num_units, getName());
+            }
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
@@ -353,7 +388,7 @@ private:
                 if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (is_small_interval)
+                if constexpr (is_small_interval)
                 {
                     result_data[i] = static_cast<typename ResultDataType::FieldType>(
                         ToStartOfInterval<unit>::execute(time_arg, num_units, time_zone, scale_multiplier, origin));
@@ -367,15 +402,19 @@ private:
                 }
 
                 /// The time and origin arguments have the same scale, so their difference is expressed in the
-                /// argument scale, which for large intervals equals result_scale. ToStartOfInterval returns
-                /// the offset as a whole number of interval units.
+                /// argument scale, which for large intervals equals result_scale.
                 Int64 time_diff = 0;
                 if (common::subOverflow(time_arg, origin, time_diff))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
                         "The difference between the time argument ({}) and the origin ({}) of function {} does not fit into Int64",
                         time_arg, origin, getName());
 
-                Int64 offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
+                /// A whole number of interval units, in seconds.
+                Int64 offset = 0;
+                if constexpr (unit_seconds.has_value())
+                    offset = time_diff / result_scale / interval_seconds * interval_seconds;
+                else
+                    offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
 
                 /// The offset is a whole number of seconds or days, convert it to the result scale.
                 offset *= result_scale;
@@ -668,11 +707,17 @@ The calculation is performed relative to specific points in time:
 | MICROSECOND | 1970-01-01 00:00:00    |
 | NANOSECOND  | 1970-01-01 00:00:00    |
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
-hour values between 1 and 23 are useful.
+hour values between 1 and 23 are useful. The table above and this footnote describe the first overload only; with an `origin` the
+calculation is performed relative to the `origin` instead, as described below.
 
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
-The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
+The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function. For the
+fixed-length units - `NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY` and `WEEK` - the buckets are
+`origin + k * x unit` for a whole number `k`, so the result is always a whole number of intervals away from the `origin`, whatever
+the time zone and whatever happens to the UTC offset in between. The calendar units - `MONTH`, `QUARTER` and `YEAR` - have no fixed
+length, so their buckets follow the calendar grid anchored at the `origin` instead, and the result can be later than `value` by up to
+the time of day of the `origin`.
         )";
         FunctionDocumentation::Syntax syntax = R"(
 toStartOfInterval(value, INTERVAL x unit[, time_zone])

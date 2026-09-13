@@ -1177,6 +1177,10 @@ public:
 
         const auto & vec = times->getData();
 
+        /// Only used for DateTime64 arguments, where `vec` holds `DateTime64` values.
+        [[maybe_unused]] const DateTime64::NativeType datetime64_scale_multiplier
+            = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
 
@@ -1195,15 +1199,7 @@ public:
             }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
-                auto c = DecimalUtils::split(vec[i], scale);
-
-                // -1.123 splits to -1 /  0.123
-                if (vec[i].value < 0 && c.fractional)
-                {
-                    using F = typename DataType::FieldType;
-                    c.fractional = DecimalUtils::scaleMultiplier<F>(scale) + (c.whole ? F(-1) : F(1)) * c.fractional;
-                    --c.whole;
-                }
+                const auto c = DecimalUtils::splitFlooringNegative(vec[i], datetime64_scale_multiplier);
 
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, *time_zone);
