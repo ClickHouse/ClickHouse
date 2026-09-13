@@ -101,7 +101,7 @@ static bool isAlwaysFalseByEmptySetImpl(const ActionsDAG::Node * node)
         return false;
 
     auto future_set = column_set->getData();
-    if (!future_set)
+    if (!future_set || future_set->isMutableDuringQuery())
         return false;
 
     auto set = future_set->get();
