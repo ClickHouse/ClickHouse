@@ -174,7 +174,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
 /// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
 /// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
 /// superset of the state. A uuid in the name removes both properties.
-static bool isVersionHintCommitScheme(const String & file_name)
+static bool isVersionNumberedCommitScheme(const String & file_name)
 {
     if (!file_name.starts_with('v'))
         return false;
@@ -184,16 +184,16 @@ static bool isVersionHintCommitScheme(const String & file_name)
     return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
 }
 
-/// The file name a hint's content addresses, resolved the way the reader resolves it: a bare
+/// The file name a configured pointer addresses, resolved the way the reader resolves it: a bare
 /// version number can only address `v<N>`, any other content names a file directly, and a
 /// directory part is dropped because the reader reads the name alone under `metadata/`.
-static std::optional<String> versionHintTargetName(const String & hint_content)
+static std::optional<String> metadataPointerTargetName(const String & pointer_content)
 {
-    if (hint_content.empty())
+    if (pointer_content.empty())
         return {};
-    if (std::all_of(hint_content.begin(), hint_content.end(), isdigit))
-        return "v" + hint_content + ".metadata.json";
-    String named = hint_content.ends_with(".metadata.json") ? hint_content : hint_content + ".metadata.json";
+    if (std::all_of(pointer_content.begin(), pointer_content.end(), isdigit))
+        return "v" + pointer_content + ".metadata.json";
+    String named = pointer_content.ends_with(".metadata.json") ? pointer_content : pointer_content + ".metadata.json";
     return String(std::filesystem::path(named).filename());
 }
 
@@ -1206,7 +1206,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
     bool use_table_uuid_for_metadata_file_selection,
-    bool force_fetch_latest_metadata)
+    bool force_fetch_latest_metadata,
+    bool ignore_metadata_pointer_overrides)
 {
     auto load_fn = [&]()
     {
@@ -1238,33 +1239,40 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
 
         /// A candidate outside the scheme the table itself commits through counts a version sequence
-        /// that is not this table's, so it must not be ranked against this table's files. The hint
+        /// that is not this table's, so it must not be ranked against this table's files. A pointer
         /// declares the scheme; uuid selection identifies files by content and needs no name rule.
         std::optional<bool> own_scheme_is_version_numbered;
-        if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
-            && !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
+        if (!(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
         {
-            /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
-            /// widen what a destructive caller may delete, so the read is allowed to throw.
-            String hint_content;
-            StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
-            auto buf = object_storage->readObject(version_hint, ReadSettings{});
-            readString(hint_content, *buf);
-            if (auto target = versionHintTargetName(hint_content))
+            /// The version a pointer names may be stale, which is why these callers list instead,
+            /// but the scheme it spells is this table's: a pointer of the other scheme would not
+            /// resolve here at all. Precedence is the reader's: explicit path first, then the hint.
+            String pointer_content;
+            if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+                pointer_content = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
+            else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
-                const bool version_numbered = isVersionHintCommitScheme(*target);
+                /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
+                /// widen what a destructive caller may delete, so the read is allowed to throw.
+                StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
+                auto buf = object_storage->readObject(version_hint, ReadSettings{});
+                readString(pointer_content, *buf);
+            }
+            if (auto target = metadataPointerTargetName(pointer_content))
+            {
+                const bool version_numbered = isVersionNumberedCommitScheme(*target);
                 bool scheme_present = false;
                 bool target_present = false;
                 for (const auto & path : metadata_files)
                 {
                     String name = std::filesystem::path(path).filename();
-                    if (isVersionHintCommitScheme(name) == version_numbered)
+                    if (isVersionNumberedCommitScheme(name) == version_numbered)
                         scheme_present = true;
                     if (name == *target)
                         target_present = true;
                 }
                 /// A bare version number may address a compressed spelling of the name, so the
-                /// scheme is what has to be present, not the exact name. A hint naming a file
+                /// scheme is what has to be present, not the exact name. A pointer naming a file
                 /// directly declares nothing unless that file is really there.
                 if (scheme_present && (version_numbered || target_present))
                     own_scheme_is_version_numbered = version_numbered;
@@ -1278,7 +1286,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
                 continue;
-            if (own_scheme_is_version_numbered && isVersionHintCommitScheme(filename) != *own_scheme_is_version_numbered)
+            if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
@@ -1331,6 +1339,32 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 ErrorCodes::FILE_DOESNT_EXIST,
                 "The metadata file for Iceberg table with path {} doesn't exist",
                 table_path);
+        }
+
+        /// Two schemes among the candidates mean nothing declared one (a declared scheme filtered the
+        /// other out above), and the two number sequences are unrelated, so the highest number can
+        /// name a file this table never committed. A destructive caller cannot undo rooting there.
+        if (ignore_metadata_pointer_overrides)
+        {
+            bool version_numbered_candidate = false;
+            bool uuid_named_candidate = false;
+            for (const auto & candidate : metadata_files_with_versions)
+            {
+                if (isVersionNumberedCommitScheme(std::filesystem::path(candidate.path).filename()))
+                    version_numbered_candidate = true;
+                else
+                    uuid_named_candidate = true;
+            }
+            if (version_numbered_candidate && uuid_named_candidate)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} has metadata files named `v<N>.metadata.json` and metadata "
+                    "files named `<N>-<uuid>.metadata.json`, and nothing declares which of the two schemes "
+                    "this table commits through, so its current metadata file cannot be identified. "
+                    "Refusing, because this operation deletes or rewrites metadata. Declare the current "
+                    "metadata file with `iceberg_metadata_file_path`, or with `iceberg_use_version_hint = 1` "
+                    "and a `metadata/version-hint.text` naming it",
+                    table_path);
         }
 
         /// Get the latest version of metadata file: v<V>.metadata.json
@@ -1431,7 +1465,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            normalizeUuid(explicit_table_uuid),
+            true,
+            force_fetch_latest_metadata,
+            ignore_metadata_pointer_overrides);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
@@ -1453,7 +1495,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            table_uuid,
+            false,
+            force_fetch_latest_metadata,
+            ignore_metadata_pointer_overrides);
     }
 }
 

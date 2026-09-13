@@ -864,3 +864,43 @@ def test_remove_orphan_files_ignores_foreign_scheme_metadata(
         assert not env.exists("data", orphan_name), \
             "The planted orphan should still have been deleted"
         env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_undeclared_scheme(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """With nothing declaring the scheme, the two schemes cannot be ranked against each other.
+
+    Their numbers count different sequences, so the highest one may name a file this table
+    never committed, and rooting the scan there deletes whatever only the committed state
+    references. Neither order is more plausible than the other, so the command refuses
+    instead of picking one. The case above, same fixture plus a hint, is what shows the
+    refusal is conditional rather than a binary that stopped cleaning up."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_undeclared_scheme")
+    # No version hint and no explicit metadata file path: nothing declares the scheme.
+    env.populate(3)
+
+    newest = env.newest_metadata_version()
+    assert newest >= 2, f"Need at least two metadata versions, got v{newest}"
+    assert not env.exists("metadata", "version-hint.text"), \
+        "Fixture wrote a version hint, which declares the scheme and would skip the refusal"
+
+    foreign_name = f"{newest + 1:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest - 1}.metadata.json", foreign_name)
+    assert env.metadata_files_with_version(newest + 1) == [foreign_name], (
+        "Fixture did not produce a candidate outranking the committed metadata file, so a "
+        "resolver that ranks both schemes would not pick it and the case is vacuous"
+    )
+
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="nothing declares which of the two schemes"):
+        env.remove_orphans(older_than=env.now_ts())
+
+    # A refusal that deleted something first would be the same data loss with a message.
+    files_after = sorted(env.list_files())
+    assert files_after == files_before, (
+        "remove_orphan_files refused but deleted objects anyway.\n"
+        f"  Before: {files_before}\n  After:  {files_after}"
+    )
