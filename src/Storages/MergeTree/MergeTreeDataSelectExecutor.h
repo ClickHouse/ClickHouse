@@ -228,6 +228,20 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Filter parts using minmax index and partition key.
+    static RangesInDataParts filterPartsByPartition(
+        const RangesInDataParts & parts,
+        const std::optional<PartitionPruner> & partition_pruner,
+        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
+        const std::optional<std::unordered_set<String>> & part_values,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
+        const ContextPtr & context,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool check_index_usage = true);
+
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
     static RangesInDataParts filterPartsByStatistics(

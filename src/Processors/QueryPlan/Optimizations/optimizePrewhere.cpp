@@ -226,7 +226,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
     /// Candidate parallel-replica plans have not applied filters yet. Keep their existing
-    /// cost estimates until pruning filters or analyzed parts are available.
+    /// column-size estimates until pruning filters or analyzed parts are available.
     const bool use_pruned_parts = read_from_merge_tree_step
         && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
     RangesInDataParts prewhere_parts;
@@ -260,7 +260,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (has_multiple_conditions && read_from_merge_tree_step)
         selectivity_estimator = use_pruned_parts
             ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts)
-            : read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns);
+            : read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),

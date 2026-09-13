@@ -5238,7 +5238,7 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 Possible values: true, false
 )", 0) \
     DECLARE(Bool, optimize_or_like_chain, true, R"(
-Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
+Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, are end-anchored (do not end in an unescaped `%`; Vectorscan matches `$` before a final newline, so the rewrite would widen the filter), or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
 
 The optimization is applied only with the analyzer (`enable_analyzer = 1`, the default); with the old analyzer (`enable_analyzer = 0`) the `OR` chain is left unchanged. For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
 
@@ -7614,6 +7614,24 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
+The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
+It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
+the workload's `max_concurrent_queries`) and for a memory reservation (from a
+`CREATE RESOURCE ... (MEMORY RESERVATION)` resource together with the `reserve_memory` setting). Both are
+acquired before the query starts running, so this is the only way to bound that pre-execution wait:
+`max_execution_time` does not apply yet because the query has not started.
+
+When the timeout expires the query fails with one of two distinct errors, depending on which resource it
+was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` for a memory reservation.
+
+Possible values:
+
+- Positive integer — timeout in milliseconds.
+- 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
+  immediately when the workload's `max_waiting_queries` limit is reached.
+)", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 )", 0) \
@@ -8329,7 +8347,7 @@ If true, ClickHouse will use parallel replicas algorithm also for non-replicated
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
 )", 0) \
     DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
-If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
+If true, and `JOIN` can be executed with parallel replicas algorithm, and every storage of the `JOIN` part that would otherwise be materialized into a temporary table can be read by each replica on its own, local `JOIN` will be used instead of `GLOBAL JOIN`. That part is the right one, except for a `RIGHT JOIN`, where it is the left one and where every storage has to be eligible for parallel replicas rather than merely `*MergeTree`. A storage under the materialized side of a nested `GLOBAL JOIN`, or under a `GLOBAL IN`, does not count, because the initiator materializes those itself.
 )", 0) \
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
@@ -9240,6 +9258,7 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
