@@ -623,7 +623,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isValuesSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
