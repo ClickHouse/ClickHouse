@@ -511,6 +511,8 @@ The dictionary is not stored in memory and directly goes to the source during th
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
+Only a lookup is selective. `dictGet` and the other dictionary functions query the source for the requested keys, but reading the dictionary **as a table** is not a keyed fetch: `SELECT ... FROM <dictionary> WHERE key IN (...)` reads the whole source and filters the result afterwards, because the key filter is not pushed down into the dictionary. Use the dictionary functions when you want the source to be queried for particular keys.
+
 All types of [sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), except local files, are supported.
 
 Configuration example:
@@ -542,7 +544,8 @@ This type of storage is for use with composite [keys](/reference/statements/crea
         .syntax = "LAYOUT(DIRECT())",
         .related = {"cache"}});
     factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true, true, Documentation{
-        .description = "Like `direct`, but supports composite keys.",
+        .description = "Like `direct`, but supports composite keys. As with `direct`, a table read of the dictionary "
+                       "reads the whole source and filters afterwards; only the dictionary functions query the source for particular keys.",
         .syntax = "LAYOUT(COMPLEX_KEY_DIRECT())",
         .related = {"direct"}});
 }
