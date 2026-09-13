@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <base/find_symbols.h>
@@ -25,12 +27,16 @@ template <char... symbols>
 static void test_compile_time_boundaries()
 {
     const std::array<char, sizeof...(symbols)> needles {symbols...};
-    const std::array<size_t, 12> sizes {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 256};
-    const std::array<size_t, 12> positions {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255};
+    char non_needle = 'a';
+    while (std::find(needles.begin(), needles.end(), non_needle) != needles.end())
+        ++non_needle;
+    const bool contains_null = std::find(needles.begin(), needles.end(), '\0') != needles.end();
+    const std::array<size_t, 18> sizes {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 511, 512, 1024};
+    const std::array<size_t, 18> positions {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 511, 512, 1023};
 
     for (const size_t size : sizes)
     {
-        std::string haystack(size, 'a');
+        std::string haystack(size, non_needle);
         const char * begin = haystack.data();
         const char * end = begin + haystack.size();
 
@@ -44,12 +50,12 @@ static void test_compile_time_boundaries()
             continue;
         }
 
-        if (size >= 32)
+        if (size >= 32 && !contains_null)
         {
             haystack.back() = '\0';
             ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end);
             ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), nullptr);
-            haystack.assign(size, 'a');
+            haystack.assign(size, non_needle);
             begin = haystack.data();
             end = begin + haystack.size();
         }
@@ -59,7 +65,7 @@ static void test_compile_time_boundaries()
             if (position >= size)
                 continue;
 
-            haystack.assign(size, 'a');
+            haystack.assign(size, non_needle);
             haystack[position] = needles[position % needles.size()];
             begin = haystack.data();
             end = begin + haystack.size();
@@ -74,7 +80,7 @@ static void test_compile_time_boundaries()
         ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end) << "size: " << size;
         ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), nullptr) << "size: " << size;
 
-        if (size >= 32)
+        if (size >= 32 && !contains_null)
         {
             haystack.back() = '\0';
             ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + size - 1) << "size: " << size;
@@ -89,10 +95,51 @@ static void test_compile_time_boundaries()
             if (position >= size)
                 continue;
 
-            haystack[position] = 'a';
+            haystack[position] = non_needle;
             ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
             ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
             haystack[position] = needles[0];
+        }
+    }
+}
+
+template <char... symbols>
+static void test_compile_time_randomized()
+{
+    const std::array<char, sizeof...(symbols)> needles {symbols...};
+    constexpr std::array<size_t, 23> sizes {0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 95, 96, 127, 128, 255, 256, 511, 512, 513, 1024};
+    std::uint32_t state = 0x12345678;
+
+    for (size_t iteration = 0; iteration < 64; ++iteration)
+    {
+        for (const size_t size : sizes)
+        {
+            std::string haystack(size, '\0');
+            for (char & byte : haystack)
+            {
+                state = state * 1664525u + 1013904223u;
+                byte = static_cast<char>(state >> 24);
+            }
+
+            const char * begin = haystack.data();
+            const char * end = begin + haystack.size();
+            const auto expected = [&](const bool positive)
+            {
+                for (size_t i = 0; i < haystack.size(); ++i)
+                {
+                    const bool is_needle = std::find(needles.begin(), needles.end(), haystack[i]) != needles.end();
+                    if (is_needle == positive)
+                        return begin + i;
+                }
+                return end;
+            };
+
+            const char * expected_symbols = expected(true);
+            const char * expected_not_symbols = expected(false);
+            EXPECT_EQ(find_first_symbols<symbols...>(begin, end), expected_symbols);
+            EXPECT_EQ(find_first_symbols_or_null<symbols...>(begin, end), expected_symbols == end ? nullptr : expected_symbols);
+            EXPECT_EQ(find_first_not_symbols<symbols...>(begin, end), expected_not_symbols);
+            EXPECT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), expected_not_symbols == end ? nullptr : expected_not_symbols);
         }
     }
 }
@@ -104,6 +151,18 @@ TEST(FindSymbols, CompileTimeBoundaries)
     test_compile_time_boundaries<'\n', '\r'>();
     test_compile_time_boundaries<'\n', '\r', '\\'>();
     test_compile_time_boundaries<'\n', '\r', '\\', '"'>();
+    test_compile_time_boundaries<'\0'>();
+    test_compile_time_boundaries<'\0', '\n'>();
+}
+
+TEST(FindSymbols, CompileTimeRandomized)
+{
+    test_compile_time_randomized<'\n'>();
+    test_compile_time_randomized<'\n', '\r'>();
+    test_compile_time_randomized<'\n', '\r', '\\'>();
+    test_compile_time_randomized<'\n', '\r', '\\', '"'>();
+    test_compile_time_randomized<'\0'>();
+    test_compile_time_randomized<'\0', '\n'>();
 }
 
 
