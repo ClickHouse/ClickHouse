@@ -27,7 +27,7 @@ struct PartProperties
     const std::set<std::string> projection_names = {};
 
     const bool all_ttl_calculated_if_any = false;
-    bool is_in_volume_where_merges_avoid = false;
+    const bool is_in_volume_where_merges_avoid = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;
@@ -64,7 +64,6 @@ PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
-    time_t current_time,
-    bool has_volumes_with_disabled_merges);
+    time_t current_time);
 
 }
