@@ -126,3 +126,22 @@ SELECT CAST(CAST('-3600000.5' AS Decimal64(1)), 'Time64(3)') SETTINGS date_time_
 SELECT CAST(CAST('3600000.5' AS Decimal64(1)), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT accurateCastOrNull(CAST('3600000.5' AS Decimal64(1)), 'Time64(3)'), accurateCastOrNull(CAST('3599999.5' AS Decimal64(1)), 'Time64(3)');
 SELECT CAST(toDecimal128('1000000000000', 3), 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate';
+
+-- `BFloat16` is a floating-point carrier too and takes the same overflow-aware path as `Float32` and `Float64`
+-- (it used to reach the plain `Decimal` conversion, which does not implement it at all). Its 8-bit mantissa
+-- rounds the literals: `4000000` becomes `3997696`, `1e10` becomes `9999221000`, `999424` is exact.
+SELECT 'BFloat16';
+SELECT CAST(CAST(999424 AS BFloat16), 'DateTime64(3)'), CAST(CAST(999424 AS BFloat16), 'Time64(3)'), toDateTime64(CAST(1.5 AS BFloat16), 3), toTime64(CAST(-1.5 AS BFloat16), 3);
+SELECT CAST(CAST(4000000 AS BFloat16), 'Time64(3)'), CAST(CAST(-4000000 AS BFloat16), 'Time64(3)'), CAST(CAST(1e10 AS BFloat16), 'DateTime64(9)'), CAST(CAST(-1e10 AS BFloat16), 'DateTime64(9)') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(CAST(4000000 AS BFloat16), 'Time64(3)'), CAST(CAST(-4000000 AS BFloat16), 'Time64(3)'), CAST(CAST(1e10 AS BFloat16), 'DateTime64(9)'), CAST(CAST(-1e10 AS BFloat16), 'DateTime64(9)') SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT CAST(CAST('inf' AS BFloat16), 'DateTime64(3)'), CAST(CAST('-inf' AS BFloat16), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(CAST(4000000 AS BFloat16), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(CAST(-4000000 AS BFloat16), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(CAST(1e10 AS BFloat16), 'DateTime64(9)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(materialize(CAST(-1e10 AS BFloat16)), 9) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toTime64(materialize(CAST(4000000 AS BFloat16)), 3) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCast(CAST(4000000 AS BFloat16), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(CAST(1e10 AS BFloat16), 'DateTime64(9)') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(CAST('nan' AS BFloat16), 'DateTime64(3)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(CAST(4000000 AS BFloat16), 'Time64(3)'), accurateCastOrNull(CAST(1e10 AS BFloat16), 'DateTime64(9)'), accurateCastOrNull(CAST('nan' AS BFloat16), 'DateTime64(3)'), accurateCastOrNull(CAST(999424 AS BFloat16), 'DateTime64(3)') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT accurateCast(CAST(999424 AS BFloat16), 'Time64(3)'), accurateCast(CAST(1.5 AS BFloat16), 'DateTime64(1)'), accurateCastOrDefault(CAST(4000000 AS BFloat16), 'Time64(3)', toTime64('1:00:00', 3));

@@ -3180,8 +3180,11 @@ struct Transformer
         /// `999:59:59.5` is a good `Time64(1)` value even though `999:59:60` is not a good number of seconds.
         [[maybe_unused]] Int64 whole_seconds_lower_bound = 0;
         [[maybe_unused]] Int64 whole_seconds_upper_bound = 0;
-        [[maybe_unused]] FromValueType ticks_lower_bound {};
-        [[maybe_unused]] FromValueType ticks_upper_bound {};
+        /// A `BFloat16` source is checked in `Float32`, the carrier the transform computes in: every `BFloat16`
+        /// value is exact there, while the 8-bit mantissa of the source could not even hold the scale multiplier.
+        using FloatCheckType = std::conditional_t<std::is_same_v<FromValueType, BFloat16>, Float32, FromValueType>;
+        [[maybe_unused]] FloatCheckType ticks_lower_bound {};
+        [[maybe_unused]] FloatCheckType ticks_upper_bound {};
         /// A `Date32` day is not always representable as a high-precision `DateTime64` - a scale-9 one ends at
         /// `2262-04-11` - and the transform below would clamp it, so an accurate cast needs this window too.
         [[maybe_unused]] Int32 day_num_lower_bound = 0;
@@ -3227,7 +3230,7 @@ struct Transformer
                     else if constexpr (is_floating_point<FromValueType>)
                     {
                         /// Every comparison with a NaN is false, so a NaN is rejected as well.
-                        const FromValueType ticks = vec_from[i] * static_cast<FromValueType>(transform.scale_multiplier);
+                        const FloatCheckType ticks = static_cast<FloatCheckType>(vec_from[i]) * static_cast<FloatCheckType>(transform.scale_multiplier);
                         is_valid_input = ticks >= ticks_lower_bound && ticks <= ticks_upper_bound;
                     }
                     else if constexpr (is_signed_v<FromValueType>)

@@ -743,6 +743,12 @@ struct ToDateTime64TransformFloat
         /// exactly like convertToDecimal.
         return static_cast<DateTime64::NativeType>(ticks);
     }
+
+    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
+    DateTime64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    {
+        return execute(static_cast<FromType>(from), time_zone);
+    }
 };
 
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
@@ -912,6 +918,12 @@ struct ToTime64TransformFloat
         /// Both bounds are inside the Int64, so the truncating cast is well defined; it truncates towards zero,
         /// exactly like convertToDecimal.
         return static_cast<Time64::NativeType>(ticks);
+    }
+
+    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
+    Time64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    {
+        return execute(static_cast<FromType>(from), time_zone);
     }
 };
 
@@ -2297,15 +2309,21 @@ struct ConvertImpl
                     arguments, result_type, input_rows_count, targetScale(additions));
         }
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeFloat32>
+                std::is_same_v<FromDataType, DataTypeBFloat16>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
+            /// `BFloat16` is a `Float32` truncated to its top 16 bits, so every `BFloat16` value is exactly
+            /// representable in a `Float32`; the transform computes in that carrier, whose arithmetic and bounds
+            /// are exact enough for the tick domain, instead of in the 8-bit mantissa of the source.
+            using FloatCarrierDataType = std::conditional_t<std::is_same_v<FromDataType, DataTypeBFloat16>, DataTypeFloat32, FromDataType>;
+            using FloatCarrierType = typename FloatCarrierDataType::FieldType;
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FloatCarrierDataType, FloatCarrierType, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, targetScale(additions));
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FloatCarrierDataType, FloatCarrierType, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, targetScale(additions));
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
