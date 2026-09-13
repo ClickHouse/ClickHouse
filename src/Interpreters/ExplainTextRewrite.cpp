@@ -55,6 +55,9 @@ void applyPage(ASTPtr & query, const ASTExplainTextAction & action)
 {
     auto & select_query = getSingleSelectQuery(query, action.getKind());
 
+    if (select_query.limitAfter() || select_query.limitUntil())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE is not supported with LIMIT AFTER/UNTIL");
+
     const ASTPtr limit = select_query.limitLength();
     if (!limit)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE requires an existing LIMIT");
@@ -148,6 +151,9 @@ ExplainTextRewriteResult rewriteExplainTextQuery(const ASTPtr & query, const AST
             case ASTExplainTextAction::Kind::ModifyOffset:
             {
                 auto & select_query = getSingleSelectQuery(result.query, action->getKind());
+                if (select_query.limitAfter() || select_query.limitUntil())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "MODIFY OFFSET is not supported with LIMIT AFTER/UNTIL");
+
                 setSelectExpression(select_query, ASTSelectQuery::Expression::LIMIT_OFFSET, action->getOperand()->clone());
                 break;
             }

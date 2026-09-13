@@ -394,6 +394,8 @@ Actions are applied from left to right. Separate consecutive actions with commas
 
 `MODIFY LIMIT`, `MODIFY OFFSET`, and `PAGE` require a single plain `SELECT`; they reject queries with multiple union branches. `MODIFY FORMAT` supports unions and other statements that accept output formats.
 
+`MODIFY OFFSET` and `PAGE` are not supported when the source query uses `LIMIT ... AFTER` or `LIMIT ... UNTIL`, including their combined form. This restriction also applies to `PAGE 1`.
+
 For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. An expression limit remains an expression in the generated offset.
 
 **Source and result options**
