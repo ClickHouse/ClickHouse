@@ -8,7 +8,7 @@ SELECT toStartOfInterval(toDateTime('2020-06-15 13:01:05', 'Asia/Kolkata'), INTE
 SELECT toStartOfInterval(toDateTime('2020-06-15 13:00:10', 'Asia/Kolkata'), INTERVAL 7 SECOND, toDateTime('2020-06-15 12:00:00', 'Asia/Kolkata'));
 SELECT toStartOfInterval(toDateTime('2020-06-15 13:00:10', 'Asia/Kathmandu'), INTERVAL 25 MINUTE, toDateTime('2020-06-15 12:00:00', 'Asia/Kathmandu'));
 
--- Before 1906 `Asia/Kolkata` is +5:53:28, so the offset has a sub-minute component as well.
+-- Before 1906 `Asia/Kolkata` is +5:21:10, so the offset has a sub-minute component as well.
 SELECT toStartOfInterval(toDateTime64('1902-06-15 13:01:05', 0, 'Asia/Kolkata'), INTERVAL 1 HOUR, toDateTime64('1902-06-15 12:00:00', 0, 'Asia/Kolkata'));
 SELECT toStartOfInterval(toDateTime64('1902-06-15 12:00:41', 0, 'Asia/Kolkata'), INTERVAL 20 SECOND, toDateTime64('1902-06-15 12:00:00', 0, 'Asia/Kolkata'));
 
