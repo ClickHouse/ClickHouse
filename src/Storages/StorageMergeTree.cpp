@@ -2630,8 +2630,8 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
 
     size_t done_count = 0;
     /// `clearOldMutations` erases the leading `done_count` entries without re-checking them, so the
-    /// count must stay an unbroken run of entries it may erase: finished, and not transactional -
-    /// a transactional entry may be erased only once its transaction has committed.
+    /// count must stay an unbroken run of entries it may erase: finished, and - for a transactional
+    /// entry - with its transaction committed.
     bool erasable_prefix = true;
     for (auto & [mutation_version, entry] : current_mutations_by_version)
     {
@@ -2688,7 +2688,9 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         if (!entry.finish_time && mutation_version >= first_just_completed_version)
             entry.finish_time = now;
 
-        if (!entry.tid.isNonTransactional())
+        /// Same committedness check as `clearOldMutations`: a rolled-back transaction removes its
+        /// entry through `killMutation`, so an entry without a CSN belongs to a still-open one.
+        if (!entry.tid.isNonTransactional() && !entry.csn && !TransactionLog::getCSN(entry.tid))
             erasable_prefix = false;
         if (erasable_prefix)
             ++done_count;

@@ -1,0 +1,4 @@
+before_cleanup	mutation_2.txt	1
+before_cleanup	mutation_3.txt	1
+after_cleanup	mutation_3.txt	1
+1	x
