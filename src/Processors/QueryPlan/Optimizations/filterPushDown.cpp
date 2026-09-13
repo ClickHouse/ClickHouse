@@ -1061,6 +1061,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
+    size_t pushed_partial_filters = 0;
     if (filter && disj_pushdown_enabled)
     {
         if ((join && join->isDisjunctionsOptimizationApplied()) ||
@@ -1087,6 +1088,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
                 ++updated_steps;
+                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1101,6 +1103,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
                 ++updated_steps;
+                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1114,6 +1117,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             logical_join->setDisjunctionsOptimizationApplied(true);
         if (filled_join)
             filled_join->setDisjunctionsOptimizationApplied(true);
+
+        /// A partial filter is inserted two levels below this node, as a new child of the join, with the
+        /// expression that renames the read's columns under it. The return value is how many layers the
+        /// traversal comes back down, so reporting one leaves the new filter unvisited: it is never
+        /// merged with that expression, stays one step away from the read, and `optimizePrewhere` - which
+        /// only takes a filter adjacent to the read - cannot move it. Three reaches it, the same depth
+        /// the union push above reports for the filters it inserts.
+        if (pushed_partial_filters)
+            updated_steps = std::max<size_t>(updated_steps, 3);
     }
 
     return updated_steps;

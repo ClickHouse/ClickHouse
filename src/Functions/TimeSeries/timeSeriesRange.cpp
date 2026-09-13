@@ -8,9 +8,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/DecimalFunctions.h>
 #include <base/arithmeticOverflow.h>
-
 
 namespace DB
 {
@@ -306,6 +306,22 @@ public:
                 size_t num_values = (*values_offsets)[i] - values_base_offset;
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
+
+                bool row_has_no_nulls = !null_map
+                    || memoryIsZero(null_map->data(), values_base_offset, values_base_offset + num_steps);
+
+                if (row_has_no_nulls)
+                {
+                    res_values->insertRangeFrom(*values, values_base_offset, num_steps);
+                    for (size_t j = 0; j != num_steps; ++j)
+                    {
+                        TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
+                        res_timestamps->insert(timestamp);
+                    }
+
+                    res_offsets->insert(res_timestamps->size());
+                    continue;
+                }
             }
 
             for (size_t j = 0; j != num_steps; ++j)

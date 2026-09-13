@@ -10,7 +10,6 @@
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
@@ -20,6 +19,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 
 #include <concepts>
 #include <span>
@@ -168,7 +168,7 @@ private:
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = HashMap<PackedStringRef, PostingListBuilder>;
 /// A token paired with its posting/position builder views.
 struct SortedToken
 {

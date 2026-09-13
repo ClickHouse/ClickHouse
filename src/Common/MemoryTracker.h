@@ -205,6 +205,16 @@ public:
         return soft_limit.load(std::memory_order_relaxed);
     }
 
+    /// `amount / hard_limit` for this tracker, or 0 without a hard limit. Lock-free.
+    double getPressure() const
+    {
+        const Int64 limit = hard_limit.load(std::memory_order_relaxed);
+        if (limit <= 0)
+            return 0.0;
+        const Int64 used = amount.load(std::memory_order_relaxed);
+        return used <= 0 ? 0.0 : static_cast<double>(used) / static_cast<double>(limit);
+    }
+
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
