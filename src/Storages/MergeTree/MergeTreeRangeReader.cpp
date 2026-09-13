@@ -156,6 +156,9 @@ std::optional<bool> FilterWithCachedCount::tryGetUniformValue() const
     }
 
     const auto & filter = getData();
+    const bool first_value = filter[0] != 0;
+    if ((filter.back() != 0) != first_value)
+        return {};
 
     if (filter[0] == 0)
     {
