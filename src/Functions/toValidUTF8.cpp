@@ -44,10 +44,18 @@ struct ToValidUTF8Impl
 #if USE_SIMDUTF
         static constexpr size_t SIMDUTF_MIN_SIZE = 128;
         const size_t size = static_cast<size_t>(end - begin);
-        if (size >= SIMDUTF_MIN_SIZE && simdutf::validate_utf8(begin, size))
+        if (size >= SIMDUTF_MIN_SIZE)
         {
-            write_buffer.write(begin, size);
-            return;
+            const auto validation = simdutf::validate_utf8_with_errors(begin, size);
+            if (validation.error == simdutf::SUCCESS)
+            {
+                write_buffer.write(begin, size);
+                return;
+            }
+
+            if (validation.count != 0)
+                write_buffer.write(begin, validation.count);
+            begin += validation.count;
         }
 #endif
 

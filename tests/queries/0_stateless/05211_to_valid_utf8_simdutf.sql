@@ -6,6 +6,7 @@ SELECT count(), countIf(toValidUTF8(repeat('中文🙂', number)) = repeat('中�
 SELECT 'invalid strings keep the existing replacement behavior';
 SELECT countIf(toValidUTF8(concat(repeat('a', number), '\xC2')) = concat(repeat('a', number), '�')) FROM numbers(1, 128);
 SELECT countIf(toValidUTF8(concat(repeat('a', number), '\xC2\xFF\x80')) = concat(repeat('a', number), '�')) FROM numbers(1, 128);
+SELECT countIf(toValidUTF8(concat(repeat('a', 64), '\xE2\x28\xA1', repeat('b', 64))) = concat(repeat('a', 64), '�(�', repeat('b', 64))) FROM numbers(10);
 
 SELECT 'validation is isolated to each ColumnString row';
 SELECT

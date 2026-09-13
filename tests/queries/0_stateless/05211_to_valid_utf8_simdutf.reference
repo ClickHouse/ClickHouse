@@ -5,5 +5,6 @@ valid UTF-8 strings across the SIMD threshold
 invalid strings keep the existing replacement behavior
 128
 128
+10
 validation is isolated to each ColumnString row
 1	1	1
