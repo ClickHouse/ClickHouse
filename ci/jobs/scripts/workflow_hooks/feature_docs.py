@@ -36,6 +36,7 @@ source_owned_doc_files = embedded_doc_files + [
 source_owned_doc_paths = inline_doc_paths + [
     "src/Databases/",
     "src/DataTypes/",
+    "src/Parsers/",
     "src/Processors/Formats/",
     "src/Storages/",
 ]

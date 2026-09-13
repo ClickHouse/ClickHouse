@@ -7,6 +7,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -16,8 +18,6 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr like;
     ASTPtr from1;
     ASTPtr from2;
-
-    String from2_str;
 
     auto query = make_intrusive<ASTShowColumnsQuery>();
 
@@ -46,14 +46,18 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     query->table = table_id->shortName();
     if (table_id->compound())
-        query->database = table_id->name_parts[0];
+    {
+        /// `db.table`, or a hierarchical name `a.b.table` (see `DatabaseCatalog`): the database is all the parts but the last.
+        query->database = fmt::format("{}", fmt::join(table_id->name_parts.begin(), table_id->name_parts.end() - 1, "."));
+    }
     else
     {
+        /// The database, possibly a hierarchical name `a.b`.
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from2, expected))
+            if (!ParserCompoundIdentifier().parse(pos, from2, expected))
                 return false;
-        tryGetIdentifierNameInto(from2, from2_str);
-        query->database = from2_str;
+        if (from2)
+            query->database = from2->as<ASTIdentifier &>().name();
     }
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))

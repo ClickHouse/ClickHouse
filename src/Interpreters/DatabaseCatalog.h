@@ -140,8 +140,80 @@ public:
     std::optional<std::shared_lock<SharedMutex>> tryGetLockForRestartReplica(const String & database);
 
 
+    /// Checks that `database_name` can be the current database: an existing database, or a hierarchical
+    /// name (see `resolveHierarchicalDatabase`). Throws UNKNOWN_DATABASE with a hint otherwise.
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
+
+    /// Hierarchical names.
+    ///
+    /// A qualified name `a.b.c` has no fixed split into a database and a table: it may be the table `c` of the
+    /// database `a.b`, the table `b.c` of the database `a` (data lake catalogs name their tables `namespace.table`),
+    /// or the table `a.b.c` of the current database. Quoting does not matter: `a."b.c"`, `"a.b".c` and `a.b.c` are
+    /// the same name. The current database is hierarchical as well: `USE a.b` selects the database `a.b`, or the
+    /// tables `b.*` of the database `a`, or the databases `a.b.*`; and inside it, `c` is `a.b.c`.
+    ///
+    /// The candidate splits of a table reference, in the order they are tried:
+    ///  - the name as written (`database_name` and `table_name`), when a database is given;
+    ///  - the other splits of the qualified name, the longest database first;
+    ///  - the splits of the current database followed by the qualified name, the longest database first:
+    ///    inside `USE a`, the name `b.c` is also `a.b`.`c` and `a`.`b.c`.
+    /// The first candidate that names an existing table wins. Names without dots have a single candidate, and
+    /// the fast paths of the methods below do not cost anything extra for them.
+    static std::vector<StorageID> getHierarchicalNameCandidates(const StorageID & table_id, const String & current_database);
+
+    /// The database and the table that an existing table with this name has. `table_id.database_name` may be empty,
+    /// then the name is resolved in the current database of `context_`. If no candidate names an existing table,
+    /// returns the placement (see `getHierarchicalNamePlacement`), without a UUID.
+    StorageID resolveHierarchicalName(const StorageID & table_id, ContextPtr context_) const;
+    /// The same, with the current database given explicitly instead of taken from the context.
+    StorageID resolveHierarchicalName(const StorageID & table_id, const String & current_database, ContextPtr context_) const;
+
+    /// The candidate the name refers to when the table does not exist (for error messages): the first candidate
+    /// whose database exists, or the name as written (qualified with the current database). A name qualified with
+    /// a database that does not exist stays as written, unless the current database has such a namespace of tables.
+    StorageID getHierarchicalNamePlacement(const StorageID & table_id, ContextPtr context_) const;
+    StorageID getHierarchicalNamePlacement(const StorageID & table_id, const String & current_database, ContextPtr context_) const;
+
+    /// Where a table with this name is created (or renamed to). Same as the placement, with a protection against
+    /// typos in database names: the unquoted parts of a name never create a namespace. When the table gets a
+    /// namespace that was not written as a part of its name (`CREATE TABLE a.b.c` creating `a`.`b.c`, or
+    /// `CREATE TABLE c` inside `USE a.b`), the database must have tables in that namespace already (`b.*`).
+    /// The first table of a namespace is created by quoting the name: `CREATE TABLE a."b.c"`.
+    /// Throws UNKNOWN_DATABASE when there is no candidate.
+    StorageID resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
+    /// The same, but returns nothing instead of throwing when no candidate exists here. A query executed ON CLUSTER
+    /// ships the name as written then: the database may exist on the other hosts only, and every host resolves the
+    /// name against its own catalog.
+    std::optional<StorageID> tryResolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
+
+    struct HierarchicalDatabase
+    {
+        /// The existing database the name denotes. Empty when the name is only a common prefix of database
+        /// names (`a` for the databases `a.b` and `a.c`).
+        String database_name;
+        /// The prefix of the table names within `database_name`: `b.` when `a.b` denotes the tables `b.*` of the
+        /// database `a`. Empty when the database itself is meant.
+        String table_prefix;
+    };
+
+    /// What a (current) database name denotes: the database itself; or the longest prefix that is a database,
+    /// with the rest as a namespace of its tables, when there are such tables; or a common prefix of database
+    /// names. Throws UNKNOWN_DATABASE with a hint when none applies.
+    HierarchicalDatabase resolveHierarchicalDatabase(const String & name) const;
+
+    /// Whether the database has tables whose names start with `prefix` (a namespace, `b.`).
+    static bool hasTablesWithPrefix(const IDatabase & database, const String & prefix, ContextPtr context_);
+
+    /// The dot-separated parts of a name. A name with an empty part (`.inner_id.x`, `t.`, `a..b`) is not hierarchical
+    /// and is a single part, so that an empty part never becomes a database or a table name.
+    static std::vector<String> splitHierarchicalName(std::string_view name);
+
+    /// A qualified name written as a string (`'a.b.c'`, the first argument of `joinGet` or `dictGet`), split the same
+    /// way as `ASTTableIdentifier` splits an identifier: the database is all the parts but the last (`a.b`); the other
+    /// splits are tried when the name is resolved. A name without dots is a table name without a database.
+    /// Throws UNKNOWN_TABLE for an empty name.
+    static StorageID parseHierarchicalName(const String & name);
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;

@@ -19,6 +19,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
@@ -302,7 +303,13 @@ private:
         if (with_aliases.contains(identifier.name()))
             return;
 
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
+        StorageID qualified(database_name, identifier.name());
+        /// A hierarchical default database (`USE a.b`, which is not a database itself; see `DatabaseCatalog`):
+        /// the name is bound to the table it denotes, `a`.`b.name` or `name` of the database `a.b.c`.
+        if (!database_name.empty() && !DatabaseCatalog::instance().isDatabaseExist(database_name))
+            qualified = DatabaseCatalog::instance().resolveHierarchicalName(StorageID("", identifier.name()), database_name, context);
+
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(qualified.database_name, qualified.table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;

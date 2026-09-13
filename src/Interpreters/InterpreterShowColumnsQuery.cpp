@@ -41,9 +41,11 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
-    String table = escapeString(query.table);
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is the database and the table of the table it refers to
+    /// (see `DatabaseCatalog`).
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({getContext()->resolveDatabase(query.database), query.table}, getContext());
+    String database = escapeString(table_id.database_name);
+    String table = escapeString(table_id.table_name);
 
     String rewritten_query;
     if (use_mysql_types)

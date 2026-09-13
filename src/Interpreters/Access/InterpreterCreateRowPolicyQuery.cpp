@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
@@ -76,6 +77,8 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     getContext()->checkAccess(required_access);
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    if (query.names)
+        resolveHierarchicalNamesForAccess(*query.names, getContext());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

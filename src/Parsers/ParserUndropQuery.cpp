@@ -1,4 +1,5 @@
 #include <Parsers/ASTUndropQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
@@ -17,8 +18,6 @@ namespace
 bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_table(Keyword::TABLE);
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr table;
@@ -30,14 +29,9 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!s_table.ignore(pos, expected))
         return false;
-    if (!name_p.parse(pos, table, expected))
+    /// [db.]table, possibly a hierarchical name `a.b.c`
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
     if (ParserKeyword(Keyword::UUID).ignore(pos, expected))
     {
         ParserStringLiteral uuid_p;
