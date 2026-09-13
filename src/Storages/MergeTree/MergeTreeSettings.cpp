@@ -1943,6 +1943,11 @@ expired based on their TTL settings are removed.
 
 When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
+
+This applies only to the TTLs that delete rows. A column `TTL` can only be
+honoured by rewriting the part, so the merges that clear expired columns are
+still assigned when this setting is enabled. Such a merge rewrites the part
+anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL

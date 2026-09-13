@@ -93,7 +93,20 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
-    /// Recompression - 3 priority
+    /// Delete columns - 3 priority
+    ///
+    /// `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts once
+    /// every row in them has expired. A column TTL has no such alternative - the only way to clear an
+    /// expired column is to rewrite the part - so this selector runs regardless of that setting.
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
+    {
+        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+    }
+
+    /// Recompression - 4 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
