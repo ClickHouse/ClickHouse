@@ -447,8 +447,65 @@ _REVERT_NUMBER_TITLE_RE = re.compile(
 _REVERT_TITLE_RE = re.compile(r"(?i)^\s*revert(s|ed)?\b")
 
 
-def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
-    """Find the reverts among `raw_prs` and bind each to what it reverts.
+# The line GitHub puts into the body of a revert pull request, naming what it
+# reverts: `Reverts owner/repo#N`. A revert opened by hand often spells the
+# same thing as a link, `Reverts https://github.com/owner/repo/pull/N`, which
+# is the same relation and is read the same way.
+_REVERTS_MARKER_RE = re.compile(
+    r"(?i)reverts\s+(?:https?://github\.com/[\w.-]+/[\w.-]+/pull/|[\w.-]+/[\w.-]+#)(\d+)"
+)
+
+
+def _is_revert(title, body):
+    return bool(_REVERT_TITLE_RE.match(title) or _REVERTS_MARKER_RE.search(body))
+
+
+def _bind_revert(pr, title, body, candidates):
+    """The pull requests that revert `pr` reverts, from its metadata, or an
+    empty set when they cannot be told.
+
+    Three forms, tried in order. The body marker GitHub writes into a revert
+    (`Reverts owner/repo#N`, or the link spelling of it). A title that names
+    the number outright (`Revert #N`). And a title that nests the reverted
+    title: a revert of a revert made with the web UI carries no marker in its
+    body (the button restores the change, GitHub words the body differently),
+    but the target of `Revert "Revert "X""` is the revert titled `Revert "X"`,
+    which is looked up among `candidates` (pull request -> title).
+
+    A revert is always merged after what it reverts, so it always has the
+    higher number. That is the invariant `revert_net_effect` settles whole
+    chains in a single descending pass with, so a relation that breaks it is
+    not one: it is dropped and the other forms get their turn.
+
+    Revert titles are not unique - the same change can be reverted more than
+    once in a cycle, and every one of those reverts is titled `Revert "X"` -
+    so a title matching several earlier candidates identifies none of them.
+    Only an unambiguous match binds; anything else stays unresolved, which
+    grants no deletion credit at all."""
+    older = _older_than(_REVERTS_MARKER_RE.findall(body), pr)
+    if older:
+        return older
+    numbered = _REVERT_NUMBER_TITLE_RE.match(title)
+    if numbered:
+        older = _older_than([numbered.group(1)], pr)
+        if older:
+            return older
+    nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', title)
+    if not nested:
+        return set()
+    matched = {
+        p
+        for p, t in candidates.items()
+        if t == nested.group(1) and int(p) < int(pr)
+    }
+    return matched if len(matched) == 1 else set()
+
+
+def resolve_revert_targets(
+    raw_prs, text_reverts=(), known_titles=None, known_targets=None
+):
+    """Find the reverts among `raw_prs` and bind each to what it reverts,
+    following the chain down to a pull request that is not a revert.
 
     A pull request is a revert when its title announces one, when its body
     carries the `Reverts owner/repo#N` line GitHub puts into revert bodies, or
@@ -456,13 +513,27 @@ def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
     The metadata decides, not the bullet: the bullet is the author's own
     changelog entry and need not mention the revert at all.
 
+    The target of a revert can itself be a revert - `Revert "Revert "X""`
+    re-applies `X` - and what that means for the changelog depends on the
+    whole chain: the entry of `X` stays and records the re-apply, and neither
+    revert has an entry of its own (skill section 2.5). The intermediate
+    revert is usually not in the current raw blocks: it arrived on an earlier
+    day and was consumed then. `known_targets` (revert -> what it reverts) is
+    what earlier runs recorded about it in the ledger; a target that neither
+    the raw blocks nor the ledger know is looked up on GitHub, and if it turns
+    out to be a revert, so is its target, until the chain ends. Without this
+    the verifier would read a revert of a revert as a plain revert of a pull
+    request without an entry and demand that no trace of it remain - while
+    the editing rules put its link on the entry it brought back. That
+    contradiction wedged the 26.9 changelog for a week in September 2026, for
+    a chain whose first revert predated the ledger.
+
     `known_titles` supplies the titles of the reverts earlier runs already
-    resolved, so a revert of a revert binds to its target even when that target
-    is not in the current raw block. Returns (targets, titles, unresolved):
+    resolved, for the nested-title form. Returns (targets, titles, unresolved):
     `targets` maps a revert to the pull requests it reverts, `titles` holds the
     titles looked up here, and `unresolved` lists the reverts whose target
     stayed unknown (a manual revert without the marker, or a nested title that
-    fits several earlier reverts equally well) — those grant no deletion
+    fits several earlier reverts equally well) - those grant no deletion
     credit, and the caller fails closed on any disappearance it cannot bind to
     a resolved, uncancelled revert."""
     metadata = fetch_pull_requests(raw_prs)
@@ -471,64 +542,45 @@ def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
         (
             pr
             for pr, (title, body) in metadata.items()
-            if _REVERT_TITLE_RE.match(title)
-            or re.search(r"(?i)reverts\s+[\w.-]+/[\w.-]+#\d+", body)
-            or pr in text_reverts
+            if _is_revert(title, body) or pr in text_reverts
         ),
         key=int,
     )
+    known_targets = known_targets or {}
     targets = {}
-    for pr in revert_prs:
-        found = re.findall(
-            r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", metadata[pr][1]
-        )
-        # A revert is always merged after what it reverts, so it always has the
-        # higher number. That is the invariant `revert_net_effect` settles
-        # whole chains in a single descending pass with, so a relation that
-        # breaks it is not one: drop it and let the other forms try.
-        older = _older_than(found, pr)
-        if older:
-            targets[pr] = older
-    # A revert of a revert made with the web UI carries no `Reverts ...#N`
-    # marker in its body (the button restores the change, GitHub words the
-    # body differently), but its title nests the reverted title: the target
-    # of `Revert "Revert "X""` is the revert titled `Revert "X"` — which this
-    # job may have processed days ago, hence `known_titles`.
-    candidates = {**(known_titles or {}), **titles}
     unresolved = []
-    for pr in revert_prs:
-        if pr in targets:
-            continue
-        # The skill's other common form, and an exact one: no title matching
-        # needed, and nothing to be ambiguous about.
-        numbered = _REVERT_NUMBER_TITLE_RE.match(titles.get(pr, ""))
-        if numbered:
-            older = _older_than([numbered.group(1)], pr)
-            if older:
-                targets[pr] = older
-                continue
-        nested = re.match(
-            r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles.get(pr, "")
-        )
-        matched = (
+    # The reverts to bind, in waves: the ones from the raw blocks first, then
+    # the targets of what was bound so far that are reverts themselves and
+    # that nobody has bound yet.
+    pending = revert_prs
+    while pending:
+        candidates = {**(known_titles or {}), **titles}
+        for pr in pending:
+            title, body = metadata[pr]
+            bound = _bind_revert(pr, title, body, candidates)
+            if bound:
+                targets[pr] = bound
+            else:
+                unresolved.append(pr)
+        unknown = sorted(
             {
-                p
-                for p, t in candidates.items()
-                if t == nested.group(1) and int(p) < int(pr)
-            }
-            if nested
-            else set()
+                target
+                for pr in pending
+                for target in targets.get(pr, ())
+                if target not in metadata and target not in known_targets
+            },
+            key=int,
         )
-        # Revert titles are not unique — the same change can be reverted more
-        # than once in a cycle, and every one of those reverts is titled
-        # `Revert "X"` — so a title matching several earlier reverts
-        # identifies none of them. Bind only an unambiguous match; anything
-        # else stays unresolved, which grants no credit at all.
-        if len(matched) == 1:
-            targets[pr] = matched
-        else:
-            unresolved.append(pr)
-    return targets, titles, unresolved
+        if not unknown:
+            break
+        fetched = fetch_pull_requests(unknown)
+        metadata.update(fetched)
+        titles.update({pr: title for pr, (title, _) in fetched.items()})
+        pending = sorted(
+            (pr for pr, (title, body) in fetched.items() if _is_revert(title, body)),
+            key=int,
+        )
+    return targets, titles, sorted(set(unresolved), key=int)
 
 
 def revert_net_effect(targets):
@@ -772,7 +824,7 @@ def analyze_reverts(text, anchor, range_prs=()):
     ledger_targets, ledger_titles, deleted, integrated = read_revert_ledger()
     all_prs, strict_prs, text_reverts = raw_prs_and_reverts(text)
     new_targets, titles, unresolved = resolve_revert_targets(
-        all_prs, text_reverts, ledger_titles
+        all_prs, text_reverts, ledger_titles, ledger_targets
     )
     targets = {pr: set(reverted) for pr, reverted in ledger_targets.items()}
     for pr, reverted in new_targets.items():
