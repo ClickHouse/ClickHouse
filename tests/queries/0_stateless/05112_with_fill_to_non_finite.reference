@@ -1,0 +1,12 @@
+a finite bound still fills
+10
+0
+1
+2
+3
+a TO bound with no STEP is checked as well
+FROM and STEP keep their existing behaviour, which the fill loop guards at run time
+3
+3
+a finite staleness still fills
+4
