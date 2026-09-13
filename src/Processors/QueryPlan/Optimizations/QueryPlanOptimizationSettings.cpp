@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -107,8 +108,9 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsBool query_plan_optimize_join_order_use_cd_a_conflict_detector;
-    extern const SettingsBool query_plan_optimize_join_order_use_cd_c_conflict_detector;
+    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_a;
+    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_c;
+    extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
@@ -287,17 +289,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
-    /// served from a projection; the implicit count/minmax projection would also be counted once per
-    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
-    if (make_distributed_plan)
-    {
-        optimize_projection = false;
-        optimize_use_implicit_projections = false;
-        force_use_projection = false;
-        force_projection_name = {};
-    }
-
+    /// NOTE: projection rewrites are disabled for a distributed plan in `QueryPlan::optimize`, after
+    /// the decision on whether the plan is distributed at all.
+    distributed_plan_fallback_to_local_execution = from[Setting::distributed_plan_fallback_to_local_execution];
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
@@ -375,8 +369,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
-    query_plan_optimize_join_order_use_cd_a_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_a_conflict_detector];
-    query_plan_optimize_join_order_use_cd_c_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_c_conflict_detector];
+    query_plan_optimize_join_order_use_conflict_detector_a = from[Setting::query_plan_optimize_join_order_use_conflict_detector_a];
+    query_plan_optimize_join_order_use_conflict_detector_c = from[Setting::query_plan_optimize_join_order_use_conflict_detector_c];
+    join_use_nulls = from[Setting::join_use_nulls];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
