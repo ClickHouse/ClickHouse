@@ -482,7 +482,13 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     # https://github.com/ClickHouse/ClickHouse/issues/112032 needs to be fixed to enable transform_null_in
     #if random.random() < 1 / 3:
     #    client_options.append("transform_null_in=1")
-    if random.random() < 1 / 3:
+    # The upgrade check runs this load against the previous release's server. Before #119385
+    # (26.9) a sorting key such as `CAST(json.b, 'String')` is matched to the same expression
+    # in `ORDER BY` by name and arity only, although under `cast_keep_nullable = 1` the query
+    # types it `Nullable(String)` while the key is `String`; read-in-order with
+    # `read_in_order_use_virtual_row = 1` then aborts the shipped server with
+    # `Logical error: Virtual row has different type` (`03277_json_subcolumns_in_primary_key`).
+    if random.random() < 1 / 3 and not upgrade_check:
         client_options.append("cast_keep_nullable=1")
     if random.random() < 1 / 3:
         client_options.append("aggregate_functions_null_for_empty=1")
