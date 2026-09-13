@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/CancellationChecker.h>
@@ -1093,9 +1094,8 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
             has_string |= isStringOrFixedString(type);
             found_enum |= isEnum(type);
         };
-        apply(*arg.type);
         /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
         found_const_string |= has_string && arg.column->isConst();
     }
     return found_const_string && found_enum;
@@ -1110,8 +1110,7 @@ bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
         {
             found_nullable |= type.isNullable();
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found_nullable;
 }
@@ -1132,8 +1131,7 @@ bool typeCanHaveNanOrIncomparableFields(const DataTypePtr & type)
         found |= isFloat(t) || isVariant(t) || isDynamic(t) || isObject(t) || isIPv4(t) || isIPv6(t)
             || isDecimal(t) || isDateTime64(t);
     };
-    check(*type);
-    type->forEachChild(check);
+    forEachInTypeTree(*type, check);
     return found;
 }
 
@@ -1146,8 +1144,7 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
         {
             found |= isVariant(type) || isDynamic(type) || isObject(type);
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found;
 }

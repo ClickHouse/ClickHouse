@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/assert_cast.h>
 #include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
@@ -667,10 +668,7 @@ namespace JSONUtils
                     names.push_back(name);
         };
         for (const auto & type : header.getDataTypes())
-        {
-            collect(*type);
-            type->forEachChild(collect);
-        }
+            forEachInTypeTree(*type, collect);
 
         if (names.empty())
             return false;

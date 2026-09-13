@@ -299,13 +299,38 @@ MutableColumnPtr DataTypeObject::createColumn() const
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
 
-void DataTypeObject::forEachChild(const ChildCallback & callback) const
+std::vector<std::pair<std::string_view, DataTypePtr>> DataTypeObject::getSortedTypedPaths() const
 {
+    std::vector<std::pair<std::string_view, DataTypePtr>> paths;
+    paths.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-    {
-        callback(*type);
-        type->forEachChild(callback);
-    }
+        paths.emplace_back(path, type);
+    std::sort(paths.begin(), paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    return paths;
+}
+
+DataTypes DataTypeObject::getChildren() const
+{
+    const auto paths = getSortedTypedPaths();
+
+    DataTypes children;
+    children.reserve(paths.size());
+    for (const auto & [_, type] : paths)
+        children.push_back(type);
+    return children;
+}
+
+DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
+{
+    const auto paths = getSortedTypedPaths();
+
+    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    new_typed_paths.reserve(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i)
+        new_typed_paths.emplace(paths[i].first, new_children[i]);
+
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
 }
 
 namespace

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -519,8 +520,7 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        check_not_dynamic_or_variant(*column.type);
-        column.type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
     }
 }
 

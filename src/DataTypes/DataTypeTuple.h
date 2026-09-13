@@ -75,9 +75,10 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    DataTypes getChildren() const override { return elems; }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
 };
 
