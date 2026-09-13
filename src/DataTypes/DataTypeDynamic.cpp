@@ -980,6 +980,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
     res->substreams_path.emplace_back(is_null_map_subcolumn ? ISerialization::Substream::VariantElementNullMap : ISerialization::Substream::VariantElement);
     res->substreams_path.back().variant_element_name = subcolumn_type->getName();
 
+    String nested_name_to_store(subcolumn_nested_name);
+
     if (!is_null_map_subcolumn && !subcolumn_nested_name.empty())
     {
         auto nested_info = getSubcolumnInfo(subcolumn_nested_name, res->data, initial_array_level, throw_if_null);
@@ -992,6 +994,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     subcolumn_name);
             return nullptr;
         }
+
+        /// SerializationDynamicElement resolves this name again against the element type alone to
+        /// extract the subcolumn from a value read from the shared variant.
+        nested_name_to_store = getSubcolumnNameForZeroArrayLevel(subcolumn_nested_name, nested_info->substreams_path);
 
         res->data = std::move(nested_info->data);
         res->substreams_path.insert(
@@ -1011,7 +1017,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
         res->data.serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
-        String(subcolumn_nested_name),
+        nested_name_to_store,
         is_null_map_subcolumn,
         nullable_added_by_extraction);
 
