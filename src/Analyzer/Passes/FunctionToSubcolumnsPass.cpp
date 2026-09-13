@@ -910,20 +910,19 @@ void optimizeJSONArrayElementChain(
 
     String full_name = ctx.column.name + "." + subcolumn_name;
 
-    /// The rewrite means the JSON combined (`@`) subcolumn for this path. A Tuple element or a
-    /// typed path can claim the same flat name, so check the substreams path, not just existence.
-    if (sourceHasColumn(ctx.column_source, full_name)
-        || !canOptimizeToExpectedSubcolumn(
-            ctx.column_source, full_name, SerializationObjectCombinedPath::isCombinedPathSubcolumn))
+    /// Use the actual subcolumn type: a typed path (also one reached by a chain, e.g. `c.d` for
+    /// `json['c']['d']`) is not `Dynamic`, and the node must declare the type storage really produces.
+    /// The result is cast back to the type of the original expression below.
+    DataTypePtr subcolumn_type = data_type_object.tryGetSubcolumnType(subcolumn_name);
+    if (!subcolumn_type)
         return;
 
-    /// For a single key, use the actual subcolumn type (may be a typed path, not Dynamic).
-    /// For chained access, the execution goes through Dynamic dispatch, so the type is Dynamic.
-    DataTypePtr subcolumn_type;
-    if (keys.size() == 1)
-        subcolumn_type = data_type_object.getSubcolumnType(subcolumn_name);
-    else
-        subcolumn_type = data_type_object.getDynamicType();
+    /// The rewrite means the JSON combined (`@`) subcolumn for this path. A Tuple element or a
+    /// typed path can claim the same flat name, so check the substreams path and the resolved type,
+    /// not just existence.
+    if (sourceHasColumn(ctx.column_source, full_name)
+        || !canOptimizeToExpectedSubcolumn(ctx, full_name, SerializationObjectCombinedPath::isCombinedPathSubcolumn, subcolumn_type))
+        return;
 
     auto original_result_type = function_node.getResultType();
     NameAndTypePair column{full_name, subcolumn_type};

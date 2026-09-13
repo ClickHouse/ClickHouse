@@ -94,9 +94,13 @@ QUERY id: 0
     arrayElement(arrayElement(json, \'c\'), \'d\') Dynamic
   PROJECTION
     LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: json.@`c`.d, result_type: Dynamic, source_id: 3
+      FUNCTION id: 2, function_name: _CAST, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: json.@`c`.d, result_type: UInt32, source_id: 5
+            CONSTANT id: 6, constant_value: \'Dynamic\', constant_value_type: String
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.test_json_dotted
+    TABLE id: 5, alias: __table1, table_name: default.test_json_dotted
   SETTINGS optimize_functions_to_subcolumns=1
 equivalence_single
 1	1	1
