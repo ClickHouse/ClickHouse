@@ -17,9 +17,22 @@ FROM default.t_byte_size_string_subcolumn AS __table1
 2	10
 3	14
 4	19
+1	16
+2	17
+3	21
+4	26
+1	16
+2	17
+3	21
+4	26
+1	16
+2	17
+3	21
+4	26
+0
 SELECT
-    byteSize(__table1.s) AS `byteSize(s)`,
-    byteSize(__table1.s, 1) AS `byteSize(s, 1)`
+    plus(__table1.`s.size`, byteSize(__table1.`s.size`)) AS `byteSize(s)`,
+    plus(__table1.`s.size`, byteSize(__table1.`s.size`, 1)) AS `byteSize(s, 1)`
 FROM default.t_byte_size_string_subcolumn AS __table1
 id	Default
 s	Sparse
