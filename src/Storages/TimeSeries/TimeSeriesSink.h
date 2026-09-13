@@ -1,13 +1,16 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
+#include <Common/PODArray_fwd.h>
 #include <Core/Block.h>
+#include <base/Decimal.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -25,7 +28,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (time_series, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the three inner target tables (Tags, Samples, Metrics).
+/// into blocks for the target tables (Tags, Samples, RecentSamples, Metrics).
+/// The samples of a series are sorted, deduplicated and split into time buckets, each bucket makes a row
+/// of the samples tables with the columns `id`, `samples`, `bucket`, `min_time`, `max_time`.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -88,18 +93,26 @@ private:
     bool insert_metrics = false;
     bool async_insert = false;
 
+    /// Types of the `id` column of the tags table, and of the timestamps and the values of the samples.
+    DataTypePtr id_type;
+    DataTypePtr timestamp_type;
+    DataTypePtr value_type;
+
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
 
-    /// Type of the `id` column in the tags target table.
-    DataTypePtr id_type;
-
-    /// True when the resolved id-generator references the `all_tags` identifier.
+    /// True when the id generator references the `all_tags` column, which is not stored: it is filled with the same data
+    /// as `tags` to calculate `id` (see makeTagsBlockWithoutId).
     bool id_generator_uses_all_tags = false;
 
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
+
+    /// The steps of the buckets of the samples table and of the recent samples table (unset if there is no such table)
+    /// with the scale of `timestamp_type`, e.g. in milliseconds for `DateTime64(3)`.
+    Decimal64 samples_bucket_step{0};
+    std::optional<Decimal64> recent_samples_bucket_step;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;

@@ -40,18 +40,18 @@ SELECT toTypeName(id) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) LIMIT 1;
 
 SELECT '-- whole-metric selector: results and the emitted id range';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
 
 SELECT '-- partial selector: results, no id range';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000) ORDER BY value, timestamp;
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
 
 SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 
@@ -81,7 +81,7 @@ INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
 SELECT toTypeName(id) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) LIMIT 1;
-SELECT timestamp, value FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 DROP TABLE ts_lc;
 DROP TABLE ts_plain;

@@ -40,10 +40,10 @@ INSERT INTO ts_clustered (metric_name, tags, time_series) VALUES
 
 SELECT '-- whole-metric selector: same rows as a filtered read, and the WHERE carries the id range';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
 
 SELECT '-- the range is an index condition only: it is not part of any row-level filter';
 
@@ -51,30 +51,30 @@ SELECT
     countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%') > 0 AS range_in_index_condition,
     countIf(explain ILIKE '%filter column:%' AND explain ILIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%') = 0 AS range_not_row_level,
     -- control for the check above: filter descriptions are printed and this pattern does match them
-    countIf(explain ILIKE '%filter column:%' AND explain ILIKE '%timestamp%') > 0 AS filter_lines_present
-FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000));
+    countIf(explain ILIKE '%filter column:%' AND explain ILIKE '%bucket%') > 0 AS filter_lines_present
+FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000));
 
 SELECT '-- whole-metric-by-data selector (a matcher every series passes): the range is still emitted';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000)));
 
 SELECT '-- partial-metric selector (a matcher filters some series out): falls back to the id set only';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000) ORDER BY value, timestamp;
-SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000)) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_clustered, 'foo{env!=""}', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000)));
 
 SELECT '-- regex matcher on the metric name: falls back';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar", env="dev"}', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar", env="dev"}', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar"}', 0, 1000)));
 
 SELECT '-- selector with no series in the time range: empty result either way';
 
@@ -102,10 +102,10 @@ INSERT INTO ts_plain (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000)));
 
 SELECT '-- custom id generator: no structural guarantee, no id range, same results';
 
@@ -116,10 +116,10 @@ INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)));
 
 SELECT '-- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back';
 
@@ -136,10 +136,10 @@ INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'new'), [(toDateTime64(200, 3), 2.)]);
 
 -- Both the old-generator and the new-generator series must be returned.
-SELECT timestamp, value FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000)));
 
 SELECT '-- Tuple(UInt64, UInt64) id layout: the range is emitted with the max-UInt64 literal';
 
@@ -149,10 +149,10 @@ INSERT INTO ts_u64 (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(time_series) AS sample FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%18446744073709551615%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)));
 
 SELECT '-- the index-only range still drops the part that holds another metric';
 
@@ -162,7 +162,7 @@ SELECT '-- the index-only range still drops the part that holds another metric';
 -- then the only condition that can drop the `bar` part, which `id_set_not_in_index_analysis`
 -- asserts rather than assumes.
 CREATE TABLE ts_prune ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)
     SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
@@ -171,12 +171,12 @@ INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
 INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
     ('bar', map('env', 'prod'), [(toDateTime64(100, 3), 4.)]);
 
-SELECT sum(value), count() FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000);
+SELECT sum(arraySum(x -> x.2, time_series)), sum(length(time_series)) FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000);
 
 SELECT
     countIf(explain LIKE '%Parts: 1/2%') > 0 AS prunes_the_other_metrics_part,
     countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%element set%') = 0 AS id_set_not_in_index_analysis
-FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000));
+FROM (EXPLAIN indexes = 1 SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000));
 
 DROP TABLE ts_prune;
 DROP TABLE ts_u64;

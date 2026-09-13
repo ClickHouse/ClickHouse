@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Storages/ColumnCodecDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -287,8 +288,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (column.codec)
-                        res_columns[res_index++]->insert(column.codec->formatForLogging());
+                    if (column.codec.hasRoot())
+                        res_columns[res_index++]->insert(column.codec.getRoot()->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

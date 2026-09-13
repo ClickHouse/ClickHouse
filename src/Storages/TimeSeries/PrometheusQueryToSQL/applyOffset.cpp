@@ -51,11 +51,14 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
+                /// SELECT group, arrayMap(sample -> (sample.1 + INTERVAL X, sample.2), time_series) AS time_series
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+                /// sample.1
+                ASTPtr timestamp = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{1}));
 
                 ASTPtr new_timestamp;
                 if (isDateTime64(context.timestamp_data_type))
@@ -74,7 +77,7 @@ namespace
 
                     new_timestamp = makeASTFunction(
                         "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
+                        std::move(timestamp),
                         makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
                 }
                 else
@@ -82,14 +85,26 @@ namespace
                     /// timestamp + x
                     new_timestamp = makeASTFunction(
                         "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
+                        std::move(timestamp),
                         timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
                 }
 
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
+                /// The cast restores the exact type of the timestamps (e.g. the scale of `DateTime64`) after the addition.
+                new_timestamp = timeSeriesTimestampASTCast(std::move(new_timestamp), context.timestamp_data_type);
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                /// arrayMap(sample -> (<new_timestamp>, sample.2), time_series) AS time_series
+                auto new_sample = makeASTFunction(
+                    "tuple",
+                    std::move(new_timestamp),
+                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{2})));
+
+                auto new_time_series = makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction("lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("sample")), std::move(new_sample)),
+                    make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+
+                new_time_series->setAlias(ColumnNames::TimeSeries);
+                builder.select_list.push_back(std::move(new_time_series));
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -187,34 +202,8 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because RAW_DATA is used only with range vectors, which are handled above.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 

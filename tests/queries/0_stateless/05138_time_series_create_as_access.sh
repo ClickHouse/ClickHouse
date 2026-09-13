@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
     GRANT CREATE TABLE ON ${db}.* TO ${user};
     GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON MergeTree, TABLE ENGINE ON AggregatingMergeTree, TABLE ENGINE ON ReplacingMergeTree TO ${user};
 
-    CREATE TABLE ${db}.ext_data (id UUID, timestamp DateTime64(6), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+    CREATE TABLE ${db}.ext_data (id UUID, samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64))), bucket DateTime64(6), min_time SimpleAggregateFunction(min, DateTime64(6)), max_time SimpleAggregateFunction(max, DateTime64(6))) ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
     CREATE TABLE ${db}.ext_tags (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
         ENGINE = MergeTree ORDER BY (metric_name, id);
     CREATE TABLE ${db}.ts_src ENGINE = TimeSeries
@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
 "
 
 create_copy="CREATE TABLE ${db}.ts_copy AS ${db}.ts_src ENGINE = TimeSeries
-    DATA ENGINE = MergeTree ORDER BY (id, timestamp) TAGS ENGINE = AggregatingMergeTree ORDER BY (metric_name, id)"
+    DATA ENGINE = AggregatingMergeTree ORDER BY (id, bucket) TAGS ENGINE = AggregatingMergeTree ORDER BY (metric_name, id)"
 
 # Prints the privileges of the user and either the error or the inner columns of the created copy.
 function try_create_copy()

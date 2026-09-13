@@ -34,7 +34,7 @@ def start_cluster():
 # Time series data for "foo" — inserted directly into prealpha inner tables before upgrade.
 foo = [({"__name__": "foo", "job": "prometheus"}, {1000.0: 10.0})]
 
-# Time series data for "bar" — inserted via RemoteWrite after upgrade.
+# Time series data for "bar" — inserted via RemoteWrite after the table is recreated with the latest version.
 bar = [({"__name__": "bar", "job": "prometheus"}, {2000.0: 20.0})]
 
 
@@ -178,14 +178,8 @@ def insert_foo_into_prealpha_time_series(data_table, tags_table, metrics_table):
     node.query(f"INSERT INTO `{metrics_table}` VALUES ('foo', 'gauge', 'bytes', 'Foo metric')")
 
 
-# Sends the `bar` metric via RemoteWrite protocol to a table after it's upgraded or restored.
-def send_bar_via_remote_write():
-    protobuf = convert_time_series_to_protobuf(bar)
-    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
-
-
-# Checks that both `foo` and `bar` metrics exist.
-def check_foo_and_bar():
+# Checks that the `foo` metric can be read from the upgraded table.
+def check_foo():
     result = node.query(
         "SELECT t.metric_name, d.timestamp, d.value"
         " FROM timeSeriesData(prometheus) AS d"
@@ -193,8 +187,37 @@ def check_foo_and_bar():
         " ORDER BY t.metric_name, d.timestamp"
     )
     assert result == TSV([
-        ["bar", "1970-01-01 00:33:20.000", "20"],
         ["foo", "1970-01-01 00:16:40.000", "10"],
+    ])
+
+    assert node.query(
+        "SELECT metric_name, tags, time_series FROM prometheus ORDER BY metric_name"
+    ) == TSV([
+        ["foo", "{'__name__':'foo','job':'prometheus'}", "[('1970-01-01 00:16:40.000',10)]"],
+    ])
+
+
+# A table of an old version is read-only, so it is recreated with the latest version and refilled with INSERT SELECT.
+def recreate_and_refill():
+    node.query("DROP TABLE IF EXISTS prometheus_new SYNC")
+    node.query("CREATE TABLE prometheus_new ENGINE=TimeSeries")
+    node.query("INSERT INTO prometheus_new SELECT * FROM prometheus")
+    node.query("DROP TABLE prometheus SYNC")
+    node.query("RENAME TABLE prometheus_new TO prometheus")
+
+
+def send_bar_via_remote_write():
+    protobuf = convert_time_series_to_protobuf(bar)
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+
+
+# Checks that both `foo` and `bar` metrics exist.
+def check_foo_and_bar():
+    assert node.query(
+        "SELECT metric_name, tags, time_series FROM prometheus ORDER BY metric_name"
+    ) == TSV([
+        ["bar", "{'__name__':'bar','job':'prometheus'}", "[('1970-01-01 00:33:20.000',20)]"],
+        ["foo", "{'__name__':'foo','job':'prometheus'}", "[('1970-01-01 00:16:40.000',10)]"],
     ])
 
 
@@ -209,6 +232,8 @@ def cleanup_after_test():
 # Checks that an prealpha-version TimeSeries table can be attached and used.
 def test_upgrade_from_prealpha():
     create_and_fill_prealpha_time_series()
+    check_foo()
+    recreate_and_refill()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
@@ -222,6 +247,8 @@ def test_upgrade_from_prealpha_ordinary_db():
     )
 
     create_and_fill_prealpha_time_series()
+    check_foo()
+    recreate_and_refill()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
@@ -235,5 +262,7 @@ def test_restore_from_prealpha():
     backup_file = os.path.join(os.path.dirname(__file__), "backups", "time_series_prealpha.zip")
     node.copy_file_to_container(backup_file, "/backups/time_series_prealpha.zip")
     node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'time_series_prealpha.zip')")
+    check_foo()
+    recreate_and_refill()
     send_bar_via_remote_write()
     check_foo_and_bar()

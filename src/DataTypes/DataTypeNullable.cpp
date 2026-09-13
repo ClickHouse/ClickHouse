@@ -172,6 +172,8 @@ A `Nullable` type field can't be included in table indexes.
 
 To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
 
+For a stored [`Tuple`](/reference/data-types/tuple) element with its own [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs), `Nullable` is transparent when the codec declaration is matched to data streams. The element declaration governs both its value and null-mask streams, but only generic codec stages apply to the null mask. For an outer `Nullable(Tuple(...))`, the outer null mask is governed by the whole-column codec or part default, again with only generic stages applied, while streams inside the Tuple use their element declarations.
+
 <Note>
 Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
 </Note>

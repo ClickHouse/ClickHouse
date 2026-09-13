@@ -7,6 +7,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -189,9 +190,15 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
-    const ASTPtr & effective_codec_desc)
+    const ColumnCodecDescription & codec_policy)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
+    const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+    ColumnCodecResolver codec_resolver(
+        codec_policy,
+        name_and_type.getTypeInStorage(),
+        name_and_type,
+        default_codec_desc,
+        settings.apply_adaptive_codec);
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -204,14 +211,16 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
-        /// Shared offsets for Nested type.
+        /// Logical columns can share a physical stream, such as flattened Nested offsets.
+        /// The first writer chooses its codec.
         if (column_streams.contains(stream_name))
             return;
 
-        /// Don't write offsets more than one time for Nested type in case elements of nested had been written separately, i.e. via Vertical merge.
+        /// A vertical merge can use separate writers for Nested elements.
+        /// The first writer of their shared offsets chooses the codec.
         if (written_offset_substreams)
         {
-            bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
+            const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
             if (is_offsets && written_offset_substreams->contains(stream_name))
                 return;
         }
@@ -223,7 +232,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        CompressionCodecPtr compression_codec = codec_resolver.getCodec(substream_path, default_codec);
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -267,7 +276,6 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings));
-
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
 

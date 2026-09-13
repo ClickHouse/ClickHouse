@@ -25,15 +25,14 @@ namespace
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
 
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-        /// FROM timeSeriesSelectorToGrid(<selector>, <start_time>, <end_time>, <step>, <window>)
+        /// SELECT timeSeriesIdToGroup(id) AS group, time_series
+        /// FROM timeSeriesSelector(<selector>, <min_time>, <max_time>)
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
         builder.select_list.back()->setAlias(ColumnNames::Group);
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
 
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;

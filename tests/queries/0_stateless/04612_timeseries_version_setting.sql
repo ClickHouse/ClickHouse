@@ -26,7 +26,7 @@ SELECT extract(create_table_query, 'version = (\d+)')
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
 SELECT '--- the version cannot be altered ---';
-ALTER TABLE ts_version MODIFY SETTING version = 2; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE ts_version MODIFY SETTING version = 1; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE ts_version RESET SETTING version; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- altering another setting does not drop the version or other settings from the metadata ---';
@@ -46,9 +46,19 @@ SELECT extract(create_table_query, 'version = (\d+)')
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version_0';
 CREATE TABLE ts_version_bad ENGINE = TimeSeries SETTINGS version = 999; -- { serverError INVALID_SETTING_VALUE }
 
-SELECT '--- PromQL works on tables of every supported version ---';
-SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000);
-SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000);
+SELECT '--- the tables of the older versions can be read but not written into, and PromQL rejects them ---';
+SELECT count() FROM ts_version_0;
+SELECT count() FROM ts_version_1;
+INSERT INTO ts_version_0 (metric_name, tags, time_series) VALUES ('up', map(), [(toDateTime64(1000, 3), 1.)]); -- { serverError INCOMPATIBLE_SCHEMA }
+INSERT INTO ts_version_1 (metric_name, tags, time_series) VALUES ('up', map(), [(toDateTime64(1000, 3), 1.)]); -- { serverError INCOMPATIBLE_SCHEMA }
+SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000); -- { serverError INCOMPATIBLE_SCHEMA }
+SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000); -- { serverError INCOMPATIBLE_SCHEMA }
+SELECT count() FROM timeSeriesSelector(ts_version_1, 'up', 0, 1000); -- { serverError INCOMPATIBLE_SCHEMA }
+
+SELECT '--- the latest version supports everything ---';
+INSERT INTO ts_version (metric_name, tags, time_series) VALUES ('up', map('job', 'j'), [(toDateTime64(1000, 3), 1.)]);
+SELECT count() FROM ts_version;
+SELECT count() FROM prometheusQuery(ts_version, 'up', 1000);
 
 SELECT '--- CREATE AS does not copy the version: a new table gets the latest one ---';
 CREATE TABLE ts_version_0_copy AS ts_version_0;

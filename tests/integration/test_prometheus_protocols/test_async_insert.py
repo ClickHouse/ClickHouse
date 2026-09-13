@@ -72,7 +72,7 @@ def test_async_insert_acknowledged_after_flush():
         convert_metrics_metadata_to_protobuf(metrics_metadata),
     )
 
-    assert node.query("SELECT count() FROM timeSeriesData(prometheus)") == "2\n"
+    assert node.query("SELECT sum(length(samples)) FROM timeSeriesData(prometheus)") == "2\n"
     assert (
         node.query(
             "SELECT tags['job'] FROM timeSeriesTags(prometheus) "
@@ -93,8 +93,10 @@ def test_async_insert_acknowledged_after_flush():
 
 def test_async_insert_no_acknowledgement_on_failure():
     node.query(
-        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
-        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE samples (id UUID, "
+        "samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), "
+        "bucket DateTime64(3), min_time SimpleAggregateFunction(min, DateTime64(3)), max_time SimpleAggregateFunction(max, DateTime64(3)), "
+        "CONSTRAINT reject_all CHECK empty(samples)) ENGINE=AggregatingMergeTree ORDER BY (id, bucket)"
     )
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
 
@@ -132,7 +134,7 @@ def test_async_insert_flush_timeout_returns_503():
 
     # The data stays in the server's asynchronous insert queue and is flushed later.
     assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
+        node, "SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)", "1", retry_count=60
     )
 
     # A PromQL instant query at the sample's timestamp returns the flushed data.
@@ -164,7 +166,7 @@ def test_async_insert_flush_timeout_is_clamped():
     response = remote_write("clamped_pos_metric", 10000000000)
     assert response.status_code == 204
     # No retry here: the acknowledgement means the wait outlasted the flush.
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
+    assert node.query("SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)") == "1\n"
 
     # -1e10 seconds overflows the same conversion in the other direction. A negative timeout
     # means "already expired", so the wait returns immediately.
@@ -179,5 +181,5 @@ def test_async_insert_flush_timeout_is_clamped():
 
     # A timed-out wait keeps the data in the queue, so every sample arrives after the flush.
     assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "3", retry_count=60
+        node, "SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)", "3", retry_count=60
     )

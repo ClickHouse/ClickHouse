@@ -192,6 +192,8 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if the storage selects codecs independently for physical subcolumn streams.
+    virtual bool supportsPerSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
