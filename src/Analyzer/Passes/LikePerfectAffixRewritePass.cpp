@@ -2,6 +2,7 @@
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Core/Settings.h>
@@ -85,14 +86,14 @@ public:
 
         /// Only perfect-affix patterns ('Prefix%') are rewritten here; exact (wildcard-free) patterns keep
         /// is_perfect == false and are left as LIKE for KeyCondition to optimize into an exact point range.
-        auto affix = extractFixedPrefixFromLikePattern(pattern, true);
-        if (!affix.is_perfect || affix.prefix.empty())
+        [[maybe_unused]] auto [affix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(pattern, true);
+        if (!is_perfect || affix.empty())
             return;
 
         if (is_suffix)
-            std::reverse(affix.prefix.begin(), affix.prefix.end());
+            std::reverse(affix.begin(), affix.end());
 
-        auto affix_constant = std::make_shared<ConstantNode>(std::move(affix.prefix));
+        auto affix_constant = std::make_shared<ConstantNode>(std::move(affix));
 
         /// Create startsWith/endsWith function
         FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", args[0], affix_constant);

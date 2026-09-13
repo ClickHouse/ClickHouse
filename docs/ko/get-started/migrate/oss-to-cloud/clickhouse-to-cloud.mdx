@@ -23,7 +23,7 @@ import CompatibilityNote from '/snippets/ko/compatibility.mdx';
 
 <Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
 
-원본 테이블이 세그먼트로 나뉘어 있거나 복제되어 있는지와 관계없이, ClickHouse Cloud에서는 대상 테이블만 생성하면 됩니다(이 테이블의 Engine 매개변수는 생략할 수 있으며, `SharedMergeTree`가 테이블 엔진으로 자동 선택됩니다).
+소스 테이블이 세그먼트로 나뉘어 있거나 복제되어 있는지와 관계없이, ClickHouse Cloud에서는 대상 테이블만 생성하면 됩니다(이 테이블의 Engine 매개변수는 생략할 수 있으며, `SharedMergeTree`가 테이블 엔진으로 자동 선택됩니다).
 또한 ClickHouse Cloud가 수직 및 수평 스케일링을 자동으로 처리합니다.
 테이블을 어떻게 복제하고 세그먼트로 나눌지 따로 고민할 필요가 없습니다.
 
@@ -86,7 +86,7 @@ CREATE DATABASE db
 * 원본의 CREATE TABLE 문을 사용해 대상을 생성합니다.
 
 <Tip>
-  CREATE 문을 실행할 때 ENGINE은 매개변수 없이 ReplicatedMergeTree로 변경하십시오. ClickHouse Cloud는 항상 테플을 복제하고 올바른 매개변수를 제공합니다. 다만 `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL`, `SETTINGS` 절은 그대로 유지하십시오.
+  CREATE 문을 실행할 때 ENGINE은 매개변수 없이 ReplicatedMergeTree로 변경하십시오. ClickHouse Cloud는 항상 테이블을 복제하고 올바른 매개변수를 제공합니다. 다만 `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL`, `SETTINGS` 절은 그대로 유지하십시오.
 </Tip>
 
 ```sql
@@ -142,12 +142,12 @@ ClickHouse Cloud 서비스 간에 데이터를 마이그레이션하는 일반�
 마이그레이션은 다음 단계로 진행됩니다:
 
 1. 하나의 ClickHouse Cloud 서비스를 *source*로, 다른 하나를 *destination*으로 지정합니다
-2. 원본 서비스에 읽기 전용 사용자를 추가합니다
-3. 대상 서비스에 source 테이블 구조를 복제합니다
-4. 원본 서비스에 대한 IP 액세스를 일시적으로 허용합니다
+2. source 서비스에 읽기 전용 사용자를 추가합니다
+3. destination 서비스에 source 테이블 구조를 복제합니다
+4. source 서비스에 대한 IP 액세스를 일시적으로 허용합니다
 5. source에서 destination으로 데이터를 복사합니다
-6. 대상 서비스의 IP 액세스 목록(IP 액세스 목록)을 다시 설정합니다
-7. 원본 서비스에서 읽기 전용 사용자를 제거합니다
+6. destination의 IP 액세스 목록(IP 액세스 목록)을 다시 설정합니다
+7. source 서비스에서 읽기 전용 사용자를 제거합니다
 
 <div id="add-a-read-only-user-to-the-source-service">
   #### 소스 서비스에 읽기 전용 사용자를 추가합니다

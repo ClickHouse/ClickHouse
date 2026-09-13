@@ -24,12 +24,9 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
     std::lock_guard lock(executor_mutex);
 
     /// Cancelled (via onCancel) or already finished - stop without launching/continuing work.
-    if (cleaned_up || cancellation->isCancelled())
+    if (cleaned_up || *cancellation_flag)
     {
         cleanupLocked();
-        /// A failing task cancels the query too. Report its exception instead of reporting end of
-        /// data, which would turn the failure into a silently truncated result.
-        cancellation->rethrowIfFailed();
         return std::nullopt;
     }
 
@@ -39,7 +36,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         {
             started = true;
             distributed_query_executor = createDistributedQueryExecutor(
-                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation);
+                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation_flag);
             distributed_query_executor->start();
         }
 
@@ -63,7 +60,7 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     /// Signal first (lock-free) so an in-flight start()/execute() returns promptly, then tear down
     /// under the lock. Without active cleanup, cancellation is only seen on the next tryGenerate,
     /// which may never come once the pipeline is cancelled.
-    cancellation->cancel();
+    *cancellation_flag = true;
     try
     {
         /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked

@@ -484,7 +484,7 @@ static void addFilters(
     if (!predicate)
         return;
 
-    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    auto table_expressions = extractTableExpressions(query_node->getJoinTree());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
         return;
@@ -525,7 +525,7 @@ static void addFilters(
         if (!inner_query_node)
             return;
 
-        table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
             return;

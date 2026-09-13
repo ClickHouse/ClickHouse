@@ -414,9 +414,3 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc
-[submodule "contrib/libucontext"]
-	path = contrib/libucontext
-	url = https://github.com/kaniini/libucontext
-[submodule "contrib/MeCab"]
-	path = contrib/MeCab
-	url = https://github.com/taku910/mecab

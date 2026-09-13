@@ -15,12 +15,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기 위해 여러 유형의 연결을 유지합니다:
 
-| 목적                            | 연결 유형                                                             | 비고                                                                                                                                 |
-| ----------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **일상 운영 — Kubernetes API 서버** | IP 필터링이 적용된 공개 연결(기본값), 또는 Tailscale이나 AWS VPC Lattice를 통한 비공개 연결 | 관리 서비스는 IP 허용 목록으로 제한된 공개 네트워크를 통해 EKS API 서버와 통신합니다. 초기 배포 후에는 필요에 따라 이를 Tailscale 또는 AWS에서는 VPC Lattice를 통한 비공개 접근으로 전환할 수 있습니다. |
-| **일상 운영 — AWS APIs**          | ClickHouse VPC → AWS                                              | 관리 서비스는 ClickHouse Cloud 자체 VPC에서 AWS API(EKS, EC2 등)를 AWS에 호출합니다. 이 과정에는 사용자 VPC나 Tailscale이 관여하지 않습니다.                           |
-| **문제 해결 — ClickHouse 서비스**    | Tailscale                                                         | ClickHouse 엔지니어는 진단을 위해 Tailscale을 통해 ClickHouse 서비스(예: 시스템 테이블)에 접근합니다.                                                           |
-| **문제 해결 — Kubernetes API 서버** | Tailscale                                                         | ClickHouse 엔지니어는 클러스터 진단을 위해 Tailscale을 통해 API 서버에 접근합니다.                                                                          |
+| 목적                                | 연결 유형                               | 비고                                                                                                       |
+| --------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **일상 운영 — Kubernetes API 서버** | IP 필터링이 적용된 공개 연결(기본값) 또는 Tailscale | 관리 서비스는 IP 허용 목록으로 제한된 공개 네트워크를 통해 API 서버와 통신합니다. 초기 배포 후에는 필요에 따라 이를 Tailscale을 통한 비공개 접근으로 전환할 수 있습니다. |
+| **일상 운영 — AWS APIs**              | ClickHouse VPC → AWS                | 관리 서비스는 ClickHouse Cloud 자체 VPC에서 AWS API(EKS, EC2 등)를 AWS에 호출합니다. 이 과정에는 사용자 VPC나 Tailscale이 관여하지 않습니다. |
+| **문제 해결 — ClickHouse 서비스**        | Tailscale                           | ClickHouse 엔지니어는 진단을 위해 Tailscale을 통해 ClickHouse 서비스(예: 시스템 테이블)에 접근합니다.                                 |
+| **문제 해결 — Kubernetes API 서버** | Tailscale                           | ClickHouse 엔지니어는 클러스터 진단을 위해 Tailscale을 통해 API 서버에 접근합니다.                                                |
 
 다음 섹션에서는 **Tailscale** 프라이빗 네트워크가 문제 해결과 선택적 관리 접근에 어떻게 사용되는지 설명합니다.
 
@@ -52,7 +52,7 @@ Tailscale은 ClickHouse 컨트롤 플레인(ClickHouse의 VPC 내)과 BYOC 데�
 
 Tailscale을 통해 액세스해야 하는 각 서비스 또는 엔드포인트에 대해 ClickHouse BYOC는 다음을 배포합니다:
 
-1. **Tailnet 주소 등록**: 각 엔드포인트는 고유한 tailnet 주소를 등록합니다(예: Kubernetes API 서버의 경우 `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`)
+1. **Tailnet 주소 등록**: 각 엔드포인트는 고유한 tailnet 주소를 등록합니다(예: Kubernetes API server의 경우 `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`)
 
 2. **Tailscale agent 컨테이너**: EKS 클러스터에서 Tailscale agent 컨테이너가 실행되며, 다음을 담당합니다:
    * Tailscale coordination server에 연결
@@ -110,7 +110,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
 **선택적 Private Endpoint 구성**:
 
 * EKS API 서버가 Private Endpoint만 사용하도록 구성할 수 있습니다
-* 이 경우 관리 서비스는 Tailscale을 통해 API 서버에 액세스하거나(사용자의 문제 해결 접근과 유사), AWS에서는 VPC Lattice를 통해 액세스합니다([Kubernetes API Private Connection](/ko/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection) 참조)
+* 이 경우 관리 서비스는 Tailscale을 통해 API 서버에 액세스합니다(사용자의 문제 해결 접근과 유사)
 * 긴급 investigation 및 지원이 필요한 경우를 대비한 백업 메커니즘으로 공용 액세스가 유지됩니다
 
 <div id="tailscale-traffic-flow">

@@ -28,7 +28,9 @@ Neste guia, você aprenderá a criar um agente de IA com o [Agno](https://github
 Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
 
 <Steps>
-  <Step title="Instale as bibliotecas" id="install-libraries">
+  <Step>
+    ## Instale as bibliotecas
+
     Instale a biblioteca Agno executando os seguintes comandos:
 
     ```python
@@ -38,7 +40,9 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step title="Configure as credenciais" id="setup-credentials">
+  <Step>
+    ## Configure as credenciais
+
     Em seguida, você precisará fornecer sua chave de API da Anthropic:
 
     ```python
@@ -54,7 +58,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
       **Usando outro provedor de LLM**
 
       Se você não tiver uma chave de API da Anthropic e quiser usar outro provedor de LLM,
-      poderá encontrar as instruções para configurar suas credenciais na [documentação da Agno](https://docs.agno.com/models/overview)
+      poderá encontrar as instruções para configurar suas credenciais na [documentação da Agno](https://docs.agno.com/concepts/models/introduction)
     </Info>
 
     Em seguida, defina as credenciais necessárias para se conectar ao playground SQL do ClickHouse:
@@ -70,7 +74,9 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step title="Inicializar o servidor MCP e o agente Agno" id="initialize-mcp-and-agent">
+  <Step>
+    ## Inicializar o servidor MCP e o agente Agno
+
     Agora, configure o servidor MCP do ClickHouse para apontar para o playground SQL do ClickHouse
     e inicialize também o nosso agente Agno e faça uma pergunta a ele:
 

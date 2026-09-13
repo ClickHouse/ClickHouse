@@ -9,7 +9,7 @@ keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestión de cole
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -71,7 +71,9 @@ Bindplane resuelve esto al ofrecer:
 </div>
 
 <Steps>
-  <Step title="Configura ClickStack como destino" id="configure-destination">
+  <Step>
+    #### Configura ClickStack como destino
+
     1. Inicia sesión en tu cuenta de Bindplane
     2. Ve a **Library**
     3. Haz clic en **Add Destination**
@@ -91,7 +93,9 @@ Bindplane resuelve esto al ofrecer:
     </Tip>
   </Step>
 
-  <Step title="Crea una configuración" id="create-configuration">
+  <Step>
+    #### Crea una configuración
+
     Una vez configurado el destino de ClickStack, crea una configuración para procesar y enrutar la telemetría:
 
     1. Ve a **Configurations** → **Create Configuration**
@@ -100,11 +104,11 @@ Bindplane resuelve esto al ofrecer:
     4. Añade fuentes:
        * Haz clic en **Add Source** para elegir entre más de 80 fuentes disponibles
        * Para hacer pruebas, puedes añadir una fuente generadora de telemetría para simular tráfico
-       * Para producción, añade fuentes para tu telemetría real (logs, métricas, trazas)
+       * Para producción, añade fuentes para tu telemetría real (logs, metrics, traces)
     5. Añade el destino de ClickStack:
        * Haz clic en **Add Destination**
        * Selecciona el destino de ClickStack que creaste en el paso anterior
-       * Elige qué tipos de telemetría enviar (Logs, Métricas, Trazas o todos)
+       * Elige qué tipos de telemetría enviar (Logs, Metrics, Traces o todos)
 
     <Tip>
       **Puntos clave**
@@ -113,11 +117,13 @@ Bindplane resuelve esto al ofrecer:
     </Tip>
   </Step>
 
-  <Step title="Añade procesadores (opcional)" id="add-processors">
-    Bindplane proporciona inteligencia de pipeline y recomendaciones de procesadores. Puedes añadir procesadores para:
+  <Step>
+    #### Añade procesadores (opcional)
+
+    Bindplane proporciona inteligencia de pipelines y recomendaciones de procesadores. Puedes añadir procesadores para:
 
     * **Filter**: Reducir el volumen de datos excluyendo telemetría innecesaria
-    * **Sample**: Aplicar estrategias de sampling a trazas de gran volumen
+    * **Sample**: Aplicar estrategias de sampling a traces de gran volumen
     * **Enrich**: Añadir atributos de recursos, labels o metadatos
     * **Transform**: Modificar la estructura o el contenido de la telemetría
     * **Batch**: Optimizar el tamaño de los lotes para una transmisión eficiente
@@ -125,7 +131,9 @@ Bindplane resuelve esto al ofrecer:
     Estos procesadores se aplican de forma coherente en toda tu flota de collectors antes de que los datos lleguen a ClickStack.
   </Step>
 
-  <Step title="Implementa collectors e inicia el rollout" id="deploy-collectors">
+  <Step>
+    #### Implementa collectors e inicia el rollout
+
     1. Añade un collector (BDOT Collector) a tu configuración:
        * Ve a **Agents** en Bindplane
        * Instala el collector de Bindplane en tus sistemas de destino [siguiendo las instrucciones de instalación de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
@@ -149,11 +157,13 @@ Bindplane resuelve esto al ofrecer:
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Señales de telemetría en ClickStack a través de Bindplane" size="lg" />
   </Step>
 
-  <Step title="Verifica la telemetría en ClickStack" id="verify-telemetry">
+  <Step>
+    #### Verifica la telemetría en ClickStack
+
     Una vez desplegada la configuración, la telemetría empezará a fluir hacia ClickStack desde tu flota gestionada de collectors:
 
     1. Inicia sesión en tu instancia de ClickStack (UI de HyperDX)
-    2. Ve al explorador de **Logs**, **Métricas** o **Trazas**
+    2. Ve al explorador de **Logs**, **Metrics** o **Traces**
     3. Deberías ver datos de telemetría de tus collectors gestionados por Bindplane
     4. Los datos que llegan a ClickStack ya están enriquecidos y estructurados por los procesadores de Bindplane
 

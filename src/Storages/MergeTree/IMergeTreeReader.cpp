@@ -108,11 +108,6 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
 }
 
-bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
-{
-    return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
-}
-
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
     chassert(columns.size() == getColumns().size());

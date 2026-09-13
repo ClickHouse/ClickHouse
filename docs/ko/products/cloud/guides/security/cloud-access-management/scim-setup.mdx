@@ -7,10 +7,14 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SCIM', '프로비저닝', 'Okta', 'SSO', 'SAML', 'IdP(Identity Provider)', 'IdP', '사용자 관리']
 ---
 
-import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<Note>
+  SCIM Provisioning은 비공개 프리뷰입니다.
+</Note>
 
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
@@ -44,7 +48,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
 </div>
 
 <Steps>
-  <Step title="SCIM 활성화" id="enable-scim-provisioning">
+  <Step>
+    ### SCIM 활성화
+
     조직 관리자로 **ClickHouse Cloud 콘솔**에 로그인한 후 **조직 설정 → SAML 및 SCIM 설정 → SCIM 구성**을 엽니다.
 
     ![조직 설정에서 SCIM 구성 탭으로 이동](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -62,13 +68,15 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     복사해 두십시오. 나중에 Okta에 붙여 넣어야 합니다.
   </Step>
 
-  <Step title="SCIM 액세스 토큰 생성" id="generate-scim-token">
+  <Step>
+    ### SCIM 액세스 토큰 생성
+
     `Create an API key` 섹션을 찾아 만료 날짜를 선택합니다.
 
     <Tip>
       **토큰 교체를 미리 계획하십시오.**
 
-      만료 기간은 12개월로 설정하고 캘린더 알림을 추가하는 것이 좋습니다. ClickHouse Cloud는 동시에 최대 2개의 활성 SCIM 토큰을 지원하므로 중단 없이 교체할 수 있습니다. 새 토큰을 생성하고, Okta를 새 토큰으로 전환하고, Provisioning이 계속 작동하는지 확인한 다음, 기존 토큰을 철회하십시오.
+      만료 기간은 12개월로 설정하고 캘린더 알림을 추가하는 것이 좋습니다. ClickHouse Cloud는 동시에 최대 2개의 활성 SCIM 토큰을 지원하므로 중단 없이 교체할 수 있습니다. 새 토큰을 생성하고, Okta를 새 토큰으로 전환하고, 프로비저닝이 계속 작동하는지 확인한 다음, 기존 토큰을 철회하십시오.
     </Tip>
 
     `Generate key`를 클릭합니다. 토큰은 키(`scim_` 접두사 포함)와 시크릿 형태로 **한 번만** 표시됩니다. 둘 다 즉시 복사하여 안전한 시크릿 관리자에 저장하십시오. 나중에 다시 확인할 수 없습니다. 분실한 경우 해당 토큰을 철회하고 새로 생성하십시오.
@@ -76,7 +84,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     ![새 SCIM API Key 생성](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step title="역할 매핑 정의" id="define-role-mapping">
+  <Step>
+    ### 역할 매핑 정의
+
     SCIM 구성 패널에서 **역할 매핑**을 클릭합니다(또는 **Users and roles → Roles**로 직접 이동합니다).
 
     SCIM 그룹은 이름을 기준으로 ClickHouse Cloud 역할에 연결되며, 다음 규칙을 염두에 두어야 합니다.
@@ -93,7 +103,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
 </div>
 
 <Steps>
-  <Step title="Okta에서 ClickHouse Cloud 애플리케이션 열기" id="open-clickhouse-cloud-app">
+  <Step>
+    ### Okta에서 ClickHouse Cloud 애플리케이션 열기
+
     **Okta Admin Console**에서 **Applications → Applications**로 이동한 후, ClickHouse Cloud용 SAML SSO를 설정할 때 생성한 애플리케이션을 검색합니다. 해당 애플리케이션을 엽니다.
 
     아직 SAML 애플리케이션을 만들지 않았다면 먼저 [SAML SSO 설정 가이드](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)를 따르십시오. SCIM 프로비저닝은 동일한 애플리케이션에서 구성합니다.
@@ -107,7 +119,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     ![이제 애플리케이션에 Provisioning 탭이 표시됨](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step title="### SCIM 엔드포인트에 Okta 연결" id="connect-okta-scim">
+  <Step>
+    ### SCIM 엔드포인트에 Okta 연결
+
     애플리케이션의 **Provisioning** 탭을 열고 `Edit`를 클릭합니다. 양식을 다음과 같이 입력합니다.
 
     * **SCIM connector base URL** — 앞서 확인한 SCIM 엔드포인트 URL입니다.
@@ -133,7 +147,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     `Save`를 클릭합니다.
   </Step>
 
-  <Step title="Provisioning 동작 구성" id="configure-provisioning-behavior">
+  <Step>
+    ### Provisioning 동작 구성
+
     계속해서 **Provisioning** 탭에서 왼쪽 사이드바의 `To App`을 클릭합니다. `Edit`를 클릭한 후 다음 항목을 활성화합니다:
 
     | 설정                     | 작업      | 설명                                                    |
@@ -150,7 +166,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     ![프로비저닝 설정을 저장하고 Sign On 탭으로 돌아가기](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step title="사용자 속성 매핑" id="map-user-attributes">
+  <Step>
+    ### 사용자 속성 매핑
+
     Okta와 ClickHouse Cloud는 사용자 필드가 어떻게 매핑되는지에 대해 서로 일치해야 합니다. **Provisioning** 탭에서 `To App`을 클릭하고 애플리케이션의 **Attribute Mappings**를 검토하십시오. Okta SAML 애플리케이션의 기본값은 보통 그대로 사용해도 되지만, 아래 표를 확인하십시오.
 
     | Okta 속성           | ClickHouse Cloud (SCIM) 속성 | 필수                              |
@@ -171,7 +189,9 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
     </Warning>
   </Step>
 
-  <Step title="그룹 푸시 및 사용자 할당" id="push-groups-and-assign-users">
+  <Step>
+    ### 그룹 푸시 및 사용자 할당
+
     이 단계에서 역할이 자동으로 적용됩니다.
 
     **Okta에서 그룹을 생성합니다.** 앞서 설정한 각 역할 매핑마다 **정확히 동일한 표시 이름**을 사용하는 Okta 그룹을 생성하거나 기존 그룹을 확인합니다. 예를 들어 매핑이 `ClickHouse-Admins → Admin`이라면, Okta에서 `ClickHouse-Admins`라는 그룹을 생성합니다.
@@ -188,7 +208,7 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
 
     ![그룹에 애플리케이션 할당](/images/cloud/security/scim-okta/scim-okta-16.webp)
 
-    **그룹을 Push합니다.** 애플리케이션의 **Provisioning** 탭에서 `Push Groups → Find groups by name`을 클릭하고 그룹을 검색한 다음 `Save`를 클릭합니다. 각 역할 그룹에 대해 이 과정을 반복합니다. Provisioning이 완료되면 각 그룹의 **Push Status**가 &#42;&#42;Active (Pushed)&#42;&#42;로 표시되어야 합니다.
+    **그룹을 Push합니다.** 애플리케이션의 **Provisioning** 탭에서 `Push Groups → Find groups by name`을 클릭하고 그룹을 검색한 다음 `Save`를 클릭합니다. 각 역할 그룹에 대해 이 과정을 반복합니다. Provisioning이 완료되면 각 그룹의 **Push Status**가 **Active (Pushed)**로 표시되어야 합니다.
 
     ![애플리케이션의 Push Groups 탭에서 이름으로 Group Push 설정](/images/cloud/security/scim-okta/scim-okta-17.webp)
 
@@ -231,107 +251,88 @@ Provisioning 구성을 마치면 ClickHouse Cloud 콘솔의 **Settings → Users
   ## 운영 환경을 위한 모범 사례
 </div>
 
-<div id="rotate-tokens">
-  ### 토큰을 정기적으로 교체하세요
-</div>
+**토큰을 정기적으로 교체하세요.** SCIM 토큰 교체를 위한 캘린더 알림을 설정하십시오. 권장 주기는 12개월마다 1회이며, 토큰을 알고 있던 관리자가 회사를 떠나는 경우에는 즉시 교체하는 것이 좋습니다. ClickHouse Cloud는 조직마다 활성 토큰 2개를 허용하므로 Provisioning을 중단하지 않고 토큰을 교체할 수 있습니다.
 
-SCIM 토큰 교체를 위한 캘린더 알림을 설정하십시오. 권장 주기는 12개월마다 1회이며, 토큰을 알고 있던 관리자가 회사를 떠나는 경우에는 즉시 교체하는 것이 좋습니다. ClickHouse Cloud는 조직마다 활성 토큰 2개를 허용하므로 Provisioning을 중단하지 않고 토큰을 교체할 수 있습니다.
+**직접 할당 대신 그룹을 사용하세요.** 사용자를 애플리케이션에 직접 할당해도 동작하지만, 금방 감사하기 어려워집니다. Okta 그룹을 통해 할당을 관리하면 액세스 검토와 역할 변경을 한곳에서 처리할 수 있습니다.
 
-<div id="use-groups">
-  ### 직접 할당 대신 그룹을 사용하세요
-</div>
+**감사 로그를 검토하세요.** 사용자 생성, 사용자 비활성화, 프로필 업데이트 등 모든 SCIM 작업은 ClickHouse Cloud 감사 로그에 기록됩니다. [감사 로깅](/ko/products/cloud/reference/security/audit-logging)을 참조하십시오. 특히 대규모 Provisioning이 한꺼번에 수행된 후에는 로그를 주기적으로 확인하십시오.
 
-사용자를 애플리케이션에 직접 할당해도 동작하지만, 금방 감사하기 어려워집니다. Okta 그룹을 통해 할당을 관리하면 액세스 검토와 역할 변경을 한곳에서 처리할 수 있습니다.
+**적절한 기본 역할을 설정하세요.** Okta 사용자가 애플리케이션에 할당되었지만 푸시된 어떤 그룹에도 속하지 않으면 **기본 역할**로 생성됩니다. 잘못된 구성에도 안전하게 대응할 수 있도록, 사용자가 *최소한의 작업은* 수행할 수 있으면서도 가장 제한적인 역할을 선택하십시오.
 
-<div id="review-audit-log">
-  ### 감사 로그를 검토하세요
-</div>
+**SCIM과 수동 초대를 동시에 사용하지 마세요.** SCIM을 활성화한 후에는 Okta를 통해 멤버십을 관리하고, 동일한 사용자에게 수동 초대를 함께 보내지 마십시오. 두 방식을 혼용하면 어느 쪽이 기준 정보인지 혼란이 생기고 중복이 발생할 수 있습니다.
 
-사용자 생성, 사용자 비활성화, 프로필 업데이트 등 모든 SCIM 작업은 ClickHouse Cloud 감사 로그에 기록됩니다. [감사 로깅](/ko/products/cloud/reference/security/audit-logging)을 참조하십시오. 특히 대규모 Provisioning이 한꺼번에 수행된 후에는 로그를 주기적으로 확인하십시오.
-
-<div id="default-role">
-  ### 적절한 기본 역할을 설정하세요
-</div>
-
-Okta 사용자가 애플리케이션에 할당되었지만 푸시된 어떤 그룹에도 속하지 않으면 **기본 역할**로 생성됩니다. 잘못된 구성에도 안전하게 대응할 수 있도록, 사용자가 *최소한의 작업은* 수행할 수 있으면서도 가장 제한적인 역할을 선택하십시오.
-
-<div id="avoid-manual-invites">
-  ### SCIM과 수동 초대를 동시에 사용하지 마세요
-</div>
-
-SCIM을 활성화한 후에는 Okta를 통해 멤버십을 관리하고, 동일한 사용자에게 수동 초대를 함께 보내지 마십시오. 두 방식을 혼용하면 어느 쪽이 기준 정보인지 혼란이 생기고 중복이 발생할 수 있습니다.
-
-<div id="monitor-failed-tasks">
-  ### 실패한 Provisioning 작업을 모니터링하세요
-</div>
-
-Okta는 실패한 Provisioning 호출을 재시도하지만, 결국 이를 **Tasks** 큐에 보류합니다. IT 팀이 이미 모니터링하는 대시보드에 이 큐를 추가하거나, Okta의 웹훅 또는 이메일 알림을 사용해 지속적인 실패를 감지하십시오.
+**실패한 Provisioning 작업을 모니터링하세요.** Okta는 실패한 Provisioning 호출을 재시도하지만, 결국 이를 **Tasks** 큐에 보류합니다. IT 팀이 이미 모니터링하는 대시보드에 이 큐를 추가하거나, Okta의 웹훅 또는 이메일 알림을 사용해 지속적인 실패를 감지하십시오.
 
 <div id="troubleshooting">
   ## 문제 해결
 </div>
 
-<AccordionGroup>
-  <Accordion title="Okta에서 &#x22;Test connector configuration&#x22;이 실패하는 경우">
-    * ClickHouse Cloud 콘솔에서 SCIM이 **활성화**되어 있는지 확인하세요.
-    * Okta의 **기준 URL**이 Cloud Console에 표시된 SCIM 엔드포인트 URL과 정확히 일치하는지 확인하세요. 조직 ID가 정확해야 합니다.
-    * **토큰 key와 시크릿**를 앞뒤 공백 없이 붙여넣었는지 확인하세요.
-    * 토큰을 교체했다면 이전 쌍이 아니라 **새** key와 시크릿를 사용하고 있는지 확인하세요.
-  </Accordion>
+<div id="test-credentials-fails">
+  ### Okta에서 &quot;커넥터 구성 테스트&quot;가 실패합니다
+</div>
 
-  <Accordion title="사용자는 생성되지만 권한이 없는 경우">
-    * 예상한 역할에 대해 **Users and roles**의 **역할 매핑** 아래에 행을 추가했는지 확인하세요.
-    * Okta 그룹 이름이 매핑의 SCIM 그룹 이름과 대소문자, 하이픈까지 포함해 **정확히** 일치하는지 확인하세요.
-    * 설계상 일부 사용자를 그룹 없이 프로비저닝하도록 한 경우, **기본 역할**이 설정되어 있는지 확인하세요.
-  </Accordion>
+* ClickHouse Cloud 콘솔에서 SCIM이 **활성화**되어 있는지 확인하세요.
+* Okta의 **기준 URL**이 Cloud Console에 표시된 SCIM 엔드포인트 URL과 정확히 일치하는지 확인하세요 — 조직 ID가 정확해야 합니다.
+* **토큰 키와 시크릿**을 앞뒤 공백 없이 붙여넣었는지 확인하세요.
+* 토큰을 교체했다면 이전 쌍이 아니라 **새** 키와 시크릿을 사용하고 있는지 확인하세요.
 
-  <Accordion title="멤버 목록에 중복 사용자가 표시되는 경우">
-    대개 Okta와 이전에 수동으로 초대한 계정 간 이메일 대소문자가 일치하지 않을 때 발생합니다. Members 목록에서 중복 항목을 제거한 다음, Okta에서 해당 사용자의 할당을 해제했다가 다시 할당해 새로 프로비저닝하세요.
-  </Accordion>
+<div id="users-no-permissions">
+  ### 사용자가 생성되지만 권한이 없습니다
+</div>
 
-  <Accordion title="Group push가 &#x22;displayName not recognised&#x22;와 함께 실패하는 경우">
-    Okta의 그룹 이름이 ClickHouse Cloud에 구성된 매핑과 일치하지 않습니다. Okta 그룹 이름을 변경하거나, SCIM 구성 패널(또는 **Users and roles → Roles** 경로)에서 **Users and roles**의 **역할 매핑** 아래에 매핑을 추가하세요.
-  </Accordion>
+* 예상한 역할에 대해 **&quot;Users and roles&quot;의 역할 매핑** 아래에 행이 추가되어 있는지 확인하세요.
+* Okta 그룹 이름이 대소문자와 하이픈까지 포함해 매핑에 있는 SCIM 그룹 이름과 **정확히** 일치하는지 확인하세요.
+* 설계상 일부 사용자를 그룹 없이 의도적으로 프로비저닝하는 경우 **기본 역할**이 설정되어 있는지 확인하세요.
 
-  <Accordion title="비활성화된 사용자가 여전히 멤버로 표시되는 경우">
-    Okta에서 deactivation이 반영되기까지 최대 1분이 걸릴 수 있습니다. 몇 분이 지나도 사용자가 여전히 멤버로 남아 있다면, Okta의 **Provisioning → View Logs**에서 deactivate 작업의 오류를 확인하세요.
-  </Accordion>
+<div id="duplicate-user">
+  ### 멤버 목록에 중복 사용자 표시
+</div>
 
-  <Accordion title="SCIM 토큰을 교체한 후 Okta가 실패하는 경우">
-    Okta에서 **동일한 SCIM 애플리케이션**의 자격 증명을 업데이트했는지 확인하세요. 업데이트한 후 `Test Connector Configuration`을 클릭해 확인하세요. Provisioning 상태가 다시 정상으로 돌아오면 ClickHouse Cloud 콘솔에서 이전 토큰을 철회하세요.
-  </Accordion>
+일반적으로 Okta와 이전에 수동으로 보낸 초대 간 이메일 대소문자 표기가 일치하지 않을 때 발생합니다. Members 목록에서 중복 항목을 제거한 다음, Okta에서 해당 사용자 할당을 해제했다가 다시 할당하여 새로 프로비저닝하십시오.
 
-  <Accordion title="SCIM 토큰을 분실한 경우">
-    토큰은 복구할 수 없습니다. ClickHouse Cloud 콘솔의 **Organization settings → SAML and SCIM settings → SCIM 구성**에서 분실한 토큰을 철회하고 새 토큰을 생성한 다음, Okta에서 자격 증명을 업데이트하세요.
-  </Accordion>
-</AccordionGroup>
+<div id="group-display-name">
+  ### 그룹 푸시가 &quot;displayName not recognised&quot; 오류로 실패합니다
+</div>
+
+Okta의 그룹 이름이 ClickHouse Cloud에 구성된 매핑과 일치하지 않습니다. Okta 그룹 이름을 변경하거나 SCIM 구성 패널의 **역할 매핑**에서 매핑을 추가하십시오(또는 **Users and roles → Roles**를 통해 추가할 수 있습니다).
+
+<div id="deactivated-users-remaining">
+  ### 비활성화된 사용자가 여전히 구성원으로 표시됩니다
+</div>
+
+Okta에서 비활성화 상태가 반영되기까지 최대 1분이 걸릴 수 있습니다. 몇 분이 지나도 사용자가 여전히 구성원으로 남아 있으면, 비활성화 작업에서 오류가 발생했는지 Okta의 **Provisioning → View Logs**에서 확인하십시오.
+
+<div id="token-rotation-issue">
+  ### SCIM 토큰을 교체한 후 Okta가 작동하지 않습니다
+</div>
+
+Okta에서 **동일한 SCIM 애플리케이션**의 자격 증명을 업데이트했는지 확인하세요. 업데이트한 후 `Test Connector Configuration`을 클릭해 확인하십시오. Provisioning 상태가 다시 녹색으로 돌아오면 ClickHouse Cloud 콘솔에서 이전 토큰을 무효화하십시오.
+
+<div id="lost-token">
+  ### SCIM 토큰을 분실했습니다
+</div>
+
+토큰은 복구할 수 없습니다. ClickHouse Cloud 콘솔의 **조직 설정 → SAML 및 SCIM 설정 → SCIM 구성**에서 분실한 토큰을 해지하고 새 토큰을 생성한 다음, Okta의 자격 증명을 업데이트하십시오.
 
 <div id="faq">
   ## 자주 묻는 질문
 </div>
 
-<AccordionGroup>
-  <Accordion title="SCIM을 사용하려면 먼저 SAML SSO를 설정해야 합니까?">
-    예. SCIM은 사용자 계정을 생성하지만, ClickHouse Cloud는 SAML을 통해 이를 인증합니다. 먼저 [SAML SSO](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)를 설정하십시오.
-  </Accordion>
+**SCIM을 사용하려면 먼저 SAML SSO를 설정해야 합니까?**
+예. SCIM은 사용자 계정을 생성하지만, ClickHouse Cloud는 SAML을 통해 이를 인증합니다. 먼저 [SAML SSO](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)를 설정하십시오.
 
-  <Accordion title="SCIM은 Microsoft Entra ID, OneLogin 또는 다른 SCIM 2.0 IdP에서 작동합니까?">
-    공식적으로는 그렇지 않습니다 — 현재 테스트를 거쳐 지원하는 유일한 IdP는 Okta입니다. 엔드포인트는 SCIM 2.0(RFC 7644)을 따르지만, 인증 방식이 Basic Auth로 제한되므로 Basic Auth로 인증할 수 없는 IdP는 사용할 수 없습니다. Basic Auth를 지원하는 다른 SCIM 2.0 IdP도 실제로는 작동할 수 있지만, 이를 보장하지는 않습니다.
-  </Accordion>
+**SCIM은 Microsoft Entra ID, OneLogin 또는 다른 SCIM 2.0 IdP에서 작동합니까?**
+공식적으로는 그렇지 않습니다 — 현재 테스트를 거쳐 지원하는 유일한 IdP는 Okta입니다. 엔드포인트는 SCIM 2.0(RFC 7644)을 따르지만, 인증 방식이 Basic Auth로 제한되므로 Basic Auth로 인증할 수 없는 IdP는 사용할 수 없습니다. Basic Auth를 지원하는 다른 SCIM 2.0 IdP도 실제로는 작동할 수 있지만, 이를 보장하지는 않습니다.
 
-  <Accordion title="Okta의 변경 사항은 얼마나 빨리 ClickHouse Cloud에 반영됩니까?">
-    대부분의 작업은 몇 초 내에 반영됩니다. 대량 변경(대규모 그룹 푸시)은 규모에 따라 더 오래 걸릴 수 있지만, 일시적인 오류가 발생하면 Okta가 자동으로 재시도합니다.
-  </Accordion>
+**Okta의 변경 사항은 얼마나 빨리 ClickHouse Cloud에 반영됩니까?**
+대부분의 작업은 몇 초 내에 반영됩니다. 대량 변경(대규모 그룹 푸시)은 규모에 따라 더 오래 걸릴 수 있지만, 일시적인 오류가 발생하면 Okta가 자동으로 재시도합니다.
 
-  <Accordion title="하나의 Okta 테넌트에서 여러 ClickHouse Cloud 조직을 Provisioning할 수 있습니까?">
-    예 — 조직마다 고유한 SCIM 엔드포인트 URL과 토큰을 사용해 애플리케이션을 각각 한 번씩 설치하십시오. 필요에 따라 동일한 Okta 그룹을 각 애플리케이션에 푸시하면 됩니다.
-  </Accordion>
+**하나의 Okta 테넌트에서 여러 ClickHouse Cloud 조직을 Provisioning할 수 있습니까?**
+예 — 조직마다 고유한 SCIM 엔드포인트 URL과 token을 사용해 애플리케이션을 각각 한 번씩 설치하십시오. 필요에 따라 동일한 Okta 그룹을 각 애플리케이션에 푸시하면 됩니다.
 
-  <Accordion title="진행이 막혔을 때는 어디에서 도움을 받을 수 있습니까?">
-    ClickHouse Cloud 콘솔에서 지원 티켓을 여십시오(**Help → Contact support**). 다음 내용을 포함해야 합니다:
+**진행이 막혔을 때는 어디에서 도움을 받을 수 있습니까?**
+ClickHouse Cloud 콘솔에서 지원 티켓을 여십시오(**Help → Contact support**). 다음 내용을 포함해야 합니다:
 
-    * 조직 ID,
-    * Okta 애플리케이션 ID,
-    * Okta 로그에서 실패한 작업 또는 테스트의 스크린샷.
-  </Accordion>
-</AccordionGroup>
+* 조직 ID,
+* Okta 애플리케이션 ID,
+* Okta 로그에서 실패한 작업 또는 테스트의 스크린샷.

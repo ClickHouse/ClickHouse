@@ -271,16 +271,6 @@ jobs:
     if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """
 
-        # Same as TEMPLATE_IF_EXPRESSION without the upstream-status half, for
-        # a job with `run_on_upstream_failure`: it reports on the head whatever
-        # the rest of the pipeline did, but a cache hit or the job filter
-        # (`should_skip_job`, which marks a job by adding it to
-        # `cache_success_base64`) must still skip it. Dropping straight to
-        # `!cancelled()` would run it on a `release` or `do not test` PR too.
-        TEMPLATE_IF_EXPRESSION_UPSTREAM_FAILURE_OK = """
-    if: ${{{{ !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
-"""
-
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
     if: ${{ !cancelled() }}\
 """
@@ -380,12 +370,7 @@ class PullRequestPushYamlGen:
                 self.workflow_config.config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
-                template = (
-                    YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_UPSTREAM_FAILURE_OK
-                    if job.run_on_upstream_failure
-                    else YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION
-                )
-                if_expression = template.format(
+                if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
                     WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
                     JOB_NAME_BASE64=Utils.to_base64(job_name),
                 )
@@ -514,6 +499,8 @@ class PullRequestPushYamlGen:
                 "EVENT": self.workflow_config.event,
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                    # if not Settings.USE_CUSTOM_GH_AUTH
+                    # else ""
                 ),
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):

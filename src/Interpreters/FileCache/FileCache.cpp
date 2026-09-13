@@ -30,8 +30,6 @@
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -74,9 +72,6 @@ namespace CurrentMetrics
     extern const Metric FilesystemCacheEvictionThreads;
     extern const Metric FilesystemCacheEvictionThreadsActive;
     extern const Metric FilesystemCacheEvictionThreadsScheduled;
-    extern const Metric FilesystemCacheDropCacheThreads;
-    extern const Metric FilesystemCacheDropCacheThreadsActive;
-    extern const Metric FilesystemCacheDropCacheThreadsScheduled;
 }
 
 
@@ -129,7 +124,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
-    extern const FileCacheSettingsString system_cache_extensions;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -137,7 +131,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsNonZeroUInt64 idle_client_eviction_threads;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
-    extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
 }
 
 namespace
@@ -281,20 +274,6 @@ bool FileCache::CheckCacheProbability::doCheck()
     return distribution(rndgen);
 }
 
-static std::set<std::string> parseSystemCacheExtensions(const String & raw)
-{
-    std::vector<std::string> parts;
-    boost::split(parts, raw, [](char c) { return c == ',';});
-    std::set<std::string> result;
-    for (auto & ext : parts)
-    {
-        boost::trim(ext);
-        if (!ext.empty())
-            result.insert(ext);
-    }
-    return result;
-}
-
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -310,7 +289,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , keep_up_free_space_eviction_threads(settings[FileCacheSetting::keep_free_space_eviction_threads])
-    , drop_cache_threads(settings[FileCacheSetting::drop_cache_threads])
     , invalidated_entries_cleanup_threshold(settings[FileCacheSetting::invalidated_entries_cleanup_threshold])
     , invalidated_entries_cleanup_interval_ms(settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms])
     , invalidated_entries_cleanup_remove_batch(settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch])
@@ -319,7 +297,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , idle_client_eviction_threads(settings[FileCacheSetting::idle_client_eviction_threads])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
-    , system_cache_extensions(parseSystemCacheExtensions(settings[FileCacheSetting::system_cache_extensions].value))
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
@@ -459,7 +436,8 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
     if (!use_split_cache)
         return origin;
 
-    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
+    origin.segment_type = system_cache_type.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -614,19 +592,6 @@ void FileCache::initializeImpl(bool load_metadata)
         keep_up_free_space_ratio_task->schedule();
     }
 
-    if (drop_cache_threads > 1)
-    {
-        /// Concurrent drop requests share the pool: with the queue limited to
-        /// `max_threads`, a request whose workers do not fit blocks in scheduling
-        /// until the previous request's workers finish.
-        drop_cache_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::FilesystemCacheDropCacheThreads,
-            CurrentMetrics::FilesystemCacheDropCacheThreadsActive,
-            CurrentMetrics::FilesystemCacheDropCacheThreadsScheduled,
-            /* max_threads */drop_cache_threads,
-            /* max_free_threads */0,
-            /* queue_size */drop_cache_threads);
-    }
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
@@ -2122,7 +2087,7 @@ void FileCache::removeAllReleasable(const UserID & user_id)
     assertInitialized();
     assertCacheCorrectness();
 
-    metadata.removeAllKeys(user_id, drop_cache_pool.get());
+    metadata.removeAllKeys(user_id);
 }
 
 void FileCache::loadMetadata()

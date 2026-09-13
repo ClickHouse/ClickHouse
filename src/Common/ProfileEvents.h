@@ -21,8 +21,7 @@ namespace ProfileEvents
 {
     /// Event identifier (index in array).
     using Event = StrongTypedef<size_t, struct EventTag>;
-    /// Not `size_t`: counters are 64-bit even on 32-bit platforms, and must match `Increment`.
-    using Count = UInt64;
+    using Count = size_t;
     using Increment = Int64;
 
     /// Counter cells are plain `Count`, accessed atomically via `std::atomic_ref`. Keeping the
@@ -119,7 +118,6 @@ namespace ProfileEvents
         {
             Snapshot();
             Snapshot(Snapshot &&) = default;
-            Snapshot(const Snapshot & other);
 
             Count operator[] (Event event) const noexcept
             {
@@ -127,7 +125,6 @@ namespace ProfileEvents
             }
 
             Snapshot & operator=(Snapshot &&) = default;
-            Snapshot & operator=(const Snapshot & other);
         private:
             std::unique_ptr<Count[]> counters_holder;
 

@@ -304,7 +304,7 @@ Generates an embedding vector for the given text using the configured AI provide
 
 The function sends the text to the configured embedding endpoint and returns the resulting vector as `Array(Float32)`.
 Within a single block of rows, inputs are grouped into batches of up to
-[`ai_function_embedding_max_batch_size`](/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
 Credentials (a named collection specifying the provider, endpoint, and optionally an API key)

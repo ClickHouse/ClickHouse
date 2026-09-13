@@ -4,7 +4,6 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -97,11 +96,9 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
-    /// Part (owned or borrowed) to read while performing this task.
-    /// Owned parts wrap a concrete IMergeTreeDataPart (LoadedMergeTreeDataPartInfoForReader);
-    /// stateless-worker parts use BorrowedMergeTreeDataPartInfoForReader.
-    MergeTreeDataPartInfoForReaderPtr data_part_info;
-    /// Parent part of the projection part (projections are coordinator-only)
+    /// Data part which should be read while performing this task
+    DataPartPtr data_part;
+    /// Parent part of the projection part
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query{};

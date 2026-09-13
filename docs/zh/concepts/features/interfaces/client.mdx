@@ -165,26 +165,6 @@ ClickHouse 客户端 基于 `replxx` (类似于 `readline`) ，因此支持常�
 * `q`、`Q` 或 `:q`
 * `logout` 或 `logout;`
 
-<div id="getting-help">
-  ### 获取帮助
-</div>
-
-你无需离开客户端，即可查阅系统中任意函数、表引擎、数据类型、格式、设置及其他组件的文档。输入 `help` 后接名称即可 (`/help`、`man` 和 `/man` 这几种等效形式也可用) ：
-
-```text
-help domainWithoutWWW
-```
-
-该查找不区分大小写，并会查询 [`system.documentation`](/zh/reference/system-tables/documentation) 表。匹配到的文档会在终端中由 Markdown 渲染显示，包含粗体/斜体文本、表格以及带语法高亮的代码块。当多个组件共用同一个名称时 (例如 `file`，它既是函数，也是表引擎) ，它们都会显示出来。
-
-当没有完全匹配的结果时，客户端会列出相近的名称 (允许存在拼写错误) 以及文档中提到该词的组件：
-
-```text
-help maxx_threads
-```
-
-单独输入 `help` 会显示简短的用法摘要。
-
 <div id="processing-info">
   ### 查询处理信息
 </div>
@@ -500,16 +480,14 @@ clickhouse-client
             {/* 要使用的模型（默认值因提供商而异） */}
             <model>gpt-4o</model>
 
-            {/* 可选：用于兼容 OpenAI 的服务的自定义 API 端点 */}
+            {/* 可选：用于 OpenAI 兼容服务的自定义 API 端点 */}
             {/* <base_url>https://openrouter.ai/api</base_url> */}
 
             {/* schema 探索设置 */}
             <enable_schema_access>true</enable_schema_access>
 
             {/* 生成参数 */}
-            {/* 可选：仅当在此处设置时，temperature 才会发送给模型。
-                 默认会省略它，因为某些模型会拒绝此参数。 */}
-            {/* <temperature>0.0</temperature> */}
+            <temperature>0.0</temperature>
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -533,16 +511,14 @@ clickhouse-client
       # 要使用的模型
       model: gpt-4o
 
-      # 可选：用于兼容 OpenAI 的服务的自定义 API 端点
+      # 可选：用于 OpenAI 兼容服务的自定义 API 端点
       # base_url: https://openrouter.ai/api
 
       # 启用 schema 访问 - 允许 AI 查询数据库/表信息
       enable_schema_access: true
 
       # 生成参数
-      # 仅当在此处设置时，temperature 才会发送给模型；默认会省略
-      # 因为某些模型会拒绝此参数。
-      # temperature: 0.0    # 控制随机性（0.0 = 确定性）
+      temperature: 0.0      # 控制随机性（0.0 = 确定性）
       max_tokens: 1000      # 最大响应长度
       timeout_seconds: 30   # 请求超时
       max_steps: 10         # schema 探索的最大步数
@@ -558,27 +534,27 @@ clickhouse-client
 
 <br />
 
-**使用兼容 OpenAI 的 API (例如 OpenRouter) ：**
+**使用 OpenAI 兼容 API (例如 OpenRouter) ：**
 
 ```yaml
 ai:
-  provider: openai  # Use 'openai' for compatibility
+  provider: openai  # 使用 'openai' 以保持兼容性
   api_key: your-openrouter-api-key
   base_url: https://openrouter.ai/api/v1
-  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+  model: anthropic/claude-3.5-sonnet  # 使用 OpenRouter 模型命名规范
 ```
 
 **最简配置示例：**
 
 ```yaml
-# Minimal config - uses environment variable for API key
+# 最小配置 - 使用环境变量作为 API 密钥
 ai:
-  provider: openai  # Will use OPENAI_API_KEY env var
+  provider: openai  # 将使用 OPENAI_API_KEY 环境变量
 
-# No config at all - automatic fallback
-# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+# 完全无配置 - 自动回退
+# （ai 部分为空或不存在 - 将依次尝试 OPENAI_API_KEY 和 ANTHROPIC_API_KEY）
 
-# Only override model - uses env var for API key
+# 仅覆盖模型 - 使用环境变量作为 API 密钥
 ai:
   provider: openai
   model: gpt-3.5-turbo
@@ -605,7 +581,7 @@ ai:
 </Accordion>
 
 <Accordion title="连接设置">
-  * `base_url` - 用于兼容 OpenAI 的服务的自定义 API 端点 (可选)
+  * `base_url` - 用于 OpenAI 兼容服务的自定义 API 端点 (可选)
   * `timeout_seconds` - 请求超时时间 (单位：秒)  (默认值：`30`)
 </Accordion>
 
@@ -615,7 +591,7 @@ ai:
 </Accordion>
 
 <Accordion title="生成参数">
-  * `temperature` - 控制随机性，0.0 = 确定性，1.0 = 更具创造性。默认情况下会省略，仅在显式设置时才会发送给模型，因为某些模型会拒绝此参数。
+  * `temperature` - 控制随机性，0.0 = 确定性，1.0 = 更具创造性 (默认值：`0.0`)
   * `max_tokens` - 响应的最大长度 (以标记数计)  (默认值：`1000`)
   * `system_prompt` - 提供给 AI 的自定义指令 (可选)
 </Accordion>
@@ -954,17 +930,15 @@ $ clickhouse-client --max_threads 1
   ### 格式选项
 </div>
 
-| Option                            | Description                                                                                                                                                                                                                           | Default                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `-f [ --format ] <format>`        | 使用指定的格式输出结果。 <br /><br />支持的格式列表请参见[输入和输出数据格式](/zh/reference/formats/index)。                                                                                                                                                             | `TabSeparated`                      |
-| `--pager <command>`               | 将所有输出通过管道传递给此命令。通常是 `less` (例如，使用 `less -S` 显示较宽的结果集) 或类似命令。                                                                                                                                                                          | -                                   |
-| `-E [ --vertical ]`               | 使用 [Vertical format](/zh/reference/formats/Vertical) 输出结果。这与 `–-format Vertical` 相同。在这种格式下，每个值都会单独打印在一行中，因此在显示宽表时很有帮助。                                                                                                                   | -                                   |
-| `--echo [ <bool> ]`               | 在执行前打印每个查询。可选接受一个布尔值。                                                                                                                                                                                                                 | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-formatted [ <bool> ]`     | 对回显的查询进行格式化。可选接受一个布尔值。                                                                                                                                                                                                                | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-query-id [ <bool> ]`      | 在执行前打印查询 ID。可选接受一个布尔值。                                                                                                                                                                                                                | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-query-separator <string>` | 在格式化后的回显查询前打印此分隔符 (需要 `--echo-formatted`)，以便更容易区分输入的查询和重新格式化后的回显。                                                                                                                                                                     | 空 (已禁用)                             |
-| `--highlight [ --hilite ] <bool>` | 切换命令提示符和回显查询的语法高亮显示。                                                                                                                                                                                                                  | `true`                              |
-| `--hints <bool>`                  | 当光标位于输入末尾时，显示键入时的自动补全提示 (内联“幽灵”文本) ，给出最佳匹配建议。使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选择某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开传统补全列表。需要启用 `--highlight` (提示需要颜色) 以及建议机制 (因此 `--disable_suggestion` 也会将其关闭) 。 | `true`                              |
+| Option                            | Description                                                                                                         | Default                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `-f [ --format ] <format>`        | 使用指定的格式输出结果。 <br /><br />支持的格式列表请参见[输入和输出数据格式](/zh/reference/formats/index)。                                           | `TabSeparated`                      |
+| `--pager <command>`               | 将所有输出通过管道传递给此命令。通常是 `less` (例如，使用 `less -S` 显示较宽的结果集) 或类似命令。                                                        | -                                   |
+| `-E [ --vertical ]`               | 使用 [Vertical format](/zh/reference/formats/Vertical) 输出结果。这与 `–-format Vertical` 相同。在这种格式下，每个值都会单独打印在一行中，因此在显示宽表时很有帮助。 | -                                   |
+| `--echo [ <bool> ]`               | 在执行前打印每个查询。可选接受一个布尔值。                                                                                               | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--echo-formatted [ <bool> ]`     | 对回显的查询进行格式化。可选接受一个布尔值。                                                                                              | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--echo-query-id [ <bool> ]`      | 在执行前打印查询 ID。可选接受一个布尔值。                                                                                              | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--highlight [ --hilite ] <bool>` | 切换命令提示符和回显查询的语法高亮显示。                                                                                                | `true`                              |
 
 <div id="command-line-options-execution-details">
   ### 执行细节

@@ -74,12 +74,7 @@ def read_varstring(sock):
 
 def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
     """An old-protocol peer sends no secret hash; with the require-auth setting on
-    (the default), the server must reject it instead of disclosing table status.
-    The Hello names the existing cluster `mismatch` (which has a secret) so that the
-    handshake itself is accepted and the rejection is exercised at the
-    `TablesStatusRequest` stage; a Hello with an unknown or secret-less cluster is
-    already rejected during the handshake (covered by
-    `test_interserver_marker_requires_cluster_secret`)."""
+    (the default), the server must reject it instead of disclosing table status."""
     hello = (
         varuint(0)
         + varstring("test")           # client name
@@ -89,7 +84,7 @@ def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
         + varstring("")               # default database
         + varstring(USER_INTERSERVER_MARKER)
         + varstring("")               # password (empty -> interserver mode)
-        + varstring("mismatch")       # cluster name (must exist and have a secret, or the Hello itself is rejected)
+        + varstring("")               # cluster name
         + varstring("")               # salt
     )
     tsr = varuint(5) + varuint(1) + varstring("default") + varstring("any_table")

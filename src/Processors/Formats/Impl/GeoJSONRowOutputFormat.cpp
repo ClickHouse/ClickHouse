@@ -46,9 +46,8 @@ struct GeoTypeEntry
     bool ring; /// The innermost array is a polygon ring (>= 4 points and closed).
 };
 
-constexpr std::array<GeoTypeEntry, 7> geo_type_table{{
+constexpr std::array<GeoTypeEntry, 6> geo_type_table{{
     {"Point", "Point", 0, false, 0, false},
-    {"MultiPoint", "MultiPoint", 1, false, 0, false},
     {"LineString", "LineString", 1, false, 2, false},
     {"Ring", "Polygon", 1, true, 4, true},
     {"MultiLineString", "MultiLineString", 2, false, 2, false},
@@ -194,7 +193,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     if (!found_geometry)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The GeoJSON output format requires exactly one geometry-typed column (Point, MultiPoint, LineString, "
+            "The GeoJSON output format requires exactly one geometry-typed column (Point, LineString, "
             "MultiLineString, Polygon, MultiPolygon, Ring, or Geometry), but found none");
 
     /// Emit a lone object-typed `properties` column directly as the properties object so that GeoJSON

@@ -358,9 +358,6 @@ public:
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
-    void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
-
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {

@@ -102,87 +102,97 @@ CloudFormation 스택을 생성한 후에는 cloud console에서 S3, VPC, EKS �
   ### 선택 사항: VPC 피어링 설정
 </div>
 
-ClickHouse BYOC용 VPC 피어링을 생성하거나 삭제하려면 다음 단계를 따르십시오.
+ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단계를 따르십시오:
 
-<Steps>
-  <Step title="ClickHouse BYOC용 프라이빗 로드 밸런서 활성화" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-    Private Load Balancer를 활성화하려면 ClickHouse 지원팀에 문의하십시오.
-  </Step>
+<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+  #### 1단계: ClickHouse BYOC용 프라이빗 로드 밸런서 활성화
+</div>
 
-  <Step title="피어링 연결 생성" id="step-2-create-a-peering-connection">
-    1. ClickHouse BYOC 계정의 VPC Dashboard로 이동합니다.
-    2. Peering Connections를 선택합니다.
-    3. Create Peering Connection을 클릭합니다.
-    4. VPC Requester를 ClickHouse VPC ID로 설정합니다.
-    5. VPC Accepter를 대상 VPC ID로 설정합니다. (해당하는 경우 다른 계정을 선택합니다.)
-    6. Create Peering Connection을 클릭합니다.
+프라이빗 로드 밸런서를 활성화하려면 ClickHouse 지원팀에 문의하십시오.
 
-    <br />
+<div id="step-2-create-a-peering-connection">
+  #### 2단계 피어링 연결 생성
+</div>
 
-    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC 피어링 연결 생성" />
+1. ClickHouse BYOC 계정의 VPC Dashboard로 이동합니다.
+2. Peering Connections를 선택합니다.
+3. Create Peering Connection을 클릭합니다.
+4. VPC Requester를 ClickHouse VPC ID로 설정합니다.
+5. VPC Accepter를 대상 VPC ID로 설정합니다. (해당하는 경우 다른 계정을 선택합니다.)
+6. Create Peering Connection을 클릭합니다.
 
-    <br />
-  </Step>
+<br />
 
-  <Step title="피어링 연결 요청 수락" id="step-3-accept-the-peering-connection-request">
-    피어링 계정에서 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 페이지로 이동한 후 이 VPC 피어링 요청을 승인할 수 있습니다.
+<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC 피어링 연결 생성" />
 
-    <br />
+<br />
 
-    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC 피어링 연결 수락" />
+<div id="step-3-accept-the-peering-connection-request">
+  #### 3단계 피어링 연결 요청 수락
+</div>
 
-    <br />
-  </Step>
+피어링 계정으로 이동한 다음 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 페이지에서 이 VPC 피어링 요청을 승인합니다.
 
-  <Step title="ClickHouse VPC 라우트 테이블에 대상 추가" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-    ClickHouse BYOC 계정에서,
+<br />
 
-    1. VPC Dashboard에서 Route Tables을 선택합니다.
-    2. ClickHouse VPC ID를 검색합니다. private subnets에 연결된 각 라우트 테이블을 편집합니다.
-    3. Routes 탭 아래의 Edit 버튼을 클릭합니다.
-    4. Add another route를 클릭합니다.
-    5. Destination에 대상 VPC의 CIDR 범위를 입력합니다.
-    6. Target에 &quot;Peering Connection&quot;과 피어링 연결 ID를 선택합니다.
+<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC 피어링 연결 수락" />
 
-    <br />
+<br />
 
-    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC 라우트 테이블 추가" />
+<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+  #### 4단계 ClickHouse VPC 라우트 테이블에 대상 추가
+</div>
 
-    <br />
-  </Step>
+ClickHouse BYOC 계정에서 다음을 수행하십시오.
 
-  <Step title="대상 VPC 라우트 테이블에 대상 추가" id="step-5-add-destination-to-the-target-vpc-route-tables">
-    피어링 AWS 계정에서,
+1. VPC Dashboard에서 Route Tables를 선택합니다.
+2. ClickHouse VPC ID를 검색합니다. 프라이빗 서브넷에 연결된 각 라우트 테이블을 편집합니다.
+3. Routes 탭 아래에 있는 Edit 버튼을 클릭합니다.
+4. Add another route를 클릭합니다.
+5. Destination에 대상 VPC의 CIDR 범위를 입력합니다.
+6. Target에서 &quot;Peering Connection&quot;과 피어링 연결 ID를 선택합니다.
 
-    1. VPC Dashboard에서 Route Tables을 선택합니다.
-    2. 대상 VPC ID를 검색합니다.
-    3. Routes 탭 아래의 Edit 버튼을 클릭합니다.
-    4. Add another route를 클릭합니다.
-    5. Destination에 ClickHouse VPC의 CIDR 범위를 입력합니다.
-    6. Target에 &quot;Peering Connection&quot;과 피어링 연결 ID를 선택합니다.
+<br />
 
-    <br />
+<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC 라우트 테이블 추가" />
 
-    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC 라우트 테이블 추가" />
+<br />
 
-    <br />
-  </Step>
+<div id="step-5-add-destination-to-the-target-vpc-route-tables">
+  #### 5단계 대상 VPC 라우팅 테이블에 대상 추가
+</div>
 
-  <Step title="피어링된 VPC 액세스를 허용하도록 Security Group 수정" id="step-6-edit-security-group-to-allow-peered-vpc-access">
-    ClickHouse BYOC 계정에서 피어링된 VPC의 트래픽을 허용하도록 Security Group 설정을 업데이트해야 합니다. 피어링된 VPC의 CIDR 범위를 포함하는 인바운드 규칙을 추가해 달라고 ClickHouse 지원팀에 문의하십시오.
+피어링이 설정된 AWS 계정에서 다음을 수행하십시오.
 
-    ***
+1. VPC Dashboard에서 Route Tables를 선택합니다.
+2. 대상 VPC ID를 검색합니다.
+3. Routes 탭에서 Edit 버튼을 클릭합니다.
+4. Add another route를 클릭합니다.
+5. Destination에 ClickHouse VPC의 CIDR 범위를 입력합니다.
+6. Target으로 &quot;Peering Connection&quot;과 피어링 연결 ID를 선택합니다.
 
-    이제 피어링된 VPC에서 ClickHouse 서비스에 액세스할 수 있어야 합니다.
+<br />
 
-    ClickHouse에 비공개로 액세스할 수 있도록, 사용자의 피어링된 VPC에서 안전하게 연결할 수 있는 프라이빗 로드 밸런서와 엔드포인트가 프로비저닝됩니다. 프라이빗 엔드포인트는 퍼블릭 엔드포인트 형식을 따르며 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
+<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC 라우팅 테이블 경로 추가" />
 
-    * **퍼블릭 엔드포인트**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-    * **프라이빗 엔드포인트**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+<br />
 
-    선택 사항으로, 피어링이 정상적으로 작동하는 것을 확인한 후 ClickHouse BYOC의 퍼블릭 로드 밸런서 제거를 요청할 수 있습니다.
-  </Step>
-</Steps>
+<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
+  #### 6단계: 피어링된 VPC 액세스를 허용하도록 Security Group 수정
+</div>
+
+ClickHouse BYOC 계정에서 피어링된 VPC의 트래픽을 허용하도록 Security Group 설정을 업데이트해야 합니다. 피어링된 VPC의 CIDR 범위를 포함하는 인바운드 규칙을 추가해 달라고 ClickHouse 지원팀에 문의하십시오.
+
+***
+
+이제 피어링된 VPC에서 ClickHouse 서비스에 액세스할 수 있어야 합니다.
+
+ClickHouse에 비공개로 액세스할 수 있도록, 사용자의 피어링된 VPC에서 안전하게 연결할 수 있는 프라이빗 로드 밸런서와 엔드포인트가 프로비저닝됩니다. 프라이빗 엔드포인트는 퍼블릭 엔드포인트 형식을 따르며 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
+
+* **퍼블릭 엔드포인트**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **프라이빗 엔드포인트**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+
+선택 사항으로, 피어링이 정상적으로 작동하는 것을 확인한 후 ClickHouse BYOC의 퍼블릭 로드 밸런서 제거를 요청할 수 있습니다.
 
 <div id="upgrade-process">
   ## 업그레이드 프로세스

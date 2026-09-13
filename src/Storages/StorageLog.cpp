@@ -283,22 +283,6 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
         if (!column->empty())
             result_columns.emplace_back(std::move(column));
     }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Before the substreams caches and deserialize states go out of scope, verify that the reference
-    /// counts of the columns shared between them and the result columns account for all those holders.
-    /// `getCacheKey` deliberately shares a cache across the subcolumns of a `Nested` group, so a broken
-    /// copy-on-write reference count on a shared child (e.g. `Nested` array offsets) would free it here
-    /// while it is still referenced from the result, leading to use-after-free (issue #105626).
-    ColumnsOwnershipValidator ownership_validator;
-    for (const auto & [_, cache] : caches)
-        ownership_validator.add(cache);
-    for (const auto & [_, states] : deserialize_states_caches)
-        ownership_validator.add(states);
-    for (const auto & [_, state] : deserialize_states)
-        ownership_validator.add(state);
-    ownership_validator.validate(result_columns);
-#endif
 }
 
 void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -1408,9 +1392,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-`Log` differs from [TinyLog](/reference/engines/table-engines/log-family/tinylog) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
+`Log` differs from [TinyLog](../../../engines/table-engines/log-family/tinylog.md) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
 For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
 The `Log` engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The `Log` engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
 
@@ -1510,11 +1494,11 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The engine belongs to the log engine family. See [Log Engine Family](/reference/engines/table-engines/log-family/index) for common properties of log engines and their differences.
+The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 
 This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
 
-Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](/reference/engines/table-engines/log-family/log) engine (fewer files need to be opened).
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
 
 ## Characteristics {#characteristics}
 

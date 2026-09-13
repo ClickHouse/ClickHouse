@@ -190,8 +190,7 @@ private:
 /// Process-wide instance used by CurrentMemoryTracker. Constructed before main(); allocations
 /// before its initialiser runs see cpu_count == 0, so sync() returns false without indexing the
 /// (empty) array — a normal per-thread flush.
-/// Defined in `PerCPUMemory.cpp`: a definition here gives every shared object its own copy.
-extern PerCPUMemory per_cpu_memory;
+inline PerCPUMemory per_cpu_memory{PerCPUMemory::numberOfCPUs(), PerCPUMemory::DEFAULT_BUDGET, PerCPUMemory::DEFAULT_THREAD_BUFFER};
 
 }
 
@@ -226,8 +225,7 @@ private:
     std::atomic<Int64> buffer{DEFAULT_THREAD_BUFFER};
 };
 
-/// Defined in `PerCPUMemory.cpp`: a definition here gives every shared object its own copy.
-extern PerCPUMemory per_cpu_memory;
+inline PerCPUMemory per_cpu_memory;
 
 }
 

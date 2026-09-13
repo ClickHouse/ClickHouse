@@ -8,7 +8,7 @@ keywords: ['озера данных', 'lakehouse', 'iceberg', 'delta lake', 'hud
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse предоставляет табличные функции для выполнения запросов к данным, хранящимся в открытых табличных форматах, непосредственно в объектном хранилище. Для этого не требуется подключаться к внешнему каталогу — данные запрашиваются на месте, подобно тому, как AWS Athena читает их из S3.
 
@@ -17,7 +17,7 @@ ClickHouse предоставляет табличные функции для �
 <Info>
   **Сервер, локально или chDB**
 
-  Шаги в этом руководстве можно выполнить, используя существующую установку сервера ClickHouse. Для разовых запросов можно вместо этого использовать [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) и выполнить тот же процесс без запуска сервера. С небольшими изменениями этот процесс также можно выполнить с помощью in-process дистрибутива ClickHouse — [chDB](/ru/chdb/index).
+  Шаги в этом руководстве можно выполнить, используя существующую установку сервера ClickHouse. Для разовых запросов можно вместо этого использовать [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) и выполнить тот же процесс без запуска сервера. С небольшими изменениями этот процесс также можно выполнить с помощью in-process дистрибутива ClickHouse — [chDB](/ru/products/chdb/index).
 </Info>
 
 В следующих примерах используется датасет [hits](/ru/get-started/sample-datasets/star-schema), хранящийся в S3 в каждом формате lakehouse. Для каждого формата lakehouse существуют отдельные функции для каждого провайдера объектного хранилища.

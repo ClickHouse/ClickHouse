@@ -12,7 +12,7 @@ namespace DB
 {
 class StorageTimeSeries;
 class PrometheusQueryTree;
-class PullingAsyncPipelineExecutor;
+class PullingPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
@@ -71,7 +71,7 @@ public:
 
 private:
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    void writeQueryResponse(WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);

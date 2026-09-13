@@ -59,6 +59,12 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
+inline void readAsIntText(time_t & x, ReadBuffer & istr)
+{
+    readIntText(x, istr);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+}
+
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
@@ -78,6 +84,14 @@ inline bool tryReadText(
 
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return res;
+}
+
+inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
+{
+    if (!tryReadIntText(x, istr))
+        return false;
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    return true;
 }
 
 }
@@ -169,13 +183,9 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    else /// Just 1504193808 or 01504193808
     {
-        readDateTimeAsRawValue(x, istr);
-    }
-    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
-    {
-        readDateTimeAsNumber(x, istr);
+        readAsIntText(x, istr);
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -190,14 +200,9 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadDateTimeAsRawValue(x, istr))
-            return false;
-    }
-    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
-    {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadAsIntText(x, istr))
             return false;
     }
 
@@ -222,13 +227,9 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
-    {
-        readDateTimeAsRawValue(x, istr);
-    }
     else
     {
-        readDateTimeAsNumber(x, istr);
+        readAsIntText(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -242,14 +243,9 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
-    {
-        if (!tryReadDateTimeAsRawValue(x, istr))
-            return false;
-    }
     else
     {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadAsIntText(x, istr))
             return false;
     }
 

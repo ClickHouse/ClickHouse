@@ -104,7 +104,6 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
-#include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
@@ -118,7 +117,6 @@
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
 #include <Storages/System/StorageSystemKeeperSnapshots.h>
-#include <Storages/System/StorageSystemKeeperStorage.h>
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
@@ -133,9 +131,6 @@
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemIcebergFiles.h>
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/Utils.h>
-#endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -165,12 +160,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int TABLE_ALREADY_EXISTS;
-}
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
@@ -284,9 +273,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
     attachNoDescription<StorageSystemFilesystemCacheSettings>(context, system_database, "filesystem_cache_settings", "Contains information about all filesystem cache settings");
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", "Contains information about all entries inside query condition cache in server's memory.");
-#if ENABLE_DISTRIBUTED_CACHE
-    DistributedCache::attachSystemTablesDistributedCache(context, system_database);
-#endif
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
@@ -329,39 +315,12 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
         attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
         attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
-        attachNoDescription<StorageSystemKeeperStorage>(context, system_database, "keeper_storage", "Contains one row per node of the data tree stored on this Keeper node, read from a consistent lock-free view of the committed state.");
     }
 #endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
-    }
-
-    if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
-    {
-        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
-        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
-        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
-        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `query_log.table` server setting cannot be set to `user_query_log`: "
-                "the query log table is always created in the `system` database, where `system.user_query_log` "
-                "shows the query log records of the current user. "
-                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
-
-        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
-        if (system_database.isTableExist("user_query_log", context))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
-                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
-
-        attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
-            "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
-            "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "
-            "This is only supported when the query log is stored locally: if `query_log.engine` delegates reads to another "
-            "server (for example, `Distributed`), reading throws an exception, because the per-user access check cannot be "
-            "enforced across a ClickHouse-protocol server boundary; in that case set `query_log.enable_user_query_log` to 0.");
     }
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");

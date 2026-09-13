@@ -66,8 +66,9 @@ static void extractLiteralTokensImpl(
             return;
         }
 
-        if (const auto * token_info = token_map.find(literal))
-            result.push_back(*token_info);
+        auto it = token_map.find(literal);
+        if (it != token_map.end())
+            result.push_back(it->second);
         else
             result.push_back(std::nullopt);
         return;

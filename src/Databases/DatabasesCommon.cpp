@@ -94,8 +94,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
-    DefaultExpressionsInfo default_expr_info;
-    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
 
     for (const auto & ast : columns.columns->children)
     {
@@ -112,9 +111,6 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
             LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.name);
     }
 
-    /// Validates the whole resulting metadata (also for ordinary ALTERs), so do not enforce the
-    /// virtual-column rule here: a legacy table may already have such a default and an unrelated ALTER
-    /// must not fail on it. New/modified defaults are checked by AlterCommands::validate.
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 

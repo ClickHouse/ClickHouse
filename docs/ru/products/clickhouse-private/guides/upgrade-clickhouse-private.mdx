@@ -35,7 +35,9 @@ description: "Обновите компоненты ClickHouse Private — оп�
 </div>
 
 <Steps>
-  <Step title="1. Обновите Helm-чарт оператора" id="1-upgrade-the-operator-helm-chart">
+  <Step>
+    ### 1. Обновите Helm-чарт оператора
+
     Сохраните все текущие значения Helm без изменений, обновив только версии оператора до новых целевых версий.
 
     ```bash
@@ -45,10 +47,12 @@ description: "Обновите компоненты ClickHouse Private — оп�
       -n clickhouse-operator-system
     ```
 
-    > **Note:** Обновление оператора может вызвать поочередный перезапуск всех кластеров ClickHouse, которыми он управляет. Если у вас несколько кластеров и вы хотите сначала проверить обновление на одном из них, прежде чем оператор начнет выполнять реконсиляцию остальных, см. ниже раздел [Защита кластеров во время обновления](#protecting-clusters-during-upgrade).
+    > **Note:** Обновление оператора может вызвать поочередный перезапуск всех кластеров ClickHouse, которыми он управляет. Если у вас несколько кластеров и вы хотите сначала проверить обновление на одном из них, прежде чем оператор начнет согласовывать остальные, см. ниже раздел [Защита кластеров во время обновления](#protecting-clusters-during-upgrade).
   </Step>
 
-  <Step title="2. Проверьте обновленный оператор" id="2-validate-the-upgraded-operator">
+  <Step>
+    ### 2. Проверьте обновленный оператор
+
     Убедитесь, что развертывание оператора запущено и работает исправно:
 
     ```bash
@@ -57,15 +61,17 @@ description: "Обновите компоненты ClickHouse Private — оп�
     kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
     ```
 
-    Проверьте, что в журналах нет ошибок и что оператор успешно выполнил реконсиляцию состояния всех управляемых кластеров:
+    Проверьте, что в журналах нет ошибок и что оператор успешно согласовал состояние всех управляемых кластеров:
 
     ```bash
     kubectl get clickhousecluster -A
     ```
   </Step>
 
-  <Step title="3. Обновите Helm-чарт onprem-clickhouse-cluster" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
-    Обновите Helm-чарт `onprem-clickhouse-cluster` для каждого кластера. Сохраните все текущие значения Helm без изменений, обновив только версии образов ClickHouse server и Keeper до новых целевых версий.
+  <Step>
+    ### 3. Обновите Helm-чарт `onprem-clickhouse-cluster`
+
+    Обновите Helm-чарт `onprem-clickhouse-cluster` для каждого кластера. Сохраните все текущие значения Helm без изменений, обновив только версии образов ClickHouse сервер и Keeper до новых целевых версий.
 
     ```bash
     helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
@@ -79,7 +85,9 @@ description: "Обновите компоненты ClickHouse Private — оп�
     Это вызовет **поочередный перезапуск подов Keeper и сервера** (по одному поду за раз). Повторите для каждого кластера.
   </Step>
 
-  <Step title="4. Проверьте обновленный кластер" id="4-validate-the-upgraded-cluster">
+  <Step>
+    ### 4. Проверьте обновленный кластер
+
     После завершения поочередного перезапуска убедитесь, что кластер работает исправно:
 
     ```bash
