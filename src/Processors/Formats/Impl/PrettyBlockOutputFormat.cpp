@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -816,6 +817,17 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
     {
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
+
+        /// The squashed chunk is written by the background thread, long after `work` has taken its
+        /// packet boundary and done its own `auto_flush`. Without doing it here, the rendered table
+        /// stays in the output buffer (or, under framing, in the payload buffer without a packet of
+        /// its own) until the query finishes - which is exactly what the squashing is supposed to
+        /// avoid. This runs under `writing_mutex` (held by `writingThread`), same as `work`, so the
+        /// framing format still sees serialized calls.
+        if (framing)
+            writeFramingPayloadBoundary(FramedPacketKind::Data);
+        else if (auto_flush)
+            flushImpl();
     }
 }
 
