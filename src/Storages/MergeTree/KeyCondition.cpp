@@ -2803,8 +2803,16 @@ static bool tryPrepareSetColumnsForIndex(
 ///     describes at the type level what the constant actually holds, so the caller narrows both to
 ///     the alternatives the constant column occupies before calling here; a bare `Dynamic` reaching
 ///     this check is declined.
+/// `only_permuting_casts` restricts the rule to the casts that make the set element stand for a
+/// *different* value than the one `has` compares at runtime - the by-name mappings, which make the
+/// transformed set miss a matching row. Everything else it rejects is about the set being an exact
+/// image of the predicate rather than an over-approximation of it, which a relaxed atom does not
+/// need: it only reports `can_be_true`, and for that an over-approximation is sound.
 static bool areTypesCompatibleForHasSetIndex(
-    const DataTypePtr & set_element_type, const DataTypePtr & key_column_type, bool within_container = false)
+    const DataTypePtr & set_element_type,
+    const DataTypePtr & key_column_type,
+    bool within_container = false,
+    bool only_permuting_casts = false)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
@@ -2814,6 +2822,11 @@ static bool areTypesCompatibleForHasSetIndex(
 
     if (set_type->equals(*key_type))
         return true;
+
+    /// The cast between two `Enum` types maps by name while the raw comparison compares the codes, so
+    /// the set element can stand for another code than the row the predicate matches holds.
+    if (isEnum(set_type) && isEnum(key_type))
+        return false;
 
     const bool set_is_native_integer = isNativeInteger(set_type);
     const bool key_is_native_integer = isNativeInteger(key_type);
@@ -2847,7 +2860,7 @@ static bool areTypesCompatibleForHasSetIndex(
     {
         for (const auto & alternative : set_variant_type->getVariants())
         {
-            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container))
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container, only_permuting_casts))
                 return false;
         }
         return true;
@@ -2878,7 +2891,7 @@ static bool areTypesCompatibleForHasSetIndex(
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
-            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true))
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true, only_permuting_casts))
                 return false;
         }
         return true;
@@ -2888,13 +2901,27 @@ static bool areTypesCompatibleForHasSetIndex(
     const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
     if (set_array_type && key_array_type)
         return areTypesCompatibleForHasSetIndex(
-            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true);
+            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true, only_permuting_casts);
 
     const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
     const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
     if (set_map_type && key_map_type)
-        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true)
-            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true);
+        return areTypesCompatibleForHasSetIndex(
+                   set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true, only_permuting_casts)
+            && areTypesCompatibleForHasSetIndex(
+                   set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true, only_permuting_casts);
+
+    /** A pair the rule does not describe is accepted for a relaxed atom only when the key side is a
+      * `Dynamic`, which carries the element's value as it is, so the transformed set still
+      * over-approximates what `has` compares at runtime.
+      *
+      * Anything else is declined even for a relaxed atom: relaxing permits false positives in
+      * `can_be_true`, not turning a comparison that raises at runtime - `has([toIPv4('1.2.3.4')], x)`
+      * over a `UInt32` column reports `Cannot compare DB::IPv4 with unsigned long` once a granule
+      * reaches the filter - into an empty result.
+      */
+    if (only_permuting_casts && WhichDataType(key_type).isDynamic())
+        return true;
 
     return false;
 }
@@ -2904,7 +2931,8 @@ static bool areSetAndKeyTypesCompatibleForHas(
     size_t key_args_count,
     const DataTypes & key_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+    bool only_permuting_casts = false)
 {
     while (set_types.size() < key_args_count)
     {
@@ -2947,7 +2975,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
         /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
         /// `Field::operator==`, not the accurate one.
         if (!areTypesCompatibleForHasSetIndex(
-                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
+                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1, only_permuting_casts))
             return false;
     }
 
@@ -3191,12 +3219,19 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     if (element_type_is_from_column && contains_float(checked_element_type))
         return false;
 
-    if (!out.relaxed)
-    {
-        if (!areSetAndKeyTypesCompatibleForHas(
-                {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
-            return false;
-    }
+    /// A relaxed atom is checked too, for the casts that permute the value: relaxing an atom only
+    /// allows `can_be_false`, while the positive direction still trusts `can_be_true`, which is sound
+    /// only when the transformed set over-approximates what `has` compares at runtime. A `CAST`
+    /// between named tuples matches their fields by name while `has` compares them positionally, so
+    /// such a set names a key value that no matching row holds and prunes the granule holding it.
+    if (!areSetAndKeyTypesCompatibleForHas(
+            {checked_element_type},
+            key_args_count,
+            data_types,
+            set_transforming_dags,
+            indexes_mapping,
+            /*only_permuting_casts=*/ out.relaxed))
+        return false;
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
