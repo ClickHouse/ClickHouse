@@ -666,6 +666,88 @@ def test_system_drop_s3queue_failed_files_idempotent(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_system_drop_s3queue_failed_files_preserves_retriable(started_cluster):
+    """SYSTEM DROP S3QUEUE FAILED FILES must remove only terminal failures, never a
+    live `.retriable` marker.
+
+    All existing SYSTEM DROP tests use `s3queue_loading_retries = 0`, so every failure
+    is immediately terminal and there is no coverage of a live-retrying file coexisting
+    with a terminal one. Plants a synthetic `.retriable` marker (bypassing the real
+    retry pipeline, matching the established pattern used elsewhere in this file) beside
+    a real terminal failure, then asserts the command deletes only the terminal entry
+    from both Keeper and the in-memory cache while leaving the retriable marker intact.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_preserves_retriable_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    # A real file that fails terminally on the first attempt.
+    put_s3_file_content(
+        started_cluster, f"{files_path}/failed_terminal.csv", b"not,valid,numbers\n"
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znode_names():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return set(result.split("\n")) if result else set()
+
+    def terminal_znodes():
+        return {n for n in failed_znode_names() if not n.endswith(".retriable")}
+
+    def get_failed_count():
+        return int(node.query(
+            f"SELECT count() FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+        ).strip())
+
+    # Wait for the real file to reach terminal failure.
+    terminal_ready = False
+    for _ in range(60):
+        if len(terminal_znodes()) == 1:
+            terminal_ready = True
+            break
+        time.sleep(1)
+    assert terminal_ready, f"expected one terminal failed node, got {terminal_znodes()}"
+    assert get_failed_count() == 1, "Should have 1 failed file in the cache"
+
+    # Plant a live `.retriable` marker beside it - a file still within its retry budget.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    planted = _plant_retriable_markers(zk, failed_path, 1)
+
+    # Run SYSTEM DROP - it must remove the terminal entry only.
+    node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+
+    assert terminal_znodes() == set(), "Terminal failed znode should be removed from Keeper"
+    assert get_failed_count() == 0, "Terminal failed file should be removed from the cache"
+
+    remaining = failed_znode_names()
+    assert remaining == set(planted), (
+        f"SYSTEM DROP must never touch a live .retriable marker, got {remaining}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_system_drop_ordered_mode_blocked(started_cluster):
     """Test that SYSTEM DROP S3QUEUE FAILED FILES is blocked in ordered mode"""
     node = started_cluster.instances["instance"]
@@ -717,6 +799,7 @@ def test_failed_files_ttl_ordered_mode_no_cleanup(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
 
     # Create table in ordered mode with failed_files_ttl_sec set
     # This should be accepted but ignored (cleanup_failed_files will be false)
@@ -732,6 +815,7 @@ def test_failed_files_ttl_ordered_mode_no_cleanup(started_cluster):
             "cleanup_interval_min_ms": 2000,
             "cleanup_interval_max_ms": 2000,
             "s3queue_loading_retries": 0,
+            "tracked_files_limit": 0,
         },
     )
 
@@ -749,24 +833,36 @@ def test_failed_files_ttl_ordered_mode_no_cleanup(started_cluster):
             f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
         ).strip())
 
+    def get_keeper_failed_children_count():
+        return int(node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip())
+
     # Wait for file to fail (up to 60 seconds)
     for _ in range(60):
         if get_failed_count() > 0:
             break
         time.sleep(1)
 
-    # Assert file is marked as failed
+    # Assert file is marked as failed, both in the in-memory cache and in Keeper
     failed_count = get_failed_count()
     assert failed_count > 0, "Invalid file should be marked as Failed"
+    keeper_failed_count = get_keeper_failed_children_count()
+    assert keeper_failed_count > 0, "Failed file should have a /failed znode in Keeper"
 
-    if True:  # Always run the TTL check now that we confirmed failure
-        # Wait past the TTL period
-        time.sleep(5)
+    # Wait past the TTL period
+    time.sleep(5)
 
-        # In ordered mode, TTL cleanup is disabled, so failed file should still be there
-        failed_count_after = get_failed_count()
-        assert failed_count_after == failed_count, \
-            "Failed files should NOT be cleaned up in ordered mode (cleanup_failed_files is disabled)"
+    # In ordered mode, TTL cleanup is disabled, so the failed file should still be
+    # there both in the in-memory cache AND as an actual znode in Keeper - checking
+    # only the cache would still pass even if failed_files_ttl_sec incorrectly
+    # deleted the real Keeper node, since the cache is not refreshed here.
+    failed_count_after = get_failed_count()
+    assert failed_count_after == failed_count, \
+        "Failed files should NOT be cleaned up in ordered mode (cleanup_failed_files is disabled)"
+    keeper_failed_count_after = get_keeper_failed_children_count()
+    assert keeper_failed_count_after == keeper_failed_count, \
+        "Failed file's znode should NOT be removed from Keeper in ordered mode"
 
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
@@ -2681,19 +2777,25 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
     for it - that fallback is the PR's backward-compatibility promise, and it has to survive a
     restart or re-attach without the user setting anything.
 
-    Asserted on the `adjustFromKeeper` log rather than on cleanup behaviour, and deliberately so: the
-    count-based tracked-files sweep now also trims `/failed` for every non-exclusive mode using
-    `tracked_files_ttl_sec`, so a behavioural test would pass whether or not the fallback worked -
-    the file would be removed either way. The log line proves the parsed value specifically: it is
-    emitted only when Keeper's value differs from the local one and the local one was never set,
-    which is exactly the legacy case, and it carries the value that was inherited.
+    Checked two ways. First, the `adjustFromKeeper` log line: proof of the parsed value specifically,
+    since it is emitted only when Keeper's value differs from the local one and the local one was
+    never set - exactly the legacy case - and it carries the inherited value. Second, a real failed
+    file is put through the table after the re-attach and left past the inherited TTL: with
+    `tracked_files_limit` pinned to 0, the count-based tracked-files sweep (which independently trims
+    `/failed` using `tracked_files_ttl_sec` in non-exclusive mode - see
+    `test_tracked_file_ttl_sec_does_not_expire_failed_files`) cannot also account for the removal, so
+    the terminal znode disappearing is attributable only to `failed_files_ttl_sec` cleanup running
+    with the inherited value, which only happens if the fallback actually took effect.
     """
     node = started_cluster.instances["instance"]
 
     table_name = f"test_legacy_ttl_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
     tracked_ttl = 3
+    cleanup_interval_ms = 2000
 
     # `failed_files_ttl_sec` is deliberately not set: this table looks like one created before the
     # setting existed, which is what makes the local value "never explicitly set".
@@ -2706,6 +2808,12 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": tracked_ttl,
+            # Isolates the terminal-znode-expiry check below from the count-based tracked-files
+            # sweep, which trims `/failed` on its own schedule and would otherwise confound it.
+            "tracked_files_limit": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
         },
     )
 
@@ -2747,7 +2855,37 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
         "`from keeper` lines for this setting instead:\n" + "\n".join(reported[-10:])
     )
 
+    # Now confirm the inherited value actually drives cleanup, not just the log line.
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", b"invalid,data,here\n"
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    terminal_ready = False
+    for _ in range(60):
+        if terminal_failed_znodes():
+            terminal_ready = True
+            break
+        time.sleep(1)
+    assert terminal_ready, "expected the invalid file to reach terminal failure"
+
+    # Past the inherited TTL, with several cleanup sweeps to run.
+    time.sleep(tracked_ttl + 4 * cleanup_interval_ms / 1000)
+
+    assert terminal_failed_znodes() == set(), (
+        "the terminal failed znode survived past the inherited failed_files_ttl_sec - "
+        "the legacy fallback value is not actually driving cleanup"
+    )
+
     node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
 
 
 def test_drop_failed_files_retries_partial_failure_if_lock_lost_before_publish(started_cluster):
