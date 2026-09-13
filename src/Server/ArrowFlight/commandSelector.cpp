@@ -556,6 +556,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
         const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
         const auto & type_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(1));
+        const auto conversion_settings = arrowConversionSettings(query_context);
         for (size_t i = 0; i < col->size(); ++i)
         {
             ColumnsWithTypeAndName table_columns;
@@ -569,9 +570,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
                 auto data_type = DataTypeFactory::instance().get(String(type));
                 table_columns.emplace_back(nullptr, data_type, String(name));
             }
-            auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
-                table_columns, "Arrow", nullptr,
-                arrowConversionSettings(query_context));
+            auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, conversion_settings);
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());

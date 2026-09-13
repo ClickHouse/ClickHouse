@@ -601,7 +601,6 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             schema = status.ValueUnsafe();
         }
 
-        /// Resolved once: it reads the whole settings profile, and the loop below runs per block.
         const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
 
         std::optional<ColumnsWithTypeAndName> header;
