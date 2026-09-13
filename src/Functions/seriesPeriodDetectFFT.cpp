@@ -141,11 +141,11 @@ public:
 
         pocketfft::r2c(shape, stride_src, stride_out, axes, pocketfft::FORWARD, src.data(), out.data(), static_cast<double>(1));
 
-        size_t spec_len = (len - 1) / 2; //removing the nyquist element when len is even
+        size_t spec_end = len / 2 + (len % 2); // removing the nyquist element when len is even
 
         double max_mag = 0;
         size_t idx = 1;
-        for (size_t i = 1; i < spec_len; ++i)
+        for (size_t i = 1; i < spec_end; ++i)
         {
             double magnitude = sqrt(out[i].real() * out[i].real() + out[i].imag() * out[i].imag());
             if (magnitude > max_mag)
@@ -163,10 +163,7 @@ public:
             return true;
         }
 
-        double step = 0.5 / static_cast<double>(spec_len - 1);
-        auto freq = static_cast<double>(idx) * step;
-
-        period = std::round(1 / freq);
+        period = std::round(static_cast<double>(len) / idx);
         return true;
     }
 };
