@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 
@@ -26,6 +27,21 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
+        const String & sum_function_name,
+        const String & sum_function_map_name,
+        bool remove_default_values,
+        bool aggregate_all_columns,
+        bool allow_tuple_element_aggregation);
+
+    /// Names of the columns that the merge aggregates: the summed columns and the columns of the
+    /// discovered `...Map` groups. A `FINAL` read has to fetch every one of them even when the query
+    /// itself needs only a subset, because the merge removes a row only when all of them are zero.
+    /// The names refer to the tuple-flattened header when `allow_tuple_element_aggregation` is set.
+    static NameSet getAggregatedColumnNames(
+        const Block & sample_header,
+        const SortDescription & sort_description,
+        const Names & column_names_to_sum,
+        const Names & partition_and_sorting_required_columns,
         const String & sum_function_name,
         const String & sum_function_map_name,
         bool remove_default_values,
