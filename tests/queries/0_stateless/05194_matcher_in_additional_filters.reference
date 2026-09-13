@@ -1,0 +1,16 @@
+WHERE	100
+unqualified	100
+COLUMNS	100
+qualified	100
+transformer	100
+alias column	100
+filtering	94
+filtering by an alias column	94
+result filter
+0
+1
+2
+result filter, filtering
+2
+row policy	100
+row policy, filtering	94
