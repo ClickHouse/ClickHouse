@@ -1,3 +1,7 @@
+-- Tags: long
+-- long: the scenario needs several full merge/reload cycles and lands just over the 180s cap
+--   that the flaky check applies to untagged tests.
+
 -- Projection metadata is re-derived from the projection query at every table load, so an existing
 -- projection part may lack a column the current metadata expects (e.g. after ALTER re-points an
 -- ALIAS column selected by the projection). Reading or merging such a part must not fill the
