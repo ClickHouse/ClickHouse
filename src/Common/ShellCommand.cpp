@@ -38,18 +38,56 @@
 
 namespace
 {
-    /// By these return codes from the child process, we learn (for sure) about errors when creating it.
-    enum class ReturnCodes : int
+    /// The step of preparing the child that failed between `vfork` and `exec`. Reported to the
+    /// parent through a close-on-exec pipe rather than as the child's exit code: an exit code is
+    /// one byte the command's own exit codes share, so any value chosen for these would sooner or
+    /// later diagnose an ordinary `exit 88` as a failed `exec`. The pipe carries the step and the
+    /// `errno`, and a successful `exec` closes it, so the parent learns the outcome before it
+    /// touches the process at all.
+    enum class ChildSetupStep : int
     {
-        CANNOT_DUP_STDIN            = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT           = 0x55555556,
-        CANNOT_DUP_STDERR           = 0x55555557,
-        CANNOT_EXEC                 = 0x55555558,
-        CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
-        CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
-        CANNOT_DUP_INHERITED_DESCRIPTOR = 0x55555561,
-        CANNOT_CLOSE_INHERITED_DESCRIPTOR = 0x55555562,
+        DUP_STDIN,
+        DUP_STDOUT,
+        DUP_STDERR,
+        EXEC,
+        DUP_READ_DESCRIPTOR,
+        DUP_WRITE_DESCRIPTOR,
+        DUP_INHERITED_DESCRIPTOR,
+        CLOSE_INHERITED_DESCRIPTOR,
     };
+
+    /// What the child writes into the error pipe: small enough for a single write to be atomic.
+    struct ChildSetupFailure
+    {
+        int step;
+        int error;
+    };
+
+    const char * describe(ChildSetupStep step)
+    {
+        switch (step)
+        {
+            case ChildSetupStep::DUP_STDIN: return "dup2 stdin";
+            case ChildSetupStep::DUP_STDOUT: return "dup2 stdout";
+            case ChildSetupStep::DUP_STDERR: return "dup2 stderr";
+            case ChildSetupStep::EXEC: return "execv";
+            case ChildSetupStep::DUP_READ_DESCRIPTOR: return "dup2 a read descriptor";
+            case ChildSetupStep::DUP_WRITE_DESCRIPTOR: return "dup2 a write descriptor";
+            case ChildSetupStep::DUP_INHERITED_DESCRIPTOR: return "dup2 an inherited descriptor";
+            case ChildSetupStep::CLOSE_INHERITED_DESCRIPTOR: return "close the original of an inherited descriptor";
+        }
+        return "prepare";
+    }
+
+    /// Runs in the child, between `vfork` and `exec`: nothing but the write and the exit.
+    [[noreturn]] void reportChildSetupFailureAndExit(int error_fd, ChildSetupStep step)
+    {
+        ChildSetupFailure failure{static_cast<int>(step), errno};
+        /// Nothing to do about a failed write here: the parent then sees EOF and, since the child
+        /// is gone, an exit code of 1 in place of a running command.
+        [[maybe_unused]] ssize_t written = ::write(error_fd, &failure, sizeof(failure));
+        _exit(1);
+    }
 }
 
 namespace ProfileEvents
@@ -248,29 +286,41 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
                 LOG_WARNING(getLogger(), "Cannot close a staged inherited descriptor: {}", errnoToString());
     });
 
-    if (!config.inherited_fds.empty())
+    /// The first number above every descriptor the child is going to install something under.
+    int first_free_fd = STDERR_FILENO + 1;
+    for (const auto & [child_fd, parent_fd] : config.inherited_fds)
     {
-        int first_free_fd = STDERR_FILENO + 1;
-        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
-        {
-            if (child_fd <= STDERR_FILENO)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot hand descriptor {} to a child as {}: 0, 1 and 2 are the child's standard streams", parent_fd, child_fd);
-            first_free_fd = std::max(first_free_fd, child_fd + 1);
-        }
-        for (int fd : config.read_fds)
-            first_free_fd = std::max(first_free_fd, fd + 1);
-        for (int fd : config.write_fds)
-            first_free_fd = std::max(first_free_fd, fd + 1);
-
-        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
-        {
-            int staged = ::fcntl(parent_fd, F_DUPFD_CLOEXEC, first_free_fd);
-            if (staged == -1)
-                throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate descriptor {} to hand it to a child as {}", parent_fd, child_fd);
-            staged_inherited_fds.push_back(staged);
-        }
+        if (child_fd <= STDERR_FILENO)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot hand descriptor {} to a child as {}: 0, 1 and 2 are the child's standard streams", parent_fd, child_fd);
+        first_free_fd = std::max(first_free_fd, child_fd + 1);
     }
+    for (int fd : config.read_fds)
+        first_free_fd = std::max(first_free_fd, fd + 1);
+    for (int fd : config.write_fds)
+        first_free_fd = std::max(first_free_fd, fd + 1);
+
+    for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+    {
+        int staged = ::fcntl(parent_fd, F_DUPFD_CLOEXEC, first_free_fd);
+        if (staged == -1)
+            throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate descriptor {} to hand it to a child as {}", parent_fd, child_fd);
+        staged_inherited_fds.push_back(staged);
+    }
+
+    /// How the child reports a failure of any step below: a close-on-exec pipe. A successful
+    /// `exec` closes the child's end and the parent reads EOF; a failure writes the step and the
+    /// `errno` and the parent reads those. The child's copy of the write end is staged above every
+    /// target like the inherited descriptors are, so that no `dup2` below lands on it - it would
+    /// otherwise be silently replaced by whatever was installed under that number, and a later
+    /// failure would write its report into a pipe or a region instead. (The pipe itself is opened
+    /// with `O_CLOEXEC`, and `F_DUPFD_CLOEXEC` keeps the copy so.) Both of the parent's write ends
+    /// are closed before the parent reads, or the read would never see EOF.
+    PipeFDs pipe_child_error;
+    const int child_error_fd = ::fcntl(pipe_child_error.fds_rw[1], F_DUPFD_CLOEXEC, first_free_fd);
+    if (child_error_fd == -1)
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate the child error pipe");
+    staged_inherited_fds.push_back(child_error_fd);
 
     /// `vfork` must be called directly, not through a pointer obtained with `dlsym`: the compiler
     /// knows `vfork` as a function that returns twice, and only a call it can see as such makes
@@ -305,15 +355,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         /// Replace the file descriptors with the ends of our pipes.
         if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
+            reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDIN);
 
         if (!config.pipe_stdin_only)
         {
             if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDOUT);
 
             if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDERR);
         }
 
         for (size_t i = 0; i < config.read_fds.size(); ++i)
@@ -322,7 +372,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.read_fds[i];
 
             if (fd != dup2(fds.fds_rw[1], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_READ_DESCRIPTOR);
         }
 
         for (size_t i = 0; i < config.write_fds.size(); ++i)
@@ -331,7 +381,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.write_fds[i];
 
             if (fd != dup2(fds.fds_rw[0], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_WRITE_DESCRIPTOR);
         }
 
         for (size_t i = 0; i < config.inherited_fds.size(); ++i)
@@ -342,7 +392,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             /// staged copy does not.
             const int child_fd = config.inherited_fds[i].first;
             if (child_fd != dup2(staged_inherited_fds[i], child_fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR));
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_INHERITED_DESCRIPTOR);
         }
 
         /// The originals must not reach the child either, under their own numbers: the contract
@@ -353,18 +403,23 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         /// caller opened the descriptor. An original whose number is itself a target - of any of
         /// the `dup2`s above: the standard streams, `read_fds`, `write_fds` or another inherited
         /// pair - has just been overwritten with the right thing and is left alone; closing it
-        /// would take down what was just installed there.
-        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+        /// would take down what was just installed there. And an original handed over under two
+        /// numbers (`{10 <- 5}, {11 <- 5}`) is one descriptor, closed once: the second close would
+        /// fail on a number that is already free, or worse, hit whatever got that number since.
+        for (size_t i = 0; i < config.inherited_fds.size(); ++i)
         {
-            bool is_a_target = parent_fd <= STDERR_FILENO;
+            const int parent_fd = config.inherited_fds[i].second;
+            bool leave_alone = parent_fd <= STDERR_FILENO;
             for (int fd : config.read_fds)
-                is_a_target |= parent_fd == fd;
+                leave_alone |= parent_fd == fd;
             for (int fd : config.write_fds)
-                is_a_target |= parent_fd == fd;
+                leave_alone |= parent_fd == fd;
             for (const auto & [other_child_fd, other_parent_fd] : config.inherited_fds)
-                is_a_target |= parent_fd == other_child_fd;
-            if (!is_a_target && 0 != ::close(parent_fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_CLOSE_INHERITED_DESCRIPTOR));
+                leave_alone |= parent_fd == other_child_fd;
+            for (size_t j = 0; j < i; ++j)
+                leave_alone |= parent_fd == config.inherited_fds[j].second;
+            if (!leave_alone && 0 != ::close(parent_fd))
+                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::CLOSE_INHERITED_DESCRIPTOR);
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -377,8 +432,44 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
-        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+        reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::EXEC);
         /// NOLINTEND(clang-analyzer-unix.Vfork)
+    }
+
+    /// The child has either `exec`ed or written its report and exited (that is what `vfork`
+    /// guarantees by the time it returns in the parent), so this read does not wait on anything:
+    /// once the parent's own write ends are closed, the pipe holds either the report or nothing.
+    {
+        if (0 != ::close(child_error_fd))
+            LOG_WARNING(getLogger(), "Cannot close the child error pipe: {}", errnoToString());
+        staged_inherited_fds.pop_back();
+        if (0 != ::close(pipe_child_error.fds_rw[1]))
+            LOG_WARNING(getLogger(), "Cannot close the child error pipe: {}", errnoToString());
+        pipe_child_error.fds_rw[1] = -1;
+
+        ChildSetupFailure failure{};
+        ssize_t bytes_read = 0;
+        do
+            bytes_read = ::read(pipe_child_error.fds_rw[0], &failure, sizeof(failure));
+        while (bytes_read == -1 && errno == EINTR);
+
+        if (bytes_read != 0)
+        {
+            /// The child is gone; reap it so that it does not linger as a zombie, then report.
+            int status = 0;
+            while (-1 == ::waitpid(pid, &status, 0) && errno == EINTR)
+            {
+            }
+
+            if (bytes_read == sizeof(failure))
+                throw Exception(
+                    ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
+                    "Cannot {} in child process: {}",
+                    describe(static_cast<ChildSetupStep>(failure.step)),
+                    errnoToString(failure.error));
+
+            throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot prepare child process: incomplete report from it");
+        }
     }
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
@@ -574,30 +665,10 @@ void ShellCommand::handleProcessStatus(int status) const
 
 void ShellCommand::handleProcessRetcode(int retcode) const
 {
+    /// Whatever the code, it is the command's own: a failure to prepare or `exec` the child is
+    /// reported through the error pipe in `executeImpl` and never gets as far as an exit status.
     if (retcode != EXIT_SUCCESS)
-    {
-        switch (retcode)
-        {
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdin of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdout of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stderr of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_EXEC):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot execv in child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 an inherited descriptor of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_CLOSE_INHERITED_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot close the original of an inherited descriptor in child process");
-            default:
-                throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
-        }
-    }
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
 }
 
 bool ShellCommand::waitIfProccesTerminated()

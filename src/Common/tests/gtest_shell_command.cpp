@@ -1,5 +1,6 @@
 #include <iostream>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -19,6 +20,12 @@
 
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+}
 
 
 TEST(ShellCommand, Execute)
@@ -43,6 +50,46 @@ TEST(ShellCommand, ExecuteDirect)
     command->wait();
 
     EXPECT_EQ(res, "Hello, world!\n");
+}
+
+/// A command that cannot be started is reported at once, with the reason, rather than as a process
+/// that produces nothing and then exits with a code that has to be recognised.
+TEST(ShellCommand, ExecFailureIsReportedWithItsReason)
+{
+    ShellCommand::Config config("/nonexistent/binary/for/this/test");
+    try
+    {
+        ShellCommand::executeDirect(config);
+        FAIL() << "a command that cannot be executed was started";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+        EXPECT_NE(e.message().find("Cannot execv in child process"), std::string::npos) << e.message();
+        EXPECT_NE(e.message().find("No such file or directory"), std::string::npos) << e.message();
+    }
+}
+
+/// The exit code of a command that did start is its own, whatever the value: none of them is taken
+/// for a failure to start it.
+TEST(ShellCommand, AnyExitCodeOfTheCommandIsItsOwn)
+{
+    for (int code : {1, 85, 88, 96, 98, 255})
+    {
+        auto command = ShellCommand::execute("exit " + std::to_string(code));
+        std::string res;
+        readStringUntilEOF(res, command->out);
+        try
+        {
+            command->wait();
+            FAIL() << "exit " << code << " passed as success";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY) << e.message();
+            EXPECT_NE(e.message().find("exited with return code " + std::to_string(code)), std::string::npos) << e.message();
+        }
+    }
 }
 
 TEST(ShellCommand, ExecuteWithInput)
@@ -142,8 +189,9 @@ TEST(ShellCommand, DoesNotLeakTheOriginalOfAnInheritedDescriptor)
     const int target = probe + 1;
     ::close(probe);
 
+    /// `/dev/fd` rather than `/proc/self/fd`, which only Linux has.
     const std::string script = "cat /dev/fd/" + std::to_string(target)
-        + "; echo; if [ -e /proc/self/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
+        + "; echo; if [ -e /dev/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
     EXPECT_EQ(readInheritedInChild({{target, source}}, script), "only once\nclosed\n");
     ::close(source);
 }
@@ -191,6 +239,27 @@ TEST(ShellCommand, KeepsAPipeInstalledOnTheNumberOfAnOriginal)
 
     EXPECT_EQ(from_stdout, "via the region");
     EXPECT_EQ(from_pipe, "via the pipe\n");
+    ::close(source);
+}
+
+/// One original may be handed over under two numbers. It is one descriptor, and it is closed once:
+/// a second close would fail on a number that is already free and end the child before `exec`.
+TEST(ShellCommand, InheritsOneDescriptorUnderTwoNumbers)
+{
+    const int source = makeInheritableSource("twice");
+    ASSERT_NE(source, -1);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int first = probe + 1;
+    const int second = probe + 2;
+    ::close(probe);
+
+    /// Both numbers reach the same pipe: reading through either drains it for the other, so what
+    /// the child sees is the content once and then EOF, whichever number it reads first.
+    const std::string script = "cat /dev/fd/" + std::to_string(first) + "; cat /dev/fd/" + std::to_string(second)
+        + "; echo; if [ -e /dev/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
+    EXPECT_EQ(readInheritedInChild({{first, source}, {second, source}}, script), "twice\nclosed\n");
     ::close(source);
 }
 

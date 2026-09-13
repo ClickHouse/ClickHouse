@@ -117,6 +117,24 @@ def shm_region_sizes():
     return sorted(size for _, size in shm_regions())
 
 
+def shm_region_committed_bytes():
+    # `(size, committed)` per region: the file's length and how much of it is backed by pages
+    # (`st_blocks`, in 512-byte units - for a `memfd`, exactly its resident pages). A region the
+    # server reserved in full has the two equal; a hole punched into it shows as the difference.
+    pid = node.get_process_pid("clickhouse server")
+    assert pid is not None
+    listing = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"for fd in /proc/{pid}/fd/*; do "
+            f'if [ "$(readlink "$fd")" = "/memfd:clickhouse_udf_shm (deleted)" ]; '
+            f'then stat -L -c "%s %b" "$fd"; fi; done',
+        ]
+    ).splitlines()
+    return sorted((int(size), int(blocks) * 512) for size, blocks in (line.split() for line in listing if line))
+
+
 def shm_region_count():
     return len(shm_regions())
 
@@ -936,7 +954,10 @@ def test_shared_memory_udf_idle_pooled_region_counts_against_the_server_limit(st
         assert node.query(f"SELECT {second}(1)") == "Key 1\n"
         assert shm_region_sizes().count(region_size) == 1
     finally:
+        # Both pools, whichever of them an assertion above left standing: an idle worker of either
+        # holds 768 MiB the rest of this suite would otherwise run next to.
         set_server_limit(None)
+        node.query(f"SYSTEM RELOAD FUNCTION {first}")
         node.query(f"SYSTEM RELOAD FUNCTION {second}")
 
 
@@ -983,6 +1004,80 @@ def test_shared_memory_udf_command_extending_the_region_is_charged_at_the_next_h
 
     node.query("SYSTEM RELOAD FUNCTION test_function_shm_extend_pool_python")
     wait_for_pooled_shared_memory_bytes(pooled_before, "the extended region's charge was not released with the pool")
+
+
+def test_shared_memory_udf_command_extending_the_region_past_the_cap_costs_it_the_worker(started_cluster):
+    skip_test_msan(node)
+
+    # `shared_memory_max_size` is what a pooled worker may hold, and what an administrator sizes a
+    # pool by. The server's own growth stops there; a command's does not - the seals forbid
+    # shrinking the file, not extending it - so a worker whose file has passed the cap is not
+    # handed back to the pool: it is discarded with its regions, the next query starts a fresh
+    # one, and the server is never charged for, never maps and never zeroes a file the command
+    # stretched past what was configured. Here the cap is the region size (the default), and the
+    # command doubles the file on every request.
+    region_size = 4 * 1048576
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_extend_past_cap_pool_python")
+    pooled_before = pooled_shared_memory_baseline(region_size)
+
+    assert node.query("SELECT test_function_shm_extend_past_cap_pool_python(1)") == "Key 1\n"
+
+    # The extended region is gone with its worker: nothing of it is charged to the server while
+    # the slot sits in the pool, and the server holds no file of the extended size.
+    wait_for_pooled_shared_memory_bytes(pooled_before, "the region extended past the cap stayed with the pool")
+    assert 2 * region_size not in shm_region_sizes()
+    assert node.contains_in_log("past shared_memory_max_size")
+
+    # The next query is served by a fresh worker with a fresh region - which the command extends
+    # again, with the same outcome.
+    assert node.query("SELECT test_function_shm_extend_past_cap_pool_python(2)") == "Key 2\n"
+    wait_for_pooled_shared_memory_bytes(pooled_before, "the region extended past the cap stayed with the pool")
+
+
+def test_shared_memory_udf_hole_punched_by_the_command_is_not_fatal(started_cluster):
+    skip_test_msan(node)
+
+    # The seals stop a command from shrinking its region's file; they do not stop it from freeing
+    # pages inside it (`fallocate(FALLOC_FL_PUNCH_HOLE)` - only `F_SEAL_WRITE` would, and the
+    # command has to write). That is not a `SIGBUS` for the server: the file is as long as it was,
+    # a punched page reads as zeros and takes a write like any other. What is lost is the
+    # reservation - the server's next write into the hole allocates the page on its hot path -
+    # and that is the command's own slowness, not a failure. The command here answers and then
+    # frees everything past its answer; the next borrow, same worker, same region, must work.
+    # The region size is one no other function in this file uses, so the region can be told
+    # apart by it.
+    region_size = 1310720
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_punch_hole_pool_python")
+
+    assert node.query("SELECT test_function_shm_punch_hole_pool_python(1)") == "Key 1\n"
+
+    # The hole is there: the file is as long as it was, most of it no longer backed by pages.
+    committed = dict(shm_region_committed_bytes())
+    assert region_size in committed, committed
+    assert committed[region_size] < region_size // 2, committed
+
+    # The same region serves the next query - the server writes the input into the hole and
+    # reads the answer out of it - and the pool still holds one worker.
+    assert node.query("SELECT test_function_shm_punch_hole_pool_python(2)") == "Key 2\n"
+    assert shm_region_sizes().count(region_size) == 1
+
+
+def test_shared_memory_udf_file_extended_by_the_command_is_mapped_whole_at_the_next_borrow(started_cluster):
+    skip_test_msan(node)
+
+    # A file that is longer than the server's mapping - a command extended it, or a growth committed
+    # its pages and could not map them - is brought into the mapping when the region is handed to
+    # its next borrow: the command maps the whole file on every request and may put its answer
+    # anywhere in it, so the region the server validates that answer against has to be the file.
+    # The command here writes its answer - the file's size - at the end of the file, and extends a
+    # 64 KiB file to 128 KiB (within the cap) after its first answer; the second answer therefore
+    # lies past everything the server had mapped when it created the region.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_report_size_pool_python")
+
+    assert node.query("SELECT test_function_shm_report_size_pool_python(1)") == "65536\n"
+    assert node.query("SELECT test_function_shm_report_size_pool_python(1)") == "131072\n"
 
 
 def test_shared_memory_udf_pooled_region_is_scrubbed_between_users(started_cluster):

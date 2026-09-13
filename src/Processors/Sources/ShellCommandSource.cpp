@@ -5,6 +5,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/formatReadable.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -983,6 +984,29 @@ public:
         shared_memory[index].reset();
     }
 
+    /// The length of the longest region's file, re-read now; zero without regions. What a borrow
+    /// checks against `shared_memory_max_size` before it builds anything on the worker.
+    size_t largestSharedMemoryBackingSize() const
+    {
+        size_t largest = 0;
+        for (const auto & region : shared_memory)
+            if (region)
+                largest = std::max(largest, region->refreshBackingSize());
+        return largest;
+    }
+
+    /// Drops the returned process and its regions together, so that the next `buildCommand` starts
+    /// a fresh process with fresh regions. A process and its regions live and die together - the
+    /// process reached them by inheriting their descriptors at `exec` - so there is no dropping
+    /// one without the other. Called while the holder is borrowed and its charge is with the
+    /// borrower, so nothing is uncharged here.
+    void discardWorkerAndRegions()
+    {
+        returned_command.reset();
+        for (auto & region : shared_memory)
+            region.reset();
+    }
+
     /// A region is charged to exactly one memory tracker at a time, chosen by who can observe it:
     /// while the holder is borrowed, the borrowing query's tracker owns the charge, so the memory
     /// limit of that query still covers the region; while the holder sits idle in the process pool
@@ -1015,7 +1039,14 @@ public:
     /// Never throws: this runs on a cleanup path, and it is an accounting hand-back rather than an
     /// allocation — the memory is already mapped, refusing the charge would not free anything. A
     /// failed re-read falls back to the size last seen, which is a lower bound.
-    void acquireChargeFromBorrower() noexcept
+    ///
+    /// Never more than `cap` per region, whatever the file says. The borrower has just checked the
+    /// files against `shared_memory_max_size` and discarded a worker over it, but the command is
+    /// alive in between and can extend the file after that check and before this read; what it
+    /// must not be able to do is have the server carry a made-up figure while the worker idles.
+    /// The cap is what the administrator allowed a pooled worker to hold, so it is the most any
+    /// idle worker is ever charged, and the next borrow finds the file over the cap and drops it.
+    void acquireChargeFromBorrower(size_t cap) noexcept
     {
         size_t bytes = 0;
         for (const auto & region : shared_memory)
@@ -1024,12 +1055,12 @@ public:
                 continue;
             try
             {
-                bytes += region->refreshBackingSize();
+                bytes += std::min(region->refreshBackingSize(), cap);
             }
             catch (...)
             {
                 tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the size last seen");
-                bytes += region->backingSize();
+                bytes += std::min(region->backingSize(), cap);
             }
         }
 
@@ -1965,6 +1996,39 @@ namespace
                 if (command_holder)
                     command_holder->releaseChargeToBorrower();
 
+                /// A worker whose regions have outgrown `shared_memory_max_size` is not built on.
+                /// The cap is what an administrator sized the pool by - `pool_size` regions of at
+                /// most that - and the server's own growth never exceeds it, but the seals do not
+                /// stop the command from extending the file (`ftruncate` past the end is not
+                /// shrinking), and a file it stretched to a terabyte would be charged to this
+                /// query, mapped, and - for a borrow by another user - zeroed page by page. So the
+                /// file's length is read before anything else, and a worker over the cap goes,
+                /// with its regions; this borrow starts a fresh one. The same check runs where the
+                /// worker is handed back (`commandIsReused`), so this is the second line, for a
+                /// hand-back that could not run it.
+                ///
+                /// A check and an action on a file the command can extend at any moment are two
+                /// different things, and the command is alive between them. So this check is the
+                /// graceful path, not the guarantee: the guarantee is that nothing below is ever
+                /// sized by the file's length without that very length having been compared with
+                /// the cap first - the charge, the mapping, the reservation (`takeOverReusedRegion`)
+                /// each re-read the file and refuse to go on with a figure over the cap, and a
+                /// command that extends the file inside that window costs its worker the borrow.
+                if (command_holder)
+                {
+                    const size_t largest = command_holder->largestSharedMemoryBackingSize();
+                    if (largest > shared_memory_max_size)
+                    {
+                        LOG_WARNING(
+                            getLogger("ShellCommandSharedMemorySource"),
+                            "The process of an executable UDF has extended its shared-memory region to {} bytes, "
+                            "past shared_memory_max_size ({} bytes); the process and its regions are discarded and "
+                            "this borrow starts a fresh one",
+                            largest, shared_memory_max_size);
+                        command_holder->discardWorkerAndRegions();
+                    }
+                }
+
                 /// May throw MEMORY_LIMIT_EXCEEDED.
                 size_t region_count = pipeline_mode ? 2 : 1;
                 for (size_t i = 0; i < region_count; ++i)
@@ -1978,9 +2042,14 @@ namespace
                         /// previous borrow may have grown, so charge what it actually holds - its
                         /// committed size; a missing one is created at exactly shared_memory_size_.
                         size_t existing_size = command_holder->getSharedMemorySize(i);
+                        if (existing_size > shared_memory_max_size)
+                            failBorrowOnRegionOverTheCap(existing_size);
                         chargeQueryMemory(existing_size ? existing_size : shared_memory_size_);
                         regions[i] = command_holder->getOrCreateSharedMemory(shared_memory_size_, i, region_created);
                         regions_created_by_this_borrow[i] = region_created;
+
+                        if (!region_created)
+                            takeOverReusedRegion(i, existing_size);
                     }
                     else
                     {
@@ -2710,15 +2779,94 @@ namespace
         /// something it did not do, which under `stderr_reaction` `throw` is the difference between
         /// a confusing failure and a wrong accusation. They are logged instead, so they are not
         /// lost, and the query that borrows the worker is left alone.
+        /// Brings a region that served an earlier borrow into the state this borrow relies on: the
+        /// whole file mapped.
+        ///
+        /// The file can be longer than what the server has mapped - a command that extended it,
+        /// or a growth that committed its pages and could not map them - and the command maps the
+        /// whole file on every request, so the tail beyond the mapping is as readable to it as the
+        /// rest, and an offset it answers with may lie there. The query is already charged for the
+        /// file's length (`getSharedMemorySize`), a region only ever grows, and the file is under
+        /// the cap (checked before this), so the mapping is brought up to the file here; a region
+        /// that cannot be mapped whole is no use to this or any later borrow, and the worker goes
+        /// with it rather than being handed on with the same defect.
+        ///
+        /// Pages the previous command freed inside the file (the seals stop it from shrinking the
+        /// file, not from punching holes in it) are not committed again here: nothing about that
+        /// would hold - the command keeps its descriptor and can punch again at any instant - and
+        /// `SharedMemoryRegion` explains why no check can even tell. A hole costs the server a page
+        /// allocation on its next access, which is that function's own slowness, and nothing more.
+        void takeOverReusedRegion(size_t index, size_t charged_size)
+        {
+            auto & region = *regions[index];
+
+            /// Re-read, and compared with the cap again, because this is the figure the growth
+            /// below commits with `posix_fallocate` and maps: the constructor's check was a moment
+            /// ago, and the command can have extended the file since. Sizing the growth by an
+            /// unchecked length would let a command that races the borrow have the server commit
+            /// whatever it made the file - which is exactly what the cap exists to prevent.
+            const size_t backing = region.refreshBackingSize();
+            if (backing > shared_memory_max_size)
+                failBorrowOnRegionOverTheCap(backing);
+
+            /// The query was charged for the length read a moment earlier; a file that grew in
+            /// between - within the cap - is charged for the rest before it is mapped, so that
+            /// what this borrow holds mapped is what it is charged for. May throw the memory
+            /// limit, in which case nothing has been touched yet and the worker keeps its regions.
+            if (backing > charged_size)
+                chargeQueryMemory(backing - charged_size);
+
+            if (backing > region.size())
+            {
+                try
+                {
+                    region.grow(backing);
+                }
+                catch (...)
+                {
+                    dropRegionsAndWorker();
+                    throw;
+                }
+            }
+
+        }
+
+        /// Drops this borrow's view of the regions together with the holder's worker and regions:
+        /// what a borrow does when it finds the worker's regions unusable after it has begun.
+        void dropRegionsAndWorker()
+        {
+            for (size_t i = 0; i < regions.size(); ++i)
+            {
+                regions[i].reset();
+                regions_created_by_this_borrow[i] = false;
+            }
+            command_holder->discardWorkerAndRegions();
+        }
+
+        /// A region's file found over `shared_memory_max_size` after the constructor's check let
+        /// the borrow begin: the command extended it in between. Fail closed - the worker and its
+        /// regions go, and so does this query - rather than carry on with a figure the cap was
+        /// meant to rule out. The next query starts a fresh worker. (`cleanup` sees no worker in
+        /// the holder afterwards, so it does not mistake this for a borrow that never touched it.)
+        [[noreturn]] void failBorrowOnRegionOverTheCap(size_t backing)
+        {
+            dropRegionsAndWorker();
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "The process of an executable UDF extended its shared-memory region to {} bytes, past "
+                "shared_memory_max_size ({} bytes), while the region was being borrowed; the process and "
+                "its regions are discarded",
+                backing, shared_memory_max_size);
+        }
+
         /// Clears the regions when this borrow belongs to a different user than the previous
         /// one. What a query wrote into a pooled region stays there until overwritten, and the
         /// command serving the next query can read it - over the pipes it only ever saw what it
         /// was sent. The user boundary is where that matters, and the cost is paid only there: a
         /// `memset` of the region, nothing when the user is the same. The whole region and not just
         /// what the server knows it used: the command may have written anywhere in it, and only
-        /// zeroing everything says anything about all of it. Freeing the pages instead of zeroing
-        /// them is not an option - `FALLOC_FL_PUNCH_HOLE` is refused by the very seal that makes
-        /// the region safe to map.
+        /// zeroing everything says anything about all of it - and by now the whole file is mapped
+        /// (`takeOverReusedRegion`), so the region is the file. Zeroed rather than freed: a freed
+        /// page would come back on the next write, at the cost of an allocation on the hot path.
         void scrubRegionsForBorrower()
         {
             const String & user = context->getUserName();
@@ -2729,22 +2877,48 @@ namespace
                     if (!region)
                         continue;
 
-                    /// The whole file, not just the mapping. The file can be longer than what the
-                    /// server has mapped - a command that extended it, or a growth that committed
-                    /// its pages and could not map them - and the command maps the whole file, so
-                    /// a stale tail beyond the mapping is exactly as readable as the rest. Grow the
-                    /// mapping to the file first: the query is already charged for the file's
-                    /// length (see `getSharedMemorySize`), and a region only ever grows, so this
-                    /// is where the transport would end up anyway.
-                    const size_t backing = region->refreshBackingSize();
-                    if (backing > region->size())
-                        region->grow(backing);
-
                     memset(region->data(), 0, region->size());
                     ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryScrubbedBytes, region->size());
                 }
             }
             command_holder->recordBorrower(user);
+        }
+
+        /// Whether every region's file is still within `shared_memory_max_size` - the one property
+        /// of a worker's regions that the worker cannot be handed back to the pool without. The
+        /// server's own growth stops at the cap; the command's extension of the file does not
+        /// (see the constructor), and a worker whose file has passed it is discarded here rather
+        /// than charged to the server at that size and handed to the next query. Never throws: a
+        /// file whose length cannot be read is not one to build the next borrow on either.
+        bool regionsAreWithinTheCap() noexcept
+        {
+            for (const auto & region : regions)
+            {
+                if (!region)
+                    continue;
+
+                size_t backing = 0;
+                try
+                {
+                    backing = region->refreshBackingSize();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region; the process will not be reused");
+                    return false;
+                }
+
+                if (backing > shared_memory_max_size)
+                {
+                    LOG_WARNING(
+                        getLogger("ShellCommandSharedMemorySource"),
+                        "The process of an executable UDF has extended its shared-memory region to {} bytes, "
+                        "past shared_memory_max_size ({} bytes); the process will not be reused",
+                        backing, shared_memory_max_size);
+                    return false;
+                }
+            }
+            return true;
         }
 
         void discardStderrLeftByAPreviousBorrow()
@@ -2924,7 +3098,8 @@ namespace
                 && !command_is_invalid
                 && (command_can_be_reused
                     || (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read))
-                && controlChannelIsClean();
+                && controlChannelIsClean()
+                && regionsAreWithinTheCap();
         }
 
 
@@ -3163,8 +3338,25 @@ namespace
             /// `max_untracked_memory`), while double counting could fail a query that fits and
             /// would inflate the peak the server reports. The borrow side of the hand-over
             /// (`releaseChargeToBorrower`) errs the same way, for the same reason.
+            /// Checked once more, as late as possible: `keep_command` was decided above, and the
+            /// command is alive in between - a file it extended past the cap since then would be
+            /// charged to the server and handed to the next query along with the worker. The window
+            /// between this read and the charge below cannot be closed (the command can extend the
+            /// file at any instant), which is why the charge is capped as well.
+            if (keep_command && command_holder && !regionsAreWithinTheCap())
+            {
+                keep_command = false;
+                command = nullptr;
+                for (size_t i = 0; i < regions.size(); ++i)
+                {
+                    regions[i].reset();
+                    command_holder->resetSharedMemory(i);
+                    regions_created_by_this_borrow[i] = false;
+                }
+            }
+
             if (command_holder)
-                command_holder->acquireChargeFromBorrower();
+                command_holder->acquireChargeFromBorrower(shared_memory_max_size);
 
             if (command_holder && process_pool)
             {

@@ -26,6 +26,29 @@ using namespace DB;
 /// fails nor pins resources on non-Linux builds of unit_tests_dbms.
 #if defined(OS_LINUX)
 
+#include <linux/falloc.h>
+
+/// The sealing constants of the kernel ABI, for a libc whose headers predate them (the same
+/// fallback as in SharedMemoryRegion.cpp, which explains it).
+#if !defined(F_ADD_SEALS)
+#    define F_ADD_SEALS 1033
+#endif
+#if !defined(F_GET_SEALS)
+#    define F_GET_SEALS 1034
+#endif
+#if !defined(F_SEAL_SEAL)
+#    define F_SEAL_SEAL 0x0001
+#endif
+#if !defined(F_SEAL_SHRINK)
+#    define F_SEAL_SHRINK 0x0002
+#endif
+#if !defined(F_SEAL_GROW)
+#    define F_SEAL_GROW 0x0004
+#endif
+#if !defined(F_SEAL_WRITE)
+#    define F_SEAL_WRITE 0x0008
+#endif
+
 namespace
 {
 
@@ -391,6 +414,35 @@ TEST(SharedMemoryRegion, CommandExtendingTheFileIsSeenAndItsTailIsCommittedOnGro
     EXPECT_GE(static_cast<size_t>(st.st_blocks) * 512, 65536u);
     memset(region.data() + 60000, 'x', 100);
     EXPECT_EQ(std::string(region.data() + 60000, 3), "xxx");
+}
+
+/// The seal stops the command from making the file shorter; it does not stop it from freeing pages
+/// inside it. The region survives that: a punched page reads as zeros and takes a write like any
+/// other - an allocation, not a `SIGBUS`. What is lost is the reservation, and that is all: this
+/// test pins the boundary of what the seal promises, not a repair (see the class comment for why
+/// there is none).
+TEST(SharedMemoryRegion, HolePunchedByTheCommandIsNotASigbus)
+{
+    constexpr size_t size = 16 * 4096;
+    SharedMemoryRegion region(size);
+    memset(region.data(), 'x', size);
+
+    /// What a command could do through its inherited descriptor.
+    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 4096, 8 * 4096), 0);
+
+    struct stat st{};
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), size);
+    EXPECT_LT(static_cast<size_t>(st.st_blocks) * 512, size);
+
+    /// The mapping is intact: the hole reads as zeros, the rest as it was, and a write into the
+    /// hole is an ordinary page allocation.
+    EXPECT_EQ(region.data()[0], 'x');
+    EXPECT_EQ(region.data()[4096], '\0');
+    EXPECT_EQ(region.data()[9 * 4096], 'x');
+    region.data()[4096] = 'y';
+    EXPECT_EQ(region.data()[4096], 'y');
+    EXPECT_EQ(region.refreshBackingSize(), size);
 }
 
 TEST(SharedMemoryRegion, SynchronizedHandoff)

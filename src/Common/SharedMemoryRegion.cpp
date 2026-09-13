@@ -40,13 +40,36 @@ std::string SharedMemoryRegion::pathForChildFd(int child_fd)
 
 #if defined(OS_LINUX)
 
+/// The sealing constants of the kernel ABI (`<linux/fcntl.h>`, `<linux/memfd.h>`), for a libc whose
+/// headers predate them - the sysroot of one cross-compilation target does. The kernel has had
+/// them since 3.17, with these values, on every architecture; a libc header that declares them
+/// agrees, and one that does not gets them from here.
+#if !defined(F_ADD_SEALS)
+#    define F_ADD_SEALS 1033
+#endif
+#if !defined(F_SEAL_SEAL)
+#    define F_SEAL_SEAL 0x0001
+#endif
+#if !defined(F_SEAL_SHRINK)
+#    define F_SEAL_SHRINK 0x0002
+#endif
+#if !defined(MFD_CLOEXEC)
+#    define MFD_CLOEXEC 0x0001U
+#endif
+#if !defined(MFD_ALLOW_SEALING)
+#    define MFD_ALLOW_SEALING 0x0002U
+#endif
+
 namespace
 {
 
 /// The seals every region carries. `F_SEAL_SHRINK` is the point: the command holds a writable
-/// descriptor and must not be able to take pages out from under the server's mapping.
-/// `F_SEAL_SEAL` keeps it from adding seals of its own - `F_SEAL_GROW` would break the server's
-/// growth, `F_SEAL_WRITE` its writes.
+/// descriptor and must not be able to make the file shorter than the server's mapping - that is
+/// the one thing that would turn an access into a `SIGBUS`. `F_SEAL_SEAL` keeps it from adding
+/// seals of its own - `F_SEAL_GROW` would break the server's growth, `F_SEAL_WRITE` its writes.
+/// Nothing here stops the command from extending the file or from punching holes in it: the
+/// former is measured at every hand-over (`refreshBackingSize`), the latter is the command's own
+/// loss (the class comment states the contract); neither can crash the server.
 constexpr int REGION_SEALS = F_SEAL_SHRINK | F_SEAL_SEAL;
 
 /// The raw system call rather than the glibc wrapper: the wrapper is `memfd_create@GLIBC_2.27`,
@@ -134,8 +157,18 @@ void SharedMemoryRegion::checkSupported()
 
     /// Every region reserves its pages with `posix_fallocate`, which a seccomp profile may refuse
     /// (`EPERM`, or `EOPNOTSUPP` from a filter that lies about it); ask with one page, so that this
-    /// too fails at configuration time rather than on every call.
-    reserveBackingStorage(fd, static_cast<size_t>(::sysconf(_SC_PAGESIZE)), "support probe");
+    /// too fails at configuration time rather than on every call. Whatever the reason, it is
+    /// reported as the transport being unavailable here - this is a probe, and a refusal of one
+    /// page is not the machine running out of memory.
+    int fallocate_error = 0;
+    do
+        fallocate_error = ::posix_fallocate(fd, 0, static_cast<off_t>(::sysconf(_SC_PAGESIZE)));
+    while (fallocate_error == EINTR);
+    if (fallocate_error != 0)
+        ErrnoException::throwWithErrno(
+            ErrorCodes::NOT_IMPLEMENTED,
+            fallocate_error,
+            "Shared-memory regions for executable UDFs need posix_fallocate on a memfd, which this system refuses");
 
     if (0 != ::fcntl(fd, F_ADD_SEALS, REGION_SEALS))
     {

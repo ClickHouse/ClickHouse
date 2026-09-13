@@ -23,6 +23,33 @@ namespace DB
   * where it lies, without a copy in either direction and without ever checking whether the file is
   * still whole. There is nothing to check.
   *
+  * What the seal does not do is worth stating just as plainly, because it draws the line of what
+  * this class promises. It stops the file getting shorter; it does not stop the command from
+  * extending it (only the server's growth could be allowed, and seals do not tell the two apart -
+  * see `refreshBackingSize`), and it does not stop the command from freeing pages inside it with
+  * `fallocate(FALLOC_FL_PUNCH_HOLE)` or `madvise(MADV_REMOVE)`, which the kernel refuses only
+  * under `F_SEAL_WRITE` - a seal the command cannot live with, its output goes into the file.
+  * Neither is a `SIGBUS`: a page that was punched out is still inside the file, and the server's
+  * next access to it allocates it afresh, like any other page of memory - which can fail the way
+  * any allocation can (the OOM killer, under a cgroup limit; the mount behind a `memfd` has no
+  * size limit of its own), but not the way an access past the end of a file does. What a punched
+  * hole takes away is the reservation: the pages were committed up front so that the transport
+  * would not allocate on the hot path, and after a hole it does, for that region. There is no
+  * putting that back that would mean anything: the command can punch again the instant after,
+  * and on `shmem` no cheap check even tells a hole from a reserved page (a reserved page is not
+  * up to date until it is touched, so `mincore` and `SEEK_HOLE` report it as missing, and
+  * `st_blocks` counts pages the command can park past the end of the file); committing the
+  * whole file again on every call costs milliseconds per region, about what the transport saves.
+  *
+  * So the contract is this. The command is the server's own code - configured by the
+  * administrator, run as the server's user, able to signal the server - and is trusted like it.
+  * Against a command that is merely wrong (the classic one opens the region with `O_TRUNC`), the
+  * seal is a kernel-enforced guarantee: the server cannot be crashed through the region. Against
+  * a command that means harm, the region's cost is bounded - the consumer never charges, commits
+  * or maps it beyond what it checked against its cap - and nothing else is promised: such a
+  * command can slow its own function down, answer with zeros, or, for that matter, kill the
+  * server outright, none of which is the transport's to prevent.
+  *
   * A `memfd` has no name in any filesystem, which is the cost, and it is paid once: the command
   * cannot open the region by a path the server made up. Instead the descriptor is inherited by the
   * command's process at `exec` (see `ShellCommand::Config::inherited_fds`), and the request names it

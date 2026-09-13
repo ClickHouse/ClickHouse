@@ -798,7 +798,48 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>4194304</shared_memory_size>
+        <shared_memory_max_size>67108864</shared_memory_max_size>
         <command>shm_udf_extend.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_extend_past_cap_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>4194304</shared_memory_size>
+        <command>shm_udf_extend.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_punch_hole_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>1310720</shared_memory_size>
+        <command>shm_udf_punch_hole.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_report_size_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>65536</shared_memory_size>
+        <shared_memory_max_size>131072</shared_memory_max_size>
+        <command>shm_udf_report_size.py --extend-to 131072</command>
     </function>
     <function>
         <type>executable_pool</type>
@@ -824,6 +865,7 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>65536</shared_memory_size>
+        <shared_memory_max_size>131072</shared_memory_max_size>
         <command>shm_udf_peek_extended.py --extend-to 131072 --peek-at 65536</command>
     </function>
     <function>
