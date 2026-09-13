@@ -31,7 +31,20 @@ static void test_compile_time_boundaries()
     while (std::find(needles.begin(), needles.end(), non_needle) != needles.end())
         ++non_needle;
     const bool contains_null = std::find(needles.begin(), needles.end(), '\0') != needles.end();
-    const std::array<size_t, 18> sizes {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 511, 512, 1024};
+    const std::array<size_t, 32> sizes {
+        0, 1,
+        15, 16, 17,
+        31, 32, 33,
+        63, 64, 65,
+        127, 128,
+        255, 256,
+        511, 512, 513,
+        1023, 1024, 1025,
+        1039, 1040, 1041,
+        1055, 1056, 1057,
+        1087, 1088, 1089,
+        1536, 1537,
+    };
     const std::array<size_t, 18> positions {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 511, 512, 1023};
 
     for (const size_t size : sizes)
@@ -74,6 +87,16 @@ static void test_compile_time_boundaries()
             ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
         }
 
+        if (size >= 1024)
+        {
+            haystack.assign(size, non_needle);
+            haystack.back() = needles[0];
+            begin = haystack.data();
+            end = begin + haystack.size();
+            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end - 1) << "size: " << size;
+            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), end - 1) << "size: " << size;
+        }
+
         haystack.assign(size, needles[0]);
         begin = haystack.data();
         end = begin + haystack.size();
@@ -100,6 +123,16 @@ static void test_compile_time_boundaries()
             ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
             haystack[position] = needles[0];
         }
+
+        if (size >= 1024)
+        {
+            haystack.assign(size, needles[0]);
+            haystack.back() = non_needle;
+            begin = haystack.data();
+            end = begin + haystack.size();
+            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end - 1) << "size: " << size;
+            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), end - 1) << "size: " << size;
+        }
     }
 }
 
@@ -107,7 +140,22 @@ template <char... symbols>
 static void test_compile_time_randomized()
 {
     const std::array<char, sizeof...(symbols)> needles {symbols...};
-    constexpr std::array<size_t, 23> sizes {0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 95, 96, 127, 128, 255, 256, 511, 512, 513, 1024};
+    constexpr std::array<size_t, 36> sizes {
+        0, 1,
+        15, 16, 17,
+        31, 32, 33,
+        47, 48,
+        63, 64, 65,
+        95, 96,
+        127, 128,
+        255, 256,
+        511, 512, 513,
+        1023, 1024, 1025,
+        1039, 1040, 1041,
+        1055, 1056, 1057,
+        1087, 1088, 1089,
+        1536, 1537,
+    };
     std::uint32_t state = 0x12345678;
 
     for (size_t iteration = 0; iteration < 64; ++iteration)
