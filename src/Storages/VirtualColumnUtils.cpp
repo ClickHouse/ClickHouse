@@ -531,9 +531,10 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
         }
-        /// Only the sources that read an HTTP response supply the map; for any other source a
-        /// `_headers` virtual is a Hive path key, which the loop's Hive branch materializes.
-        else if (virtual_column.name == "_headers" && virtual_values.headers)
+        /// `_headers` is the HTTP response-header map only where a storage registered it as a
+        /// `Map` virtual; a Hive path key of that name gets a type inferred from the path value
+        /// instead, and belongs to the Hive branch below.
+        else if (virtual_column.name == "_headers" && virtual_values.headers && isMap(virtual_column.type))
         {
             chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
         }
