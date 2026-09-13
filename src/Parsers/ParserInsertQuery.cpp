@@ -256,10 +256,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT
-    /// (no SELECT), input(), or FROM INFILE. Reject it next to VALUES or a plain SELECT (no
-    /// input()), where there's nothing to decompress -- a trailing FORMAT there is just an output
-    /// format (e.g. for EXPLAIN), not a data stream, so has_format_clause alone is not enough.
-    bool has_data_stream = (!select && has_format_clause) || (select && selectReadsInlineDataViaInputFunction(select));
+    /// (no SELECT), input() with a trailing FORMAT, or FROM INFILE. Reject it next to VALUES, a
+    /// plain SELECT (no input()), or an input() SELECT without a trailing FORMAT -- in all of
+    /// those cases there's nothing to decompress.
+    bool has_data_stream = has_format_clause && (!select || selectReadsInlineDataViaInputFunction(select));
     if (compression && !infile && !has_data_stream)
         throw Exception(ErrorCodes::SYNTAX_ERROR,
                         "COMPRESSION clause is only supported next to FORMAT (including via input()) "
@@ -636,7 +636,7 @@ A `COMPRESSION` clause can also be used before a bare `FORMAT` clause, i.e. with
 </Note>
 
 <Note>
-`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. The [HTTP interface](/interfaces/http) parses this syntax but does not decompress the body for it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
+`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. Sent directly to the server (e.g. over the [HTTP interface](/interfaces/http)), it is rejected outright with an error, since the server has no way to decompress it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
 </Note>
 
 <Note>

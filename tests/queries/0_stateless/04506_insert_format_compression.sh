@@ -265,4 +265,6 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' VALUES (1, 'A')" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SELECT 1, 'A'" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
+# An input() SELECT with no trailing FORMAT has no data stream either -- COMPRESSION must still be rejected.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SELECT * FROM input('id UInt32, text String')" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"

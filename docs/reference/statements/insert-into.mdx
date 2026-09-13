@@ -239,7 +239,7 @@ A `COMPRESSION` clause can also be used before a bare `FORMAT` clause, i.e. with
 </Note>
 
 <Note>
-`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. The [HTTP interface](/interfaces/http) parses this syntax but does not decompress the body for it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
+`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. Sent directly to the server (e.g. over the [HTTP interface](/interfaces/http)), it is rejected outright with an error, since the server has no way to decompress it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
 </Note>
 
 <Note>
