@@ -11,6 +11,16 @@ using	936	683928	284928
 using	936	683928	284928
 using order by plan old analyzer	0	3
 using old analyzer	1400	1023600	428600
+right using order by plan old analyzer	0	3
+right using order by result old analyzer	1550	1
+right using order by result sharded old analyzer	1550	1
+right using old analyzer	1550	1023600	555950
+right using old analyzer	1550	1023600	555950
+right using old analyzer	1550	1023600	555950
+right using renamed key plan old analyzer	0	3
+right using renamed key other side plan old analyzer	1	2
+right using renamed key old analyzer	1550	1023600	555950	156
+right using renamed key old analyzer	1550	1023600	555950	156
 unsorted keys chain plan	3	1
 parallel unsorted keys chain pipeline	4	4	0
 inner	936	683928	359464	235376

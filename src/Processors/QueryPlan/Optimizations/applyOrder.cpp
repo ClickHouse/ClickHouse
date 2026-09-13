@@ -87,10 +87,36 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     const bool ordered_side_is_left = ordered_child == algorithm_left_child;
     const auto & output_header = *join_step.getOutputHeader();
     const auto & other_input_header = *join_step.getInputHeaders()[1 - ordered_child];
+
+    /// A name carried by both inputs does denote the ordered column of the right side in one case: when the
+    /// renamed copy of the right key is not selected, the legacy planner merges the two key columns of a
+    /// `USING` clause into the single output column of the left side, and `MergeJoinAlgorithm` fills it from
+    /// the right key for the rows that have no match on the left (`TableJoin::leftToRightKeyRemap`). For a
+    /// RIGHT join the left key column then holds the value of the right key on every row, so the ordered key
+    /// does reach the output - only under the name of the left key, while the renamed right copy is the
+    /// column that carries defaults there.
+    NameToNameMap right_key_to_merged_output;
+    if (isRight(kind))
+    {
+        for (const auto & [left_key, right_key] : table_join.leftToRightKeyRemap())
+            right_key_to_merged_output.emplace(right_key, left_key);
+    }
+
     size_t num_columns_in_output = 0;
     for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
     {
-        const auto & name = sort_description[num_columns_in_output].column_name;
+        auto & name = sort_description[num_columns_in_output].column_name;
+
+        if (auto it = right_key_to_merged_output.find(name); it != right_key_to_merged_output.end())
+        {
+            /// The merged column is the ordered one under the name of the other side, so the check for a key
+            /// shadowed by that side does not apply to it.
+            if (!output_header.has(it->second))
+                break;
+            name = it->second;
+            continue;
+        }
+
         if (!output_header.has(name))
             break;
         if (other_input_header.has(name) && (!ordered_side_is_left || table_join.renamedRightColumnName(name) == name))

@@ -101,6 +101,48 @@ FROM (EXPLAIN PLAN sorting = 1
 SELECT 'using old analyzer', count(), sum(a.v), sum(id)
 FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id);
 
+-- A RIGHT join is ordered by the right key, and `USING (id)` merges the two key columns into the single
+-- output column of the left side, which the merge join fills from the right key for the rows without a match
+-- on the left (`TableJoin::leftToRightKeyRemap`). So the ordered key reaches the output as `id` here.
+SELECT 'right using order by plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v);
+
+WITH (SELECT groupArray((id, v)) FROM (
+    SELECT id, a.v AS v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v)) AS rows
+SELECT 'right using order by result old analyzer', length(rows), rows = arraySort(rows);
+
+WITH (SELECT groupArray((id, v)) FROM (
+    SELECT id, a.v AS v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v)) AS rows
+SELECT 'right using order by result sharded old analyzer', length(rows), rows = arraySort(rows)
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
+FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
+SETTINGS join_algorithm = 'hash';
+SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
+FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id);
+SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
+FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+-- Selecting the renamed copy of the right key keeps the two columns apart instead: `b.id` is then the ordered
+-- one, while `id` holds the default for every right row without a match on the left, so a sort by `id` has to
+-- stay a full sort.
+SELECT 'right using renamed key plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT b.id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY b.id, a.v);
+
+SELECT 'right using renamed key other side plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT id, b.id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v);
+
+SELECT 'right using renamed key old analyzer', count(), sum(a.v), sum(b.id), countIf(id = 0)
+FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
+SETTINGS join_algorithm = 'hash';
+SELECT 'right using renamed key old analyzer', count(), sum(a.v), sum(b.id), countIf(id = 0)
+FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id);
+
 SET enable_analyzer = 1;
 
 -- When the join keys are not the sorting key of the tables, the table-side sorts stay full sorts, but the
