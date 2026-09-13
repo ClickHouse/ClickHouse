@@ -36,4 +36,9 @@ SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse WHERE u8_mix
 SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse WHERE nullable_all_false SETTINGS optimize_move_to_prewhere = 0;
 SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse WHERE nullable_mixed SETTINGS optimize_move_to_prewhere = 0;
 
+SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse PREWHERE u8_all_false SETTINGS optimize_move_to_prewhere = 0;
+SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse PREWHERE u8_mixed SETTINGS optimize_move_to_prewhere = 0;
+SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse PREWHERE nullable_all_false SETTINGS optimize_move_to_prewhere = 0;
+SELECT count(), sum(id) FROM t_filter_transform_uniform_mask_sparse PREWHERE nullable_mixed SETTINGS optimize_move_to_prewhere = 0;
+
 DROP TABLE t_filter_transform_uniform_mask_sparse;

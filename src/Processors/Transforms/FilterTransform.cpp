@@ -271,7 +271,7 @@ static std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & f
         if (memoryIsZero(filter.data(), 0, filter.size()))
             return false;
     }
-    else if (std::memchr(filter.data(), 0, filter.size()) == nullptr)
+    else if (std::memchr(filter.data() + 1, 0, filter.size() - 1) == nullptr)
     {
         return true;
     }

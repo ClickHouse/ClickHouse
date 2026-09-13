@@ -1,0 +1,35 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <enable_multiple_prewhere_read_steps>1</enable_multiple_prewhere_read_steps>
+        <query_plan_optimize_prewhere>1</query_plan_optimize_prewhere>
+        <optimize_trivial_count_query>0</optimize_trivial_count_query>
+        <allow_reorder_prewhere_conditions>0</allow_reorder_prewhere_conditions>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS filter_transform_uniform_mask_prewhere</create_query>
+    <create_query>
+        CREATE TABLE filter_transform_uniform_mask_prewhere
+        (
+            id UInt64,
+            selective UInt8,
+            all_true UInt8,
+            all_false UInt8
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 8192
+    </create_query>
+
+    <fill_query>
+        INSERT INTO filter_transform_uniform_mask_prewhere
+        SELECT number, toUInt8(number % 2), toUInt8(2), toUInt8(0)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE selective AND all_true FORMAT Null</query>
+    <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE selective AND all_false FORMAT Null</query>
+    <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE all_true AND selective FORMAT Null</query>
+
+    <drop_query>DROP TABLE filter_transform_uniform_mask_prewhere</drop_query>
+</test>
