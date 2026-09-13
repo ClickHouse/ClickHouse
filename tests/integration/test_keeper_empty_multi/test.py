@@ -16,9 +16,11 @@ node = cluster.add_instance(
 int_struct = struct.Struct("!i")
 int_int_long_struct = struct.Struct("!iiq")
 int_long_int_long_struct = struct.Struct("!iqiq")
+int_long_int_struct = struct.Struct("!iqi")
 
 MULTI_OPNUM = 14
 ERROR_OPNUM = -1
+XID = 1
 
 
 @pytest.fixture(scope="module")
@@ -51,22 +53,32 @@ def open_keeper_session(session_timeout=10000):
 
 
 def test_empty_multi_request(started_cluster):
-    # A `Multi` request whose subrequest list holds nothing but the terminator record. It parses,
-    # so it used to be preprocessed into no deltas at all, written to the changelog, and only then
-    # read `deltas.front()` on an empty range on the raft commit thread - terminating the process,
-    # and terminating it again on every restart that replayed the entry.
+    # A `Multi` request whose subrequest list holds nothing but the terminator record - what a client
+    # sends when it builds a transaction from a list that turns out to be empty. It parses, and it is
+    # preprocessed into no deltas at all, so it used to be written to the changelog and then read
+    # `deltas.front()` on an empty range on the raft commit thread, terminating the process - and
+    # terminating it again on every restart that replayed the entry.
     client = open_keeper_session()
     try:
         body = bytearray()
-        body.extend(int_struct.pack(1))  # xid
+        body.extend(int_struct.pack(XID))
         body.extend(int_struct.pack(MULTI_OPNUM))
         body.extend(int_struct.pack(ERROR_OPNUM))  # terminator record: op_num
         body.extend(b"\x01")  # terminator record: done
         body.extend(int_struct.pack(-1))  # terminator record: error
         client.sendall(int_struct.pack(len(body)) + bytes(body))
 
-        # The request is refused by the parser, which closes the session. What matters is that the
-        # request never reaches the state machine: Keeper answers the next client right away.
+        # An empty successful multi response: the header, then only the terminator record.
+        length = int_struct.unpack(client.recv(4))[0]
+        response = client.recv(length)
+        xid, zxid, error = int_long_int_struct.unpack_from(response, 0)
+        assert xid == XID, xid
+        assert zxid > 0, zxid
+        assert error == 0, error
+        assert response[int_long_int_struct.size :] == (
+            int_struct.pack(ERROR_OPNUM) + b"\x01" + int_struct.pack(-1)
+        )
+
         assert keeper_utils.send_4lw_cmd(cluster, node, "ruok") == "imok"
     finally:
         client.close()
@@ -82,7 +94,7 @@ def test_empty_multi_request(started_cluster):
         zk.stop()
         zk.close()
 
-    # Nothing poisonous was persisted: the restart replays the changelog written above.
+    # The entry of the empty multi is in the changelog, and the restart replays it.
     node.restart_clickhouse()
     keeper_utils.wait_nodes(cluster, [node])
     assert keeper_utils.send_4lw_cmd(cluster, node, "ruok") == "imok"

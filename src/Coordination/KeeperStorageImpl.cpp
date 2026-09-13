@@ -1565,9 +1565,11 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     const auto & subrequests = zk_request.requests;
 
     /// `preprocess` appends at least `SubDeltaEnd` or `FailedMultiDelta` for every subrequest, so the
-    /// range is empty only for a multi request without subrequests. Such a request is rejected by the
-    /// parser now, but an entry written by an older version is still replayed from the changelog on
-    /// startup, and an exception on the raft commit thread terminates the process.
+    /// range is empty only for a multi request that has no subrequests. Such a request is accepted -
+    /// ZooKeeper answers it with an empty successful response, and a client that builds a transaction
+    /// from a list that turns out to be empty sends exactly that - so answer it the same way here.
+    /// `processWatches` below already handles the empty range, and this runs on the raft commit
+    /// thread, where an exception terminates the process.
     if (deltas.empty())
     {
         chassert(subrequests.empty());
