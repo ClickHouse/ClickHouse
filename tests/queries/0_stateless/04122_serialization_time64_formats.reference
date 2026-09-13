@@ -6,7 +6,7 @@
 999:59:59.999
 -05:30:00.000
 00:00:00.000
-999:59:59.000
+999:59:59.999
 12:30:45.123456
 --- INSERT VALUES: deserializeTextQuoted quoted + numeric branches ---
 00:00:00.000

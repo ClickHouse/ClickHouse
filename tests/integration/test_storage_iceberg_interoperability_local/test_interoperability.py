@@ -1,3 +1,8 @@
+import glob
+import os
+
+from pyiceberg.table import StaticTable
+
 from helpers.iceberg_utils import get_uuid_str, iceberg_local_interop_dir
 
 # Same per-xdist-worker paths conftest uses (parallel-safe under --dist=each).
@@ -389,3 +394,98 @@ def test_spark_gzip_metadata_ch_write_spark_read(started_cluster_iceberg):
     ).collect()
     spark_values = sorted([row.number for row in df])
     assert spark_values == [42, 123], f"Spark got unexpected values: {spark_values}"
+
+
+def latest_metadata_file(table_dir):
+    """Newest `vN.metadata.json` of a table, by `N`.
+
+    The documents are numbered in write order, and two of them can carry the same
+    `last-updated-ms`, so the number decides rather than the timestamp. That is also
+    how ClickHouse itself resolves the table by default. `N` is not zero padded, so
+    the name itself does not sort.
+    """
+    candidates = glob.glob(os.path.join(table_dir, "metadata", "v*.metadata.json"))
+    assert candidates, f"no metadata file under {table_dir}"
+
+    def version(path):
+        return int(os.path.basename(path).split(".", 1)[0][1:])
+
+    return max(candidates, key=version)
+
+
+def test_ch_write_pyiceberg_read_bound_width(started_cluster_iceberg):
+    """
+    ClickHouse writes an Iceberg table, pyiceberg scans it with a row filter.
+
+    Regression for issue #117072: a manifest bound is serialized with the width of
+    its own Iceberg type (spec Appendix D), so `int` and `date` take 4 bytes and
+    `long` takes 8. ClickHouse wrote the `int` and `date` bounds 8 bytes wide, and
+    pyiceberg then raised `struct.error: unpack requires a buffer of 4 bytes` while
+    planning any filtered scan of such a table. Unfiltered scans never read the
+    bounds, so the breakage looked intermittent.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+
+    TABLE_NAME = "test_pyiceberg_bound_width_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    ch_settings = {"allow_insert_into_iceberg": 1}
+
+    node1.query(
+        f"""
+        CREATE TABLE {TABLE_NAME} (i32 Int32, d Date, i64 Int64, s String, d32 Date32)
+        ENGINE=IcebergLocal(local,
+            path = '{table_dir}', format=Parquet)
+        ORDER BY (i32)
+        """,
+        settings=ch_settings,
+    )
+    # One row, so each column's lower and upper bound hold the same value.
+    node1.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (42, '2024-06-01', 100, 'abc', '1950-01-01')",
+        settings=ch_settings,
+    )
+    assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
+
+    # external_dirs mounts the container path at the same absolute path on the host,
+    # so pyiceberg opens the very table ClickHouse just wrote.
+    table = StaticTable.from_metadata(latest_metadata_file(table_dir))
+
+    entries = [
+        entry
+        for manifest in table.current_snapshot().manifests(table.io)
+        for entry in manifest.fetch_manifest_entry(table.io)
+    ]
+    assert len(entries) == 1
+
+    # Raw bytes, because a decoder reads its own width and returns the right number
+    # from a bound of any length. Field 5 is negative (1950-01-01 is day -7305), so
+    # it pins the sign as well as the width.
+    expected_bounds = {
+        1: "2A000000",  # i32, Iceberg `int`
+        2: "A34D0000",  # d, `date`
+        3: "6400000000000000",  # i64, `long`
+        4: "616263",  # s, `string`
+        5: "77E3FFFF",  # d32, `date` before the epoch
+    }
+    for bounds in (entries[0].data_file.lower_bounds, entries[0].data_file.upper_bounds):
+        assert {
+            field_id: value.hex().upper() for field_id, value in bounds.items()
+        } == expected_bounds
+
+    # pyiceberg reads those bounds when it plans a filtered scan. The `long` and
+    # `string` filters and the unfiltered scan succeeded on the 8-byte bounds too,
+    # so they show the failure was confined to the narrow types.
+    for row_filter in [
+        "i32 >= 0",
+        "d >= '2024-01-01'",
+        "d32 <= '1950-01-02'",
+        "i64 >= 0",
+        "s >= 'a'",
+    ]:
+        assert len(table.scan(row_filter=row_filter).to_arrow()) == 1, row_filter
+
+    # The bounds are usable and not merely parseable: each of these excludes the row.
+    for row_filter in ["i32 > 42", "d > '2024-06-01'", "d32 > '1950-01-01'"]:
+        assert len(table.scan(row_filter=row_filter).to_arrow()) == 0, row_filter
+
+    assert len(table.scan().to_arrow()) == 1

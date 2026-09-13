@@ -117,7 +117,11 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
+    void updateLastColumnId(Int32 last_column_id_);
+
 private:
+    std::atomic<Int64> last_column_id{-1};
+
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
