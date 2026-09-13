@@ -625,6 +625,14 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
+        else
+            return false;
+    }
+
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
@@ -673,6 +681,7 @@ private:
     using T = typename Data::Set::value_type;
 
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
+    static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
 
     size_t num_args = 0;
@@ -730,6 +739,31 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+
+    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+
+    constexpr static bool parallelizeMergeWithKey() { return true; }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        if constexpr (is_parallelize_merge_prepare_needed)
+        {
+            using DataSet = typename Data::Set;
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ", getName());
+        }
+    }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
+        else
+            return false;
+    }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
