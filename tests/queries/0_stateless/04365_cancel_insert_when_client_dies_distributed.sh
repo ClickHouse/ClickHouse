@@ -9,6 +9,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest_dist.tsv"
 export TEST_MARK="04365_insert_${CLICKHOUSE_DATABASE}_"
+# insert_data publishes here the pid of the client it is running, for thread_cancel to kill.
+export CLIENT_PID_FILE="$CLICKHOUSE_TMP/deduptest_dist_client.pid"
+: > "$CLIENT_PID_FILE"
 
 # Sibling of 02434_cancel_insert_when_client_dies for the distributed insert source. Under
 # insert_deduplication_version=new_unified_hash the deduplication id is keyed by the insert source,
@@ -26,8 +29,13 @@ function insert_data
 {
     local ID=$1
     # client will send 10000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
+    # Run the client asynchronously and publish its pid: an insert lives ~0.1s, which only an
+    # O(1) lookup of that pid is fast enough to catch (see thread_cancel).
     $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal --max_block_size=10000 --max_insert_block_size=10000 --query_id="$ID" \
-        -q 'insert into dedup_dist settings max_insert_block_size=110000, min_insert_block_size_rows=110000, distributed_foreground_insert=1 format TSV' < $DATA_FILE
+        -q 'insert into dedup_dist settings max_insert_block_size=110000, min_insert_block_size_rows=110000, distributed_foreground_insert=1 format TSV' < $DATA_FILE &
+    local CLIENT_PID=$!
+    printf '%s' "$CLIENT_PID" > "$CLIENT_PID_FILE"
+    wait "$CLIENT_PID"
 }
 
 export -f insert_data
@@ -67,14 +75,18 @@ function thread_cancel
             SIGNAL="KILL"
         fi
 
-        # Poll (10ms) until an insert client is in flight, then kill it at once. A single blind
-        # snapshot plus long random sleeps misses the short in-flight window on fast builds, so
-        # no insert gets cancelled and the "did we cancel anything" guard below flips to 0.
+        # Poll (10ms) until an insert client is in flight, then kill it at once. Read the pid
+        # insert_data published instead of scanning /proc/*/cmdline: that scan costs O(all
+        # processes on the host) and can outlast the whole ~0.1s client, cancelling nothing.
         PID=""
         while [ $SECONDS -lt "$TIMELIMIT" ]
         do
-            PID=$(grep -Fa "query_id=$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Fav insert_data | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
-            if [ ! -z "$PID" ]; then break; fi
+            CANDIDATE=$(<"$CLIENT_PID_FILE")
+            # Matching the cmdline is liveness and identity at once: an exited pid may be reused.
+            if [ -n "$CANDIDATE" ] && grep -Faq "query_id=$TEST_MARK" "/proc/$CANDIDATE/cmdline" 2>/dev/null; then
+                PID="$CANDIDATE"
+                break
+            fi
             sleep 0.01;
         done
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi

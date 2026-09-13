@@ -251,7 +251,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_snapshot,
-        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
+        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
         storage.supportedPrewhereColumnsIncludeSubcolumns(),

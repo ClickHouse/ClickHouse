@@ -80,6 +80,10 @@ def ch_median(times):
 MAX_EXACT_SPLIT_RUNS = 8
 SAMPLED_SPLITS = 10000
 
+# `ErrorCodes::TIMEOUT_EXCEEDED`, src/Common/ErrorCodes.cpp. Spelled out instead of
+# read from `clickhouse_driver.errors.ErrorCodes`, whose contents vary by version.
+TIMEOUT_EXCEEDED = 159
+
 
 def stat_threshold(left_times, right_times):
     """The relative noise threshold of this comparison, replicating the
@@ -231,6 +235,11 @@ parser.add_argument(
     help="Test no more than this number of queries, chosen at random.",
 )
 parser.add_argument(
+    "--soft-max-queries",
+    action="store_true",
+    help='Let tests marked <test run_all_queries="1"> ignore --max-queries.',
+)
+parser.add_argument(
     "--queries-to-run",
     nargs="*",
     type=int,
@@ -254,6 +263,13 @@ parser.add_argument(
     type=int,
     default=0,
     help="For how many seconds to profile a query for which the performance has changed.",
+)
+parser.add_argument(
+    "--profile-all-queries",
+    action="store_true",
+    help="Profile every query of every test, not only the ones whose performance has "
+    "changed. Costs --profile-seconds per query per server. A single test can ask for "
+    'the same with <test profile_all_queries="1">.',
 )
 parser.add_argument(
     "--long", action="store_true", help="Do not skip the tests tagged as long."
@@ -282,6 +298,14 @@ parser.add_argument(
     "Purging equalises per-process jemalloc dirty-page state between LEFT and "
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
+)
+parser.add_argument(
+    "--pr-number",
+    type=int,
+    default=0,
+    help="Number of the pull request under test. A setup query marked "
+    'do_not_check_in_pr="<this number>" is allowed to fail on the reference '
+    "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
 
@@ -564,9 +588,8 @@ if not args.long:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-if any(q["kind"] == "shell" for q in test_queries) and (
-    args.user != "default" or args.password != "" or args.secure
-):
+has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
         "--user / --password / --secure connection options yet: the shell "
@@ -574,11 +597,53 @@ if any(q["kind"] == "shell" for q in test_queries) and (
         "Remove these options, or run this test without shell-script queries."
     )
 
+# Setup queries, in document order. The do_not_check_in_pr attribute is honoured only on these elements.
+setup_query_elements = [e for e in root.findall("./*") if e.tag in ("create_query", "fill_query")]
+
+for e in root.iter():
+    if "do_not_check_in_pr" in e.attrib and e not in setup_query_elements:
+        raise Exception(
+            "do_not_check_in_pr is only allowed on top-level <create_query> "
+            f"and <fill_query> elements, but was found on <{e.tag}>"
+        )
+
+if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_query_elements):
+    raise Exception(
+        "do_not_check_in_pr is not compatible with shell queries: a shell "
+        "performance test must run on every server to be comparable"
+    )
+
+# Setup queries paired with a flag. Tolerate query's failure on the reference server
+# only when do_not_check_in_pr matches --pr-number.
+create_query_templates = []
+for e in setup_query_elements:
+    attr = e.get("do_not_check_in_pr")
+    if attr is not None and not re.fullmatch("[1-9][0-9]*", attr):
+        raise Exception(
+            f'Invalid do_not_check_in_pr="{attr}" on <{e.tag}> in the test '
+            "file: must be the number of the pull request that introduces "
+            "the test (a positive integer)"
+        )
+    create_query_templates.append(
+        (e.text, attr is not None and int(attr) == args.pr_number)
+    )
+
+# <query file=...> have no element to carry the attribute. We can add support for it later if needed.
+create_query_templates += [(template, False) for template in extra_create_queries]
+
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
 if "max_ignored_relative_change" in root.attrib:
     ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
     print(f"report-threshold\t{ignored_relative_change}")
+
+# Opt-in per run or per test: profile every query, not only those whose timings changed.
+profile_all_queries = args.profile_all_queries or root.attrib.get(
+    "profile_all_queries", "0"
+) not in ("0", "false", "")
+
+# Opt-in per test: run every query. Honored only with --soft-max-queries.
+run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
 
 reportStageEnd("before-connect")
 
@@ -725,32 +790,43 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
+# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
+setup_error_on_connection = [None] * len(all_connections)
+
 if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both
-    # servers, to save time. The weird XML search + filter is because we want to
-    # keep the relative order of elements, and etree doesn't support the
-    # appropriate xpath query.
-    create_query_templates = [
-        q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
-    ]
-    create_query_templates += extra_create_queries
-    create_queries = substitute_parameters(create_query_templates)
+    # Run create and fill queries. We will run them simultaneously for both servers, to save time.
+    create_queries = []
+    for template, tolerate_on_reference in create_query_templates:
+        create_queries += [
+            (q, tolerate_on_reference) for q in substitute_parameters([template])
+        ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
     # after some errors.
-    for q in create_queries:
+    for q, _ in create_queries:
         if re.search("create temporary table", q, flags=re.IGNORECASE):
-            print(
-                f"Temporary tables are not allowed in performance tests: '{q}'",
-                file=sys.stderr,
-            )
+            print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
             sys.exit(1)
 
     def do_create(connection, index, queries):
-        for q in queries:
-            connection.execute(q)
-            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+        for q, tolerate_on_reference in queries:
+            try:
+                connection.execute(q)
+                print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+            except Exception:
+                # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
+                if index != 0 or not tolerate_on_reference:
+                    raise
+
+                message = (
+                    "setup query failed on the reference server and is tolerated "
+                    f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
+                    f"running the test on the new server only: {tsv_escape(q)[:200]}"
+                )
+                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                setup_error_on_connection[index] = message
+                break
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
@@ -792,7 +868,7 @@ reportStageEnd("sync")
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
 
-if args.max_queries:
+if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
         range(0, len(test_queries)), min(len(test_queries), args.max_queries)
@@ -826,8 +902,13 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    query_error_on_connection = [None] * len(all_connections)
+    # A connection whose tolerated (do_not_check_in_pr) setup query failed
+    # starts out already failed for every query, so the partial
+    # ("backward-incompatible") machinery excludes it from the comparison.
+    query_error_on_connection = list(setup_error_on_connection)
     for conn_index, c in enumerate(all_connections):
+        if query_error_on_connection[conn_index]:
+            continue
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -1046,7 +1127,7 @@ for query_index in queries_to_run:
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")
 
-    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
+    # Run additional profiling queries to collect profile data, by default only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
     if len(all_server_times) != 2:
         continue
@@ -1063,7 +1144,9 @@ for query_index in queries_to_run:
     # difference we use in report (max(median) / min(median)).
     relative_diff = (median[1] - median[0]) / median[0]
     print(f"diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}")
-    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
+    if not profile_all_queries and (
+        abs(relative_diff) < ignored_relative_change or pvalue > 0.05
+    ):
         continue
 
     if q_item["kind"] == "shell":
@@ -1076,10 +1159,15 @@ for query_index in queries_to_run:
     # of runs, because we also have short queries.
     profile_start_seconds = time.perf_counter()
     run = 0
-    while time.perf_counter() - profile_start_seconds < args.profile_seconds:
+    profile_budget_reached = False
+    while (
+        not profile_budget_reached
+        and time.perf_counter() - profile_start_seconds < args.profile_seconds
+    ):
         run_id = f"{query_prefix}.profile{run}"
 
         for conn_index, c in enumerate(this_query_connections):
+            run_start_seconds = time.perf_counter()
             try:
                 profile_elapsed = execute_query_group(
                     c,
@@ -1089,22 +1177,34 @@ for query_index in queries_to_run:
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
-                        # Dedicated profile runs are not timed, so we can afford
-                        # the overhead of allocation sampling to also collect
-                        # MemorySample and JemallocSample stacks for flamegraphs.
+                        # Allocation sampling can make a query orders of magnitude
+                        # slower, so each statement of a run is bounded by the
+                        # profiling budget; a multi-statement item takes a multiple.
+                        "max_execution_time": args.profile_seconds,
                         "memory_profiler_sample_probability": 0.1,
                         "jemalloc_enable_profiler": 1,
                         "jemalloc_collect_profile_samples_in_trace_log": 1,
                     },
                 )
+            except clickhouse_driver.errors.ServerException as e:
+                if e.code != TIMEOUT_EXCEEDED:
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ": " + e.message
+                    raise
+                # The samples taken before the budget ran out are in `trace_log`;
+                # the `profile` row below is what joins them into the report.
+                profile_elapsed = time.perf_counter() - run_start_seconds
+                profile_budget_reached = True
                 print(
-                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}"
+                    f"profile-timeout\t{query_index}\t{run_id}\t{conn_index}"
+                    f"\t{profile_elapsed}"
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ": " + e.message
                 raise
+            print(f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}")
 
         run += 1
 
@@ -1118,8 +1218,15 @@ reportStageEnd("run")
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
+        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
+        setup_failed = setup_error_on_connection[conn_index] is not None
         for q in drop_queries:
-            c.execute(q)
+            try:
+                c.execute(q)
+            except Exception:
+                if setup_failed:
+                    continue
+                raise
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")

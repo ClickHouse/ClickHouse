@@ -4,12 +4,15 @@
 #include <cmath>
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -21,8 +24,19 @@
 #include <Formats/ParseError.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event SelectivityEstimatorInSetNotBuilt;
+    extern const Event SelectivityEstimatorInSetEstimatedFromSize;
+}
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
+}
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
@@ -154,6 +168,15 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
+                /// Negating by flipping ranges only works for an element whose ranges say what it
+                /// matches. Two do not qualify: a clause holding an absorbed factor is a conjunction
+                /// times that factor, and `NOT (a AND u)` is `NOT a OR NOT u`, not the flipped ranges
+                /// times the same factor; and an element with no ranges at all - an unknown atom, say -
+                /// has nothing to flip, so the switch below would leave it unchanged and it would go on
+                /// to report the selectivity of the un-negated predicate. Finalize both first, so the
+                /// negation applies to a plain selectivity.
+                if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
+                    last_element->finalize(column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else
@@ -255,6 +278,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     Field const_value;
     DataTypePtr const_type;
     String column_name;
+    /// Set when the right-hand side of IN / NOT IN is a prepared set whose ranges we can share.
+    /// The ranges themselves are pulled only at the point of use: the checks below can still reject
+    /// the atom (e.g. the left side is an expression rather than a column), and deriving them for an
+    /// atom we then discard is exactly the work this reuse is meant to avoid.
+    SetPtr set_for_ranges;
     DataTypePtr column_type;
 
     if (node.isFunction())
@@ -312,19 +340,54 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 if (!future_set)
                     return false;
 
-                auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+                /// Deliberately not `buildOrderedSetInplace`: this estimator is advisory - it only ranks
+                /// PREWHERE candidates - so it must not run a subquery to fill a set. A set that is not
+                /// built yet simply cannot be analysed, and the condition falls back to the default
+                /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
+                /// became a `ColumnConst` and made these sets visible here.
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
+                {
+                    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
                     return false;
+                }
 
                 Columns columns = prepared_set->getSetElements();
                 if (columns.size() != 1)
                     return false;
 
-                Tuple tuple(columns[0]->size());
-                for (size_t i = 0; i < columns[0]->size(); ++i)
-                    tuple[i] = (*columns[0])[i];
+                /// Turning the set into ranges below costs a `Field` per element, a sort, and one
+                /// statistics probe per element. Above the limit, estimate from the size of the set
+                /// and its bounds instead: still one pass over the set, for the bounds, but without the
+                /// sort or the per-element probes. The atom is finalized rather than turned into ranges:
+                /// a scalar selectivity cannot intersect with other predicates on the same column, only
+                /// multiply.
+                const auto max_set_size = node.getTreeContext().getQueryContext()->getSettingsRef()
+                    [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
+                if (max_set_size && columns[0]->size() > max_set_size)
+                {
+                    chassert(is_in_operator);
+                    const bool negative = func_name != "in";
+                    const auto lhs_name = func.getArgumentAt(0).getColumnName();
 
-                const_value = std::move(tuple);
+                    /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
+                    /// consult, and below the limit it is given a flat default by the "not a real column"
+                    /// branch further down. Use that same default here, so that crossing the limit cannot
+                    /// change the estimate for such an atom - and skip the size-based path, which would
+                    /// otherwise read `set_size / <no cardinality>` as "matches everything".
+                    if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                        out.selectivity.true_sel = negative ? 1.0 - default_cond_equal_factor : default_cond_equal_factor;
+                    else
+                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative);
+
+                    out.finalized = true;
+                    return false;
+                }
+
+                /// Take the set's shared range view instead of copying every element into a `Tuple`
+                /// only to turn it back into ranges below: for a large set that dominates planning,
+                /// and each consumer of the same set derives an identical result.
+                set_for_ranges = prepared_set;
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -464,6 +527,22 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 }
             }
 
+            /// Every check that could reject this atom has passed, so the ranges will actually be used.
+            if (set_for_ranges)
+            {
+                auto set_ranges = set_for_ranges->getPlainRanges();
+                if (!set_ranges)
+                    return false;
+
+                chassert(is_in_operator);
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                if (func_name == "in")
+                    out.column_ranges.emplace(column_name, *set_ranges);
+                else
+                    out.column_not_ranges.emplace(column_name, *set_ranges);
+                return true;
+            }
+
             /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
             if (is_in_operator && const_value.getType() != Field::Types::Tuple)
                 const_value = Tuple{const_value};
@@ -590,6 +669,48 @@ UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() con
     return stats->estimateCardinality();
 }
 
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estimateSelectivityFromSetSize(
+    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const
+{
+    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
+
+    /// `Set::appendSetElements` appends only the rows flagged by the deduplication filter, so this is the
+    /// set's exact number of distinct values, directly comparable with the column's estimated cardinality.
+    const size_t set_size = set_elements.size();
+
+    auto it = column_estimators.find(column_name);
+    if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+    {
+        /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
+        const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * default_cond_equal_factor, 1.0), 0};
+        return negative ? selectivity.applyNot() : selectivity;
+    }
+
+    /// First upper bound: a row outside the set's bounds cannot be in the set. This is exactly as
+    /// accurate as any other range atom on this column - `estimateRanges` degrades to the same
+    /// defaults whenever the statistics cannot answer for a range.
+    Selectivity selectivity{1.0, 0};
+    Field min_value;
+    Field max_value;
+    set_elements.getExtremes(min_value, max_value, 0, set_size);
+    if (!min_value.isNull() && !max_value.isNull())
+        selectivity = it->second.estimateRanges(PlainRanges(Range(min_value, true, max_value, true)));
+
+    /// Second upper bound: at most `set_size` of the column's distinct values can match, and the
+    /// estimator assumes every distinct value carries the same share of rows, so at most
+    /// `set_size / cardinality` of them do. Only when the cardinality is measured - without a uniq
+    /// sketch `estimateCardinality` returns a fixed fraction of the row count, and dividing by that
+    /// guess would make the condition look arbitrarily selective and promote it into PREWHERE on no
+    /// evidence.
+    const UInt64 cardinality = it->second.estimateCardinality();
+    if (cardinality && it->second.stats->hasCardinality())
+        selectivity.true_sel
+            = std::min(selectivity.true_sel, static_cast<Float64>(set_size) / static_cast<Float64>(cardinality));
+
+    return negative ? selectivity.applyNot() : selectivity;
+}
+
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
 {
         {
@@ -689,6 +810,21 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
 {
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
+        /// An operand carrying no ranges contributes a bare factor that a merge cannot represent as a
+        /// range. Under `AND` it is still absorbable: its selectivity is kept aside in
+        /// `absorbed_and_selectivity` and applied by `finalize`, which lets the ranges around it keep
+        /// merging with each other. This covers an unknown atom, a negated one that `FUNCTION_NOT`
+        /// already finalized, and atoms estimated by a default such as `LIKE`. Under `OR` there is no
+        /// such factorisation, so it stays unmergeable and is finalized as its own operand.
+        if (e.isConstantFactor())
+            return function_to_merge == FUNCTION_AND;
+
+        /// A clause that already absorbed an unknown atom is a conjunction times a constant factor.
+        /// That composes with another conjunction, but not with a disjunction: `P((a AND u) OR b)` is
+        /// not the selectivity of the united ranges times the factor.
+        if (e.hasAbsorbed() && function_to_merge != FUNCTION_AND)
+            return false;
+
         return (e.function == FUNCTION_IN_RANGE
                 || e.function == FUNCTION_IS_NULL
                 || e.function == FUNCTION_IS_NOT_NULL
@@ -697,8 +833,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
                 || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
-                || e.function == FUNCTION_UNKNOWN)
+                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1)
                 && !e.finalized;
     };
     /// we will merge normal expression and not expression separately.
@@ -726,6 +861,24 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     };
     if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
+        /// Carry over what either side absorbed, and absorb a side that is itself only a factor. Both
+        /// are conjunctive factors, so they multiply into this clause's own factor. A finalized side
+        /// already knows its selectivity; an unknown atom does not, and `finalize` would give it
+        /// `default_unknown_cond_factor`.
+        for (const RPNElement * side : {&lhs, &rhs})
+        {
+            if (side->hasAbsorbed())
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->absorbed_and_selectivity);
+
+            if (!side->isConstantFactor())
+                continue;
+
+            if (side->finalized)
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->selectivity);
+            else if (side->function == FUNCTION_UNKNOWN)
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(Selectivity{default_unknown_cond_factor, 0});
+        }
+
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
         null_check_columns.insert(lhs.null_check_columns.begin(), lhs.null_check_columns.end());
@@ -744,6 +897,14 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return;
 
     finalized = true;
+
+    /// Take what was absorbed and clear it. It is folded into `selectivity` below, and from then on
+    /// this clause is a number: a later merge has to take that number and nothing else. Leaving the
+    /// factor behind would let the merge carry it over a second time, on top of the result it is
+    /// already part of. Every exit below clears it, which is why it is taken here rather than at each.
+    const Selectivity absorbed = absorbed_and_selectivity;
+    const bool had_absorbed = hasAbsorbed();
+    absorbed_and_selectivity = Selectivity{1.0, 0.0};
 
     if (function == FUNCTION_UNKNOWN)
     {
@@ -832,6 +993,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         {
             if (not_null_check_columns.contains(col))
             {
+                /// A contradiction is zero whatever was absorbed alongside it.
                 selectivity = Selectivity();
                 return;
             }
@@ -845,6 +1007,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
             if (not_null_check_columns.contains(col))
             {
                 selectivity = Selectivity(1, 0);
+                if (had_absorbed)
+                    selectivity = selectivity.applyAnd(absorbed);
                 return;
             }
         }
@@ -920,6 +1084,11 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         selectivity.true_sel = default_unknown_cond_factor;
     else
         selectivity.true_sel = std::max(0.0, std::min(1.0, selectivity.true_sel));
+
+    /// Atoms absorbed by a conjunctive merge contribute no range, so they are applied here, after the
+    /// ranges they were interleaved with have been merged and estimated together.
+    if (had_absorbed)
+        selectivity = selectivity.applyAnd(absorbed);
 }
 
 }

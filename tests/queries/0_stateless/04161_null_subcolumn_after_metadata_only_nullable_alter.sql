@@ -124,3 +124,41 @@ SELECT 'tuple element';
 SELECT t.a FROM t_tuple_elem_mem;
 
 DROP TABLE t_tuple_elem_mem;
+
+-- A pending `RENAME COLUMN` leaves the column stored under its previous name in the part while the
+-- table metadata already carries the new one. The `.null` subcolumn must still be derived from the
+-- parent column that is read alongside it, not filled from the storage-type default.
+DROP TABLE IF EXISTS t_null_sub_renamed;
+CREATE TABLE t_null_sub_renamed (id UInt8, y UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1000000000, auto_statistics_types = '';
+
+INSERT INTO t_null_sub_renamed VALUES (1, 42);
+ALTER TABLE t_null_sub_renamed MODIFY COLUMN y Nullable(UInt8) SETTINGS mutations_sync = 2;
+SYSTEM STOP MERGES t_null_sub_renamed;
+ALTER TABLE t_null_sub_renamed RENAME COLUMN y TO x SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'compact, pending rename';
+SELECT count() FROM t_null_sub_renamed WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_null_sub_renamed WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count(x) FROM t_null_sub_renamed SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, x, x.null FROM t_null_sub_renamed ORDER BY id;
+
+DROP TABLE t_null_sub_renamed;
+
+CREATE TABLE t_null_sub_renamed (id UInt8, y UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+INSERT INTO t_null_sub_renamed VALUES (1, 42);
+ALTER TABLE t_null_sub_renamed MODIFY COLUMN y Nullable(UInt8) SETTINGS mutations_sync = 2;
+SYSTEM STOP MERGES t_null_sub_renamed;
+ALTER TABLE t_null_sub_renamed RENAME COLUMN y TO x SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'wide, pending rename';
+SELECT count() FROM t_null_sub_renamed WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_null_sub_renamed WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count(x) FROM t_null_sub_renamed SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, x, x.null FROM t_null_sub_renamed ORDER BY id;
+
+DROP TABLE t_null_sub_renamed;

@@ -24,6 +24,22 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 drop할 때 모든 Iceberg 파일을 삭제할지 여부입니다.
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "첫 번째 행을 읽기 전에 동시에 디코딩할 Iceberg 삭제 manifest 파일 수의 상한을 지정하는 새로운 설정입니다. 26.8 이전에는 한 번에 manifest 하나를 디코딩하면서 다음 manifest를 fetch했으므로, 이전 동작과 가장 유사한 값은 `2`입니다. 이 경우 첫 번째 행이 반환되기 전 중요 경로에 두 manifest의 객체 스토리지 왕복 시간이 합산됩니다."}]}]} />
+
+데이터 파일을 읽기 전에 쿼리 실행 중 동시에 디코딩할 수 있는 Iceberg 삭제 manifest 파일의 최대 개수입니다.
+
+데이터 파일을 읽기 전에 모든 삭제 manifest를 디코딩해야 하므로, 이 작업은 첫 번째 행이 반환되기 전의 중요 경로에 포함됩니다. 여러 개를 동시에 디코딩하면 객체 스토리지 왕복 시간과 행별 프루닝 작업을 모두 겹쳐서 수행할 수 있습니다.
+
+Iceberg 메타데이터 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 진행 중인 각 manifest가 자체 디코딩 결과를 보유하므로 값이 클수록 쿼리 초기화 중 최대 메모리 사용량이 증가합니다.
+
+0보다 커야 하며, `1`은 manifest를 한 번에 하나씩 디코딩합니다.
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>
