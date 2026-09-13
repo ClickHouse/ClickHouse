@@ -350,6 +350,32 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 {
     const char * pos = begin;
 
+    for (; end - pos >= 64; pos += 64)
+    {
+        __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+        __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
+
+        __m256i eq0 = mm256_is_in<symbols...>(bytes0);
+        __m256i eq1 = mm256_is_in<symbols...>(bytes1);
+
+        __m256i combined;
+        if constexpr (positive)
+            combined = _mm256_or_si256(eq0, eq1);
+        else
+            combined = _mm256_and_si256(eq0, eq1);
+
+        uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
+        if (!combined_mask)
+            continue;
+
+        uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
+        if (mask0)
+            return pos + __builtin_ctz(mask0);
+
+        uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
+        return pos + 32 + __builtin_ctz(mask1);
+    }
+
     for (; end - pos >= 32; pos += 32)
     {
         if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
