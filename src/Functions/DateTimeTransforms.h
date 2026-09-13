@@ -2139,7 +2139,17 @@ struct ToDayOfWeekImpl
     }
 
     static constexpr bool hasMonotonicity() { return true; }
-    using FactorTransform = ToMondayImpl;
+
+    /// The day of the week is monotonic inside a single day for every `mode`, while a week-based factor
+    /// only holds for the Monday-first modes: modes 2 and 3 number Sunday lowest, so a range inside one
+    /// Monday-week is not monotonic there - and the mode, a constant argument, is not visible to
+    /// `getMonotonicityForRange`.
+    ///
+    /// The factor has to be `ToDate32Impl` rather than `ToDateImpl`: the latter narrows the day number
+    /// to `UInt16`, which aliases it modulo 65536 on the extended carriers - `1970-01-01` and
+    /// `2149-06-07` would share a factor - and reads the whole part of the decimal components of a
+    /// `DateTime64`, which truncates towards zero instead of rounding down before the epoch.
+    using FactorTransform = ToDate32Impl;
 };
 
 struct ToDayOfYearImpl
