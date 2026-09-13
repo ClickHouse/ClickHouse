@@ -135,6 +135,121 @@ FROM
 )
 WHERE explain LIKE '%m.values%';
 
+-- FixedString Map elements should use the matching subcolumn too.
+DROP TABLE IF EXISTS t_map_contains_like_fixed;
+
+CREATE TABLE t_map_contains_like_fixed
+(
+    id UInt8,
+    m_fixed_key Map(FixedString(3), String),
+    m_fixed_value Map(String, FixedString(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_fixed VALUES
+    (1, {'abc': 'one'}, {'key': 'val'}),
+    (2, {'xyz': 'two'}, {'key': 'foo'});
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_fixed
+    WHERE mapContainsKeyLike(m_fixed_key, 'a%')
+)
+WHERE explain LIKE '%m_fixed_key.keys%';
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_fixed
+    WHERE mapContainsValueLike(m_fixed_value, 'v%')
+)
+WHERE explain LIKE '%m_fixed_value.values%';
+
+SELECT count() = 1
+FROM t_map_contains_like_fixed
+WHERE mapContainsKeyLike(m_fixed_key, 'a%');
+
+SELECT count() = 1
+FROM t_map_contains_like_fixed
+WHERE mapContainsKeyLike(m_fixed_key, 'a%')
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT count() = 1
+FROM t_map_contains_like_fixed
+WHERE mapContainsValueLike(m_fixed_value, 'v%');
+
+SELECT count() = 1
+FROM t_map_contains_like_fixed
+WHERE mapContainsValueLike(m_fixed_value, 'v%')
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_map_contains_like_fixed;
+
+-- Keep Map LIKE functions unchanged when the Map is required by a text index.
+DROP TABLE IF EXISTS t_map_contains_like_text_index;
+
+CREATE TABLE t_map_contains_like_text_index
+(
+    id UInt8,
+    m Map(String, String),
+    INDEX idx_keys mapKeys(m) TYPE text(tokenizer = 'splitByNonAlpha'),
+    INDEX idx_values mapValues(m) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_text_index VALUES
+    (1, {'alpha': 'one'}),
+    (2, {'beta': 'two'});
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_text_index
+    WHERE mapContainsKeyLike(m, 'a%')
+)
+WHERE explain LIKE '%FUNCTION mapContainsKeyLike%';
+
+SELECT count() = 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_text_index
+    WHERE mapContainsKeyLike(m, 'a%')
+)
+WHERE explain LIKE '%arrayExists%';
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_text_index
+    WHERE mapContainsValueLike(m, 'o%')
+)
+WHERE explain LIKE '%FUNCTION mapContainsValueLike%';
+
+SELECT count() = 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_text_index
+    WHERE mapContainsValueLike(m, 'o%')
+)
+WHERE explain LIKE '%arrayExists%';
+
+DROP TABLE t_map_contains_like_text_index;
+
 -- Expression patterns must not be moved into the synthesized lambda. This is a structural
 -- check, so it does not depend on the output of a non-deterministic function.
 SELECT count() = 0
