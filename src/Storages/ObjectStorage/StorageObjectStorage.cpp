@@ -1,5 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <algorithm>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -22,6 +24,7 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -404,7 +407,7 @@ size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
         return num_streams;
 
     /// A static list of keys: the read creates at most one source per key.
-    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+    return std::min(num_streams, std::max(1uz, configuration->getPathsCount()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -830,11 +833,79 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// A truncating insert overwrites the table: it starts from the base key, the split objects
+    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
+    /// It does not matter whether the current insert is split by size: a rewrite with
+    /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous
+    /// split insert as well, otherwise both this table and the readers of a wildcard path over the same
+    /// prefix keep seeing the stale rows.
+    if (settings.truncate_on_insert)
+    {
+        if (paths.size() > 1)
+        {
+            /// These objects were written by this table, and are deleted whatever their keys are.
+            std::vector<String> stale_keys;
+            stale_keys.reserve(paths.size() - 1);
+            for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+                stale_keys.push_back(it->path);
+
+            /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
+            /// remove one leaves the table reading exactly the objects that are still there: neither the whole
+            /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
+            removeStaleSplitObjects(
+                *object_storage,
+                stale_keys,
+                [&](const String & removed_key) { configuration->retirePath(removed_key); });
+        }
+        else if (settings.split_on_write_by_size_bytes)
+        {
+            /// The table has no numbered tail of its own to delete - it either never had one, or lost it
+            /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
+            removeStaleSplitObjectsByNumber(
+                *object_storage,
+                paths.front().path,
+                getStartSequenceNumber(paths.front().path, 1),
+                settings.create_new_file_on_insert);
+        }
+
+        paths.resize(1);
+    }
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path,
+            getStartSequenceNumber(paths.front().path, 1)))
     {
         paths.push_back({*new_key});
     }
     configuration->setPaths(paths);
+
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
+    /// The numbering is derived per insert from the key of the object this insert starts with:
+    /// the next objects continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
+    StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    StorageObjectStorageSink::PublishPathCallback publish_path;
+    if (settings.split_on_write_by_size_bytes)
+    {
+        get_next_path = [storage = object_storage, config = configuration, settings,
+                         key = paths.back().path,
+                         sequence_number = getStartSequenceNumber(paths.back().path, 1)]() mutable -> String
+        {
+            return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+        };
+
+        /// The key becomes visible for the readers of this table only after the object has been committed:
+        /// a `SELECT` running concurrently with the insert never plans a key whose object is still being
+        /// written, or was never created at all because the insert failed. The registration is a single
+        /// atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
+        /// the list without this key or the list with it, and never a copy of a vector that is being
+        /// reallocated under it.
+        publish_path = [config = configuration](const String & new_key)
+        {
+            config->appendPath({new_key});
+        };
+    }
 
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
@@ -843,7 +914,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        settings.split_on_write_by_size_bytes,
+        std::move(get_next_path),
+        std::move(publish_path));
 }
 
 bool StorageObjectStorage::optimize(

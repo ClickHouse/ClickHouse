@@ -24,6 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool hdfs_create_new_file_on_insert;
+    extern const SettingsUInt64 hdfs_split_on_write_by_size_bytes;
     extern const SettingsBool hdfs_ignore_file_doesnt_exist;
     extern const SettingsUInt64 hdfs_replication;
     extern const SettingsBool hdfs_skip_empty_files;
@@ -65,6 +66,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
     return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
+        .split_on_write_by_size_bytes = settings[Setting::hdfs_split_on_write_by_size_bytes],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
         .schema_inference_mode = settings[Setting::schema_inference_mode],
         .skip_empty_files = settings[Setting::hdfs_skip_empty_files],

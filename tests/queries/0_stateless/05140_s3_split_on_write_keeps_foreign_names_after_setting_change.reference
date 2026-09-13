@@ -1,0 +1,15 @@
+--- A large insert skips the taken keys
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv
+--- A smaller truncating insert with s3_create_new_file_on_insert back at 0
+100	0	99
+--- The objects of the previous insert are deleted, the keys it did not own are intact
+data.1.tsv
+data.3.tsv
+data.tsv
+111111
+333333
