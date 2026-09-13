@@ -244,6 +244,29 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
     return added;
 }
 
+/// The column an internal top-k threshold filter thresholds, when `prewhere` computes nothing else.
+/// A prewhere that also carries a user predicate or a row policy is an `and(...)` and yields nothing;
+/// on a projection read the filter arrives behind the `_projection_filter` alias `QueryDAG` adds.
+std::optional<String> topKDynamicFilterColumn(const PrewhereInfo & prewhere)
+{
+    const auto * node = prewhere.prewhere_actions.tryFindInOutputs(prewhere.prewhere_column_name);
+    if (!node)
+        return {};
+
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base
+        || node->function_base->getName() != "__topKFilter" || node->children.size() != 1)
+        return {};
+
+    const auto * argument = node->children.front();
+    if (argument->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    return argument->result_name;
+}
+
 }
 
 namespace ProfileEvents
@@ -3974,6 +3997,44 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     enable_vertical_final = false;
 
     updateSortDescription();
+
+    /// Once the read is ordered by the top-k sort column it delivers the rows the LIMIT wants first, so
+    /// the threshold can only reject rows the read order has already passed: evaluating it per row and
+    /// pulling the sort column through a separate prewhere reader buys nothing.
+    if (query_info.prewhere_info && top_k_filter_info && !result_sort_description.empty())
+    {
+        auto top_k_column = topKDynamicFilterColumn(*query_info.prewhere_info);
+        /// Undo only the optimizer's own threshold filter: the name is not reserved, so a user function
+        /// can carry it, and the stamp is also set by the skip-index half alone. `where_clause` is false
+        /// exactly when the top-k pass saw no user filter below the limit, so none can be matched here.
+        if (top_k_column && !top_k_filter_info->where_clause
+            && *top_k_column == top_k_filter_info->column_name
+            && *top_k_column == result_sort_description.front().column_name)
+        {
+            /// A prewhere moves its own DAG's outputs to the front of the header, so reading the
+            /// columns in the order the prewhere reported them keeps the header the steps above were
+            /// built for. Committing only on an equal structure leaves "keep the filter" fail-closed.
+            auto reordered_column_names = output_header->getNames();
+            auto candidate_header = MergeTreeSelectProcessor::transformHeader(
+                storage_snapshot->getSampleBlockForColumns(reordered_column_names), query_info.row_level_filter, nullptr);
+
+            if (blocksHaveEqualStructure(*output_header, candidate_header))
+            {
+                all_column_names = std::move(reordered_column_names);
+                updatePrewhereInfo(nullptr);
+
+                /// A projection read arrives already analyzed, and the read is fed from the analysis.
+                if (analyzed_result_ptr)
+                    analyzed_result_ptr->column_names_to_read = all_column_names;
+
+                /// The caller zeroes `read_limit` for a read that carries a filter and passes the intact
+                /// bound as `query_limit`; this read keeps no filter, so the bound applies again.
+                if (!read_limit && query_limit && !query_info.row_level_filter)
+                    query_info.input_order_info
+                        = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, query_limit);
+            }
+        }
+    }
 
     /// Set correct read_type
     if (analyzed_result_ptr)
