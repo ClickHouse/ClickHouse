@@ -1,0 +1,85 @@
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+
+SET enable_json_type = 1;
+
+{% for case in [
+    {
+      "table": "condition_only_provenance_04839",
+      "comment1a": "An identifier referenced only in an if()/multiIf() condition never contributes a value to",
+      "comment1b": "the output, so it must not donate its own SHARED REGEXP policy to the result.",
+      "col1": "j JSON(max_dynamic_paths=5)",
+      "col2": "meta JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "insert_val": "(1, '{\"a\":1}', '{\"tag_a\":1}')",
+      "proj_expr": "if(JSONHas(meta, 'x'), j, j)",
+      "comment2a": "The regression: this must be 0. meta is referenced only inside the if() condition, never",
+      "comment2b": "contributing a value to the output, so its SHARED REGEXP rule must not leak into j's type.",
+      "label": "condition-only identifier provenance"
+    },
+    {
+      "table": "array_predicate_provenance_04839",
+      "comment1a": "A predicate lambda (arrayFilter, arraySort, ...) never contributes its own return value to the",
+      "comment1b": "output, so an identifier used only inside it must not donate its SHARED REGEXP policy.",
+      "col1": "arr Array(JSON(max_dynamic_paths=5))",
+      "col2": "meta JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "insert_val": "(1, ['{\"a\":1}'], '{\"tag_a\":1}')",
+      "proj_expr": "arrayFilter(x -> JSONHas(meta, 'flag'), arr)",
+      "comment2a": "The regression: this must be 0. meta is referenced only inside arrayFilter's predicate lambda,",
+      "comment2b": "never contributing a value to the output, so its SHARED REGEXP rule must not leak into arr's element type.",
+      "label": "array predicate-lambda identifier provenance"
+    },
+    {
+      "table": "map_predicate_provenance_04839",
+      "comment1a": "mapFilter/mapSort/... are thin Map adapters over the same predicate-only array Impls; an",
+      "comment1b": "identifier used only inside their lambda must not donate its SHARED REGEXP policy either.",
+      "col1": "m Map(String, UInt64)",
+      "col2": "meta JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "insert_val": "(1, map('a', 1), '{\"tag_a\":1}')",
+      "proj_expr": "mapFilter((k, v) -> JSONHas(meta, 'flag'), m)",
+      "comment2a": "The regression: this must be 0. meta is referenced only inside mapFilter's predicate lambda,",
+      "comment2b": "never contributing a value to the output, so its SHARED REGEXP rule must not leak into m's type.",
+      "label": "map predicate-lambda identifier provenance"
+    },
+    {
+      "table": "lambda_parameter_shadowing_04839",
+      "comment1a": "A lambda's bound parameter must be masked like RequiredSourceColumnsVisitor masks it, or it can",
+      "comment1b": "collide with a same-named real column and donate that column's SHARED REGEXP rule to the wrong output.",
+      "col1": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "col2": "arr Array(JSON(max_dynamic_paths=5))",
+      "insert_val": "(1, '{\"tag_a\":1}', ['{\"keep\":1}'])",
+      "proj_expr": "arrayMap(j -> j, arr) AS mapped",
+      "comment2a": "The regression: this must be 0. The lambda's bound parameter `j` must not be resolved against",
+      "comment2b": "the unrelated top-level `j` column, whose SHARED REGEXP rule `mapped` has nothing to do with.",
+      "label": "lambda parameter shadowing provenance"
+    }
+  ] -%}
+DROP TABLE IF EXISTS {{ case.table }};
+
+-- {{ case.comment1a }}
+-- {{ case.comment1b }}
+CREATE TABLE {{ case.table }}
+(
+    id UInt64,
+    {{ case.col1 }},
+    {{ case.col2 }}
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO {{ case.table }} VALUES {{ case.insert_val }};
+
+ALTER TABLE {{ case.table }}
+    ADD PROJECTION p (SELECT id, {{ case.proj_expr }} WHERE id > 0 ORDER BY id);
+ALTER TABLE {{ case.table }} MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+-- {{ case.comment2a }}
+-- {{ case.comment2b }}
+SELECT
+    '{{ case.label }}',
+    countIf(position(type, 'SHARED REGEXP') > 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='{{ case.table }}' AND column != 'id' AND active;
+
+DROP TABLE {{ case.table }};
+
+{% endfor -%}

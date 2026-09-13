@@ -10,6 +10,9 @@
 #include <algorithm>
 
 #include <Columns/ColumnObject.h>
+#include <Common/SpaceSaving.h>
+
+#include <base/StringViewHash.h>
 #include <Core/Defines.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
@@ -157,6 +160,9 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     ColumnObject::Statistics statistics;
     /// If true, statistics will be recalculated during serialization.
     bool recalculate_statistics = false;
+    /// Bounded per-part shared-data path counts (heavy-hitter sketch, so a high-cardinality part
+    /// cannot exhaust memory); read into `statistics` only once, at suffix time.
+    SpaceSaving<std::string_view, StringViewHash> shared_data_path_counts;
 
     /// For flattened serialization only. string_views reference path data inside the Object column
     /// (shared data paths and dynamic paths map keys), which stays alive during serialization.
@@ -936,19 +942,16 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     object_state->shared_data_serialization->serializeBinaryBulkWithMultipleStreams(*shared_data, offset, limit, settings, object_state->shared_data_state);
     if (object_state->recalculate_statistics)
     {
-        /// Calculate statistics for paths in shared data.
+        /// Exact per-part counts; the single top-K cap happens at suffix time, so an early chunk
+        /// cannot evict a path that is globally hot but locally cold (the counts stay chunk-order independent).
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        size_t start = shared_data_offsets[offset - 1];
+        size_t start = offset ? shared_data_offsets[offset - 1] : 0;
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
+        if (object_state->shared_data_path_counts.capacity() == 0)
+            object_state->shared_data_path_counts.resize(4 * ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE);
         for (size_t i = start; i != end; ++i)
-        {
-            auto path = shared_data_paths->getDataAt(i);
-            if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
-                ++it->second;
-            else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
-                object_state->statistics.shared_data_paths_statistics.emplace(path, 1);
-        }
+            object_state->shared_data_path_counts.insert(shared_data_paths->getDataAt(i));
     }
     settings.path.pop_back();
     settings.path.pop_back();
@@ -975,6 +978,16 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
         /// It is needed to be able to write empty statistics if needed.
         if (object_state->serialization_version.value == SerializationVersion::V3)
             writeBinary(true, *stream);
+
+        /// Read the top paths out of the bounded sketch exactly once, over full-part totals; within
+        /// the sketch's capacity the counts are exact, beyond it they are Space-Saving upper bounds.
+        if (object_state->recalculate_statistics)
+        {
+            auto & shared_stats = object_state->statistics.shared_data_paths_statistics;
+            shared_stats.clear();
+            for (const auto & counter : object_state->shared_data_path_counts.topK(ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE))
+                shared_stats.emplace(String(counter.key), counter.count);
+        }
 
         /// First, write dynamic paths statistics.
         for (const auto & path : object_state->sorted_dynamic_paths)

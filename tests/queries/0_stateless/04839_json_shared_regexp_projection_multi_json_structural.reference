@@ -1,0 +1,10 @@
+tuple(j1,j2) type	Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+map(j1,j2) type	Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+arrayZip(arr1,arr2) type	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\')))
+arrayZipUnaligned(arr1,arr2) type	Array(Tuple(Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\')), Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))))
+single aligned donor	arrayElement(arr, 1)	Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), b JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+single aligned donor	assumeNotNull(t)	Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), b JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+if(tuple,tuple) type	Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+if(map,map) type	Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
+if(arrayZip,arrayZip) type	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\')))
+if(single-donor branches)	1	1

@@ -1,0 +1,73 @@
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+
+SET enable_json_type = 1;
+
+{% for name, vertical_rows, vertical_columns in [('horizontal', 1000000, 1000000), ('vertical', 1, 1)] -%}
+DROP TABLE IF EXISTS merge_04839_{{ name }};
+
+CREATE TABLE merge_04839_{{ name }}
+(
+    id UInt64,
+    j JSON(max_dynamic_paths=1, SHARED REGEXP '^forced[.]')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    min_rows_for_wide_part=0,
+    min_bytes_for_wide_part=0,
+    enable_vertical_merge_algorithm={{ 0 if name == 'horizontal' else 1 }},
+    vertical_merge_algorithm_min_rows_to_activate={{ vertical_rows }},
+    vertical_merge_algorithm_min_columns_to_activate={{ vertical_columns }},
+    vertical_merge_algorithm_min_bytes_to_activate=0;
+
+SYSTEM STOP MERGES merge_04839_{{ name }};
+
+INSERT INTO merge_04839_{{ name }}
+SELECT
+    number,
+    toJSONString(map('forced.k' || toString(number), number, 'hot', number))
+FROM numbers(10)
+SETTINGS max_threads=1;
+
+INSERT INTO merge_04839_{{ name }}
+SELECT
+    number + 10,
+    toJSONString(map('forced.k' || toString(number + 10), number, 'cold', number))
+FROM numbers(6)
+SETTINGS max_threads=1;
+
+SELECT
+    '{{ name }} before',
+    countIf(has(JSONDynamicPaths(j), 'hot')),
+    countIf(has(JSONDynamicPaths(j), 'cold')),
+    countIf(arrayExists(path -> startsWith(path, 'forced.'), JSONDynamicPaths(j))),
+    countIf(has(JSONSharedDataPaths(j), 'cold')),
+    countIf(arrayExists(path -> startsWith(path, 'forced.'), JSONSharedDataPaths(j)))
+FROM merge_04839_{{ name }};
+
+SYSTEM START MERGES merge_04839_{{ name }};
+OPTIMIZE TABLE merge_04839_{{ name }} FINAL;
+SYSTEM FLUSH LOGS part_log;
+
+SELECT
+    '{{ name }} algorithm',
+    merge_algorithm
+FROM system.part_log
+WHERE database=currentDatabase()
+  AND table='merge_04839_{{ name }}'
+  AND event_type='MergeParts'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+SELECT
+    '{{ name }} after',
+    countIf(has(JSONDynamicPaths(j), 'hot')),
+    countIf(has(JSONDynamicPaths(j), 'cold')),
+    countIf(arrayExists(path -> startsWith(path, 'forced.'), JSONDynamicPaths(j))),
+    countIf(has(JSONSharedDataPaths(j), 'cold')),
+    countIf(arrayExists(path -> startsWith(path, 'forced.'), JSONSharedDataPaths(j)))
+FROM merge_04839_{{ name }};
+
+DROP TABLE merge_04839_{{ name }};
+
+{% endfor -%}

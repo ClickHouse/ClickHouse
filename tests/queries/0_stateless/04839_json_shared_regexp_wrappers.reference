@@ -1,0 +1,19 @@
+before alter	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
+before alter	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
+2	0
+arr	0
+mp	0
+nul	0
+tup	0
+arr	2	2
+mp	2	2
+nul	2	2
+tup	2	2
+after metadata reload	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
+after metadata reload	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
+arr	1	1
+mp	1	1
+nul	1	1
+tup	1	1
+after merge	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
+after merge	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]

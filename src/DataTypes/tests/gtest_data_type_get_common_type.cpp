@@ -1,6 +1,8 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
+#include <Common/assert_cast.h>
 
 #include <sstream>
 #include <gtest/gtest.h>
@@ -81,6 +83,21 @@ TEST_P(LeastSuperTypeTest, getLeastSupertype)
     {
         EXPECT_ANY_THROW(getLeastSupertype(this->from_types));
     }
+}
+
+GTEST_TEST(LeastSuperTypeTest, JSONSharedRegexpRootPrefix)
+{
+    const auto outer_type = typeFromString(
+        "JSON(shared_regexp_path_prefix='outer.', SHARED REGEXP '^outer[.]forced$')");
+    const auto same_prefix = getLeastSupertype(DataTypes{outer_type, outer_type});
+    EXPECT_TRUE(outer_type->equals(*same_prefix));
+
+    const auto inner_type = typeFromString(
+        "JSON(shared_regexp_path_prefix='inner.', SHARED REGEXP '^outer[.]forced$')");
+    const auto different_prefix = getLeastSupertype(DataTypes{outer_type, inner_type});
+    const auto & different_prefix_json = assert_cast<const DataTypeObject &>(*different_prefix);
+    EXPECT_TRUE(different_prefix_json.getSharedDataPathRules().empty());
+    EXPECT_TRUE(different_prefix_json.getSharedDataPathPrefix().empty());
 }
 
 class MostSubtypeTest : public TypeTest {};
