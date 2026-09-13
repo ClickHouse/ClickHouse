@@ -1767,6 +1767,13 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// path, and both queue modes then skip every later generation at that key - the
                 /// rewritten object would be dropped for good. So the processing is reset without a
                 /// failure instead, and the newer generation is picked up on a later pass.
+                ///
+                /// This branch is about a read that failed, so no `after_processing` step acts on
+                /// this file in this pass: nothing is moved or deleted, and the reset only decides
+                /// whether the path is listed again. What the post-processing does with a file that
+                /// was ingested is a separate matter (`ObjectStorageQueuePostProcessor`): there the
+                /// copy of a move is pinned to the ingested generation on both Azure and S3, the
+                /// delete is pinned on Azure and by key on S3, which has no conditional delete.
                 const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
                     || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
 

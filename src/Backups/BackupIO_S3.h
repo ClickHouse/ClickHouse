@@ -134,6 +134,9 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
+    /// `s3_validate_etag_on_read` at the time the backup was opened: whether the S3-to-S3 copies of
+    /// this writer are pinned to one generation of their source (see `copyFileFromDisk`).
+    const bool pin_copies_to_generation;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;

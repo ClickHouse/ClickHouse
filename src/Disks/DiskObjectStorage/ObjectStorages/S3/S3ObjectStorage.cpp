@@ -679,6 +679,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*src_bucket=*/src_bucket,
                 /*src_key=*/src_key,
                 /*src_size=*/size,
+                /*src_etag=*/object_from.etag,
                 /*dest_s3_client=*/current_client,
                 /*dest_bucket=*/dest_bucket,
                 /*dest_key=*/dest_key,
@@ -734,11 +735,16 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
+    /// A source that carries an `ETag` names the generation the caller has seen (a queue copies the
+    /// generation it ingested); the copy is pinned to it and transfers that generation or fails with
+    /// `S3_OBJECT_CHANGED_DURING_READ`. The read-and-write fallback reads the source through
+    /// `readObject`, which pins its `GET`s to the same `ETag`.
     copyS3File(
         /*src_s3_client=*/current_client,
         /*src_bucket=*/src_bucket,
         /*src_key=*/src_key,
         /*src_size=*/size,
+        /*src_etag=*/object_from.etag,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/dest_bucket,
         /*dest_key=*/dest_key,

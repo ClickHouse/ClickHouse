@@ -233,7 +233,9 @@ private:
     /// that point on, whatever happens next, so `undo` has to take it back out.
     bool copied_to_destination = false;
     /// The generation the copy wrote, so that the delete in `undo` is pinned to it and cannot take
-    /// away a generation another writer has put at the same key since.
+    /// away a generation another writer has put at the same key since. When the endpoint names no
+    /// generation for it, `destination` is the bare key and `undo` deletes by it: a blob left under
+    /// the key of a file would be loaded as that file on the next start (see `load`).
     StoredObject destination;
     bool destination_generation_is_named = false;
 
@@ -291,7 +293,8 @@ private:
     StoredObject destination;
     /// Whether `destination` names a generation. The execute side refuses to go on without one, so
     /// `undo` only ever sees it unset for a move that was refused for exactly that reason, and it
-    /// then leaves the blob the copy wrote alone instead of deleting the key blindly.
+    /// then deletes the blob the copy wrote by its key: leaving it would make `load` bring the
+    /// uncommitted move back as `path_to` on the next start.
     bool destination_generation_is_named{false};
 
 public:

@@ -40,7 +40,8 @@ public:
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log,
-    /// with one exception. `FILE_CHANGED_DURING_READ` means that an object is no longer the generation
+    /// with one exception. `FILE_CHANGED_DURING_READ` (Azure) or `S3_OBJECT_CHANGED_DURING_READ` (S3)
+    /// means that an object is no longer the generation
     /// that was ingested: it was overwritten after it was read, and the newer generation has never been
     /// ingested. The object is left in place, every other object of the batch is still handled, and
     /// the error is then rethrown, so that the caller does not commit the file as processed - which
@@ -53,7 +54,8 @@ public:
 
 private:
     /// The first object of a batch found to be no longer the generation that was ingested
-    /// (`FILE_CHANGED_DURING_READ`), remembered while the rest of the batch is handled, so that
+    /// (`FILE_CHANGED_DURING_READ` or `S3_OBJECT_CHANGED_DURING_READ`), remembered while the rest of
+    /// the batch is handled, so that
     /// `process` can rethrow it afterwards. Safe to share between the threads that handle a batch.
     class ChangedGeneration
     {
@@ -72,7 +74,8 @@ private:
     void doWithRetries(std::function<void()> action) const;
 
     /// Move processed objects to another prefix. Each of the three rethrows the first
-    /// `FILE_CHANGED_DURING_READ` once the whole batch has been handled (see `process`).
+    /// `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ` once the whole batch has been
+    /// handled (see `process`).
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
     /// Move processed S3 objects, possibly to another S3 storage
     void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;

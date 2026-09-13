@@ -617,6 +617,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     /// that threw before writing anything leaves nothing for `undo` to remove, which is why the
     /// flag is set here rather than before the copy.
     copied_to_destination = true;
+    destination = StoredObject(remote_path_to);
     if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
     {
         destination = std::move(*named);
@@ -626,9 +627,9 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
         throw Exception(
             ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
             "Cannot copy '{}' to '{}': the generation of the blob at {} that the copy has just "
-            "written cannot be named, so a rollback of this copy could only delete that key "
-            "blindly. The copy is refused here, before the file is recorded, and the blob the copy "
-            "wrote is left in the bucket",
+            "written cannot be named, so a rollback of this copy cannot delete exactly that "
+            "generation. The copy is refused here, before the file is recorded, and the rollback "
+            "removes the blob the copy wrote by its key (see `undo`)",
             path_from.string(),
             path_to.string(),
             remote_path_to.string());
@@ -646,16 +647,23 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     if (!destination_generation_is_named)
     {
         /// The generation the copy wrote was never named, so the only delete available here is one
-        /// by path, and that is exactly what would take away a generation somebody else has put at
-        /// the key since. The blob stays and its path is logged instead.
+        /// by key. It is made all the same, because the alternative is worse: `load` rebuilds the
+        /// files of a directory from every blob under the key of the directory, so a blob left at
+        /// the key of `path_to` becomes that file on the next start of the server, although the
+        /// transaction that wrote it never committed. The key was free by the metadata of this
+        /// disk when the copy wrote it, so what is there is the blob this copy wrote, unless
+        /// another writer has taken the key over since the copy - which is the one case this
+        /// delete cannot tell apart, and the reason the pinned delete below is preferred whenever
+        /// the endpoint names the generation.
         LOG_WARNING(
             log,
-            "Not removing the blob at {} that the copy of '{}' to '{}' wrote: the generation it "
-            "holds was never named, so it cannot be deleted without the risk of taking away a "
-            "generation written by somebody else. Remove it by hand if it is not wanted",
+            "Removing the blob at {} that the copy of '{}' to '{}' wrote, by its key alone: the "
+            "generation it holds could not be named, and a blob left under the key of a file would "
+            "be loaded as that file on the next start",
             remote_path_to.string(),
             path_from,
             path_to);
+        object_storage->removeObjectIfExists(destination);
         return;
     }
 
@@ -807,6 +815,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         /// because the directory is rebuilt from the blobs that are in the bucket. The generation
         /// that was just written is named here so that the delete in `undo` is pinned to it.
         copied_to_destination = true;
+        destination = StoredObject(remote_path_to);
         if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
         {
             destination = std::move(*named);
@@ -816,9 +825,9 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                 "Cannot move '{}' to '{}': the generation of the blob at {} that the copy has just "
-                "written cannot be named, so a rollback of this move could only delete that key "
-                "blindly. The move is refused here, before the source is deleted, and the blob the "
-                "copy wrote is left in the bucket",
+                "written cannot be named, so a rollback of this move cannot delete exactly that "
+                "generation. The move is refused here, before the source is deleted, and the "
+                "rollback removes the blob the copy wrote by its key (see `undo`)",
                 path_from.string(),
                 path_to.string(),
                 remote_path_to.string());
@@ -852,16 +861,22 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     if (copied_to_destination && !destination_generation_is_named)
     {
         /// The move was refused because the generation the copy wrote could not be named, so the
-        /// only delete available here is one by path, which is what would take away a generation
-        /// another writer has put at the key since. The blob stays and its path is logged instead.
+        /// only delete available here is one by key. It is made all the same, for the reason given
+        /// in the copy operation: a blob left under the key of `path_to` is loaded as that file on
+        /// the next start, although the move never committed - and in the replaceable case it would
+        /// stand in for the target this move had set aside, which is then only under a scratch key.
+        /// The key was free (the target was set aside and deleted, pinned to its generation) when
+        /// the copy wrote it, so what is there is the blob this move wrote, unless another writer
+        /// has taken the key over since the copy.
         LOG_WARNING(
             log,
-            "Not removing the blob at {} that the move of '{}' to '{}' wrote: the generation it "
-            "holds was never named, so it cannot be deleted without the risk of taking away a "
-            "generation written by somebody else. Remove it by hand if it is not wanted",
+            "Removing the blob at {} that the move of '{}' to '{}' wrote, by its key alone: the "
+            "generation it holds could not be named, and a blob left under the key of a file would "
+            "be loaded as that file on the next start",
             remote_path_to.string(),
             path_from,
             path_to);
+        object_storage->removeObjectIfExists(destination);
     }
     else if (copied_to_destination)
     {

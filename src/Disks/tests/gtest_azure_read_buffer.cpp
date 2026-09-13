@@ -3302,9 +3302,58 @@ TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRef
 
     ASSERT_TRUE(error_code.has_value());
     ASSERT_EQ(*error_code, DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR);
-    /// The aborted hard link is not a file of the disk: `load` would otherwise find the blob the
-    /// copy wrote and the metadata would agree with it.
+    /// The aborted hard link is not a file of the disk.
     ASSERT_FALSE(fixture.fs_tree->existsFile("to"));
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+
+    /// The rollback takes the blob the copy wrote back out of the key of the file, by the key alone,
+    /// since the generation could not be named: `load` rebuilds a directory from every blob under
+    /// its key, so a blob left there would come back as the file `to` on the next start, although
+    /// the transaction never committed.
+    operation.undo();
+
+    ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
+    ASSERT_EQ(transport->deleteIfMatchHeaders(), std::vector<std::string>{std::string{}});
+}
+
+/// The same for a move: the destination blob whose generation the endpoint will not name is refused
+/// before the source is deleted, and the rollback removes it from the key of `to` by the key alone.
+TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefusedAndRemoved)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
+        /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
+        /* no_etag_on_head_after_a_copy */ true);
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport);
+
+    PlainRewritableHardLinkFixture fixture;
+    DB::StoredObjects removed_objects;
+    DB::MetadataStorageFromPlainObjectStorageMoveFileOperation operation(
+        /* replaceable */ false, "from", "to", fixture.fs_tree, object_storage, fixture.layout, fixture.metrics, removed_objects);
+
+    std::optional<int> error_code;
+    try
+    {
+        operation.execute();
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR);
+    /// Refused before the source was deleted: nothing has been deleted yet.
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+    ASSERT_TRUE(fixture.fs_tree->existsFile("from"));
+
+    operation.undo();
+
+    /// The one delete is the one of the destination, by its key alone.
+    ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
+    ASSERT_EQ(transport->deleteIfMatchHeaders(), std::vector<std::string>{std::string{}});
 }
 
 /// The same hard link against an endpoint that names the generation of the blob the copy wrote:

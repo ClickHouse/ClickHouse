@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -83,7 +84,10 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
 
 void ObjectStorageQueuePostProcessor::ChangedGeneration::rememberIfCurrentExceptionIsOne()
 {
-    if (getCurrentExceptionCode() != ErrorCodes::FILE_CHANGED_DURING_READ)
+    /// The Azure paths report a replaced generation as `FILE_CHANGED_DURING_READ`; the S3 copy and
+    /// the S3 read buffer report it as `S3_OBJECT_CHANGED_DURING_READ`. Both mean the same thing here.
+    const int code = getCurrentExceptionCode();
+    if (code != ErrorCodes::FILE_CHANGED_DURING_READ && code != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
         return;
 
     std::lock_guard lock(mutex);
@@ -460,10 +464,27 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 {
                     doWithRetries([&]{
                         const String src_bucket = s3_storage->getObjectsNamespace();
-                        size_t object_size = S3::getObjectSize(
+                        /// The copy is pinned to the generation of the source that was ingested (the
+                        /// `ETag` the listing reported): the `HeadObject` that measures the object has to
+                        /// describe that generation, and the copy carries it as
+                        /// `x-amz-copy-source-if-match`, so a source object overwritten after it was read
+                        /// is not copied as if the newer generation had been ingested - the copy fails
+                        /// with `S3_OBJECT_CHANGED_DURING_READ`, the object is left in place, and the
+                        /// error is rethrown once the batch is done, so that the file is not committed.
+                        /// The delete that follows a successful copy addresses the object by key: S3
+                        /// has no conditional `DeleteObject` on general purpose buckets, so an object
+                        /// replaced between the pinned copy and the delete is the one case this move
+                        /// cannot refuse. Azure closes it with an `If-Match` on the delete.
+                        const auto object_info = S3::getObjectInfo(
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
+                        if (!object_from.etag.empty() && object_info.etag != object_from.etag)
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "S3 object {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",
+                                object_from.remote_path, object_info.etag, object_from.etag);
+                        const size_t object_size = object_info.size;
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
@@ -472,6 +493,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /*src_bucket=*/ src_bucket,
                             /*src_key=*/ object_from.remote_path,
                             /*src_size=*/ object_size,
+                            /*src_etag=*/ object_from.etag,
                             /*dest_s3_client=*/ dst_client,
                             /*dest_bucket=*/ dst_uri.bucket,
                             /*dest_key=*/ object_to.remote_path,

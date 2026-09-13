@@ -71,6 +71,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 }
@@ -108,6 +109,9 @@ public:
     std::map<Key, Data> objects;
     /// Custom object metadata (`x-amz-meta-*`), stored alongside the object and served by HeadObject.
     std::map<Key, Metadata> object_metadata;
+    /// The `ETag` of the generation at each key, a new one for every write to the key, served by
+    /// HeadObject and checked by the copies against `x-amz-copy-source-if-match`. Quoted, as S3 quotes it.
+    std::map<Key, ETag> object_etags;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
     /// Metadata of an in-flight upload, carried from CreateMultipartUpload onto the completed object
     /// the way real S3 does -- that is what makes a HEAD after completion see it.
@@ -136,6 +140,7 @@ public:
     {
         objects[key] = data;
         object_metadata[key] = metadata;
+        object_etags[key] = "\"" + sequencer.next_id() + "\"";
     }
 
     void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
@@ -155,6 +160,7 @@ public:
 
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
+        object_etags[key] = "\"" + sequencer.next_id() + "\"";
         if (auto it = multiPartUploadMetadata.find(upload_id); it != multiPartUploadMetadata.end())
             object_metadata[key] = it->second;
         multiPartUploads.erase(upload_id);
@@ -236,6 +242,8 @@ inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, 
     data.resize(static_cast<size_t>(body->gcount()));
     return data;
 }
+
+inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedError();
 
 /// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key".
 inline std::pair<std::string, std::string> splitCopySource(const std::string & copy_source)
@@ -395,6 +403,8 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
+        if (auto it = bStore.object_etags.find(request.GetKey()); it != bStore.object_etags.end())
+            result.SetETag(it->second);
         if (auto it = bStore.object_metadata.find(request.GetKey()); it != bStore.object_metadata.end())
         {
             Aws::Map<Aws::String, Aws::String> metadata;
@@ -496,11 +506,28 @@ struct Client : DB::S3::Client
 
     /// Whole-object server-side copy. A CopyObject request carries no byte range, so it always copies the
     /// entire source object -- modelling the real S3 behaviour that makes it unsafe for a partial range.
+    /// `x-amz-copy-source-if-match`, as a real endpoint evaluates it: against the generation that is at
+    /// the source key now, with `412 Precondition Failed` when it does not hold. The SDK produces that
+    /// error without a typed model code, see `makePreconditionFailedError`.
+    std::optional<Aws::Client::AWSError<Aws::Client::CoreErrors>> copySourcePreconditionFailure(
+        const std::string & src_bucket, const std::string & src_key, const Aws::String & if_match) const
+    {
+        if (if_match.empty())
+            return std::nullopt;
+        copy_source_if_match_headers.push_back(if_match);
+        const auto & etags = store->GetBucketStore(src_bucket).object_etags;
+        if (auto it = etags.find(src_key); it != etags.end() && it->second == if_match)
+            return std::nullopt;
+        return makePreconditionFailedError();
+    }
+
     Aws::S3::Model::CopyObjectOutcome CopyObject(const Aws::S3::Model::CopyObjectRequest & request) const override
     {
         ++counters.copyObject;
 
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
+        if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
+            return *refused;
         const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
         store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
 
@@ -515,6 +542,8 @@ struct Client : DB::S3::Client
         ++counters.uploadPartCopy;
 
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
+        if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
+            return *refused;
         const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
 
         size_t begin = 0;
@@ -538,6 +567,8 @@ struct Client : DB::S3::Client
 
     std::shared_ptr<S3MemStrore> store;
     mutable EventCounts counters;
+    /// Every non-empty `x-amz-copy-source-if-match` a CopyObject or UploadPartCopy carried.
+    mutable std::vector<std::string> copy_source_if_match_headers;
     mutable std::shared_ptr<InjectionModel> injections;
     void resetCounters() const { counters = {}; }
 };
@@ -1965,30 +1996,118 @@ protected:
         };
     }
 
-    void runWholeCopy(const String & src_key, size_t size, const String & dst_key)
+    void runWholeCopy(const String & src_key, size_t size, const String & dst_key, const String & src_etag = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3File(
-            client, bucket, src_key, size,
+            client, bucket, src_key, size, src_etag,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
             wholeSourceReader(src_key));
     }
 
-    void runRangeCopy(const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key)
+    void runRangeCopy(
+        const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key, const String & src_etag = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3FileRange(
-            client, bucket, src_key, offset, size, src_object_size,
+            client, bucket, src_key, offset, size, src_object_size, src_etag,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
             wholeSourceReader(src_key));
     }
+
+    /// The `ETag` of the generation at `key` now.
+    String generationAt(const String & key) { return client->store->GetBucketStore(bucket).object_etags.at(key); }
+
+    /// The error code a copy failed with, if it did.
+    template <typename Copy>
+    std::optional<int> errorCodeOf(Copy && copy)
+    {
+        try
+        {
+            copy();
+            return std::nullopt;
+        }
+        catch (const Exception & e)
+        {
+            return e.code();
+        }
+    }
 };
+
+/// A copy pinned to the generation that is at the source key carries it as `x-amz-copy-source-if-match`
+/// and goes through. This keeps the refusals below from passing by refusing every pinned copy.
+TEST_F(CopyS3FileRoutingTest, WholeCopyPinnedToTheCurrentGenerationGoesThrough)
+{
+    const String source = putSource("src", /* size= */ 100);
+    const String generation = generationAt("src");
+
+    runWholeCopy("src", source.size(), "dst", generation);
+
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->copy_source_if_match_headers, std::vector<std::string>{generation});
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
+}
+
+/// The source is overwritten in place after the caller named its generation and before the copy: the
+/// endpoint refuses the `CopyObject` with `412`, and the copy fails with `S3_OBJECT_CHANGED_DURING_READ`
+/// rather than copying the newer generation - by another native route or through the read-and-write
+/// fallback, which would read whatever is at the key by then.
+TEST_F(CopyS3FileRoutingTest, WholeCopyPinnedToAReplacedGenerationIsRefused)
+{
+    const String source = putSource("src", /* size= */ 100);
+    const String replaced_generation = generationAt("src");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source.size(), 'x'));
+    ASSERT_NE(generationAt("src"), replaced_generation);
+
+    const auto error_code = errorCodeOf([&] { runWholeCopy("src", source.size(), "dst", replaced_generation); });
+
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->counters.uploadPartCopy, 0u);
+    EXPECT_EQ(client->counters.putObject, 0u);
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// The same for a ranged copy, which goes through `UploadPartCopy`: every part carries the generation,
+/// the first refused part fails the copy, and the multipart upload it belonged to is aborted, so the
+/// destination is not a splice of two generations of the source.
+TEST_F(CopyS3FileRoutingTest, RangedCopyPinnedToAReplacedGenerationIsRefused)
+{
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    const String source = putSource("src", source_size);
+    const String replaced_generation = generationAt("src");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source_size, 'x'));
+
+    const auto error_code
+        = errorCodeOf([&] { runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst", replaced_generation); });
+
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_GE(client->counters.uploadPartCopy, 1u);
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 1u);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// An unpinned copy carries no precondition, as before: a caller that names no generation gets a copy
+/// of whatever is at the key.
+TEST_F(CopyS3FileRoutingTest, UnpinnedCopyCarriesNoPrecondition)
+{
+    const String source = putSource("src", /* size= */ 100);
+    runWholeCopy("src", source.size(), "dst");
+
+    EXPECT_TRUE(client->copy_source_if_match_headers.empty());
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
+}
 
 TEST_F(CopyS3FileRoutingTest, WholeObjectUsesCopyObject)
 {
