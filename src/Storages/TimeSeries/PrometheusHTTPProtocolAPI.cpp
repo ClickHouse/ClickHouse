@@ -1327,7 +1327,7 @@ void PrometheusHTTPProtocolAPI::getTSDBStats(
         writeIntText(min_time_column[0], response);
         writeString(R"(,"maxTime":)", response);
         writeIntText(max_time_column[0], response);
-        writeString(R"(,"seriesCountByMetricName":)", response);
+        writeString(R"(},"seriesCountByMetricName":)", response);
 
         auto write_stats_array = [&](const char * column_name)
         {
