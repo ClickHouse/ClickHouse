@@ -50,6 +50,21 @@ SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTING
 SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS cast_string_to_date_time_mode = 'best_effort_us';
 SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS use_query_condition_cache = 0, cast_string_to_date_time_mode = 'best_effort_us';
 
+-- The conversion functions snapshot a whole `FormatSettings` (and a few more settings) in `FunctionConvertSettings`
+-- when they are built, and the text serializations they call read it. `toString` of a `DateTime64(1)` renders
+-- `'2024-05-05 10:00:00.0'` by default and cuts the all-zero fraction with
+-- `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`; `toString` of a `Bool` renders
+-- `'true'` by default and whatever `bool_true_representation` says otherwise. The result type is `String` either way.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(toDateTime64(d, 1)) = '2024-05-05 10:00:00' SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 0;
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(toDateTime64(d, 1)) = '2024-05-05 10:00:00' SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1;
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(toDateTime64(d, 1)) = '2024-05-05 10:00:00' SETTINGS use_query_condition_cache = 0, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(CAST(k < 12, 'Bool')) = 'yes' SETTINGS bool_true_representation = 'true';
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(CAST(k < 12, 'Bool')) = 'yes' SETTINGS bool_true_representation = 'yes';
+SELECT count() FROM t_qcc_formatdatetime WHERE toString(CAST(k < 12, 'Bool')) = 'yes' SETTINGS use_query_condition_cache = 0, bool_true_representation = 'yes';
+
 -- A repeated query with the same settings still reads the cached verdict.
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' FORMAT Null;

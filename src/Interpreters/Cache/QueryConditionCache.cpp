@@ -55,6 +55,9 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool variant_throw_on_type_mismatch;
     extern const SettingsBool dynamic_throw_on_type_mismatch;
     extern const SettingsBool allow_simdjson;
+    extern const SettingsBool cast_string_to_variant_use_inference;
+    extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -123,6 +126,45 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::type_json_skip_null_typed_paths].value);
     hash.update(settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object].value);
     hash.update(settings[Setting::allow_simdjson].value);
+    /// The conversion functions (`toString`, `toDateTime`, `toDecimal*`, `toIPv4`, `CAST`, ...) snapshot a whole
+    /// `FormatSettings` and a few more settings in `FunctionConvertSettings` when they are built, and the text
+    /// serializations they call for a `String` source or target read it: `toString(d)` of a `DateTime64(1)` column
+    /// is `'2024-05-05 10:00:00.0'` or `'2024-05-05 10:00:00'` depending on
+    /// `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`, `toString(b)` of a `Bool` column
+    /// is whatever `bool_true_representation` says, and `toString` of an `Array(DateTime)` renders the elements
+    /// as `'1714903200'` under `date_time_output_format = 'unix_timestamp'`, all with the same result type, so a
+    /// "no marks match" verdict written under one value must not be served under the other. The same goes for
+    /// whether an out-of-range or invalid value saturates, becomes a default or throws. (Settings that only
+    /// change the result type, such as `cast_keep_nullable`, are covered by the type name in the DAG hash.)
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_input_format].value));
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_output_format].value));
+    hash.update(settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands].value);
+    hash.update(static_cast<UInt64>(settings[Setting::interval_output_format].value));
+    hash.update(settings[Setting::bool_true_representation].value);
+    hash.update(settings[Setting::bool_false_representation].value);
+    hash.update(settings[Setting::allow_special_bool_values_inside_variant].value);
+    hash.update(settings[Setting::output_format_decimal_trailing_zeros].value);
+    hash.update(settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal].value);
+    hash.update(settings[Setting::output_format_float_precision].value);
+    hash.update(settings[Setting::output_format_trim_fixed_string].value);
+    hash.update(settings[Setting::output_format_pretty_grid_charset].value);
+    hash.update(settings[Setting::output_format_values_escape_quote_with_quote].value);
+    hash.update(settings[Setting::input_format_null_as_default].value);
+    hash.update(settings[Setting::input_format_tsv_enum_as_number].value);
+    hash.update(settings[Setting::input_format_tsv_use_best_effort_in_schema_inference].value);
+    hash.update(settings[Setting::input_format_try_infer_integers].value);
+    hash.update(settings[Setting::input_format_try_infer_exponent_floats].value);
+    hash.update(settings[Setting::input_format_try_infer_variants].value);
+    hash.update(settings[Setting::input_format_ipv4_default_on_conversion_error].value);
+    hash.update(settings[Setting::input_format_ipv6_default_on_conversion_error].value);
+    hash.update(settings[Setting::check_conversion_from_numbers_to_enum].value);
+    hash.update(settings[Setting::type_json_skip_invalid_typed_paths].value);
+    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
+    hash.update(settings[Setting::json_type_escape_dots_in_keys].value);
+    hash.update(settings[Setting::cast_string_to_variant_use_inference].value);
+    hash.update(settings[Setting::cast_string_to_dynamic_use_inference].value);
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
     return hash.get64();
 }
 
