@@ -34,7 +34,12 @@ CREATE TABLE oj_right_tbl (key UInt64) ENGINE = MergeTree ORDER BY key
 AS SELECT number FROM numbers(200000);
 
 -- INNER JOIN, join is the top of the replicas plan: ~200K matched payloads.
-SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner';
+-- Single stream for this case only: the estimate extrapolates the whole output through a compression
+-- ratio measured on 5 of the first 25 blocks, counted by one counter shared by every stream, and this
+-- case emits few enough blocks that a single sampled block decides the ratio. A short block measures
+-- a ratio below 1 (per-block framing on a few rows), so with several streams the estimate depends on
+-- which block wins that ordinal. LEFT/RIGHT emit several times more blocks and stay multi-stream.
+SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner', max_threads=1;
 
 -- LEFT JOIN, join is the top: all 1M left payloads pass through.
 SELECT t1.payload FROM oj_left_tbl AS t1 LEFT JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_left';
