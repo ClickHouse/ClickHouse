@@ -48,7 +48,7 @@ SELECT DISTINCT count() FROM t_05136_merge FINAL WHERE (3 = minus(materialize(ma
 SELECT count() FROM t_05136_merge WHERE (65536 - k) BETWEEN 3 AND 5003;
 -- Liveness: a declined monotonic chain yields an unknown mask and a full scan, which would produce the
 -- same counts as above, so the counts alone do not prove the chain ran. Assert pruning on the Merge
--- path this fix is about (not the direct table): count read nodes whose `Granules: <read>/<total>`
+-- path this test is about (not the direct table): count read nodes whose `Granules: <read>/<total>`
 -- line reports read < total. The next query is the full-scan control on the same path, which must
 -- report 0; together they show the oracle can distinguish pruning from a full scan.
 SELECT countIf(extract(explain, 'Granules: ([0-9]+)/[0-9]+')::UInt64
