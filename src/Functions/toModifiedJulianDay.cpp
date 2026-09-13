@@ -267,12 +267,12 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};

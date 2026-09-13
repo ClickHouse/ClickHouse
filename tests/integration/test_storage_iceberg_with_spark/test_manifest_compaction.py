@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import time
 
 from helpers.iceberg_utils import (
+    check_validity_and_get_prunned_files_general,
     create_iceberg_table,
     default_upload_directory,
     default_download_directory,
@@ -1759,3 +1760,66 @@ def test_optimize_manifest_files_experimental_gate(started_cluster_iceberg_with_
     assert "allow_experimental_iceberg_compaction" in error_message, (
         f"Expected the experimental-gate exception, got: {error_message}"
     )
+
+
+def test_optimize_manifest_files_decimal_partition(started_cluster_iceberg_with_spark):
+    """
+    OPTIMIZE TABLE ... MANIFEST must round-trip decimal partition values. The rewrite reads
+    partition tuples back from the source manifests, where a decimal partition value is parsed
+    from the Avro `fixed` as its raw bytes (a `String` field), and feeds them back into the
+    manifest writer; the writer used to accept only a typed `DecimalField` there and threw on
+    the raw representation, so compaction failed on any decimal-partitioned table.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_manifest_decimal_partition_" + storage_type + "_" + get_uuid_str()
+
+    # `tag` fits into 8 bytes, `wide` needs a 16-byte `fixed`.
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(tag Decimal(7, 2), wide Decimal(38, 10), number Int64)",
+        2,
+        partition_by="(tag, wide)",
+    )
+
+    # Separate inserts, so the current snapshot carries several manifests to consolidate.
+    for values in (
+        "(1.50, 1.5, 10), (2.50, 2.5, 20)",
+        "(-3.25, -3.25, 30)",
+        "(1.50, 1.5, 40)",
+    ):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} VALUES {values}",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+
+    expected = instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == expected
+
+    def prunned_files(select_expression):
+        return check_validity_and_get_prunned_files_general(
+            instance,
+            TABLE_NAME,
+            {"use_iceberg_partition_pruning": 0},
+            {"use_iceberg_partition_pruning": 1},
+            "IcebergPartitionPrunedFiles",
+            select_expression,
+        )
+
+    # Partition pruning keeps working against the consolidated manifests: the first insert
+    # produced two files (two partitions) and the other two inserts one file each.
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 0
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE tag < 0 ORDER BY ALL") == 3
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE wide > 2 ORDER BY ALL") == 3

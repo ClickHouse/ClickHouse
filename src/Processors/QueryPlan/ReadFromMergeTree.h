@@ -349,7 +349,19 @@ public:
     /// shape.
     AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
 
+    /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
+    /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
+    /// conservatively (e.g. a partial read of a compact part, which does not track per-column sizes),
+    /// it charges every selected part in full rather than giving up, so the answer errs high. Returns
+    /// nullopt only when the ranges to read cannot be analyzed at all.
+    std::optional<size_t> estimateCompressedBytesToRead() const;
+
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+
+    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
+    /// see filters whose value can change while that key stays the same: non-deterministic virtual
+    /// columns (query-wide part numbering, catalog names, disk placement).
+    static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
@@ -374,11 +386,21 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
+    void requestOutputEachPartitionThroughSeparatePortForWindow();
+    bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
+    /// window functions.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
+
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+
+    /// selectRangesToRead() will always re-analyze
+    AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
@@ -673,10 +695,6 @@ private:
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     void logPredicateStatistics(const AnalysisResult & result) const;
-
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
-    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     int getSortDirection() const;
     void updateSortDescription();

@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -52,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
@@ -422,7 +424,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -445,8 +447,24 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
+    /// with 0 (the default) meaning no limit.
+    UInt64 getLimitParam() const
+    {
+        String limit_param = params->get("limit", "");
+        if (limit_param.empty())
+            return 0;
+
+        Int64 parsed_limit = 0;
+        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                            limit_param);
+        return static_cast<UInt64>(parsed_limit);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -460,6 +478,20 @@ public:
 
         try
         {
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/format_query"))
+            {
+                /// The format_query endpoint only parses and reformats the given PromQL expression,
+                /// so it doesn't need the TimeSeries table.
+                formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -467,12 +499,6 @@ public:
             {
                 getOutputStream(response).finalize();
             };
-
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
 
             if (uri_path.ends_with("/query_range"))
             {
@@ -520,10 +546,6 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
             else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
@@ -533,37 +555,36 @@ public:
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
-
-                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
-                UInt64 limit = 0;
-                String limit_param = params->get("limit", "");
-                if (!limit_param.empty())
-                {
-                    Int64 parsed_limit = 0;
-                    if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                                        limit_param);
-                    limit = static_cast<UInt64>(parsed_limit);
-                }
+                UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
+            else if (uri_path.ends_with("/metadata"))
+            {
+                String metric = params->get("metric", "");
+                /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
+                Int64 limit = getMetadataLimitParam("limit");
+                Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
+
+                protocol.getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
+            }
             else if (uri_path.ends_with("/labels"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {
@@ -584,10 +605,16 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+            /// not with the query: report it as an internal error so that clients don't attribute it
+            /// to the PromQL expression.
+            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            response.setStatusAndReason(
+                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
+                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();
@@ -598,6 +625,33 @@ public:
     }
 
 private:
+    /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
+    /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
+    /// the comments removed, and the redundant parentheses dropped.
+    static void formatQuery(WriteBuffer & out, const String & query)
+    {
+        PrometheusQueryTree promql_tree;
+        promql_tree.parse(query);
+
+        writeString(R"({"status":"success","data":)", out);
+        writeJSONString(promql_tree.toString(), out, FormatSettings{});
+        writeChar('}', out);
+    }
+
+    /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
+    Int64 getMetadataLimitParam(const String & name) const
+    {
+        String value = params->get(name, "");
+        if (value.empty())
+            return -1;
+
+        Int64 result = 0;
+        if (!tryParse(result, value.data(), value.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the '{}' parameter: '{}', expected an integer", name, value);
+        return result;
+    }
+
     /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
     /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
     static std::optional<String> extractLabelValuesName(std::string_view uri_path)
@@ -677,7 +731,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
