@@ -830,6 +830,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableOrphanedObjectsRemoved, "Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).", ValueType::Number) \
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \

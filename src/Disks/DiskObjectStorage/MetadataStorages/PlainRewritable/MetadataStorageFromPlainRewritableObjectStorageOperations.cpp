@@ -17,7 +17,6 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -43,6 +42,37 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
+    extern const char plain_object_storage_pause_before_unlink_file_finalize[];
+    extern const char plain_object_storage_pause_before_remove_recursive_finalize[];
+    extern const char plain_object_storage_pause_before_remove_recursive_metadata[];
+}
+
+namespace
+{
+
+/// A name of the shape of `generateRemovedName` is garbage only if it is marked as such: the marker object is
+/// written before the removal is committed and deleted only after all the objects of the removal are gone.
+/// The shape of the name decides nothing by itself, because an older version, which reserved nothing, could
+/// have created a name of this shape as ordinary data.
+void writeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
+{
+    StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
+    auto buf = object_storage.writeObject(
+        marker_object,
+        WriteMode::Rewrite,
+        /*object_attributes*/ std::nullopt,
+        /*buf_size*/ 128,
+        /*settings*/ getWriteSettingsForMetadata());
+
+    writeString(removed_name, *buf);
+    buf->finalize();
+}
+
+void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
+{
+    object_storage.removeObjectIfExists(StoredObject(layout.constructTombstoneMarkerKey(removed_name)));
+}
+
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -384,7 +414,11 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     const auto normalized_path_from = normalizePath(path);
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_name = PlainRewritableLayout::generateRemovedName();
+    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name);
+
+    /// The marker has to be there before the backup copy exists, so that a load never sees the copy unmarked.
+    writeTombstoneMarker(*object_storage, *layout, tmp_name);
 
     copy_started = true;
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
@@ -404,14 +438,22 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
 
     object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+    removeTombstoneMarker(*object_storage, *layout, tmp_name);
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_unlink_file_finalize);
+
     removed_objects.push_back(StoredObject(remote_source_path));
 
     if (copy_started)
+    {
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
+        /// leaves either nothing or a marked leftover, never an unmarked one.
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
+    }
 }
 
 MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -515,8 +557,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
-    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_name_from = PlainRewritableLayout::generateRemovedName();
+    tmp_name_to = PlainRewritableLayout::generateRemovedName();
+    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_from);
+    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_to);
     file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
@@ -530,6 +574,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
+        writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_to),
             /*object_to=*/StoredObject(tmp_remote_path_to),
@@ -552,6 +597,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
+        writeTombstoneMarker(*object_storage, *layout, tmp_name_from);
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_from),
             /*object_to=*/StoredObject(tmp_remote_path_from),
@@ -599,6 +645,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             write_settings);
 
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
     }
 
     if (moved_existing_target_file)
@@ -610,6 +657,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             write_settings);
 
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_to);
     }
 }
 
@@ -618,10 +666,16 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
     removed_objects.push_back(StoredObject(remote_path_from));
 
     if (moved_existing_source_file)
+    {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
+    }
 
     if (moved_existing_target_file)
+    {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_to);
+    }
 }
 
 MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
@@ -640,7 +694,10 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(metrics);
-    tmp_path = getRandomASCIIString(16);
+    /// The subtree is moved under a reserved name, so that a concurrent load does not resurrect it under the original path,
+    /// and so that the objects can be reclaimed on the next load if the process dies before `finalize` deletes them.
+    tmp_name = PlainRewritableLayout::generateRemovedName();
+    tmp_path = tmp_name;
     move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", fs_tree, object_storage, layout, metrics);
 }
 
@@ -654,6 +711,11 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 
     if (fs_tree->existsDirectory(path))
     {
+        /// The marker has to be there before the subtree is moved under the reserved name, so that a load
+        /// never sees the moved subtree unmarked, which would make it look like ordinary data.
+        writeTombstoneMarker(*object_storage, *layout, tmp_name);
+        marker_written = true;
+
         move_tried = true;
         move_to_tmp_op->execute();
 
@@ -668,6 +730,9 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
     {
         move_to_tmp_op->undo();
     }
+
+    if (marker_written)
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
@@ -675,7 +740,16 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     if (!move_tried)
         return;
 
-    StoredObjects objects_to_remove;
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_finalize);
+
+    /// The `prefix.path` object of a directory is the only thing that lets the next load find the objects of this
+    /// subtree, so it has to outlive them: the data objects are deleted first, and the `prefix.path` objects only
+    /// once all of them are gone. A single pass would not do, because the multi-object delete of S3 and Azure
+    /// gives no ordering guarantees within a request: a directory could lose its `prefix.path` while still having
+    /// data objects, and if the process died at that moment, they would become unreachable forever.
+    StoredObjects data_objects_to_remove;
+    StoredObjects metadata_objects_to_remove;
+
     for (const auto & [subdir, remote_info] : subtree_remote_info)
     {
         auto subdir_path = tmp_path / subdir;
@@ -689,7 +763,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
-        objects_to_remove.emplace_back(metadata_object_key, path);
+        metadata_objects_to_remove.emplace_back(metadata_object_key, path);
 
         /// We also need to remove all files inside each of the subdirectories.
         for (const auto & [filename, file_info] : remote_info->files)
@@ -699,12 +773,22 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
             LOG_TRACE(log, "Removing file '{}'", file_path);
 
             auto file_object_key = layout->constructFileObjectKey(remote_info->remote_path, filename);
-            objects_to_remove.emplace_back(file_object_key, file_path);
+            data_objects_to_remove.emplace_back(file_object_key, file_path);
         }
     }
 
-    object_storage->removeObjectsIfExist(objects_to_remove);
-    removed_objects.append_range(objects_to_remove);
+    object_storage->removeObjectsIfExist(data_objects_to_remove);
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_metadata);
+
+    object_storage->removeObjectsIfExist(metadata_objects_to_remove);
+
+    /// The marker is deleted last: it is what tells the next load that the leftovers of this removal are
+    /// garbage, so it has to outlive every object it covers.
+    removeTombstoneMarker(*object_storage, *layout, tmp_name);
+
+    removed_objects.append_range(data_objects_to_remove);
+    removed_objects.append_range(metadata_objects_to_remove);
 }
 
 }
