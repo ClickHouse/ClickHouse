@@ -75,9 +75,15 @@ GROUP BY
 WITH CUBE; -- { serverError TOO_MANY_COLUMNS }
 
 SELECT '-- WITH TOTALS and extremes stay fail-closed';
-SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
-SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH ROLLUP WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
-SELECT sum(v) FROM t_corner SETTINGS extremes = 1; -- { serverError SUPPORT_IS_DISABLED }
+-- These plans still cannot be distributed. With the default
+-- `distributed_plan_fallback_to_local_execution = 1` they would run single-node and succeed, so
+-- strict mode is pinned per query to keep asserting the rejection.
+SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH TOTALS
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH ROLLUP WITH TOTALS
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT sum(v) FROM t_corner
+SETTINGS extremes = 1, distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_corner;
 DROP TABLE t_corner_dim;
