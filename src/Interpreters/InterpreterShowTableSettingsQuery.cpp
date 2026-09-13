@@ -1,13 +1,12 @@
 #include <Interpreters/InterpreterShowTableSettingsQuery.h>
 
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTableSettingsQuery.h>
-#include <Common/quoteString.h>
-
-#include <fmt/format.h>
 
 namespace DB
 {
@@ -22,46 +21,37 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery()
     /// among them: it runs to paragraphs, and four of these columns fit a screen where five do not.
     /// Anything more - descriptions, other engines, joining `system.tables`, filtering on `source` -
     /// is a query against that table, which is why the table is the feature and this a convenience.
-    String rewritten = fmt::format(
-        "SELECT name, value, changed, source "
-        "FROM system.table_settings "
-        "WHERE database = {} AND table = {} AND alias_for = ''",
-        quoteString(database), quoteString(query.table));
+    WriteBufferFromOwnString rewritten_query;
+    rewritten_query
+        << "SELECT name, value, changed, source FROM system.table_settings"
+        << " WHERE database = " << DB::quote << database
+        << " AND table = " << DB::quote << query.table
+        << " AND alias_for = ''";
 
     if (query.changed)
-        rewritten += " AND changed";
+        rewritten_query << " AND changed";
 
     if (query.has_like)
     {
-        const std::string_view op = query.case_insensitive_like ? "ILIKE" : "LIKE";
-        const String pattern = quoteString(query.like);
+        const std::string_view like = query.case_insensitive_like ? "ILIKE " : "LIKE ";
 
         /// The pattern is matched against the names a setting answers to, not only the one it is
         /// declared under, and the row printed is still the canonical one. `system.table_settings`
         /// carries a row per alias so that a lookup by the name you happen to know finds the
         /// setting; filtering on the canonical name alone would throw that away here and leave
         /// whoever knows only the old spelling with the empty result the alias rows exist to
-        /// prevent.
-        const String matches = fmt::format(
-            "(name {0}{1} {2} OR name IN ("
-            "SELECT alias_for FROM system.table_settings "
-            "WHERE database = {3} AND table = {4} AND alias_for != '' AND name {1} {2}))",
-            query.not_like ? "NOT " : "", op, pattern,
-            quoteString(database), quoteString(query.table));
-
-        /// `NOT LIKE` excludes a setting whichever of its names the pattern names, so the alias
-        /// lookup is not negated with it - a setting is dropped when any name it answers to matches.
-        rewritten += query.not_like
-            ? fmt::format(
-                " AND name NOT {0} {1} AND name NOT IN ("
-                "SELECT alias_for FROM system.table_settings "
-                "WHERE database = {2} AND table = {3} AND alias_for != '' AND name {0} {1})",
-                op, pattern, quoteString(database), quoteString(query.table))
-            : " AND " + matches;
+        /// prevent. `NOT LIKE` drops a setting when any name it answers to matches.
+        rewritten_query
+            << " AND (name " << (query.not_like ? "NOT " : "") << like << DB::quote << query.like
+            << (query.not_like ? " AND name NOT IN (" : " OR name IN (")
+            << "SELECT alias_for FROM system.table_settings"
+            << " WHERE database = " << DB::quote << database
+            << " AND table = " << DB::quote << query.table
+            << " AND alias_for != '' AND name " << like << DB::quote << query.like << "))";
     }
 
-    rewritten += " ORDER BY name";
-    return rewritten;
+    rewritten_query << " ORDER BY name";
+    return rewritten_query.str();
 }
 
 BlockIO InterpreterShowTableSettingsQuery::execute()
