@@ -2682,6 +2682,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             /// created node (a function/lambda that wraps it). Only a reused node may overwrite
             /// its cached projection name.
             const IQueryTreeNode * input_node_before_transformer = node.get();
+            /// The name this matched column carries into the transformer. A name the transformer
+            /// changes belongs to this chain alone and may not be published on a shared node.
+            const String projection_name_before_transformer = result_projection_names.back();
             const bool is_last_transformer = transformer.get() == column_transformers.back().get();
 
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
@@ -2891,11 +2894,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 const bool node_pointer_reused = node.get() == input_node_before_transformer;
                 if (node_pointer_reused)
                 {
-                    /// A prefixed name belongs to this transformer chain alone, but the reused node
-                    /// is the canonical column node shared with every other expression in the query
-                    /// (getMatchedColumnNodesWithNames hands out one node per column, uncloned), so
-                    /// publish it on a private copy: a later bare matcher must still see `a`.
-                    const bool node_is_private_copy = execute_apply_transformer && !apply_column_name_prefix.empty();
+                    /// The reused node is this column's canonical node, shared with every other
+                    /// expression in the query, so a name only this chain sees (an APPLY prefix, or
+                    /// an alias inside the lambda body) goes on a private copy, never on it.
+                    const bool node_is_private_copy = execute_apply_transformer
+                        && result_projection_names.back() != projection_name_before_transformer;
                     if (node_is_private_copy)
                         node = node->clone();
 

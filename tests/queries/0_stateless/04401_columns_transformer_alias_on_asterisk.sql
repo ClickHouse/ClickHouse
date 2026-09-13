@@ -86,6 +86,11 @@ SELECT * APPLY (x -> untuple(x), 'p_'), * FROM (SELECT (1, 2) AS a) FORMAT TSVWi
 SELECT * REPLACE (a AS a), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x, 'p_'), a AS z FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x, 'p_'), * APPLY (x -> x, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- An alias inside the lambda body names that transformer's output only, so a second matcher
+-- over the same column still reports the plain name, in either order.
+SELECT * APPLY (x -> (x AS z)), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT *, * APPLY (x -> (x AS z)) FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> (x AS z), 'p_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 -- The prefix survives an EXPLAIN QUERY TREE round-trip.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a)) WHERE explain ILIKE '%f_a%';
 
