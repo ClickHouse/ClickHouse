@@ -30,7 +30,14 @@ set (LIBURING_COMPAT_HEADER "${LIBURING_COMPAT_INCLUDE_DIR}/liburing/compat.h")
 
 set (LIBURING_CONFIG_HAS_KERNEL_RWF_T    FALSE)
 set (LIBURING_CONFIG_HAS_KERNEL_TIMESPEC FALSE)
-set (LIBURING_CONFIG_HAS_OPEN_HOW        FALSE)
+# glibc >= 2.43 includes <linux/openat2.h> from <fcntl.h>, so when the kernel headers of the sysroot
+# provide `struct open_how` (Linux >= 5.6), the fallback definition in compat.h would be a redefinition.
+# Build-time probes are forbidden (cmake/block_build_time_checks.cmake); the sysroot is known statically.
+if (EXISTS "${CMAKE_SYSROOT}/usr/include/linux/openat2.h")
+    set (LIBURING_CONFIG_HAS_OPEN_HOW    TRUE)
+else ()
+    set (LIBURING_CONFIG_HAS_OPEN_HOW    FALSE)
+endif ()
 set (LIBURING_CONFIG_HAS_STATX           FALSE)
 set (LIBURING_CONFIG_HAS_GLIBC_STATX     FALSE)
 set (LIBURING_CONFIG_HAS_DISCARD_CMD     FALSE)

@@ -1043,6 +1043,55 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     assert "C" in types, f"connection must stay alive after a rejected Bind, got {types}"
     sock.close()
 
+    # `C = 1` applies one format code to all parameters, so a binary code over a message that
+    # carries no value to decode describes nothing and must not be rejected.
+    def bind_format_codes_only(portal, stmt, codes, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", len(codes))
+        for c in codes:
+            b += struct.pack("!H", c)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            if v is None:
+                b += struct.pack("!i", -1)  # protocol NULL: no value bytes follow
+                continue
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT 1", ())
+        + bind_format_codes_only("", "", (1,), ())
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"a zero-parameter Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the zero-parameter statement must run, got {types}"
+
+    # A protocol NULL carries no value bytes either, so a binary code over it is also accepted.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), (None,))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"an all-NULL Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the all-NULL statement must run, got {types}"
+
+    # A binary format code that does cover an actual value is still rejected.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), ("5",))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"a binary parameter value must still be rejected, got {types}"
+    sock.close()
+
 
 def test_malformed_extended_message_recovers(started_cluster):
     # Reject malformed extended messages without desynchronizing recovery.

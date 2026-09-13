@@ -306,19 +306,25 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
     stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
     stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
 
+    size_t data_file_size = data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION);
+
     auto create_stream = [&]<typename Stream>()
     {
         return std::make_unique<Stream>(
             data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
             num_marks_in_part, all_mark_ranges, stream_settings,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            uncompressed_cache, data_file_size,
             std::move(marks_loader), profile_callback, clock_type);
     };
 
     if (read_without_marks)
         return streams.emplace(stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>()).first;
 
-    marks_loader->startAsyncLoad();
+    /// Nothing is read from an empty data file (for example, a variant of a `Dynamic` column that has no values
+    /// in this part), and all its marks point to the beginning of the file, so its marks file is not needed.
+    if (data_file_size != 0)
+        marks_loader->startAsyncLoad();
+
     return streams.emplace(stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumn>()).first;
 }
 
@@ -585,6 +591,10 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
         {
+            /// There is nothing to prefetch from an empty data file, and its marks are not needed.
+            if (data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION) == 0)
+                return;
+
             bool seek_to_mark = !continue_reading && !read_without_marks;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
             {
@@ -620,6 +630,9 @@ void MergeTreeReaderWide::readData(
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
+    /// Only the columns whose data files are partly there (see `addStreams`) are refilled by
+    /// `IMergeTreeReader::fillMissingColumns`; any other column has to be read in full.
+    deserialize_settings.partially_read_columns_are_refilled = partially_read_columns.contains(name_and_type.name);
 
     deserializePrefix(serialization, name_and_type, from_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 

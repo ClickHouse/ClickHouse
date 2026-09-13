@@ -3182,6 +3182,22 @@ Possible values:
 - 0 — The column name is substituted with the alias.
 - 1 — The column name is not substituted with the alias.
 
+If the column name is ambiguous between joined tables and an alias with the same name exists, the alias is used:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+Here `id` in `id AS x` is a column of both `t1` and `t3`, so it resolves to the alias `t1.id + 10`.
+
 **Example**
 
 The difference between enabled and disabled:
@@ -5222,7 +5238,7 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 Possible values: true, false
 )", 0) \
     DECLARE(Bool, optimize_or_like_chain, true, R"(
-Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
+Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, are end-anchored (do not end in an unescaped `%`; Vectorscan matches `$` before a final newline, so the rewrite would widen the filter), or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
 
 The optimization is applied only with the analyzer (`enable_analyzer = 1`, the default); with the old analyzer (`enable_analyzer = 0`) the `OR` chain is left unchanged. For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
 
@@ -7615,6 +7631,23 @@ For the `fair` workload scheduler: once the query has attained this many bytes o
 )", 0) \
     DECLARE(Int64, workload_priority, 0, R"(
 Scheduling priority of the query within its workload, used by the `priority` workload scheduler (see the `scheduler` workload setting). Lower value = higher priority; the default `0` is the neutral baseline, a negative value raises the query above the default and a positive value lowers it. Queries of equal priority are served first-come-first-served. Ignored by the other schedulers.
+    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
+The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
+It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
+the workload's `max_concurrent_queries`) and for a memory reservation (from a
+`CREATE RESOURCE ... (MEMORY RESERVATION)` resource together with the `reserve_memory` setting). Both are
+acquired before the query starts running, so this is the only way to bound that pre-execution wait:
+`max_execution_time` does not apply yet because the query has not started.
+
+When the timeout expires the query fails with one of two distinct errors, depending on which resource it
+was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` for a memory reservation.
+
+Possible values:
+
+- Positive integer — timeout in milliseconds.
+- 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
+  immediately when the workload's `max_waiting_queries` limit is reached.
 )", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
@@ -9182,6 +9215,11 @@ Enabling it automatically adjusts settings that control features not supported b
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", PRIVATE_PREVIEW) \
+    DECLARE(Bool, distributed_plan_fallback_to_local_execution, true, R"(
+When a query plan contains a step that does not support distributed execution, log the reason and execute the query on the initiator instead of throwing an exception. Disable to get an exception instead.
+
+Only takes effect when `make_distributed_plan` (private preview) is enabled.
+)", 0) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9237,6 +9275,7 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
