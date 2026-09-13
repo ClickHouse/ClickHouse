@@ -24,13 +24,28 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
 SELECT byteSize(s)
 FROM t_byte_size_string_subcolumn;
 
+-- A top-level column whose name matches the String size subcolumn up to case must
+-- block the rewrite. This uses MergeTree because file() does not support this
+-- function-to-subcolumn optimization and would not reach the guard.
+DROP TABLE IF EXISTS t_byte_size_string_subcolumn_shadowed;
+
+CREATE TABLE t_byte_size_string_subcolumn_shadowed
+(
+    s String,
+    `S.SIZE` UInt64
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
 SELECT count() FROM
 (
     EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT byteSize(s)
-    FROM file('nonexistent_05177.csv', CSV, '`S.SIZE` UInt64, s String')
+    FROM t_byte_size_string_subcolumn_shadowed
 )
 WHERE explain LIKE '%s.size%';
+
+DROP TABLE t_byte_size_string_subcolumn_shadowed;
 
 SELECT id, byteSize(s)
 FROM t_byte_size_string_subcolumn
