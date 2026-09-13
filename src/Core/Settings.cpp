@@ -4140,6 +4140,11 @@ If not enough memory is available to the workload, a query is prevented from sta
 A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
+    DECLARE(Int32, memory_eviction_score, 0, R"(
+Used in workload scheduling. Controls the order in which queries' memory reservations are evicted when their workload is under memory pressure. A query with a higher `memory_eviction_score` is evicted before a query with a lower one; queries with an equal `memory_eviction_score` are evicted largest-reservation-first. A query whose own reservation cannot fit within the workload limit even if every other reservation is evicted is stopped to fail its own request, regardless of score. The value may be negative to make a query less likely to be evicted.
+A value of `0` (the default) means the score does not influence the eviction order.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

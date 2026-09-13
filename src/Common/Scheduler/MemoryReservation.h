@@ -54,7 +54,8 @@ public:
     // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
     // exception is thrown. `time_point::max()` means no timeout.
     MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,
-                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
+                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max(),
+                      Int32 eviction_score = 0);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.

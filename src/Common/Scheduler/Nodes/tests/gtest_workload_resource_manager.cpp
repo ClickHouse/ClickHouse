@@ -2082,6 +2082,12 @@ public:
         ASSERT_EQ(increase_enqueued, true);
     }
 
+    bool wasKilled()
+    {
+        std::unique_lock lock(mutex);
+        return kill_reason != nullptr;
+    }
+
 private: // interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override
     {
@@ -2443,6 +2449,46 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
     }
 }
 
+/// A request that exceeds the workload limit on its own must fail its own request rather than evict a
+/// lower-precedence workload. `vip` (higher precedence) asks for more than the 100-byte limit, so it
+/// self-kills at `AllocationLimit` instead of evicting the lower-precedence `prd`. Without the
+/// AllocationLimit self-kill the parent selector would evict `prd` first even though `vip` can never fit.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationImpossibleGrowDoesNotKillLowerPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD prd IN all");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS precedence = -1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr c_prd = t.manager->acquire("prd");
+        ClassifierPtr c_vip = t.manager->acquire("vip");
+
+        TestAllocation low(c_prd->get("memory"), "low", 10); // lower-precedence holder
+        low.waitSync();
+        TestAllocation vip(c_vip->get("memory"), "vip", 20); // higher precedence
+        vip.waitSync();
+
+        vip.setSize(150); // vip alone (150) exceeds the 100-byte limit: an impossible grow
+        vip.waitKilled();
+        try
+        {
+            vip.throwReason();
+            GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
+            ASSERT_NE(e.displayText().find("to satisfy its own increase"), std::string::npos);
+        }
+        // The lower-precedence workload must not be evicted on the higher-precedence request's behalf.
+        EXPECT_FALSE(low.wasKilled());
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
 {
     ResourceTest t;
@@ -2471,7 +2517,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
             ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
             ASSERT_NE(e.displayText().find("all"), std::string::npos);
             ASSERT_NE(e.displayText().find("memory"), std::string::npos);
-            ASSERT_NE(e.displayText().find("to satisfy increase of a smaller allocation"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy increase of another allocation"), std::string::npos);
         }
         a1.reset(); // Destroy killed allocation to free resources
         a2.waitSync();
