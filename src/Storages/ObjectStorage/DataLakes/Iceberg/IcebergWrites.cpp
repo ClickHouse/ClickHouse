@@ -262,7 +262,9 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-            return dumpValue(field.safeGet<Int32>());
+            /// Iceberg writes `int` and `date` as 4 bytes, while a `Field` keeps them in its 8-byte
+            /// slot; `dumpValue` takes the width from its argument type, so narrow before dumping.
+            return dumpValue(static_cast<Int32>(field.safeGet<Int32>()));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::UInt8:
