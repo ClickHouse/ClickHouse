@@ -1546,6 +1546,40 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
+    /// Batch the `.retriable` marker lookup for every file that will go through a
+    /// success-path cleanup below, instead of letting each file's own cleanup do a
+    /// separate synchronous Keeper read (the extra-round-trip-per-success issue
+    /// flagged in review). A cache miss (e.g. an empty failed_node_path in exclusive
+    /// mode) is simply skipped here - addClearRetriableRequestIfExists() still works
+    /// correctly via its direct-read fallback for any file this loop does not cover.
+    if (insert_succeeded)
+    {
+        std::vector<std::string> retriable_paths;
+        std::vector<FileMetadataPtr> retriable_paths_metadata;
+        for (const auto & processed_file : processed_files)
+        {
+            if (processed_file.state != FileState::Processed)
+                continue;
+            const auto & failed_node_path = processed_file.metadata->getFailedNodePath();
+            if (failed_node_path.empty())
+                continue;
+            retriable_paths.push_back(failed_node_path + ".retriable");
+            retriable_paths_metadata.push_back(processed_file.metadata);
+        }
+
+        if (!retriable_paths.empty())
+        {
+            auto responses = files_metadata->getZooKeeper()->tryGet(retriable_paths);
+            for (size_t i = 0; i < responses.size(); ++i)
+            {
+                if (responses[i].error == Coordination::Error::ZOK)
+                    retriable_paths_metadata[i]->setRetriableNodeStat(responses[i].stat);
+                else
+                    retriable_paths_metadata[i]->setRetriableNodeStat(std::nullopt);
+            }
+        }
+    }
+
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
     /// If no buckets are used, we still do this for Ordered mode,
     /// just consider there will be only one bucket with id 0.

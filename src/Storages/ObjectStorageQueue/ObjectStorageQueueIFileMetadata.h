@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Core/Types.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -152,6 +153,12 @@ public:
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
 
+    /// Populate the `.retriable` marker cache from a batched lookup done by the
+    /// caller (see addClearRetriableRequestIfExists()), so success-path cleanup
+    /// for this file does not need its own Keeper read. `std::nullopt` means the
+    /// marker does not exist.
+    void setRetriableNodeStat(std::optional<Coordination::Stat> stat) const { retriable_node_stat_cache = stat; }
+
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
@@ -277,6 +284,24 @@ protected:
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
+
+    /// Cached result of a batched `.retriable` marker existence check done by the
+    /// caller (ObjectStorageQueueSource::prepareCommitRequests) before its commit
+    /// loop, so per-file success-path cleanup does not repeat a synchronous Keeper
+    /// read for every file. Unset means "not checked by the caller" - callers that
+    /// don't populate it (or paths outside the batched commit loop) get a direct
+    /// fallback read instead, so correctness never depends on the cache being warm.
+    mutable std::optional<Coordination::Stat> retriable_node_stat_cache;
+
+    /// If a live `.retriable` marker exists for this file, add its removal to
+    /// `requests` (with the version from the cache set via setRetriableNodeStat(),
+    /// or from a direct read if the cache was never populated). Shared by every
+    /// success-path cleanup site (prepareProcessedRequestsImpl in both Unordered
+    /// and Ordered mode, and prepareResetProcessingRequests's clear_retriable path)
+    /// to avoid repeating the same tryGet-then-conditionally-remove logic. A no-op
+    /// when failed_node_path is empty (exclusive mode, which never tracks retries
+    /// via Keeper).
+    void addClearRetriableRequestIfExists(Coordination::Requests & requests) const;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 

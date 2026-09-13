@@ -967,17 +967,7 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     /// stale retry count if the path is ever reprocessed (e.g. after `/processed`
     /// expires via TTL/limit). Fold its removal into this same multi so it is cleared
     /// atomically with success - not a separate request that could race or be skipped.
-    const auto retriable_node_path = failed_node_path + ".retriable";
-    Coordination::Stat retriable_stat;
-    std::string retriable_data;
-    bool retriable_exists = false;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
-    });
-    if (retriable_exists)
-        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
+    addClearRetriableRequestIfExists(requests);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(

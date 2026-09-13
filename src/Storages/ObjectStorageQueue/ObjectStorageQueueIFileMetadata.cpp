@@ -586,25 +586,41 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
     LOG_TEST(log, "Resetting processing for {}", path);
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
-    if (!clear_retriable)
-        return;
-
     /// Only reached for a file known to have succeeded (a bucket's non-max Processed
     /// file in ordered mode), which never goes through prepareProcessedRequestsImpl and
     /// would otherwise leave a stale `.retriable` marker (with its old retry count)
-    /// behind forever. Fold its removal into this same multi for the same atomicity
-    /// reason as in the success path in prepareProcessedRequestsImpl.
-    const auto retriable_node_path = failed_node_path + ".retriable";
-    Coordination::Stat retriable_stat;
-    std::string retriable_data;
-    bool retriable_exists = false;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    /// behind forever.
+    if (clear_retriable)
+        addClearRetriableRequestIfExists(requests);
+}
+
+void ObjectStorageQueueIFileMetadata::addClearRetriableRequestIfExists(Coordination::Requests & requests) const
+{
+    /// Exclusive mode never tracks retries via Keeper (failed_node_path is empty
+    /// there), so there is nothing to check or clear.
+    if (failed_node_path.empty())
+        return;
+
+    std::optional<Coordination::Stat> stat = retriable_node_stat_cache;
+    if (!stat)
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
-    });
-    if (retriable_exists)
-        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
+        /// Cache not populated by the caller (e.g. called outside
+        /// ObjectStorageQueueSource's batched commit loop) - fall back to a
+        /// direct read so correctness never depends on the cache being warm.
+        Coordination::Stat direct_stat;
+        std::string data;
+        bool exists = false;
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+                failed_node_path + ".retriable", data, &direct_stat);
+        });
+        if (exists)
+            stat = direct_stat;
+    }
+
+    if (stat)
+        requests.push_back(zkutil::makeRemoveRequest(failed_node_path + ".retriable", stat->version));
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
