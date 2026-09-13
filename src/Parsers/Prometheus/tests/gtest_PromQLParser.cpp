@@ -1009,6 +1009,28 @@ PrometheusQueryTree(INSTANT_VECTOR):
                 __name__ EQ 'demo_memory_usage_bytes'
 )");
 
+    EXPECT_EQ(parse("first_over_time(demo_memory_usage_bytes[20m])"), R"(
+first_over_time(demo_memory_usage_bytes[1200])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(first_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("mad_over_time(demo_memory_usage_bytes[20m])"), R"(
+mad_over_time(demo_memory_usage_bytes[1200])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(mad_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
     EXPECT_EQ(parse("timestamp(demo_num_cpus)"), R"(
 timestamp(demo_num_cpus)
 
