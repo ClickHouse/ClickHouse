@@ -298,7 +298,7 @@ def _dispatch_and_wait(branch: str, sha: str, dry_run: bool) -> bool:
     print(f"Dispatch CreateRelease for [{branch}] at commit [{sha}] (dry-run={dry})")
     Shell.check(
         f"gh workflow run {CREATE_RELEASE_WORKFLOW} --ref {MAIN_BRANCH}"
-        f" -f ref={shlex.quote(sha)} -f type=patch -f dry-run={dry}",
+        f" -f ref={shlex.quote(sha)} -f dry-run={dry}",
         strict=True,
         verbose=True,
     )
