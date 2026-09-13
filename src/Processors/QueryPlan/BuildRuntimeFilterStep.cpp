@@ -240,6 +240,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     else
     {
         format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+        format_settings.out << prefix << "Key range tracking: " << track_key_range << '\n';
     }
 }
 

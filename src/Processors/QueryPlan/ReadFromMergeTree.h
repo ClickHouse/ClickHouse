@@ -314,6 +314,27 @@ public:
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
 
+    /// Whether this read can consume a join runtime filter for granule pruning at all, regardless of
+    /// which key it is on. Every veto it lists is known already during plan optimization, so the build
+    /// side can ask the same question before the pipeline exists.
+    bool canUseJoinRuntimeFilterIndexAnalysis() const;
+
+    /// The runtime filters this read actually consumes for granule pruning. Empty when no join key of
+    /// this read is prunable, which is what tells the build side that tracking the key range is useless.
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    {
+        return join_runtime_filters_for_index_analysis;
+    }
+
+    /// Drop the descriptors of the given filters: they can never produce a positive pruning predicate,
+    /// so keeping them would only install the dynamic-predicate machinery for nothing.
+    void removeJoinRuntimeFiltersForIndexAnalysis(const std::unordered_set<String> & filter_ids)
+    {
+        std::erase_if(
+            join_runtime_filters_for_index_analysis,
+            [&](const auto & descriptor) { return filter_ids.contains(descriptor.filter_id); });
+    }
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,

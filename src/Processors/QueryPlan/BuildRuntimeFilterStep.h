@@ -36,6 +36,15 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
+
+    /// Called after index analysis registration, when no probe-side read consumes this filter's key
+    /// range: dropping the tracking avoids an extra `getExtremes` scan of every build-side chunk.
+    void disableKeyRangeTracking() { track_key_range = false; }
+
+    /// False for a filter that can never yield a positive pruning predicate (a negating `LEFT ANTI`
+    /// filter), or for one no probe-side read consumes.
+    bool isKeyRangeTrackingEnabled() const { return track_key_range; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
