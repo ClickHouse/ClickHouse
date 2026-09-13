@@ -36,7 +36,7 @@ size_t countMembersMissingFromChildren(const IAST * ast)
 
 /// Number of FROM-list elements carrying a JOIN. The seed below has a single table, so the parser
 /// produces exactly one element and its `table_join` is null: a non-null one can only come from
-/// QueryFuzzer::addJoinClause().
+/// `QueryFuzzer::addJoinClause`.
 size_t countJoinElements(const IAST * ast)
 {
     size_t joins = 0;
@@ -46,6 +46,29 @@ size_t countJoinElements(const IAST * ast)
     for (const auto & child : ast->children)
         joins += countJoinElements(child.get());
     return joins;
+}
+
+/// Number of JOIN elements whose `children` does not exactly carry the two typed members:
+/// `children` must be [`table_join`, `table_expression`], node-identical and each of its own
+/// type. Membership alone is too weak - deriving both members from one `children` entry, or
+/// dropping the table expression, leaves every member that is set inside `children` while the
+/// joined relation is gone.
+size_t countMalformedJoinElements(const IAST * ast)
+{
+    size_t bad = 0;
+    if (const auto * element = typeid_cast<const ASTTablesInSelectQueryElement *>(ast))
+    {
+        if (element->table_join
+            && !(element->children.size() == 2
+                 && element->children[0].get() == element->table_join.get()
+                 && element->children[1].get() == element->table_expression.get()
+                 && typeid_cast<const ASTTableJoin *>(element->table_join.get())
+                 && typeid_cast<const ASTTableExpression *>(element->table_expression.get())))
+            ++bad;
+    }
+    for (const auto & child : ast->children)
+        bad += countMalformedJoinElements(child.get());
+    return bad;
 }
 }
 
@@ -65,7 +88,7 @@ TEST(QueryFuzzer, AddedJoinElementKeepsChildrenConsistent)
         QueryFuzzer fuzzer{pcg64(seed)};
 
         /// Feed the same query repeatedly so the persistent fuzzer accumulates the table and
-        /// column fragments addJoinClause() needs before it can add a join at all.
+        /// column fragments `addJoinClause` needs before it can add a join at all.
         for (int step = 0; step < 8; ++step)
         {
             ASTPtr fuzzed = base->clone();
@@ -80,6 +103,7 @@ TEST(QueryFuzzer, AddedJoinElementKeepsChildrenConsistent)
                 continue;
             }
             ASSERT_EQ(countMembersMissingFromChildren(fuzzed.get()), 0u) << "seed=" << seed << " step=" << step;
+            ASSERT_EQ(countMalformedJoinElements(fuzzed.get()), 0u) << "seed=" << seed << " step=" << step;
             joins_added += countJoinElements(fuzzed.get());
         }
     }
