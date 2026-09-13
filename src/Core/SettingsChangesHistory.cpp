@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."},
             {"azure_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."},
             {"hdfs_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."},
+            {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
