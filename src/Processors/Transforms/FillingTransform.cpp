@@ -907,8 +907,14 @@ void FillingTransform::transform(Chunk & chunk)
 
         if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
+            /// The suffix may be "applicable" (fill constraints are satisfied) yet generate no rows,
+            /// e.g. WITH FILL ... STALENESS when the staleness window leaves nothing to fill. In that
+            /// case result_columns are freshly cloneEmpty()'d and carry no data, so emitting a 0-row
+            /// chunk only feeds an empty, uninitialized column to downstream transforms (a merge cursor
+            /// would read past the end of the empty column).
             size_t num_output_rows = result_columns[0]->size();
-            chunk.setColumns(std::move(result_columns), num_output_rows);
+            if (num_output_rows)
+                chunk.setColumns(std::move(result_columns), num_output_rows);
         }
 
         return;
