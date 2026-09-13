@@ -531,15 +531,15 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
-| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes⁵ (ASCII `lower`/`upper` only) | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
@@ -556,6 +556,12 @@ The preprocessor, if present, must be `lower` or `upper`; postprocessors are not
 ⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
 The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
+
+⁵ `startsWith`, `endsWith`, `LIKE`, `match`, `mapContainsKeyLike` and `mapContainsValueLike` keep their SQL semantics, so the index may only over-approximate them and must never exclude a row the predicate matches.
+Their index lookup takes the required tokens from the preprocessed needle, which bounds the tokens of the preprocessed value only when the preprocessor maps each character independently, i.e. when it is the ASCII `lower` or `upper`.
+`lowerUTF8` and `upperUTF8` do not qualify, because ICU case mapping is context sensitive: a Greek capital sigma lowercases to `ς` at the end of a word and to `σ` elsewhere, so a needle can preprocess to a token the value does not contain.
+With any other preprocessor the index is not used for these functions and they are evaluated row-level.
+`multiSearchAny`, `multiSearchAnyUTF8` and `multiMatchAny`, which use the index under the same conditions as `LIKE` and `match`, follow the same rule.
 
 **Experimental: Support phrase search argument (optional)**.
 

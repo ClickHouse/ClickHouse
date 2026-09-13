@@ -22,12 +22,9 @@ SELECT count() FROM ghdata WHERE data.payload.action = 'opened'
 Condition: (mode: All; tokens: ["opened"])
 Parts: 1/1
 Granules: 50/50
--- LIKE pattern matching (index cannot help, all granules scanned)
+-- LIKE pattern matching (index not used, all granules scanned)
 SELECT count() FROM ghdata WHERE data.repo.name LIKE '%python%'
 36
-Condition: (mode: All; tokens: [])
-Parts: 1/1
-Granules: 50/50
 -- hasToken on string field
 SELECT count() FROM ghdata WHERE hasToken(data.actor.login, 'dependabot')
 37

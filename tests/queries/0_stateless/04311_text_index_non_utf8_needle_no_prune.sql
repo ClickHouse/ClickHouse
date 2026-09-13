@@ -60,3 +60,52 @@ SELECT count() FROM tab WHERE multiSearchAny(str, [unhex('C3A96263')]) SETTINGS 
 SELECT count() FROM tab WHERE multiSearchAny(str, [unhex('C3A96263')]) SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
+
+-- A preprocessor must not prune those granules either. The index takes its required tokens from
+-- `preprocessor(needle)`, which bounds the tokens of `preprocessor(value)` only when the preprocessor maps
+-- each character independently. The two cases below sit here rather than in the preprocessor test file
+-- because `lowerUTF8` needs ICU and `multiMatchAny` needs Vectorscan, and that file runs in Fast test,
+-- which is built with neither.
+
+-- ICU case mapping is context sensitive: a Greek capital sigma lowercases to the final form only at the end
+-- of a word, so the value 'ΣΟΣΑ' becomes 'σοσα' while the needle 'ΣΟΣ' becomes 'σος', whose gram 'ος' is
+-- nowhere in the index.
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = ngrams(2), preprocessor = lowerUTF8(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES ('ΣΟΣΑ');
+
+SELECT '-- lowerUTF8 preprocessor: startsWith must not prune the matching granule (expect 1 and 1)';
+SELECT count() FROM tab WHERE startsWith(str, 'ΣΟΣ') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE startsWith(str, 'ΣΟΣ') SETTINGS use_skip_indexes = 1;
+
+SELECT '-- lowerUTF8 preprocessor: like must not prune the matching granule (expect 1 and 1)';
+SELECT count() FROM tab WHERE str LIKE '%ΣΟΣ%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE str LIKE '%ΣΟΣ%' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE tab;
+
+-- soundex folds a whole word into a four-character code, so no character of the needle survives in place:
+-- 'hello, world!' becomes H464 while the needle 'hello' becomes H400.
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = ngrams(2), preprocessor = soundex(lower(str)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES ('Hello, world!');
+
+SELECT '-- soundex preprocessor: multiMatchAny must not prune the matching granule (expect 1 and 1)';
+SELECT count() FROM tab WHERE multiMatchAny(str, ['Hello']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE multiMatchAny(str, ['Hello']) SETTINGS use_skip_indexes = 1;
+
+DROP TABLE tab;

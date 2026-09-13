@@ -161,6 +161,7 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
             {
                 const auto & arg = func->arguments->children.front();
                 is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
+                maps_characters_independently = is_lower_or_upper && (name == "lower" || name == "upper");
             }
         }
     }

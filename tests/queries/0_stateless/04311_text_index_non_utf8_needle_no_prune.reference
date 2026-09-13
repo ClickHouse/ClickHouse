@@ -18,3 +18,12 @@
 -- a valid multi-byte UTF-8 needle is code-point aligned and matches through the index (expect 1 and 1)
 1
 1
+-- lowerUTF8 preprocessor: startsWith must not prune the matching granule (expect 1 and 1)
+1
+1
+-- lowerUTF8 preprocessor: like must not prune the matching granule (expect 1 and 1)
+1
+1
+-- soundex preprocessor: multiMatchAny must not prune the matching granule (expect 1 and 1)
+1
+1

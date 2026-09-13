@@ -243,3 +243,43 @@ Baz	3
 2
 -- Preprocessor on an ALIAS column with the sparseGrams tokenizer
 3
+-- Substring and pattern predicates: the index is refused unless the preprocessor maps characters independently
+-- substringIndex preprocessor from the documentation, at default settings
+endsWith	1
+endsWith (no index)	1
+-- soundex preprocessor, ngrams tokenizer
+like	1
+like (no index)	1
+startsWith	1
+startsWith (no index)	1
+endsWith	1
+endsWith (no index)	1
+match	1
+match (no index)	1
+multiSearchAny	1
+multiSearchAny (no index)	1
+multiSearchAnyUTF8	1
+multiSearchAnyUTF8 (no index)	1
+index in plan	0
+-- soundex preprocessor, splitByNonAlpha tokenizer
+like	1
+like (no index)	1
+-- soundex preprocessor on a map index: mapContainsKeyLike / mapContainsValueLike
+mapContainsKeyLike	1
+mapContainsKeyLike (no index)	1
+mapContainsValueLike	1
+mapContainsValueLike (no index)	1
+-- Control: ASCII lower maps every byte in place, so the index is still used
+like	1
+like (no index)	1
+startsWith non-ASCII	1
+startsWith non-ASCII (no index)	1
+index in plan	1
+-- Control: ASCII upper is admitted on the same terms as ASCII lower
+like	1
+like (no index)	1
+index in plan	1
+-- Control: without a preprocessor nothing changes
+like	1
+like (no index)	1
+index in plan	1
