@@ -773,6 +773,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         if (!nested_info)
             return nullptr;
 
+        /// SerializationObjectSharedDataPath resolves this name again against the Dynamic type
+        /// alone to extract the subcolumn from a path read from the shared data. Only a dynamic
+        /// path keeps the name, but rewriting it for a typed path is harmless: it is unused there.
+        path_subcolumn = getSubcolumnNameForZeroArrayLevel(path_subcolumn, nested_info->substreams_path);
+
         res->data = std::move(nested_info->data);
         res->substreams_path.insert(
             res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());

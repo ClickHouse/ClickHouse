@@ -410,11 +410,46 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     source += sizeof(prev_delta);
     dest += sizeof(prev_value);
 
-    BitReader reader(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
+    UInt32 items_read = 2;
+    UInt8 bit_offset = 0;
+
+    /// Read up to two words per delta; leave the final bytes to `BitReader`.
+    while (items_read < items_count && source_end - source >= 16)
+    {
+        const UInt64 word = unalignedLoadBigEndian<UInt64>(source);
+        const auto write_spec = WRITE_SPEC_LUT[(word << bit_offset) >> (64 - 5)];
+        UnsignedDeltaType double_delta = 0;
+        if (write_spec.data_bits != 0)
+        {
+            const UInt8 payload_offset = bit_offset + write_spec.prefix_bits;
+            const UInt64 encoded_delta = write_spec.data_bits == 64
+                ? (word << payload_offset) | (unalignedLoadBigEndian<UInt64>(source + 8) >> (64 - payload_offset))
+                : word >> (64 - payload_offset - write_spec.data_bits);
+            double_delta = static_cast<UnsignedDeltaType>((encoded_delta & maskLowBits<UInt64>(write_spec.data_bits - 1)) + 1);
+            if ((encoded_delta >> (write_spec.data_bits - 1)) & 1)
+                double_delta = static_cast<UnsignedDeltaType>(-double_delta);
+        }
+
+        const UInt8 consumed_bits = bit_offset + write_spec.prefix_bits + write_spec.data_bits;
+        source += consumed_bits / 8;
+        bit_offset = consumed_bits % 8;
+
+        prev_delta += double_delta;
+        prev_value += prev_delta;
+        if (dest + sizeof(prev_value) > output_end)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta-encoded data");
+        unalignedStoreLittleEndian<ValueType>(dest, prev_value);
+        dest += sizeof(prev_value);
+        ++items_read;
+    }
+
+    BitReader reader(source, source_end - source);
+    if (bit_offset)
+        reader.readBits(bit_offset);
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more that there is.
-    for (UInt32 items_read = 2; items_read < items_count && !reader.eof(); ++items_read)
+    for (; items_read < items_count && !reader.eof(); ++items_read)
     {
         UnsignedDeltaType double_delta = 0;
 
