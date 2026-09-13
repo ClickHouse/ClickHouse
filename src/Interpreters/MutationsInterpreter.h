@@ -298,6 +298,9 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    /// The columns this mutation writes into the new part. Assigned at the end of `execute` and
+    /// never earlier: a header taken while `stages` is still being built silently omits the
+    /// columns of the stages appended afterwards.
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
