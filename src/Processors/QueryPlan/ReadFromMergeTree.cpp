@@ -6066,6 +6066,14 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
             result[column_name].add(size);
         }
     }
+
+    /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
+    /// while the wide parts that were pruned away would still describe the relative column sizes.
+    /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
+    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
+    if (!parts.empty() && nothing_measured)
+        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
     return result;
 }
 
