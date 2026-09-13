@@ -134,14 +134,19 @@ struct JoinSettings
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
 
-    void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
+    /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
+    /// handed to an older peer depends on which algorithm of the preference list that step reaches.
+    void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const;
 
-    /// Whether these settings make the join behave differently from a peer that still treats
+    /// Whether these settings make `join_operator` behave differently from a peer that still treats
     /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger, and still runs `grace_hash`
     /// without a spill threshold. Such a plan must not be serialized for a peer that predates
-    /// `legacy_join_size_limits_trigger_spilling`. A `grace_hash` that no step can reach - one listed
-    /// behind an algorithm that always produces a join - does not count, both sides run the same join.
-    bool spillBehaviorDiffersFromLegacy() const;
+    /// `legacy_join_size_limits_trigger_spilling`. Only a `grace_hash` that this step reaches counts:
+    /// `join_algorithm` is an ordered preference list, and an entry before it that produces a join for
+    /// this step - always for the hash family, for the kind and strictness of a plain equi-join for the
+    /// merge algorithms - is what both sides run instead. Where the step's `ON` clause could make an
+    /// earlier merge algorithm decline it, the answer stays on the safe side and the plan is refused.
+    bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`

@@ -16,6 +16,8 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 
 
 namespace DB
@@ -262,9 +264,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
-/// `join_algorithm` is an ordered preference list, and these entries always produce a join for any step that
-/// reaches them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
-/// `SpillingHashJoin` (`src/Interpreters/ExpressionAnalyzer.cpp`, `src/Planner/PlannerJoins.cpp`). Whatever follows
+/// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
+/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
 /// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
 /// the same order.
 static bool alwaysProducesJoin(JoinAlgorithm algorithm)
@@ -276,7 +278,62 @@ static bool alwaysProducesJoin(JoinAlgorithm algorithm)
         || algorithm == JoinAlgorithm::AUTO;
 }
 
-bool JoinSettings::spillBehaviorDiffersFromLegacy() const
+/// Whether every predicate of the `ON` clause is an equality between one expression of the left side and one of
+/// the right side. For such a step the merge algorithms decide on the kind and strictness alone: they decline a
+/// mixed (cross-side non-equi) condition, a one-sided filter and a disjunction, and none of those is left once the
+/// clause is plain equalities. `IS NOT DISTINCT FROM` is not counted, its keys are rewritten on the way in.
+static bool isPlainEquiJoin(const JoinOperator & join_operator)
+{
+    if (join_operator.expression.empty())
+        return false;
+
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            return false;
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            return false;
+    }
+    return true;
+}
+
+/// Whether `algorithm`, listed before `grace_hash`, produces a join for `join_operator` on both sides - so the list
+/// is never walked past it - or is known to be skipped for this step - so the walk goes on. Anything in between,
+/// where the answer depends on more than the step tells, is treated as skipped: the caller then refuses the plan,
+/// which is the safe side.
+static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & join_operator)
+{
+    if (alwaysProducesJoin(algorithm))
+        return true;
+
+    /// `FullSortingMergeJoin::isSupported` and `MergeJoin::isSupported` are the kind / strictness predicate plus
+    /// conditions on the `ON` clause that a plain equi-join satisfies. A `direct` join needs a key-value right side
+    /// a plan step never has, `ie_join` claims a step before the list is consulted at all: neither is relied upon.
+    if (!isPlainEquiJoin(join_operator))
+        return false;
+
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+        return FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness);
+
+    if (algorithm == JoinAlgorithm::PARTIAL_MERGE)
+        return MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+
+    return false;
+}
+
+/// `GraceHashJoin::isSupported` on the kind and strictness of a step. Its remaining requirement, a single
+/// disjunct, is one the merge algorithms share, so a step that fails it never reaches `grace_hash` through them
+/// either; assuming it holds only ever refuses a plan, never lets one through.
+static bool graceHashSupports(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return false;
+    const auto kind = join_operator.kind;
+    return isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind);
+}
+
+bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const
 {
     /// The receiver was asked for the old contract anyway, which is what a peer that predates the name does.
     if (legacy_join_size_limits_trigger_spilling)
@@ -286,25 +343,37 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy() const
     if (max_rows_in_join != 0 || max_bytes_in_join != 0)
         return true;
 
+    /// A CROSS / comma / PASTE join, and a join on a constant (`ON 1`, `ON NULL`), do not consult the preference
+    /// list at all: `ConstantJoin` / `PasteJoin` are the only way to run them, on both sides.
+    if (isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind))
+        return false;
+    if (join_operator.expression.empty() && join_operator.strictness != JoinStrictness::Asof)
+        return false;
+
     /// `grace_hash` diverges either way here. With a spill threshold it spills at
     /// `max_bytes_before_external_join` here, and ignores it there. Without one it is not a runnable algorithm
     /// here at all - the join demotes it to the next entry of the preference list, or refuses the query when it
     /// is listed alone - while there it still builds a standalone `GraceHashJoin` whose only spill trigger is the
     /// (unset) size limits.
     ///
-    /// Only a `grace_hash` that a step can actually reach counts: behind an entry that always produces a join it
-    /// is dead weight in the list, and both sides run the very same hash join instead.
+    /// Only a `grace_hash` that this step actually reaches counts: behind an entry that produces a join for the
+    /// step it is dead weight in the list, and both sides run that join instead. One that the step cannot run at
+    /// all - an ASOF join, or a kind outside INNER / LEFT / RIGHT / FULL - is skipped on both sides too.
     for (auto algorithm : join_algorithms)
     {
         if (algorithm == JoinAlgorithm::GRACE_HASH)
-            return true;
-        if (alwaysProducesJoin(algorithm))
+        {
+            if (graceHashSupports(join_operator))
+                return true;
+            continue;
+        }
+        if (producesJoinForStep(algorithm, join_operator))
             return false;
     }
     return false;
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -359,7 +428,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
         settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
-    else if (spillBehaviorDiffersFromLegacy())
+    else if (spillBehaviorDiffersFromLegacy(join_operator))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Cannot serialize a join step whose spilling depends on `max_rows_in_join` / `max_bytes_in_join` being hard caps "
