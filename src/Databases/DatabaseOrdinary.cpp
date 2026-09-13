@@ -30,6 +30,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
@@ -205,6 +206,20 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
+StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query) const
+{
+    /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
+    /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
+    /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
+    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
+    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+    if (create_query.storage)
+        if (auto * query_settings = create_query.storage->settings)
+            if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
+                policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+    return policy;
+}
+
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
 {
     return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
@@ -229,11 +244,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         return;
 
     /// Get table's storage policy
-    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
-    if (auto * query_settings = create_query.storage->settings)
-        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+    auto policy = getStoragePolicyFromCreateQuery(create_query);
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
 
@@ -557,15 +568,39 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
-    if (!rmt)
-        return;
-
+    /// Look for the flag before touching the storage: with `lazy_load_tables` the catalog holds a
+    /// stand-in whose `startup` did nothing, so the cast below would not see the real engine and the
+    /// whole restore would be skipped - the table would stay replicated with no metadata in ZooKeeper,
+    /// i.e. read-only, and the flag would never be removed, so no restart could ever heal it.
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
 
-    auto storage_disks = table->getStoragePolicy()->getDisks();
-    auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
+    /// A stand-in has no storage policy of its own, and materializing every deferred table here just to
+    /// ask it for its disks would defeat `lazy_load_tables`. Resolve the policy from the CREATE query
+    /// instead - the way `convertMergeTreeToReplicatedIfNeeded` did when it found the flag - so that both
+    /// phases look at the same disk even when the table is on a non-default `storage_policy`.
+    auto storage_policy = table->getStoragePolicy();
+    if (!storage_policy)
+        if (auto create_query = tryGetCreateTableQuery(name.table, getContext()))
+            storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>());
+
+    DiskPtr checking_disk = getDisk();
+    if (storage_policy)
+    {
+        auto storage_disks = storage_policy->getDisks();
+        if (!storage_disks.empty())
+            checking_disk = storage_disks[0];
+    }
+
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+        return;
+
+    /// The conversion needs the real storage, so materialize the stand-in now that the flag is known
+    /// to be there.
+    if (auto * proxy = dynamic_cast<StorageProxy *>(table.get()))
+        table = proxy->getNested();
+
+    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    if (!rmt)
         return;
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
