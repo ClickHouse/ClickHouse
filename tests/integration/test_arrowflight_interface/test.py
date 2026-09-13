@@ -737,6 +737,30 @@ def test_doget_text_mode_replaces_invalid_utf8():
     assert b"\xff" in as_binary.column("d").to_pylist()[0]
 
 
+# `throw` rejects the query rather than inventing a representation, and names the column the query used.
+# A container child carries an Arrow field name fixed by the format - `item` for a list, `key`/`value` for a
+# map - which says nothing about where the offending type came from, so quoting it would leave the user of a
+# `SELECT *` guessing. A tuple element is qualified, matching how the values are named while being written.
+def test_doget_throw_mode_names_the_query_column():
+    node.query(
+        "CREATE TABLE mytable (id Int64, plain Array(JSON), nested Tuple(j JSON)) ORDER BY id"
+    )
+    node.query("""INSERT INTO mytable VALUES (10, ['{"a":1}'], tuple('{"b":2}'))""")
+
+    client, options = get_client()
+
+    def rejected(column):
+        descriptor = flight.FlightDescriptor.for_command(
+            f"SELECT {column} FROM mytable SETTINGS output_format_arrow_unsupported_types = 'throw'"
+        )
+        with pytest.raises(flight.FlightServerError) as caught:
+            client.get_flight_info(descriptor, options)
+        return str(caught.value)
+
+    assert "column 'plain'" in rejected("plain")
+    assert "column 'nested.j'" in rejected("nested")
+
+
 # The opaque payload is produced by the query's own format settings, so a setting that changes how a value
 # serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
 # `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed

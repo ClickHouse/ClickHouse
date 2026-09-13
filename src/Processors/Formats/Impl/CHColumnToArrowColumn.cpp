@@ -578,8 +578,13 @@ namespace DB
 
     /// Builds the `arrow::Field` of a container's child, tagged when the child's ClickHouse type has no
     /// Arrow mapping, so a nested opaque value is as recognizable as a top-level one.
+    ///
+    /// `name` is the Arrow field name, which for a container child is dictated by Arrow (`item`, `key`,
+    /// `value`) and means nothing to the user. `column_name` is the one an exception quotes, so callers
+    /// pass down the name the query actually used.
     static std::shared_ptr<arrow::Field> getArrowChildField(
         const std::string & name,
+        const std::string & column_name,
         const DataTypePtr & column_type,
         const ColumnPtr & column,
         const std::string & format_name,
@@ -589,7 +594,7 @@ namespace DB
         bool is_nullable = false;
         String opaque_type_name;
         auto arrow_type
-            = getArrowType(column_type, column, name, format_name, settings, &is_nullable, for_builder, &opaque_type_name);
+            = getArrowType(column_type, column, column_name, format_name, settings, &is_nullable, for_builder, &opaque_type_name);
         auto field = std::make_shared<arrow::Field>(name, arrow_type, is_nullable);
         if (opaque_type_name.empty())
             return field;
@@ -1697,7 +1702,8 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_column = column ? assert_cast<const ColumnArray *>(column.get())->getDataPtr() : nullptr;
-            return arrow::list(getArrowChildField("item", nested_type, nested_column, format_name, settings, for_builder));
+            return arrow::list(
+                getArrowChildField("item", column_name, nested_type, nested_column, format_name, settings, for_builder));
         }
 
         if (isTuple(column_type))
@@ -1711,6 +1717,8 @@ namespace DB
             {
                 nested_fields.push_back(getArrowChildField(
                     nested_names[i],
+                    /// Matches how `buildArrowStructArrayWithTupleColumnData` names a struct child.
+                    column_name + "." + nested_names[i],
                     nested_types[i],
                     tuple_column ? tuple_column->getColumnPtr(i) : nullptr,
                     format_name,
@@ -1760,9 +1768,10 @@ namespace DB
             /// type: `DataTypeMap::isValidKeyType` allows an opaque key such as `Map(JSON, ...)`, which
             /// needs the same `clickhouse.opaque` tag as the value. An Arrow map's key field is always
             /// non-nullable, which is what `arrow::map` produced and what a ClickHouse map key always is.
-            auto key_field
-                = getArrowChildField("key", key_type, key_column, format_name, settings, for_builder)->WithNullable(false);
-            auto value_field = getArrowChildField("value", val_type, value_column, format_name, settings, for_builder);
+            auto key_field = getArrowChildField("key", column_name, key_type, key_column, format_name, settings, for_builder)
+                                 ->WithNullable(false);
+            auto value_field
+                = getArrowChildField("value", column_name, val_type, value_column, format_name, settings, for_builder);
             return std::make_shared<arrow::MapType>(std::move(key_field), std::move(value_field));
         }
 
@@ -1823,7 +1832,7 @@ namespace DB
 
                 std::string field_name = column_variant_type.getVariant(i)->getFamilyName();
                 fields.push_back(getArrowChildField(
-                    field_name, column_variant_type.getVariant(i), variant, format_name, settings, for_builder));
+                    field_name, column_name, column_variant_type.getVariant(i), variant, format_name, settings, for_builder));
             }
 
             /// Variant in CH is slightly different than in arrow - it can indicate null value by having ColumnVariant::NULL_DISCRIMINATOR
