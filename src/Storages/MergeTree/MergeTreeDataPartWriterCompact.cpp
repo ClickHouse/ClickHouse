@@ -262,17 +262,19 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     if (header.empty())
         header = result_block.cloneEmpty();
 
-    size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
+    /// Rows are accumulated in the buffer until they form a stripe (see `writeDataBlock`), or at least one granule
+    /// when the limits of a stripe are reached. Only a whole number of granules is written (see `shouldWriteStripe`),
+    /// so the beginning of an incomplete granule stays in the buffer until the next blocks complete it, and the
+    /// incomplete granule of the very last block is written by `finalizeIndexGranularity`.
     Block flushed_block;
-    if (columns_buffer.size() == 0 && result_block.rows() >= current_mark_rows)
+    if (columns_buffer.size() == 0 && shouldWriteStripe(result_block.rows(), result_block.bytes()))
     {
         flushed_block = std::move(result_block);
     }
     else
     {
         columns_buffer.add(result_block.mutateColumns());
-        size_t rows_in_buffer = columns_buffer.size();
-        if (rows_in_buffer >= current_mark_rows)
+        if (shouldWriteStripe(columns_buffer.size(), columns_buffer.bytes()))
             flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
     }
 
@@ -303,18 +305,64 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
 {
+    /// The block is written in stripes of at most `compact_parts_max_granules_to_buffer` granules and about
+    /// `compact_parts_max_bytes_to_buffer` bytes (a block accumulated in the buffer fits into one stripe, but a big
+    /// block that is written directly may need several). When all columns of a granule must share a compressed
+    /// block, the columns of a granule have to be adjacent, so every granule is written as a separate stripe.
+    size_t max_granules_per_stripe = settings.compress_per_column_in_compact_parts ? settings.compact_parts_max_granules_to_buffer : 1;
+    size_t bytes_per_row = block.rows() ? block.bytes() / block.rows() : 0;
+
+    size_t begin = 0;
+    while (begin < granules.size())
+    {
+        size_t end = begin + 1;
+        size_t stripe_bytes = granules[begin].rows_to_write * bytes_per_row;
+        while (end < granules.size() && end - begin < max_granules_per_stripe
+            && stripe_bytes + granules[end].rows_to_write * bytes_per_row <= settings.compact_parts_max_bytes_to_buffer)
+        {
+            stripe_bytes += granules[end].rows_to_write * bytes_per_row;
+            ++end;
+        }
+
+        writeStripe(block, Granules(granules.begin() + begin, granules.begin() + end));
+        begin = end;
+    }
+}
+
+void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Granules & granules)
+{
     WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
 
-    for (const auto & granule : granules)
+    /// Inside a stripe the columns are written one after another: all granules of the first column, then all
+    /// granules of the second column, and so on. So the data of a column is contiguous inside the stripe, and reading
+    /// a subset of columns needs fewer and larger ranges of the file.
+    /// Every granule of every column still starts a new compressed block (a mark points to the beginning of a block).
+    ///
+    /// Marks are stored granule by granule, so they are collected here and written after the stripe.
+    const bool with_substreams = index_granularity_info.mark_type.with_substreams;
+    const size_t num_marks_per_granule = with_substreams ? columns_substreams.getTotalSubstreams() : columns_list.size();
+    std::vector<MarkInCompressedFile> marks(granules.size() * num_marks_per_granule);
+
+    const bool is_first_stripe = !data_written;
+
+    /// Tricky part, because we share compressed streams between different columns substreams.
+    /// Compressed streams write data to the single file, but with different compression codecs.
+    /// So we flush each stream (using next()) before using new one, because otherwise we will override
+    /// data in result file.
+    CompressedStreamPtr prev_stream;
+
+    auto name_and_type = columns_list.begin();
+    for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
     {
-        /// Tricky part, because we share compressed streams between different columns substreams.
-        /// Compressed streams write data to the single file, but with different compression codecs.
-        /// So we flush each stream (using next()) before using new one, because otherwise we will override
-        /// data in result file.
-        CompressedStreamPtr prev_stream;
-        auto name_and_type = columns_list.begin();
-        for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
+        for (size_t granule_index = 0; granule_index < granules.size(); ++granule_index)
         {
+            const auto & granule = granules[granule_index];
+
+            /// Position of the next mark of this granule to fill: marks of a column's substreams
+            /// go in the order in which the serialization requests the streams.
+            size_t mark_position = granule_index * num_marks_per_granule
+                + (with_substreams ? columns_substreams.getFirstSubstreamPosition(i) : i);
+
             bool is_first_substream = true;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
@@ -350,15 +398,10 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
                 /// In format with substreams we write a mark for each column substream.
-                if (is_first_substream || index_granularity_info.mark_type.with_substreams)
+                if (is_first_substream || with_substreams)
                 {
-                    MarkInCompressedFile mark{plain_hashing.count(), result_stream->hashing_buf.offset()};
-                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
-                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
-
-                    if (!cached_marks.empty())
-                        cached_marks.begin()->second->push_back(mark);
-
+                    marks[mark_position] = MarkInCompressedFile{plain_hashing.count(), result_stream->hashing_buf.offset()};
+                    ++mark_position;
                     is_first_substream = false;
                 }
 
@@ -376,7 +419,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
+                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write,
+                /* is_first_granule = */ is_first_stripe && granule_index == 0, getSerializationSettings());
 
             if (settings.compress_per_column_in_compact_parts)
             {
@@ -384,13 +428,62 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 prev_stream = nullptr;
             }
         }
-
-        if (!settings.compress_per_column_in_compact_parts && prev_stream)
-            prev_stream->hashing_buf.next();
-
-        writeBinaryLittleEndian(granule.rows_to_write, marks_out);
-        data_written = true;
     }
+
+    if (!settings.compress_per_column_in_compact_parts && prev_stream)
+        prev_stream->hashing_buf.next();
+
+    for (size_t granule_index = 0; granule_index < granules.size(); ++granule_index)
+    {
+        for (size_t i = 0; i < num_marks_per_granule; ++i)
+        {
+            const auto & mark = marks[granule_index * num_marks_per_granule + i];
+            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
+
+            if (!cached_marks.empty())
+                cached_marks.begin()->second->push_back(mark);
+        }
+
+        writeBinaryLittleEndian(granules[granule_index].rows_to_write, marks_out);
+    }
+
+    data_written = true;
+}
+
+MergeTreeDataPartWriterCompact::CompleteGranules MergeTreeDataPartWriterCompact::getCompleteGranules(size_t rows) const
+{
+    CompleteGranules result;
+    for (size_t mark = getCurrentMark(); mark < index_granularity->getMarksCount(); ++mark)
+    {
+        size_t rows_in_mark = index_granularity->getMarkRows(mark);
+        if (rows - result.rows < rows_in_mark)
+            break;
+
+        result.rows += rows_in_mark;
+        ++result.num_granules;
+    }
+
+    return result;
+}
+
+bool MergeTreeDataPartWriterCompact::shouldWriteStripe(size_t rows, size_t bytes) const
+{
+    auto complete_granules = getCompleteGranules(rows);
+    if (complete_granules.num_granules == 0)
+        return false;
+
+    /// The rows are written with `getGranulesToWrite(last_block = false)`, which requires every granule to be
+    /// complete, so the beginning of the next granule has to wait in the buffer until the granule is complete.
+    if (complete_granules.rows != rows)
+        return false;
+
+    /// All columns of a granule must share a compressed block, so they have to be adjacent: one granule per stripe.
+    if (!settings.compress_per_column_in_compact_parts)
+        return true;
+
+    return complete_granules.num_granules >= settings.compact_parts_max_granules_to_buffer
+        || bytes >= settings.compact_parts_max_bytes_to_buffer;
 }
 
 void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
@@ -515,9 +608,19 @@ static void fillIndexGranularityImpl(
 
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
+    /// The buffer may hold several complete granules (they are waiting for the stripe to be complete) and a part of
+    /// the next one. Skip the complete granules to find how many rows are missing in the incomplete one.
+    size_t rows_in_buffer = columns_buffer.size();
+    size_t mark = getCurrentMark();
+    while (mark < index_granularity->getMarksCount() && rows_in_buffer >= index_granularity->getMarkRows(mark))
+    {
+        rows_in_buffer -= index_granularity->getMarkRows(mark);
+        ++mark;
+    }
+
     size_t index_offset = 0;
-    if (index_granularity->getMarksCount() > getCurrentMark())
-        index_offset = index_granularity->getMarkRows(getCurrentMark()) - columns_buffer.size();
+    if (mark < index_granularity->getMarksCount())
+        index_offset = index_granularity->getMarkRows(mark) - rows_in_buffer;
 
     fillIndexGranularityImpl(
         *index_granularity,
@@ -588,6 +691,14 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     if (accumulated_columns.empty())
         return 0;
     return accumulated_columns.at(0)->size();
+}
+
+size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::bytes() const
+{
+    size_t res = 0;
+    for (const auto & column : accumulated_columns)
+        res += column->byteSize();
+    return res;
 }
 
 void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & /*checksums_to_remove*/)

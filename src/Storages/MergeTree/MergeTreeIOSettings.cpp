@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool load_marks_asynchronously;
+    extern const SettingsUInt64 merge_tree_compact_parts_min_granules_to_multibuffer_read;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
@@ -65,6 +66,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat map_buckets_coefficient;
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
+    extern const MergeTreeSettingsUInt64 compact_parts_max_bytes_to_buffer;
+    extern const MergeTreeSettingsNonZeroUInt64 compact_parts_max_granules_to_buffer;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
 }
 
@@ -111,6 +114,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
+    , compact_parts_max_bytes_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_bytes_to_buffer])
+    , compact_parts_max_granules_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_granules_to_buffer])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
 {
 }
@@ -145,6 +150,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    result.compact_parts_min_granules_to_multibuffer_read = settings[Setting::merge_tree_compact_parts_min_granules_to_multibuffer_read];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
