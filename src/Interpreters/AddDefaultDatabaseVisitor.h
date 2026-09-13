@@ -9,6 +9,7 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -66,6 +67,7 @@ public:
         if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTSystemQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTFunction>(parent, ast))
         {}
     }
@@ -440,6 +442,18 @@ private:
             if (command_ast->to_database.empty())
                 command_ast->to_database = database_name;
         }
+    }
+
+    void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
+    {
+        if (query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+            return;
+
+        if (!query.table || query.database || only_replace_current_database_function)
+            return;
+
+        query.setDatabase(database_name);
     }
 
     void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const
