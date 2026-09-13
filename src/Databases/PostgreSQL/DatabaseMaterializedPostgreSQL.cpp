@@ -37,6 +37,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -48,6 +49,9 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
 }
 
 namespace FailPoints
@@ -71,12 +75,14 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & metadata_path_,
         UUID uuid_,
         bool is_attach_,
+        bool is_fresh_definition_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
+    , is_fresh_definition(is_fresh_definition_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
@@ -118,8 +124,23 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             connection_info,
             getContext(),
             is_attach,
+            is_fresh_definition,
             *settings,
             /* is_materialized_postgresql_database = */ true);
+
+    if (is_attach)
+    {
+        /// The tables this database already replicated in the previous run: their nested
+        /// ReplacingMergeTree tables exist on disk. The attach-time legacy-identity ownership check
+        /// (see PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded()) compares the
+        /// legacy publication against this set - the live PostgreSQL schema may have grown since, and
+        /// tables created in PostgreSQL after `CREATE DATABASE` are not replicated without an explicit
+        /// `ATTACH TABLE`.
+        std::set<String> tables_replicated_by_previous_run;
+        for (auto iterator = getTablesIterator(getContext(), {}, /* skip_not_loaded */ false); iterator->isValid(); iterator->next())
+            tables_replicated_by_previous_run.insert(iterator->name());
+        replication_handler->setTablesReplicatedByPreviousRun(std::move(tables_replicated_by_previous_run));
+    }
 
     std::set<String> tables_to_replicate;
     try
@@ -449,34 +470,73 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        bool added_to_replication = false;
+        bool publication_added = false;
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-            if (tables_to_replicate.empty())
+            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+
+            /// Initialize the PostgreSQL side before publishing either the persistent table list or
+            /// the wrapper. If the snapshot or temporary-slot setup fails, the catch below only has
+            /// to remove the nested table created by createTable(): a retry starts from the same
+            /// database definition and cannot observe a ghost materialized table.
             {
-                std::lock_guard tables_lock(tables_mutex);
-                tables_to_replicate = getFormattedTablesList();
+                std::lock_guard lock(handler_mutex);
+                publication_added = replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+            added_to_replication = true;
+
+            /// For a database created with `materialized_postgresql_schema_list` the table list must not
+            /// be persisted: the stored definition would then carry both settings, and the next startup
+            /// rebuilds the replication handler from it and fails with "Cannot have schema list and
+            /// tables list at the same time". The attach is durable without it - the nested table
+            /// created above survives on disk and the table was added to the publication, and on
+            /// restart the whole-schema attach path treats exactly that on-disk set of nested tables
+            /// as the authoritative replicated set.
+            if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
+            {
+                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                if (tables_to_replicate.empty())
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    tables_to_replicate = getFormattedTablesList();
+                }
+
+                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                auto alter_query = createAlterSettingsQuery(new_setting);
+
+                /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
+                /// `handler_mutex`, and the two mutexes must always be taken in that order.
+                InterpreterAlterQuery(alter_query, current_context).execute();
             }
 
-            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-            auto alter_query = createAlterSettingsQuery(new_setting);
-
-            /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
-            /// `handler_mutex`, and the two mutexes must always be taken in that order.
-            InterpreterAlterQuery(alter_query, current_context).execute();
-
-            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
             }
-
-            std::lock_guard lock(handler_mutex);
-            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
         {
+            /// `addTableToReplication` gives the nested storage to the consumer, and it publishes the
+            /// table unless the publication already contained it. Roll both side effects back when
+            /// persisting the table list or publishing the wrapper fails, otherwise a failed ATTACH
+            /// would leave a ghost replicated table behind. A publication entry this ATTACH did not
+            /// create is kept: dropping it would make the publication drift from the replicated set,
+            /// which is exactly what the attach-time checks refuse to resume from.
+            if (added_to_replication)
+            {
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeTableFromReplication(table_name, publication_added);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to roll back MaterializedPostgreSQL replication after ATTACH TABLE failure");
+                }
+            }
+
             /// This is a failed attach table. Remove already created nested table.
             DatabaseAtomic::dropTable(current_context, table_name, true);
             throw;
@@ -511,15 +571,43 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             if (it == materialized_tables.end() || !it->second)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
+            /// A MaterializedPostgreSQL database cannot durably replicate an empty set of tables:
+            /// nothing distinguishes "every table was detached on purpose" from "the initial
+            /// synchronization has not created anything yet". After a permanent detach of the last
+            /// table the publication publishes nothing and no nested table is left on disk, so the
+            /// next startup finds no authoritative on-disk set, bootstraps the replicated set from the
+            /// live PostgreSQL schema again - re-snapshotting exactly the tables that were detached on
+            /// purpose - and then refuses to resume replication, because the attach-time drift check
+            /// sees an empty publication while the expected set was just repopulated from the schema
+            /// (and, for a database whose PostgreSQL side has no live table left at all, startup fails
+            /// with `Got empty list of tables to replicate` instead). Reject the detach up front rather
+            /// than let a query that succeeds brick the database on the next restart. Nothing has been
+            /// changed at this point, neither in ClickHouse nor in PostgreSQL.
+            if (materialized_tables.size() == 1)
+                throw Exception(
+                    ErrorCodes::QUERY_NOT_ALLOWED,
+                    "Cannot detach table `{}` permanently: it is the only table replicated by "
+                    "MaterializedPostgreSQL database `{}`, and a database that replicates no table "
+                    "cannot be brought back up on the next server start. Use `DROP DATABASE {}` to "
+                    "stop replicating this PostgreSQL database entirely.",
+                    table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
+
             table_to_delete = it->second;
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
-        auto alter_query = createAlterSettingsQuery(new_setting);
-
+        /// For a database created with `materialized_postgresql_schema_list` the table list must not be
+        /// persisted (see the symmetric branch in attachTable()): the stored definition would then carry
+        /// both settings and the next startup would fail with "Cannot have schema list and tables list
+        /// at the same time". The detach is durable without it - the nested table is dropped from disk
+        /// and the table is removed from the publication below, so the restart-time authoritative
+        /// on-disk set no longer contains it.
+        if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
         {
+            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
+            auto alter_query = createAlterSettingsQuery(new_setting);
+
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->setInternalQuery(true);
             InterpreterAlterQuery(alter_query, current_context).execute();
@@ -530,7 +618,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
-        replication_handler->removeTableFromReplication(table_name);
+        replication_handler->removeTableFromReplication(table_name, /* remove_from_publication */ true);
 
         try
         {
@@ -834,8 +922,37 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
             configuration.ssl);
 
+        /// A user-managed `materialized_postgresql_replication_slot` pins the replication slot to a single,
+        /// fixed name shared by every `ON CLUSTER` replica, so it cannot be made unique per server, whereas
+        /// `materialized_postgresql_use_unique_replication_consumer_identifier` exists precisely to make the
+        /// slot and publication unique per server so that `ON CLUSTER` replicas do not collide (see
+        /// https://github.com/ClickHouse/ClickHouse/issues/58726). The two settings contradict each other.
+        /// The replication handler also rejects the combination, but for the database engine it is constructed
+        /// only in the background `tryStartSynchronization` task, after the metadata has already been written;
+        /// rejecting here — while `CREATE DATABASE` still runs synchronously and before any metadata is
+        /// persisted (see InterpreterCreateQuery::createDatabase) — makes the query fail cleanly instead of
+        /// leaving a database that retries forever in the background. Only for a freshly supplied definition
+        /// (see isFreshEngineDefinition()), so that an already-created single-server deployment that happens
+        /// to set both keeps starting after an upgrade, while `ATTACH DATABASE ... ON CLUSTER` with a full
+        /// engine definition cannot be used to slip the combination past this check.
+        const bool is_fresh_definition = isFreshEngineDefinition(args.mode, args.create_query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !(*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty()
+            && (*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use a user-managed replication slot (`materialized_postgresql_replication_slot`) together "
+                "with `materialized_postgresql_use_unique_replication_consumer_identifier`: the latter makes the "
+                "replication slot and publication unique per server so that `ON CLUSTER` replicas do not collide, "
+                "but a user-managed slot has one fixed name shared by every replica and cannot be made per-server, "
+                "so all but one replica would fail to replicate. Either remove "
+                "`materialized_postgresql_replication_slot` to let each server derive its own unique slot, or "
+                "disable `materialized_postgresql_use_unique_replication_consumer_identifier` if a single shared, "
+                "user-managed slot is intended.");
+
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-            args.context, args.metadata_path, args.uuid, args.create_query.attach,
+            args.context, args.metadata_path, args.uuid, args.create_query.attach, is_fresh_definition,
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
@@ -1059,6 +1176,12 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+
+This is also what makes a `MaterializedPostgreSQL` database work when it is created `ON CLUSTER`: an `ON CLUSTER` query assigns the same ClickHouse UUID to the database on every replica, so the replication slot and publication names are made unique per server (by mixing in the per-server identity) instead of per database. Without this setting all replicas would derive the same names and fight over a single `PostgreSQL` replication slot and publication.
+
+Deployments that already used this setting before it became unique per server keep working after an upgrade: on attach, when the replication slot and publication exist under the previously generated names, they are adopted instead of creating new ones, so replication continues from the same position without reloading the initial snapshot.
+
+This setting cannot be combined with a user-managed `materialized_postgresql_replication_slot`: a user-managed slot has a single fixed name shared by every `ON CLUSTER` replica and cannot be made unique per server, so the two settings are contradictory and the combination is rejected on `CREATE`, as well as on an `ATTACH` that carries a full engine definition. Use one or the other. Only a replay of an already stored definition - a server restart, a `RESTORE`, or a short-syntax `ATTACH` - keeps accepting the combination, so that a deployment created before this validation existed still starts up.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
