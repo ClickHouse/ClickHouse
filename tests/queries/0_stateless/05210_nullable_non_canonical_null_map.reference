@@ -1,5 +1,5 @@
 -- { echo }
--- Random settings limits: compile_expressions=(0, 0); ratio_of_defaults_for_sparse_serialization=(1.0, 1.0)
+-- Random settings limits: compile_expressions=(0, 0); ratio_of_defaults_for_sparse_serialization=(1.0, 1.0); optimize_multiif_to_if=(1, 1)
 -- A null-map byte is a predicate, not a value: any non-zero byte means NULL. `if` passes its raw
 -- condition column on as the null map, so `number % 3` fills it with the bytes 0, 1 and 2. Byte 0
 -- marks the rows holding 'x'; the 1s and the 2s are equally NULL. Every query below tests nullness
