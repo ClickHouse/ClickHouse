@@ -1,0 +1,10 @@
+--- hypothetical minmax index on a rewritten expression ---
+  marks:       25
+With idx_multiif (minmax, hypothetical):
+  status:       applicable
+  marks:        2
+--- the same estimate with the rewrite disabled ---
+  marks:       25
+With idx_multiif (minmax, hypothetical):
+  status:       applicable
+  marks:        2
