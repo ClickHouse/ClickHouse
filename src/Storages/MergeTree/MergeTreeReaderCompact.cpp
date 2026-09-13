@@ -301,6 +301,12 @@ void MergeTreeReaderCompact::readData(
                     if (columns_cache_for_subcolumns)
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
+                else if (temp_full_column->size() > rows_to_read)
+                {
+                    /// A full-column request caches the accumulated output. Extract shared paths only from this granule.
+                    temp_full_column = temp_full_column->cut(temp_full_column->size() - rows_to_read, rows_to_read);
+                    columns_cache_for_subcolumns->at(name_in_storage) = temp_full_column;
+                }
 
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
                 column.insertRangeFrom(*subcolumn, subcolumn->size() - rows_to_read, rows_to_read);
