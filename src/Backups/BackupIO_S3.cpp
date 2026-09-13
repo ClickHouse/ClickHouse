@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ServerSetting
@@ -381,6 +382,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , pin_plain_reads_to_generation(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -449,9 +451,21 @@ String BackupReaderS3::getFileGeneration(const String & file_name)
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGeneration(
     const String & file_name, std::optional<size_t> /*expected_file_size*/, const String & generation)
 {
-    /// `generation` is an `ETag`: the `GET` carries it as `If-Match`, so an object replaced in place
-    /// since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather than read. An empty
-    /// token pins nothing, which is what a versioned URI needs (it is pinned by its version).
+    /// `generation` is an `ETag`: every `GET` of the buffer carries it as `If-Match`, so an object
+    /// replaced in place since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather
+    /// than read. A versioned URI is pinned by its version and gets no token.
+    ///
+    /// An ordinary read of an unversioned backup names the generation here, with one `HeadObject`,
+    /// the same way the Azure reader does: a buffer makes more than one request - the retries of a
+    /// failed one, and the reopen after a `seek` - and without the token a key rewritten between two
+    /// of them would be restored as the first bytes of one generation followed by the rest of the
+    /// other, without any error. `s3_validate_etag_on_read` opts a plain read out of it, as for every
+    /// other S3 read; a caller that already names a generation (an archive session) is pinned
+    /// regardless, because its other handles have read that generation already.
+    String pinned_generation = generation;
+    if (pinned_generation.empty() && pin_plain_reads_to_generation)
+        pinned_generation = getFileGeneration(file_name);
+
     return std::make_unique<ReadBufferFromS3>(
         client,
         s3_uri.bucket,
@@ -466,7 +480,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGenerati
         /*file_size=*/ std::nullopt,
         /*credentials_refresh_callback=*/ [] { return nullptr; },
         /*blob_storage_log=*/ nullptr,
-        /*expected_etag=*/ generation);
+        /*expected_etag=*/ pinned_generation);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,

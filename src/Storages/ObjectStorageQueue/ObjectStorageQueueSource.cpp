@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
@@ -1755,8 +1756,10 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
-                /// A read pinned to the generation that the listing reported fails with
-                /// `FILE_CHANGED_DURING_READ` when that generation is not in the bucket any more:
+                /// A read pinned to the generation that the listing reported fails when that
+                /// generation is not in the bucket any more - `FILE_CHANGED_DURING_READ` from the
+                /// Azure buffer, `S3_OBJECT_CHANGED_DURING_READ` from the S3 one, which pins the
+                /// read whenever `s3_validate_etag_on_read` is on (see `ReadBufferFromS3::sendRequest`):
                 /// the object was rewritten between the listing and the read. That is a race over
                 /// which generation this table is looking at, not a file that cannot be read, and
                 /// the newer generation at the same key has never been ingested. Charging it to the
@@ -1764,7 +1767,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// path, and both queue modes then skip every later generation at that key - the
                 /// rewritten object would be dropped for good. So the processing is reset without a
                 /// failure instead, and the newer generation is picked up on a later pass.
-                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ;
+                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
+                    || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
 
                 /// Resetting the processing means the path is read again from offset 0 on a later
                 /// pass. That is only free while the file has emitted nothing: rows of the

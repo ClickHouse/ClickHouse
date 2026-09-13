@@ -85,6 +85,10 @@ private:
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
 
+    /// `s3_validate_etag_on_read` at the time the backup was opened: whether an ordinary read of a
+    /// file of an unversioned backup is pinned to the generation one `HeadObject` names for it.
+    const bool pin_plain_reads_to_generation;
+
     BlobStorageLogWriterPtr blob_storage_log;
 };
 
