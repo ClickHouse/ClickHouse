@@ -1,0 +1,7 @@
+# Long plateaus of small decimals: half a vector of 1.0, half of 2.0, repeated
+# Roundtrip is lossless
+100000	0
+100000	0
+# Plateaus collapse into runs: under 0.5 bits per value
+1
+1
