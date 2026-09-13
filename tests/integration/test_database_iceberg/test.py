@@ -70,7 +70,6 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
-
 def list_namespaces(started_cluster):
     base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
     response = requests.get(f"{base_url_local}/namespaces")
@@ -2300,5 +2299,62 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
         "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
     )
     assert "table_x" in result
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_catalog_commit_conflict_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+    )
+
+    # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
+    # constructed before the pipeline starts, so all but one of them commit against a stale parent
+    # and are refused with `409`. That makes the conflict a property of the plan rather than a race.
+    num_writers = 4
+    query_id = uuid.uuid4().hex
+    node.query(
+        f"INSERT INTO {table_ref} SELECT number FROM numbers_mt(4000000)",
+        query_id=query_id,
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "max_insert_threads": num_writers,
+            "max_threads": num_writers,
+        },
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    conflicts, http_requests = map(
+        int,
+        node.query(
+            f"""
+            SELECT
+                countIf(logger_name LIKE 'RestCatalog%' AND message LIKE '%updateMetadata conflict%'),
+                countIf(logger_name = 'ReadWriteBufferFromHTTP')
+            FROM system.text_log
+            WHERE query_id = '{query_id}' AND message LIKE '%409%'
+            """
+        ).split(),
+    )
+
+    assert conflicts, (
+        "no writer was refused, so nothing about conflict handling was exercised"
+    )
+    assert http_requests == conflicts, (
+        f"{conflicts} refused commit(s) cost {http_requests} catalog requests, so a conflict is "
+        f"resent with backoff instead of being handed back to the sink at once"
+    )
+
+    assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
