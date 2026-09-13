@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -107,18 +108,16 @@ public:
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
+    ///
+    /// `num_rows` is the Chunk's row count, which `Block::rows` cannot supply for a block with no
+    /// columns at all - PREWHERE consuming every column of a cross join's right side, say.
+    ///
+    /// Callers that may run concurrently must pass distinct `worker_id`s in
+    /// `[0, getMaxBuildThreads())`: `HashJoin` keeps unsynchronized per-worker state behind it.
+    /// A single-threaded filler passes `0`; a wrapper join forwards the id it was given.
+    ///
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
-
-    /// Overload that accepts the actual number of rows from the Chunk.
-    /// Needed because Block::rows() returns 0 when the block has no columns
-    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
-    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
-    {
-        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
-        (void)num_rows;
-        return addBlockToJoin(block, check_limits);
-    }
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) = 0;
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -146,6 +145,10 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
+    /// For callers that must not block, `IProcessor::prepare` above all. Returns nullopt when the
+    /// answer would need a wait, and the caller then skips whatever the answer was gating.
+    virtual std::optional<bool> tryAlwaysReturnsEmptySet() const { return alwaysReturnsEmptySet(); }
+
     /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
@@ -153,6 +156,9 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
+
+    /// Zero leaves the choice to the pipeline.
+    virtual size_t getMaxBuildThreads() const { return 0; }
 
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
@@ -187,7 +193,6 @@ public:
     virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
-    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.

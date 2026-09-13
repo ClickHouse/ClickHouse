@@ -183,10 +183,10 @@ void calculateHashTableCacheKeys(
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
-            // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+            /// `HashTablesStatistics` only feeds the hash join family, so the key is not worth computing elsewhere.
             const auto & join_expression = join_step->getJoinOperator().expression;
             bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
-            const bool calculate = allowParallelHashJoin(
+            const bool calculate = allowHashJoinCacheKeys(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),

@@ -21,7 +21,7 @@ FROM t_l_small AS l
 RIGHT JOIN t_r_small AS r ON l.id = r.id
 ORDER BY r.id, l.id;
 
--- Explain plan for a small RIGHT OUTER join (should use ConcurrentHashJoin / parallel_hash)
+-- Explain plan for a small RIGHT OUTER join (should use HashJoin / parallel_hash)
 SELECT 'explain_right_all_small';
 EXPLAIN actions=1, keep_logical_steps=0
 SELECT l.id, l.value, r.description
