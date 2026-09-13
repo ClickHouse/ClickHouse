@@ -1,8 +1,10 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
@@ -567,6 +569,179 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     ASSERT_EQ(count-1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The code that logs a blob storage request (S3, Azure) opens an `HTTPConnectionInfoScope` around
+/// issuing the request and writing the row that describes it; nothing is published outside of one.
+/// This is that pattern in miniature: request, then take, inside one scope.
+static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
+{
+    DB::HTTPConnectionInfoScope scope;
+    echoRequest(std::move(data), session);
+    return DB::takeCurrentHTTPConnectionInfo();
+}
+
+/// The connection info published for a request must describe the socket that actually carried it.
+/// The three tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and
+/// the bookkeeping that goes with it - out from under a session that is already in the middle of a
+/// request, or fails trying.
+
+TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto second = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(second.has_value);
+
+    /// A different TCP connection, even though the kernel usually hands back the same file
+    /// descriptor number - and often the same socket inode - right after the previous one closed.
+    ASSERT_NE(first.id, second.id);
+    ASSERT_EQ(0, second.requests_served);
+}
+
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    auto first_connection = pool->getConnection(timeouts, nullptr);
+    echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    DB::HTTPConnectionInfo stored_info;
+    {
+        auto second_connection = pool->getConnection(timeouts, nullptr);
+        stored_info = echoRequestAndTakeConnectionInfo("Hello", *second_connection);
+    } // returned to the pool, and starts sitting there idle from now on
+
+    ASSERT_TRUE(stored_info.has_value);
+    ASSERT_EQ(0, stored_info.idle_microseconds); // its first and only request so far
+
+    const uint64_t idle_for_microseconds = 300 * 1000;
+    sleepForMicroseconds(idle_for_microseconds);
+
+    first_connection->abort(); // further usage requires reconnect, reuse the idle stored connection
+
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    ASSERT_TRUE(reused.has_value);
+    /// The very socket that was waiting in the pool, with its own history - not a fresh one, and
+    /// not the aborted one.
+    ASSERT_EQ(stored_info.id, reused.id);
+    ASSERT_EQ(1, reused.requests_served);
+    /// And the idle time is how long that socket really waited, not the sample taken for its
+    /// previous request.
+    ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
+}
+
+/// A reconnect can also fail, and then the request never reaches a socket at all. The caller learns
+/// that from the exception and writes its error row inside the same scope - failed requests being
+/// among the rows users inspect most closely - so the slot must not still be holding the identity of
+/// the socket that was discarded on the way.
+TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
+{
+    /// A hard limit of one, reached by the connection below, so its reconnect cannot obtain a
+    /// replacement: `PooledConnection::create` throws `HTTP_CONNECTION_LIMIT_REACHED` before any
+    /// connect attempt is made. The store limit of zero keeps the pool empty, so there is no stored
+    /// connection to be reused instead.
+    DB::HTTPConnectionPools::Limits limits {0, 0, 0, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+
+    connection->abort(); // further usage requires a reconnect - the one that is going to fail
+
+    {
+        DB::HTTPConnectionInfoScope scope;
+
+        auto data = String("Hello");
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        ASSERT_ANY_THROW(connection->sendRequest(request));
+
+        /// This is where the caller logs the failure. No socket carried the request, so the row
+        /// reports zeroes - and in particular neither the id, nor the request count, nor the age of
+        /// the socket that was dropped.
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(info.has_value);
+        ASSERT_NE(first.id, info.id);
+    }
+}
+
+/// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the
+/// proxy resolver, the REST catalogs, the SDKs' credential refreshes - and none of that logs to
+/// `system.blob_storage_log`. A request they make must not be left in the slot for the next blob
+/// storage row on this thread, which would otherwise report a socket it never used - including rows
+/// for local or HDFS object storage, which use no HTTP connection at all.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// A blob storage request in between is recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_NE(0, info.id);
+
+    /// And an unrelated request after it does not resurrect the slot.
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// Not every request made inside a scope ends up taken: the SDK may retry, refresh credentials on
+/// the way, or the code that opened the scope may skip writing its row. Whatever is left when the
+/// scope ends must go with it - otherwise a later row on this thread, possibly for a request that
+/// never reached the wire, would inherit it. This is the stale-slot case that a post-upload
+/// `HeadObject` existence check, which no row describes, used to produce when the scope was owned
+/// by the HTTP client rather than by the logging code.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope;
+        echoRequest("Hello", *connection);
+        /// Published, but deliberately not taken.
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// The next scoped request starts from a clean slot and sees only itself.
+    {
+        DB::HTTPConnectionInfoScope scope;
+        auto before = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(before.has_value);
+
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(1, info.requests_served);
+
+        /// Taking is one-shot: the tail entries of a batch that shared one request see nothing.
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
 }
 
 TEST_F(ConnectionPoolTest, ReceiveTimeout)
