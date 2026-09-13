@@ -502,6 +502,23 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /** A column a pending mutation drops is not read from the part: the readers skip it and the
+              * value comes from the current metadata - the column's default, in the requested type - so
+              * the type the part carries says nothing about what is in `res_columns`. Converting from
+              * that type builds the conversion for the part's type and hands it a column of another
+              * one, which raises `Illegal column ... of first argument of function ...`.
+              *
+              * That is reachable whenever the dropped name is taken by a new column of a different type
+              * before the drop's mutation has rewritten the part:
+              *
+              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
+              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
+              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
+              */
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
