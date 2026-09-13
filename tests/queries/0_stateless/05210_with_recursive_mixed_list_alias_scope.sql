@@ -36,8 +36,9 @@ CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v_plain AS
     SELECT id FROM src;
 USE {CLICKHOUSE_DATABASE:Identifier};
 
+-- The view lives in the other database, not in currentDatabase().
 SELECT 'stored', replaceAll(create_table_query, {CLICKHOUSE_DATABASE_1:String}, 'db1') LIKE '%FROM db1.src)%' FROM system.tables
-    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'v';
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND database != currentDatabase() AND name = 'v';
 SELECT 'view from other database', * FROM {CLICKHOUSE_DATABASE_1:Identifier}.v;
 SELECT 'plain list', * FROM {CLICKHOUSE_DATABASE_1:Identifier}.v_plain;
 
