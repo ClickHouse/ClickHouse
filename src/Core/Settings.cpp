@@ -778,15 +778,12 @@ Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*
 so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
 to avoid interpreting '?' as a wildcard.
 )", 0) \
-    DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
-Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
     DECLARE(String, s3_upload_checksum_algorithm, "", R"(
 The checksum algorithm used when ClickHouse uploads data to `S3`. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header.
 
 By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so the SDK silently omits it and the upload carries no checksum at all: set `CRC32` or `SHA256` to attach a flexible checksum instead. Where this setting applies, an explicit `MD5` is then rejected.
 
-For non-`S3Express` buckets, `s3_disable_checksum` suppresses this setting. It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk.
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk.
 
 `S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
 
@@ -3185,6 +3182,22 @@ Possible values:
 - 0 — The column name is substituted with the alias.
 - 1 — The column name is not substituted with the alias.
 
+If the column name is ambiguous between joined tables and an alias with the same name exists, the alias is used:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+Here `id` in `id AS x` is a column of both `t1` and `t3`, so it resolves to the alias `t1.id + 10`.
+
 **Example**
 
 The difference between enabled and disabled:
@@ -5225,7 +5238,7 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 Possible values: true, false
 )", 0) \
     DECLARE(Bool, optimize_or_like_chain, true, R"(
-Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
+Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, are end-anchored (do not end in an unescaped `%`; Vectorscan matches `$` before a final newline, so the rewrite would widen the filter), or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
 
 The optimization is applied only with the analyzer (`enable_analyzer = 1`, the default); with the old analyzer (`enable_analyzer = 0`) the `OR` chain is left unchanged. For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
 
@@ -7601,6 +7614,24 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
+The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
+It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
+the workload's `max_concurrent_queries`) and for a memory reservation (from a
+`CREATE RESOURCE ... (MEMORY RESERVATION)` resource together with the `reserve_memory` setting). Both are
+acquired before the query starts running, so this is the only way to bound that pre-execution wait:
+`max_execution_time` does not apply yet because the query has not started.
+
+When the timeout expires the query fails with one of two distinct errors, depending on which resource it
+was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` for a memory reservation.
+
+Possible values:
+
+- Positive integer — timeout in milliseconds.
+- 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
+  immediately when the workload's `max_waiting_queries` limit is reached.
+)", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 )", 0) \
@@ -9167,6 +9198,11 @@ Enabling it automatically adjusts settings that control features not supported b
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", PRIVATE_PREVIEW) \
+    DECLARE(Bool, distributed_plan_fallback_to_local_execution, true, R"(
+When a query plan contains a step that does not support distributed execution, log the reason and execute the query on the initiator instead of throwing an exception. Disable to get an exception instead.
+
+Only takes effect when `make_distributed_plan` (private preview) is enabled.
+)", 0) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9222,6 +9258,7 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
@@ -9359,6 +9396,7 @@ Enable experimental table function `eval`.
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
+    MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \

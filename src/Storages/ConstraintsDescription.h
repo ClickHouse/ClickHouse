@@ -58,10 +58,15 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
-    /// Rejects a `CHECK` constraint whose expression changes the number of rows. Only for fresh DDL:
-    /// rejecting while loading stored metadata would fail the whole load rather than the one table.
-    static void assertConstraintPreservesRowCount(const ASTPtr & constraint);
-    void assertPreserveRowCount() const;
+    /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
+    /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked
+    /// against another row's value, or - when the column ends up shorter than the block - past the end of
+    /// it. The declaration's AST is read rather than the built expression, because a constraint that
+    /// cannot be built at all (a bare subquery as in `03594_constraint_subqery_logical_error`, a wrong
+    /// arity as in `04489_constraint_comparison_wrong_arity`) is only reported when a row is inserted, and
+    /// building it here would move that report to the DDL.
+    /// Called from DDL only, so metadata stored before this check still loads.
+    void checkExpressionsPreserveRowCount() const;
 
     struct AtomId
     {
@@ -94,6 +99,17 @@ public:
     QueryTreeData getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const;
 
 private:
+    /// The always-true constraints that the query-time constraint optimizer may rely on: a constraint
+    /// whose expression changes the number of rows (contains `arrayJoin`) is left out.
+    ///
+    /// Such a constraint is rejected at DDL time by `checkExpressionsPreserveRowCount`, but metadata
+    /// stored before that check still loads, so it has to be distrusted here as well. Otherwise
+    /// `WhereConstraintsOptimizer` and `ConvertQueryToCNFPass::optimizeWithConstraints` would match a
+    /// stored `CHECK` or `ASSUME arrayJoin(arr) > 0` against `WHERE arrayJoin(arr) > 0` and remove the
+    /// filter, turning a query over the exploded rows into a query over the base rows. The optimization
+    /// is skipped rather than the query being refused, so that reading such a table keeps working.
+    ASTs filterConstraintsForOptimization() const;
+
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;
     std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph() const;
     void update();
