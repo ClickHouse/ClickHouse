@@ -87,7 +87,6 @@ struct QueryPlanOptimizationSettings
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     UInt64 top_k_optimization_observation_rows = 65536;
-    bool derive_not_null_filters_from_joins;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -129,7 +128,6 @@ struct QueryPlanOptimizationSettings
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
-    bool allow_derived_not_null_filters_execution;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -143,6 +141,8 @@ struct QueryPlanOptimizationSettings
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_fallback_to_local_execution
+        = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
@@ -266,8 +266,6 @@ struct QueryPlanOptimizationSettings
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
-
-    double max_selectivity_for_not_null_filters_execution;
 };
 
 }
