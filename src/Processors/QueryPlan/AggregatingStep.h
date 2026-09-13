@@ -117,6 +117,7 @@ public:
     void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
+    void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }
@@ -152,7 +153,7 @@ private:
     SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    const bool should_produce_results_in_order_of_bucket_number;
+    bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
     bool enable_sharding_aggregator;

@@ -77,10 +77,19 @@ public:
             const bool original_step_was_final
                 = aggregating_step->getFinal(); /// Save whether the original AggregatingStep was final or partial
 
-            /// Convert Aggregation step to partial aggregation
+            /// The memory-efficient merge is never used on this branch for parallel replicas: the visitor
+            /// has no access to the optimization settings, so this stays hard-coded as it was before.
+            const bool memory_efficient_aggregation = false;
+
+            /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+            /// order, so the partial aggregation must produce its result in bucket order.
             auto & partial_aggregation_node = nodes.emplace_back();
             partial_aggregation_node.step = aggregating_step->clone();
-            typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
+            auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+            partial_aggregation_step->setFinal(false);
+            /// Keep the bucket order when the original step already promised it to its consumer.
+            partial_aggregation_step->setProduceResultsInBucketOrder(
+                should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation);
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
@@ -92,7 +101,6 @@ public:
 
             /// Replace original aggregation step with MergingAggregated step
             aggregator_params.only_merge = true; /// Merge partial aggregation results
-            const bool memory_efficient_aggregation = false;
             QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
                 new_split_node.step->getOutputHeader(),
                 aggregator_params,
