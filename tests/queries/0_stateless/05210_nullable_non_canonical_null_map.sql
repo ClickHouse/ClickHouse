@@ -48,7 +48,8 @@ DROP TABLE t_null_map_dict_src;
 -- Controls: a canonical 0/1 null map must be unaffected.
 SELECT count(), countIf(e IS NULL), arraySort(groupUniqArray(e)) FROM (SELECT DISTINCT if(number % 2, NULL, 'x') AS e FROM numbers(30));
 SELECT number % 2 AS c, countIf(v IS NULL) FROM (SELECT number, if(number % 2, toNullable('x'), NULL) AS v FROM numbers(30)) GROUP BY c ORDER BY c;
--- The reported query: DISTINCT and GROUP BY over one projection must agree.
+-- The reported query. Its condition column becomes the null map, so the modulus has to leave
+-- non-zero bytes there; DISTINCT and GROUP BY over one projection must agree.
 SELECT
-    (SELECT count() FROM (SELECT DISTINCT multiIf(number % -1, -9223372036854775808 < moduloLegacy(number, NULL), '^$') FROM numbers(150))) AS distinct_rows,
-    (SELECT count() FROM (SELECT multiIf(number % -1, -9223372036854775808 < moduloLegacy(number, NULL), '^$') AS e FROM numbers(150) GROUP BY e)) AS group_by_rows;
+    (SELECT count() FROM (SELECT DISTINCT multiIf(number % 3, -9223372036854775808 < moduloLegacy(number, NULL), '^$') FROM numbers(150))) AS distinct_rows,
+    (SELECT count() FROM (SELECT multiIf(number % 3, -9223372036854775808 < moduloLegacy(number, NULL), '^$') AS e FROM numbers(150) GROUP BY e)) AS group_by_rows;
