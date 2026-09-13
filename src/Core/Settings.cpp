@@ -897,6 +897,8 @@ The maximum speed of data exchange over the network in bytes per second for writ
 )", 0) \
     DECLARE(UInt64, max_local_read_bandwidth, 0, R"(
 The maximum speed of local reads in bytes per second.
+
+The limit applies to the data read from the block devices: reads that are served from the OS page cache are not accounted for, as long as the read method can detect them (which is the case for the default `local_filesystem_read_method = 'pread_threadpool'`).
 )", 0) \
     DECLARE(UInt64, max_local_write_bandwidth, 0, R"(
 The maximum speed of local writes in bytes per second.

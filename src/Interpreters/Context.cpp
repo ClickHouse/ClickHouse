@@ -1370,7 +1370,11 @@ struct ContextSharedPart : boost::noncopyable
             remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        {
+            auto throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            throttler->setLimitsBlockDeviceBandwidth();
+            local_read_throttler = std::move(throttler);
+        }
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
@@ -5876,7 +5880,11 @@ ThrottlerPtr Context::getLocalReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+        {
+            auto query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            query_throttler->setLimitsBlockDeviceBandwidth();
+            local_read_query_throttler = std::move(query_throttler);
+        }
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -5962,7 +5970,11 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+        {
+            auto throttler = std::make_shared<Throttler>(read_bandwidth);
+            throttler->setLimitsBlockDeviceBandwidth();
+            shared->local_read_throttler = std::move(throttler);
+        }
     }
 
     if (shared->local_read_throttler)

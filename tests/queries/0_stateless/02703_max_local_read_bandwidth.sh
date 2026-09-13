@@ -21,7 +21,10 @@ $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(2e5)"
 read_methods=(
     read
     pread
-    pread_threadpool
+    # NOTE: pread_threadpool detects the reads that are served from the OS page cache and does not
+    # account them in the throttler, and the data inserted above is still in the page cache.
+    # See 05111_local_read_throttler_page_cache.
+    # pread_threadpool
     # NOTE: io_uring doing all IO from one thread, that is not attached to the query
     # io_uring
     # NOTE: mmap cannot be throttled
