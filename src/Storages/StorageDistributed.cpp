@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <Disks/IDisk.h>
 
@@ -76,6 +77,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -216,6 +218,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace ActionLocks
@@ -436,6 +439,7 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
@@ -473,6 +477,28 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
+        /// `arrayJoin` is the one function that changes the number of rows, while the shard selector
+        /// built from the sharding key is applied positionally to the block being inserted: the insert
+        /// either fails with "Size of selector ... doesn't match size of column" or, when the sizes
+        /// happen to agree, routes rows by an unrelated row's array element.
+        ///
+        /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
+        /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
+        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// exists, and rejecting it there would make the table (or the whole database) unloadable
+        /// instead of failing the one insert that is actually broken. The size mismatch in
+        /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
+        /// is not available for an engine argument, so the way out is `DETACH` plus a fresh `ATTACH`
+        /// with a corrected key.
+        ///
+        /// The raw AST is what gets checked, so the two indirections the analyzer would have resolved
+        /// later are looked through as well: the `unnest` alias (matched by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`, which is off for secondary queries)
+        /// and a SQL UDF body that is inlined when the expression is built.
+        if (is_fresh_definition && expressionContainsArrayJoin(sharding_key_))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Sharding expression cannot contain arrayJoin, because it changes the number of rows");
+
         /// Check that sharding_key exists in the table and has numeric type.
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
@@ -1584,6 +1610,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
+    /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
+    /// against the new columns here; the `arrayJoin` rejection stays where the definition is introduced
+    /// (the constructor), so an unrelated `ALTER` on a table created before that check does not throw.
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
@@ -2331,7 +2360,8 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.mode);
+            args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
     {
         .supports_settings = true,
@@ -2770,6 +2800,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);

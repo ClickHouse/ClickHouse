@@ -66,6 +66,9 @@ public:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
+        /// Whether the sharding key comes from a definition the user supplies now, rather than from
+        /// stored metadata being replayed - see the constructor.
+        bool is_fresh_definition,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
         bool is_remote_function_ = false,

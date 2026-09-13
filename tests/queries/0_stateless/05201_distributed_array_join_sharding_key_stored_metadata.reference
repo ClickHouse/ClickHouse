@@ -1,0 +1,4 @@
+1
+Distributed(\'test_shard_localhost\', \'db\', \'dst\', arrayJoin(arr))
+altered
+ILLEGAL_COLUMN
