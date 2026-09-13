@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-async-insert
+# Tags: no-parallel, no-async-insert, long
 # Tag no-parallel: Fails due to failpoint intersection
+# long: waiting out the mutation with the fail point held lands just over the 180s cap that the
+#   flaky check applies to untagged tests.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
