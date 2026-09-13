@@ -777,7 +777,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentIdentifierQuotingForPo
     /// `WhenNecessary` rule it replaced produces byte-identical output here, which is what this comparison
     /// pins. A case-sensitive mixed-case object has to be addressed through the `query('...')` form, which is
     /// passed to the external database verbatim.
-    const auto quoted_mixed_case = R"((SELECT "CamelCase" FROM "MixedCase"))";
+    const char * quoted_mixed_case = R"((SELECT "CamelCase" FROM "MixedCase"))";
     EXPECT_EQ(
         formatQueryTableArgument(state,
             quoted_mixed_case,
