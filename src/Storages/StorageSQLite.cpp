@@ -280,7 +280,22 @@ Pipe StorageSQLite::read(
     /// A read must never materialize a missing SQLite database. In particular, query-backed storages are
     /// read-only and do not have pending generated-column reclassification, so deriving `allow_create` from
     /// that flag would create an empty file on the first read after an `ATTACH` while the file is unavailable.
-    auto metadata_connection = openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
+    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
+
+    /// Each read runs on its own dedicated connection: `SQLiteSource::onCancel` aborts a running statement
+    /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On the shared `sqlite_db` handle - also
+    /// used by every concurrent query on this table, and by all tables of a `DatabaseSQLite` - cancelling one
+    /// query could interrupt an unrelated sibling statement mid-scan. `allow_create` stays false: a read must
+    /// never materialize a missing database file.
+    ///
+    /// The connection is opened before the pushdown decision below because that decision must be derived from
+    /// the very database the scan will run against. The long-lived `sqlite_db` handle keeps the file it was
+    /// opened on: after the database file has been replaced at the same path (`mv new.sqlite data.sqlite`),
+    /// it still sees the old, unlinked file, while a fresh open sees the replacement. Classifying the columns
+    /// through the cached handle would then reason about one database (an old STRICT table with a BINARY
+    /// collation) and query another (a non-STRICT replacement, or a NOCASE collation), and a predicate pushed
+    /// down on the strength of the stale metadata would drop rows the local re-filtering never sees.
+    auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -328,7 +343,7 @@ Pipe StorageSQLite::read(
         for (const auto & column : available_columns)
         {
             if (!SQLiteFormatImpl::isPushdownSafeColumn(
-                    metadata_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
+                    read_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
                 local_only_columns.insert(column.name);
         }
 
@@ -376,12 +391,6 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    /// Each read runs on its own dedicated connection: `SQLiteSource::onCancel` aborts a running statement
-    /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On the shared `sqlite_db` handle - also
-    /// used by every concurrent query on this table, and by all tables of a `DatabaseSQLite` - cancelling one
-    /// query could interrupt an unrelated sibling statement mid-scan. `allow_create` stays false: a read must
-    /// never materialize a missing database file.
-    auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
     return Pipe(std::make_shared<SQLiteSource>(read_connection, query, sample_block, max_block_size));
 }
 
