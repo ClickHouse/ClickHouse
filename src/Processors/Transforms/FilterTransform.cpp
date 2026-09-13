@@ -1,5 +1,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <cstring>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
@@ -245,37 +247,36 @@ namespace
 
 static std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
 {
+    if (const auto * sparse_filter_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
+    {
+        if (expected_size == 0)
+            return {};
+
+        const size_t num_set_rows = sparse_filter_description->countBytesInFilter();
+        if (num_set_rows == 0)
+            return false;
+        if (num_set_rows == expected_size)
+            return true;
+        return {};
+    }
+
     const auto * dense_filter_description = typeid_cast<const FilterDescription *>(&filter_description);
     if (!dense_filter_description || !dense_filter_description->data
-        || dense_filter_description->data->size() != expected_size || dense_filter_description->data->empty())
+        || dense_filter_description->data->size() != expected_size || expected_size == 0)
         return {};
 
     const auto & filter = *dense_filter_description->data;
-    const bool value = filter[0] != 0;
-    size_t i = 1;
-
-    /// Keep the common mixed-mask case cheap.
-    const size_t scalar_end = std::min<size_t>(filter.size(), 16);
-    for (; i < scalar_end; ++i)
+    if (filter[0] == 0)
     {
-        if ((filter[i] != 0) != value)
-            return {};
+        if (memoryIsZero(filter.data(), 0, filter.size()))
+            return false;
+    }
+    else if (std::memchr(filter.data(), 0, filter.size()) == nullptr)
+    {
+        return true;
     }
 
-    const UInt64 expected_mask = value ? std::numeric_limits<UInt64>::max() : UInt64{0};
-    for (; i + 64 <= filter.size(); i += 64)
-    {
-        if (bytes64MaskToBits64Mask(filter.data() + i) != expected_mask)
-            return {};
-    }
-
-    for (; i < filter.size(); ++i)
-    {
-        if ((filter[i] != 0) != value)
-            return {};
-    }
-
-    return value;
+    return {};
 }
 
 /// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's

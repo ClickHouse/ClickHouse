@@ -12,4 +12,10 @@
     <query>SELECT sum(payload) FROM (SELECT number AS payload, number % 2 = 2 AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
     <query>SELECT sum(payload) FROM (SELECT number AS payload, if(number = 9999999, 0, 1) AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
     <query>SELECT sum(payload) FROM (SELECT number AS payload, if(number = 9999999, 1, 0) AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
+
+    <query>SELECT count() FROM (SELECT (number % 2) + 1 AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT number % 2 = 2 AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT number % 2 AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT if(number = 9999999, 0, 1) AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT if(number = 9999999, 1, 0) AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>
 </test>
