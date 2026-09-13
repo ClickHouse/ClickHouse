@@ -2,7 +2,6 @@
 
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Common/SharedMutex.h>
 #include <Common/ShardedSharedMutex.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <atomic>

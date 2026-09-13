@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SharedMutex.h>
+#include <Common/ShardedSharedMutex.h>
 #include <Common/Stopwatch.h>
 
 #include <base/demangle.h>
@@ -285,24 +286,104 @@ void PerfTestSharedMutexRW()
 #ifdef OS_LINUX
 TEST(Threading, SharedMutexSmokeSelf) { TestSharedMutex<DB::SelfSharedMutex>(); }
 #endif
+TEST(Threading, SharedMutexSmokeSharded) { TestSharedMutex<DB::ShardedSharedMutex>(); }
 TEST(Threading, SharedMutexSmokeAbsl) { TestSharedMutex<DB::AbslSharedMutex>(); }
 TEST(Threading, SharedMutexSmokeStd) { TestSharedMutex<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexReadersOnlySelf) { PerfTestSharedMutexReadersOnly<DB::SelfSharedMutex>(); }
 #endif
+TEST(Threading, PerfTestSharedMutexReadersOnlySharded) { PerfTestSharedMutexReadersOnly<DB::ShardedSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyAbsl) { PerfTestSharedMutexReadersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyStd) { PerfTestSharedMutexReadersOnly<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexWritersOnlySelf) { PerfTestSharedMutexWritersOnly<DB::SelfSharedMutex>(); }
 #endif
+TEST(Threading, PerfTestSharedMutexWritersOnlySharded) { PerfTestSharedMutexWritersOnly<DB::ShardedSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyAbsl) { PerfTestSharedMutexWritersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyStd) { PerfTestSharedMutexWritersOnly<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexRWSelf) { PerfTestSharedMutexRW<DB::SelfSharedMutex>(); }
 #endif
+TEST(Threading, PerfTestSharedMutexRWSharded) { PerfTestSharedMutexRW<DB::ShardedSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWAbsl) { PerfTestSharedMutexRW<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWStd) { PerfTestSharedMutexRW<std::shared_mutex>(); }
 
+
+/// The point of ShardedSharedMutex is that the reader count is spread over many
+/// cache lines, so a writer has to drain every shard rather than watch one
+/// counter. A shard missed by the writer, or a reader that releases on a
+/// different shard than it acquired on, would let a writer run beside a reader
+/// without any single operation looking wrong. Readers and writers hammering
+/// the same state together is what catches that:
+///
+///   * `counter` is deliberately a plain size_t. If two writers ever overlap,
+///     the increments are lost and the final total does not match.
+///   * writers assert no reader is inside while they hold the lock.
+///   * readers assert `counter` does not move underneath them, which is the
+///     same violation seen from the other side.
+TEST(Threading, ShardedSharedMutexStressReadersAndWriters)
+{
+    DB::ShardedSharedMutex sm;
+
+    size_t counter = 0; /// guarded by sm; not atomic on purpose
+    std::atomic<size_t> writes_done{0};
+    std::atomic<int> readers_inside{0};
+    std::atomic<bool> saw_reader_during_write{false};
+    std::atomic<bool> saw_write_during_read{false};
+    std::atomic<bool> stop{false};
+
+    constexpr int num_readers = 16;
+    constexpr int num_writers = 4;
+    constexpr size_t writes_per_writer = 2000;
+
+    std::vector<std::thread> threads;
+    threads.reserve(num_readers + num_writers);
+
+    for (int i = 0; i < num_writers; ++i)
+    {
+        threads.emplace_back([&]
+        {
+            for (size_t n = 0; n < writes_per_writer; ++n)
+            {
+                std::unique_lock lock(sm);
+                if (readers_inside.load(std::memory_order_acquire) != 0)
+                    saw_reader_during_write.store(true, std::memory_order_release);
+                ++counter;
+                writes_done.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    for (int i = 0; i < num_readers; ++i)
+    {
+        threads.emplace_back([&]
+        {
+            while (!stop.load(std::memory_order_acquire))
+            {
+                std::shared_lock lock(sm);
+                readers_inside.fetch_add(1, std::memory_order_acq_rel);
+                const size_t before = counter;
+                /// Give a writer a chance to break in, if it can.
+                for (int spin = 0; spin < 64; ++spin)
+                    std::atomic_thread_fence(std::memory_order_seq_cst);
+                if (counter != before)
+                    saw_write_during_read.store(true, std::memory_order_release);
+                readers_inside.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        });
+    }
+
+    for (int i = 0; i < num_writers; ++i)
+        threads[i].join();
+    stop.store(true, std::memory_order_release);
+    for (size_t i = num_writers; i < threads.size(); ++i)
+        threads[i].join();
+
+    ASSERT_EQ(writes_done.load(), size_t(num_writers) * writes_per_writer);
+    ASSERT_EQ(counter, writes_done.load()) << "lost updates: writers were not mutually exclusive";
+    ASSERT_FALSE(saw_reader_during_write.load()) << "a writer held the lock while a reader was inside";
+    ASSERT_FALSE(saw_write_during_read.load()) << "a writer modified guarded state while a reader held it";
+}
