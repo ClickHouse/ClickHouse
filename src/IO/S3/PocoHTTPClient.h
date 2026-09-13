@@ -24,6 +24,8 @@
 
 #include <base/types.h>
 
+#include <fmt/format.h>
+
 
 namespace Aws::Http::Standard
 {
@@ -45,6 +47,11 @@ namespace DB::S3
 
 /// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
 bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
+
+/// Renders an HTTP response code for logs and error messages.
+/// The AWS SDK reports `REQUEST_NOT_MADE` (-1) when no response has been received at all, e.g. after a network error.
+/// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
+String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
 
 /// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
 /// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
@@ -274,5 +281,14 @@ private:
 };
 
 }
+
+/// Without this, `{}` prints the underlying number, which is meaningless for `REQUEST_NOT_MADE`.
+template <> struct fmt::formatter<Aws::Http::HttpResponseCode> : fmt::formatter<std::string>
+{
+    auto format(Aws::Http::HttpResponseCode response_code, auto & ctx) const
+    {
+        return formatter<std::string>::format(DB::S3::httpResponseCodeToString(response_code), ctx);
+    }
+};
 
 #endif
