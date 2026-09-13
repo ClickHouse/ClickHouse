@@ -3,6 +3,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/scope_guard_safe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -14,6 +16,9 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
@@ -313,6 +318,93 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
+/// Whether `column_name`'s default can be evaluated on the projection part with the same result as
+/// on the parent: every column or subcolumn it references must be stored there and still current,
+/// virtual, or itself a late-add (missing from the parent part too) that is fillable in turn.
+/// Kept in lockstep with `injectRequiredColumnsRecursively`, which resolves the same way.
+static bool projectionPartCanFillDefault(
+    const IMergeTreeDataPart & projection_part,
+    const IMergeTreeDataPart & parent_part,
+    const ProjectionDescription & projection,
+    const ColumnsDescription & parent_table_columns,
+    const String & column_name,
+    NameSet & resolving,
+    NameSet & known_fillable)
+{
+    /// Incremental ALTERs can chain defaults arbitrarily deep, as on the reader's own recursive paths.
+    checkStackSize();
+
+    if (known_fillable.contains(column_name))
+        return true;
+
+    /// Only a name already on the current resolution path is a cycle. It must be erased on the way
+    /// out, otherwise two branches of a default that share a dependency (`d DEFAULT e + f` with both
+    /// `e` and `f` reading `g`) would report the second branch as a cycle.
+    if (!resolving.emplace(column_name).second)
+        return false;
+    SCOPE_EXIT({ resolving.erase(column_name); });
+
+    /// A subcolumn has no default of its own: it is extracted from the evaluated default of its
+    /// column in storage, so resolve the default through the base name.
+    auto column_default = parent_table_columns.getDefault(column_name);
+    if (!column_default)
+    {
+        auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (column_in_storage && column_in_storage->isSubcolumn())
+            column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
+    }
+
+    if (!column_default || !column_default->expression)
+    {
+        known_fillable.insert(column_name);
+        return true;
+    }
+
+    const auto & projection_columns = projection.metadata->getColumns();
+
+    /// Masks lambda formals, which are bound during evaluation and never read from a part. This is
+    /// how the reader collects the sources of a default it has to synthesize, so collecting raw
+    /// identifiers instead would report a formal as a dependency and decline a fillable default.
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(column_default->expression);
+
+    for (const auto & identifier : columns_context.requiredColumns())
+    {
+        if ((projection_part.tryGetColumn(identifier)
+             && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
+            || projection.metadata->virtuals.has(identifier))
+            continue;
+
+        /// Not a column of the table at all: nothing to resolve against the part.
+        if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+            continue;
+
+        /// Fillable only as a late-add (case (4)): a dependency the parent part still stores is
+        /// case (3) drift, and filling it here would not match the parent read path.
+        if (parent_part.tryGetColumn(identifier)
+            || !projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+            || !projectionPartCanFillDefault(
+                projection_part, parent_part, projection, parent_table_columns, identifier, resolving, known_fillable))
+            return false;
+    }
+
+    known_fillable.insert(column_name);
+    return true;
+}
+
+static bool projectionPartCanFillDefault(
+    const IMergeTreeDataPart & projection_part,
+    const IMergeTreeDataPart & parent_part,
+    const ProjectionDescription & projection,
+    const ColumnsDescription & parent_table_columns,
+    const String & column_name)
+{
+    NameSet resolving;
+    NameSet known_fillable;
+    return projectionPartCanFillDefault(
+        projection_part, parent_part, projection, parent_table_columns, column_name, resolving, known_fillable);
+}
+
 /// The projection's column set is re-derived from its query at every table load, so it can drift
 /// from what an existing projection part stores (e.g. an ALIAS column selected by the projection
 /// was re-pointed by ALTER, changing the materialized source column or the aggregate-state column
@@ -326,8 +418,9 @@ size_t filterPartsByProjection(
 ///       parent TABLE column at all (a drifted alias-derived or aggregate-state column):
 ///       drift, read from the parent instead.
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
-///       legitimate, the column was added after the part was written, so the default fill is correct
-///       and identical on either read path (see 04412).
+///       a late-added column. Usable only if its default fill is identical on either read path; if the
+///       default expression references a column the projection part does not store, it cannot be
+///       evaluated there, so route to the parent instead.
 static bool projectionPartHasRequiredColumns(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,
@@ -353,7 +446,10 @@ static bool projectionPartHasRequiredColumns(
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 
-        /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
+        /// (4) Late-added table column, missing from both parts. Usable only if its default can be
+        /// filled from the projection part; otherwise it is drift, read from the parent.
+        if (!projectionPartCanFillDefault(projection_part, parent_part, projection, parent_table_columns, name))
+            return false;
     }
 
     return true;
