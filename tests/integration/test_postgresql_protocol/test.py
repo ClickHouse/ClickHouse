@@ -1938,6 +1938,90 @@ def test_copy_options(started_cluster):
     setup.close()
 
 
+def test_copy_from_header(started_cluster):
+    # The `HEADER` of a PostgreSQL `COPY ... FROM` means that the first line of the data is the
+    # column names, and nothing more: the fields are bound to the columns of the command by
+    # position, and the header stands at the beginning of the whole stream rather than of every
+    # `CopyData` message the client happens to split that stream into.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return c
+
+    setup = connect()
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_header;")
+    cur.execute("CREATE TABLE copy_header (a String, b String) ENGINE = Memory;")
+
+    def copy_from(statement, data, size=8192):
+        # `size` is how many bytes psycopg2 reads at a time, and so how much data it puts in one
+        # `CopyData` message.
+        with closing(connect()) as c:
+            c.cursor().copy_expert(statement, StringIO(data), size=size)
+
+    # The names on the header line are not looked at: the fields go to the columns of the command
+    # in order, even where the header spells those same columns the other way round.
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "b,a\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A header naming columns the table does not have at all is a header all the same.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "x,y\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # Only the first line of the stream is the header, however many messages the client sends the
+    # data in, and a row split across two of them is still one row. 100 rows of 8 bytes sent 100
+    # bytes at a time make 9 messages, and every other boundary between them falls inside a row.
+    rows = [("a%02d" % i, "b%02d" % i) for i in range(100)]
+    body = "".join("%s,%s\n" % row for row in rows)
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "a,b\n" + body,
+        size=100,
+    )
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # And without `HEADER`, every line of every message is data.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv)", body, size=100)
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # The header of the tab separated format, which is the default one, is read the same way.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT text, HEADER)",
+        "b\ta\nfirst\tsecond\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A `HEADER` of the binary format has no meaning, and PostgreSQL refuses it there as well.
+    with pytest.raises(Exception, match="HEADER"):
+        copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT binary, HEADER)", "")
+
+    cur.execute("DROP TABLE copy_header;")
+    setup.close()
+
+
 def test_boolean_type(started_cluster):
     node = cluster.instances["node"]
 

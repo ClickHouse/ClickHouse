@@ -222,6 +222,14 @@ void checkDataShapeOptions(const DataShapeOptions & options, const ASTCopyQuery 
     }
 }
 
+void checkHeaderOption(const ASTCopyQuery & node)
+{
+    /// There is no header in the binary format, and PostgreSQL refuses the option there as well.
+    if (node.header && node.format == ASTCopyQuery::Formats::Binary)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Option HEADER of the postgresql copy command is not supported with the binary format");
+}
+
 bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTCopyQuery> node, DataShapeOptions & data_shape_options)
 {
     const String option_as_written(pos->begin, pos->end);
@@ -348,6 +356,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     }
 
     checkDataShapeOptions(data_shape_options, *node);
+    checkHeaderOption(*node);
     assert_end();
 
     return true;
