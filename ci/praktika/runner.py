@@ -239,8 +239,7 @@ class Runner:
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
-            # A local run has no workflow run behind it, so it starts here.
-            WORKFLOW_START_TIME=Utils.timestamp_to_gh_str(Utils.timestamp()),
+            WORKFLOW_START_TIME=Utils.timestamp(),
             PR_BODY="",
             PR_TITLE="",
             USER_LOGIN="",
@@ -254,12 +253,21 @@ class Runner:
         ).dump()
 
         if pr and pr > 0:
-            changed_files = GH.get_changed_files()
-            if changed_files is not None:
+            changed_file_statuses = GH.get_changed_file_statuses()
+            if changed_file_statuses is not None:
+                info = Info()
+                changed_files = GH.changed_files_from_statuses(changed_file_statuses)
+                added_files = GH.added_files_from_statuses(changed_file_statuses)
+                print(
+                    f"Storing {len(changed_file_statuses)} changed file statuses in JOB_KV_DATA"
+                )
+                info.store_kv_data("changed_file_statuses", changed_file_statuses)
                 print(f"Storing {len(changed_files)} changed files in JOB_KV_DATA")
-                Info().store_kv_data("changed_files", changed_files)
+                info.store_kv_data("changed_files", changed_files)
+                print(f"Storing {len(added_files)} added files in JOB_KV_DATA")
+                info.store_kv_data("added_files", added_files)
             else:
-                print("WARNING: Failed to fetch changed files for PR")
+                print("WARNING: Failed to fetch changed file metadata for PR")
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -486,7 +494,16 @@ class Runner:
                     result.set_label(label, hint=hint)
         if exit_code != 0:
             if not result.is_completed():
-                if not process.timeout_exceeded and enable_exit_code_result:
+                # Read the tail up front so a docker daemon death (exit 125 +
+                # torn-down-connection signatures) is classified as infra BEFORE
+                # the simple exit-code path. Otherwise enable_exit_code_result
+                # workflows record it as a plain FAIL and never auto-retry.
+                latest_log = process.get_latest_log(max_lines=20)
+                if (
+                    not process.timeout_exceeded
+                    and enable_exit_code_result
+                    and not cls._is_docker_daemon_death(exit_code, latest_log)
+                ):
                     # Simple mode: the workflow opted out of an explicit Result,
                     # so a clean non-zero exit is a job-level FAIL, not an
                     # infra-level ERROR/KILLED. Timeouts still classify as ERROR.
@@ -510,7 +527,6 @@ class Runner:
                         print(f"ERROR: {info}")
                         result.add_error(info)
                     result.set_status(Result.Status.ERROR)
-                    latest_log = process.get_latest_log(max_lines=20)
                     result.set_info(latest_log)
                     # Must run before the dump below, or the label never reaches the
                     # result JSON that retry_infra_failures.yml reads.
@@ -1132,6 +1148,17 @@ class Runner:
                 # has up-to-date storage/compute/pipeline-utilization data. All
                 # three are written as a single workflow-level summary row into
                 # the `attributes` JSON column.
+                # Highest per-job re-run count in the pipeline (0 = no job was
+                # re-run). Marks a usage row whose storage/compute totals reflect
+                # re-run attempts rather than a single clean pass — the
+                # orchestrator stamps each job's re-run count into its result ext.
+                max_rerun_count = max(
+                    (
+                        int((r.ext or {}).get("rerun_count") or 0)
+                        for r in workflow_result.results
+                    ),
+                    default=0,
+                )
                 ci_db.insert_workflow_usage(
                     pipeline_utilization=PipelineUtilization.from_dict(
                         workflow_result.ext.get("pipeline_utilization", {})
@@ -1146,6 +1173,7 @@ class Runner:
                     start_time=workflow_result.start_time,
                     duration_s=workflow_result.update_duration().duration,
                     workflow_status=workflow_result.status,
+                    rerun_count=max_rerun_count,
                 )
 
         if workflow.enable_gh_summary_comment and (

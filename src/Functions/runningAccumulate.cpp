@@ -49,7 +49,7 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
@@ -183,11 +183,11 @@ REGISTER_FUNCTION(RunningAccumulate)
     FunctionDocumentation::Description description = R"(
 Accumulates the states of an aggregate function for each row of a data block.
 
-:::warning Deprecated
+<Warning title="Deprecated">
 The state is reset for each new block of data.
 Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions) instead.
 You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax syntax = "runningAccumulate(agg_state[, grouping])";
     FunctionDocumentation::Arguments arguments = {
