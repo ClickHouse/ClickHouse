@@ -1062,6 +1062,10 @@ def main():
                         build_types[0] if is_bugfix_validation else args.options
                     ),
                     step_timeout=stateful_prep_step_timeout(info),
+                    # Of the lanes this job runs, only the flaky check arms
+                    # `ThreadFuzzer`, and the stateful fixture load is setup, not a
+                    # test: no assertion depends on how its statements interleave.
+                    stop_thread_fuzzer=is_flaky_check,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1249,6 +1253,10 @@ def main():
                         CH.set_memory_ratio(0.7)
                     else:
                         CH.reset_memory_ratio()
+                    # The configs `install.sh` selects by build flavour must follow
+                    # the binary for the same reason: decided for `build_types[0]`,
+                    # one of them makes the swapped-in server reject its own settings.
+                    CH.install_build_type_configs()
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
                     # produce `Server died` FAILs that the bugfix inverter

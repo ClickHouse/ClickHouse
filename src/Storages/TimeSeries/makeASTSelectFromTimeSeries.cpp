@@ -444,18 +444,18 @@ namespace
     }
 
     /// Builds a JOIN clause for the "tags" table to join it to the "samples" table:
-    /// SEMI LEFT JOIN tags USING id
-    ASTPtr makeTagsSemiJoinElement(const StorageID & tags_table_id)
+    /// INNER ANY JOIN tags USING id
+    ASTPtr makeTagsJoinElement(const StorageID & tags_table_id)
     {
         auto join = make_intrusive<ASTTableJoin>();
-        join->kind = JoinKind::Left;
-        join->strictness = JoinStrictness::Semi;
+        join->kind = JoinKind::Inner;
+        join->strictness = JoinStrictness::Any;
         auto using_list = make_intrusive<ASTExpressionList>();
         using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         join->using_expression_list = using_list;
         join->children.push_back(join->using_expression_list);
 
-        /// Duplicate tags rows per `id` (unmerged parts) are harmless here,
+        /// Samples are grouped by `id`, and `ANY` suppresses duplicate tags rows per `id`,
         /// so the "tags" table is read without the `LIMIT 1 BY id` deduplication.
         auto tags_elem = makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ false);
 
@@ -523,7 +523,7 @@ namespace
     ///     GROUP BY id
     /// ) AS __samples
     ///
-    /// Unlike the joined read (where the SEMI JOIN with the "tags" table drops them), this branch also returns
+    /// Unlike the joined read (where the `INNER ANY JOIN` with the "tags" table drops them), this branch also returns
     /// samples whose id has no "tags" row - possible only after direct writes into the inner "samples" table.
     ASTPtr buildSelectQueryFromSamplesOnly(const StorageID & samples_table_id, const NameSet & requested_columns)
     {
@@ -638,7 +638,7 @@ namespace
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
-    /// SEMI LEFT JOIN <tags> USING (id)
+    /// INNER ANY JOIN <tags> USING (id)
     /// FULL JOIN
     /// (
     ///     SELECT *, concat(metric_family_name, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
@@ -674,7 +674,7 @@ namespace
         {
             /// Samples-anchored: samples are the (streamed) probe side, tags/metrics the smaller build sides.
             tables->children.push_back(makeSamplesTableElement(*samples_table_id));
-            tables->children.push_back(makeTagsSemiJoinElement(tags_table_id));
+            tables->children.push_back(makeTagsJoinElement(tags_table_id));
         }
         else
         {
@@ -760,49 +760,12 @@ ASTPtr makeASTSelectFromTimeSeries(
                                            requested_tags, columns_by_tags, deduplicate_tags_by_id);
 }
 
-SettingsChanges getSettingsForSelectFromTimeSeries(bool final)
+SettingsChanges getSettingsForSelectFromTimeSeries()
 {
     SettingsChanges changes;
-
-    /// If `aggregate_functions_null_for_empty` is 1 then the `time_series` column would become Nullable and
-    /// could return NULL instead of an empty array (because that setting rewrites every aggregate,
-    /// including the `groupArray`s in `arrayZip(groupArray(timestamp), groupArray(value))`,
-    /// to its `...OrNull` variant).
     changes.emplace_back("aggregate_functions_null_for_empty", Field{false});
-
-    /// If `join_use_nulls` is 1 then the generated query would return NULLs in the non-Nullable outer columns:
-    /// in `metric_family`/`type`/`unit`/`help` for a series with no metadata row, and in `time_series` for a
-    /// metric family with no series (because the unmatched side of a FULL JOIN then produces NULLs instead of
-    /// the default values - an empty string / empty array - on which the reconstruction relies).
     changes.emplace_back("join_use_nulls", Field{false});
-
-    /// If `join_algorithm` is `full_sorting_merge` or `partial_merge` then the generated query would throw
-    /// NOT_IMPLEMENTED (because the merge-join algorithms do not implement the SEMI and FULL joins it uses).
-    /// `hash` is the final fallback supporting every join kind, while `parallel_hash` keeps the faster
-    /// parallel build of the join's right side where applicable.
-    changes.emplace_back("join_algorithm", Field{"parallel_hash,hash"});
-
-    /// If `optimize_aggregation_in_order` is 0 then the GROUP BY id over the "samples" table would build a hash
-    /// table of all the series in memory (because only this setting lets the aggregation stream in sorting-key
-    /// order, which is possible here: `id` is the first column of the default samples sorting key `(id, timestamp)`).
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
-
-    if (!final)
-    {
-        /// If `allow_aggregate_partitions_independently` is 0 then partitions of the "samples" table would never
-        /// be aggregated in fully independent pipelines even when its partition key is a function of `id`, and
-        /// if `force_aggregate_partitions_independently` is 0 then that optimization could still be skipped
-        /// when the optimizer decides it would not help (e.g. too few partitions).
-        /// Enabled only without FINAL: under FINAL the canonical merged execution is kept.
-        ///
-        /// TODO: Prefer a per-block no-merge aggregation mode once one exists (a proposed
-        /// `group_by_each_block_no_merge` setting): per-block aggregation without merging is streaming,
-        /// needs no precondition on the partition key, and its sliced output (several `time_series` rows
-        /// per series) is a valid non-FINAL result.
-        changes.emplace_back("allow_aggregate_partitions_independently", Field{true});
-        changes.emplace_back("force_aggregate_partitions_independently", Field{true});
-    }
-
     return changes;
 }
 

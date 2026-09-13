@@ -136,7 +136,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
     while (queue.isValid())
     {
-        auto current = queue.current();
+        auto current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -227,7 +227,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {
