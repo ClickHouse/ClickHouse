@@ -1,6 +1,8 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/setMembershipEquivalence.h>
+#include <Common/NaNUtils.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
@@ -202,6 +204,28 @@ inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 
 }
 
+DataTypePtr LogicalExpressionsOptimizer::tryGetColumnType(const IAST & expression) const
+{
+    const auto * identifier = expression.as<ASTIdentifier>();
+    if (!identifier)
+        return nullptr;
+
+    auto pos = IdentifierSemantic::getMembership(*identifier);
+    if (!pos)
+        pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
+
+    if (!pos)
+        return nullptr;
+
+    if (*pos >= tables_with_columns.size())
+        return nullptr;
+
+    if (auto data_type_and_name = tables_with_columns.at(*pos).columns.tryGetByName(identifier->shortName()))
+        return data_type_and_name->type;
+
+    return nullptr;
+}
+
 bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const
 {
     if (functions.size() <= 1)
@@ -219,27 +243,79 @@ bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vecto
     if (!first_operands[0])
         return false;
 
-    const auto * identifier = first_operands.at(0)->as<ASTIdentifier>();
-    if (!identifier)
-        return false;
+    auto type = tryGetColumnType(*first_operands.at(0));
+    return type && typeid_cast<const DataTypeLowCardinality *>(type.get());
+}
 
-    auto pos = IdentifierSemantic::getMembership(*identifier);
-    if (!pos)
-        pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
-
-    if (!pos)
-        return false;
-
-    if (*pos >= tables_with_columns.size())
-        return false;
-
-    if (auto data_type_and_name = tables_with_columns.at(*pos).columns.tryGetByName(identifier->shortName()))
+/// Whether the literal is a number that reaches a floating-point comparison as a NaN or a zero, which is
+/// where `equals` and set membership disagree. Used when the type of the compared expression is unknown,
+/// so a literal that cannot be a float in disguise (a string, for instance) is left alone.
+static bool literalIsNumericNaNOrZero(const Field & value)
+{
+    switch (value.getType())
     {
-        if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
+        case Field::Types::Float64:
+        {
+            const Float64 number = value.safeGet<Float64>();
+            return isNaN(number) || number == 0.0;
+        }
+        case Field::Types::UInt64:
+            return value.safeGet<UInt64>() == 0;
+        case Field::Types::Int64:
+            return value.safeGet<Int64>() == 0;
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            /// Not worth analyzing: such a chain is rewritten only when the compared column is known.
             return true;
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : value.safeGet<Tuple>())
+                if (literalIsNumericNaNOrZero(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : value.safeGet<Array>())
+                if (literalIsNumericNaNOrZero(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
+bool LogicalExpressionsOptimizer::equalityChainMatchesSetMembership(const std::vector<ASTFunction *> & functions) const
+{
+    auto & first_operands = getFunctionOperands(functions.at(0));
+    if (first_operands.empty() || !first_operands[0])
+        return false;
+
+    /// This rewrite works on the AST, where the type of the compared expression is only known when it is a
+    /// column reference. With the type at hand the check is exact; without it, a literal that could reach a
+    /// floating-point comparison as a NaN or a zero keeps the chain as a comparison.
+    auto type = tryGetColumnType(*first_operands.at(0));
+
+    for (const auto * function : functions)
+    {
+        const auto & operands = getFunctionOperands(function);
+        const auto * literal = operands[1]->as<ASTLiteral>();
+        if (!literal)
+            return false;
+
+        if (type)
+        {
+            if (!comparisonWithConstantMatchesSetMembership(type, literal->value))
+                return false;
+        }
+        else if (literalIsNumericNaNOrZero(literal->value))
+            return false;
     }
 
-    return false;
+    return true;
 }
 
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
@@ -268,6 +344,10 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
         if (literal->value.getType() != first_literal->value.getType())
             return false;
     }
+
+    if (!equalityChainMatchesSetMembership(equality_functions))
+        return false;
+
     return true;
 }
 

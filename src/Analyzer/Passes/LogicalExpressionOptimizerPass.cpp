@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/setMembershipEquivalence.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -2027,6 +2028,12 @@ private:
 
             for (auto * filter : not_equals_infos)
             {
+                if (!comparisonWithConstantMatchesSetMembership(expression.node->getResultType(), filter->constant_node->getValue()))
+                {
+                    all_operands.emplace_back(filter->original_index, std::move(filter->original_node));
+                    continue;
+                }
+
                 auto & constant_set = not_equals_node_to_constants[expression];
                 if (!constant_set.contains(filter->constant_node))
                 {
@@ -2538,10 +2545,12 @@ private:
             };
 
             if (const auto * lhs_literal = lhs->as<ConstantNode>();
-                lhs_literal && !lhs_literal->getValue().isNull())
+                lhs_literal && !lhs_literal->getValue().isNull()
+                && comparisonWithConstantMatchesSetMembership(rhs->getResultType(), lhs_literal->getValue()))
                 add_equals_function_if_not_present(rhs, lhs_literal);
             else if (const auto * rhs_literal = rhs->as<ConstantNode>();
-                     rhs_literal && !rhs_literal->getValue().isNull())
+                     rhs_literal && !rhs_literal->getValue().isNull()
+                     && comparisonWithConstantMatchesSetMembership(lhs->getResultType(), rhs_literal->getValue()))
                 add_equals_function_if_not_present(lhs, rhs_literal);
             else
                 or_operands.push_back(argument);
