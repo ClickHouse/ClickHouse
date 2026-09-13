@@ -965,6 +965,10 @@ struct TestQuery {
     UInt64 work_left = UInt64(-1);
     String name;
 
+    // Park control (to emulate worker threads entering a non-CPU wait, e.g. blocking I/O).
+    bool park_requested = false;
+    size_t parked_threads = 0;
+
     // Only used if preemption is enabled
     struct ThreadStatus
     {
@@ -1059,6 +1063,53 @@ struct TestQuery {
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
+    }
+
+    // Ask all worker threads to park their CPU lease (emulate entering a blocking-I/O wait).
+    void requestPark()
+    {
+        std::unique_lock lock{mutex};
+        park_requested = true;
+        cv.notify_all();
+    }
+
+    // Let parked worker threads unpark and resume.
+    void releasePark()
+    {
+        std::unique_lock lock{mutex};
+        park_requested = false;
+        cv.notify_all();
+    }
+
+    // Wait until at least `count` worker threads have parked their lease.
+    void waitParkedThreads(size_t count)
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [=, this] { return parked_threads >= count || query_is_finished; });
+    }
+
+    // If a park was requested, park this worker's lease (freeing its CPU slot), block until the
+    // park is released, then unpark. Master thread (0) is noncompeting and never parks here.
+    void maybePark(ISlotLease * cpu_lease, size_t thread_num)
+    {
+        if (!cpu_lease || thread_num == 0)
+            return;
+        {
+            std::unique_lock lock{mutex};
+            if (!park_requested || query_is_finished)
+                return;
+        }
+        if (!cpu_lease->park()) // free the CPU slot (the give-back happens here)
+            return;             // no-op (e.g. shutting down) -> do not unpark
+        {
+            std::unique_lock lock{mutex};
+            ++parked_threads;
+            cv.notify_all();
+            cv.wait(lock, [this] { return !park_requested || query_is_finished; });
+            --parked_threads;
+            cv.notify_all();
+        }
+        cpu_lease->unpark(); // re-acquire the slot (borrow)
     }
 
     // Returns unique thread number
@@ -1158,6 +1209,7 @@ struct TestQuery {
         {
             if (!controlConcurrency(cpu_lease))
                 break;
+            maybePark(cpu_lease, thread_num);
             if (!doWork(thread_num))
                 break;
         }
@@ -1289,6 +1341,93 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
         // Q0 - is done, Q1 still have pending resource requests, but we cancel it
         queries.clear();
     }
+
+    t.wait();
+}
+
+// Parking a lease during a non-CPU wait (I/O or idle) must release the CPU slot so another
+// query can use it — the core of the I/O-aware CPU lease feature. Deterministic: Q1's worker
+// cannot start until Q0 frees a worker slot, and here the only way that happens is Q0 parking.
+TEST(SchedulerWorkloadResourceManager, CPULeaseParkFreesSlotForOtherQuery)
+{
+    ResourceTest t;
+
+    // Parking is supported only in the target mode: master and worker on the same resource.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 2");
+
+    auto q0 = std::make_shared<TestQuery>(t);
+    auto q1 = std::make_shared<TestQuery>(t);
+
+    // Q0 occupies both slots (master + 1 worker).
+    q0->start(TestQuery::AllocateLease, "all", 2);
+    q0->waitStartedThreads(2);
+
+    // Q1 wants slots too, but both are held by Q0, so its request is enqueued and blocked.
+    q1->start(TestQuery::AllocateLease, "all", 2);
+    q1->waitEnqueued();
+
+    // Q0's worker enters a non-CPU wait (park), releasing its scheduler slot. Q1 must now be
+    // granted one. If park did not free the semaphore unit, this call would hang.
+    q0->requestPark();
+    q0->waitParkedThreads(1);
+    q1->waitStartedThreads(1); // a parked slot was handed to Q1
+
+    // Resume Q0 and let both queries finish normally.
+    q0->releasePark();
+    q0.reset();
+    q1.reset();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
+{
+    // Regression: a single query occupies all its slots and parks its workers all at once (a long
+    // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
+    // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
+    // query must finish cleanly.
+    ResourceTest t;
+
+    // Target mode (master and worker share one resource), the only mode where parking is enabled.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
+
+    auto q = std::make_shared<TestQuery>(t);
+    q->start(TestQuery::AllocateLease, "all", 4); // master + 3 workers (all competing)
+    q->waitStartedThreads(4);
+
+    // All three worker threads park simultaneously. With the old accounting this made `granted > 0`
+    // while every slot_id was leased -> over-acquire -> out-of-range slot_id.
+    q->requestPark();
+    q->waitParkedThreads(3);
+
+    q->releasePark();
+    q.reset();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPULeaseParkedThreadShutdownNoDeadlock)
+{
+    // A query is torn down while worker threads are still parked (no unpark first). Shutdown must
+    // wake the parked threads and let them exit; their unpark runs from the CPULeaseParkGuard
+    // destructor and must not throw. With the old code a parked thread could hang on shutdown or
+    // terminate on the unpark re-request; this must finish cleanly.
+    ResourceTest t;
+
+    // Target mode (master and worker share one resource), the only mode where parking is enabled.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 3");
+
+    auto q = std::make_shared<TestQuery>(t);
+    q->start(TestQuery::AllocateLease, "all", 3); // master + 2 workers (all competing)
+    q->waitStartedThreads(3);
+
+    // Both workers park (emulating a blocking I/O wait), then the query is destroyed while parked.
+    q->requestPark();
+    q->waitParkedThreads(2);
+    q.reset(); // shutdown with two parked threads -- must not deadlock or terminate
 
     t.wait();
 }

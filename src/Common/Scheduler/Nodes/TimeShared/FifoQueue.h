@@ -137,33 +137,41 @@ public:
 
     void updateQueueLimit(Int64 value)
     {
-        std::lock_guard lock(mutex);
-        if (value <= 0)
-            throw Exception(
-                ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Queue limit must be positive value must be positive, got: {}",
-                value);
-        max_queued = value;
-
-        while (requests.size() > static_cast<size_t>(max_queued))
+        // Collect requests to fail while holding the lock, but call failed() outside the lock
+        // to avoid a lock-order inversion with CPULeaseAllocation::mutex (failed() re-enters it).
+        std::vector<ResourceRequest *> requests_to_fail;
         {
-            ResourceRequest * request = &requests.back();
-            requests.pop_back();
-            request->failed(std::make_exception_ptr(
-                Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size(), max_queued)));
+            std::lock_guard lock(mutex);
+            if (value <= 0)
+                throw Exception(
+                    ErrorCodes::INVALID_SCHEDULER_NODE,
+                    "Queue limit must be positive value must be positive, got: {}",
+                    value);
+            max_queued = value;
 
-            queue_cost -= request->cost;
-            rejected_requests++;
-            rejected_cost += request->cost;
-        }
+            while (requests.size() > static_cast<size_t>(max_queued))
+            {
+                ResourceRequest * request = &requests.back();
+                requests.pop_back();
+                queue_cost -= request->cost;
+                rejected_requests++;
+                rejected_cost += request->cost;
+                requests_to_fail.push_back(request);
+            }
 
-        // In case if limit decreased to zero (which effectively disables the queue)
-        // NOTE: this is not allowed to be set using WorkloadSettings
-        if (requests.empty())
-        {
-            busy_periods++;
-            cancelActivation();
+            // In case if limit decreased to zero (which effectively disables the queue)
+            // NOTE: this is not allowed to be set using WorkloadSettings
+            if (requests.empty())
+            {
+                busy_periods++;
+                cancelActivation();
+            }
         }
+        // Now notify all collected requests about the failure without holding the mutex
+        auto exception = std::make_exception_ptr(
+            Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {}", max_queued));
+        for (ResourceRequest * request : requests_to_fail)
+            request->failed(exception);
     }
 
     bool isActive() override
