@@ -8,17 +8,13 @@ title: 'Restricciones de configuración'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
 En ClickHouse, las &quot;restricciones&quot; de los ajustes se refieren a limitaciones y reglas que
 se pueden asignar a los ajustes. Estas restricciones pueden aplicarse para mantener
 la estabilidad, la seguridad y un comportamiento predecible de la base de datos.
 
-<div id="defining-constraints">
-  ## Definición de restricciones
-</div>
+## Definición de restricciones {#defining-constraints}
 
 Las restricciones de configuración pueden definirse en la sección `profiles` del archivo de configuración `user.xml`.
 Impiden que los usuarios cambien algunos ajustes mediante la
@@ -64,9 +60,7 @@ Las restricciones se definen de la siguiente manera:
 Si el usuario intenta incumplir las restricciones, se lanza una excepción y la
 configuración permanece sin cambios.
 
-<div id="types-of-constraints">
-  ## Tipos de restricciones
-</div>
+## Tipos de restricciones {#types-of-constraints}
 
 ClickHouse admite varios tipos de restricciones:
 
@@ -100,9 +94,7 @@ de lo contrario, no se permite cambiar configuraciones en el modo `readonly=1`.
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## Varios perfiles de restricciones
-</div>
+## Varios perfiles de restricciones {#multiple-constraint-profiles}
 
 Si hay varios perfiles activos para un usuario, las restricciones se fusionan.
 El proceso de fusión depende de `settings_constraints_replace_previous`:
@@ -114,22 +106,11 @@ El proceso de fusión depende de `settings_constraints_replace_previous`:
   cada tipo de restricción no definido se toma del perfil anterior y cada
   tipo de restricción definido se sustituye por el valor del nuevo perfil.
 
-<div id="read-only">
-  ## Modo de solo lectura
-</div>
+## Modo de solo lectura {#read-only}
 
-El modo de solo lectura se habilita mediante la configuración `readonly`, que no debe confundirse
-con el tipo de restricción `readonly`:
+El modo de solo lectura se habilita mediante el SETTING `readonly`, que no debe confundirse con el tipo de CONSTRAINT `readonly`. Cuando `readonly = 1`, un SETTING que de otro modo sería rechazado aún puede modificarse si un CONSTRAINT `changeable_in_readonly` lo permite. Para conocer el significado de los valores de este SETTING, consulte la [referencia de SETTINGS](/es/reference/settings/session-settings/other#readonly); para saber qué clases de consultas permite cada valor y cómo lo establece la HTTP interface, consulte [permisos para consultas](/es/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-* `readonly=0`: Sin restricciones de solo lectura.
-* `readonly=1`: Solo se permiten consultas de lectura y no se puede cambiar la configuración,
-  salvo que se haya establecido `changeable_in_readonly`.
-* `readonly=2`: Solo se permiten consultas de lectura, pero sí se puede cambiar la configuración,
-  excepto la propia configuración `readonly`.
-
-<div id="example-read-only">
-  ### Ejemplo
-</div>
+### Ejemplo {#example-read-only}
 
 Incluya las siguientes líneas en `users.xml`:
 
@@ -172,9 +153,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   hasta que se sobrescriban explícitamente para esos usuarios.
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## Restricciones en la configuración de MergeTree
-</div>
+## Restricciones en la configuración de MergeTree {#constraints-on-merge-tree-settings}
 
 Es posible establecer restricciones para la [configuración de MergeTree](/es/reference/settings/merge-tree-settings).
 Estas restricciones se aplican al crear una tabla con el motor MergeTree
@@ -183,9 +162,7 @@ o al modificar su configuración de almacenamiento.
 El nombre de la configuración de MergeTree debe llevar el prefijo `merge_tree_` cuando
 se haga referencia a ella en la sección `<constraints>`.
 
-<div id="example-read-only">
-  ### Ejemplo
-</div>
+### Ejemplo {#example-mergetree}
 
 Puede prohibir la creación de tablas nuevas con `storage_policy` especificada explícitamente
 

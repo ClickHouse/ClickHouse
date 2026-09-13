@@ -8,17 +8,13 @@ title: 'Ограничения для настроек'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## Обзор
-</div>
+## Обзор {#overview}
 
 В ClickHouse «ограничения» для настроек — это ограничения и правила,
 которые можно назначать настройкам. Эти ограничения помогают поддерживать
 стабильность, безопасность и предсказуемое поведение вашей базы данных.
 
-<div id="defining-constraints">
-  ## Определение ограничений
-</div>
+## Определение ограничений {#defining-constraints}
 
 Ограничения для настроек можно задать в разделе `profiles` файла конфигурации `user.xml`.
 Они запрещают пользователям изменять некоторые настройки с помощью оператора
@@ -64,9 +60,7 @@ doc_type: 'reference'
 Если пользователь пытается нарушить ограничения, генерируется исключение, а
 значение настройки остается неизменным.
 
-<div id="types-of-constraints">
-  ## Типы ограничений
-</div>
+## Типы ограничений {#types-of-constraints}
 
 В ClickHouse поддерживается несколько типов ограничений:
 
@@ -99,9 +93,7 @@ doc_type: 'reference'
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## Несколько профилей ограничений
-</div>
+## Несколько профилей ограничений {#multiple-constraint-profiles}
 
 Если для пользователя активно несколько профилей, ограничения объединяются.
 Процесс объединения зависит от `settings_constraints_replace_previous`:
@@ -113,22 +105,16 @@ doc_type: 'reference'
   что каждый незаданный тип ограничения берётся из предыдущего профиля, а каждый
   заданный тип ограничения заменяется значением из нового профиля.
 
-<div id="read-only">
-  ## Режим только для чтения
-</div>
+## Режим только для чтения {#read-only}
 
-Режим только для чтения включается настройкой `readonly`; не путайте её
-с типом ограничения `readonly`:
+Режим только для чтения включается настройкой `readonly`, которую не следует путать с типом ограничения (CONSTRAINT)
+`readonly`. При `readonly = 1` настройку, изменение которой иначе было бы отклонено, всё же можно изменить,
+если это допускает ограничение `changeable_in_readonly`. О том, что означают значения этой настройки, см.
+[справочник по настройкам](/ru/reference/settings/session-settings/other#readonly); о том, какие классы запросов
+разрешает каждое значение и как его устанавливает HTTP interface, см.
+[разрешения для запросов](/ru/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-* `readonly=0`: Ограничения режима только для чтения отсутствуют.
-* `readonly=1`: Разрешены только запросы на чтение, а настройки нельзя изменять,
-  если не задан `changeable_in_readonly`.
-* `readonly=2`: Разрешены только запросы на чтение, но настройки можно изменять,
-  за исключением самой настройки `readonly`.
-
-<div id="example-read-only">
-  ### Пример
-</div>
+### Пример {#example-read-only}
 
 Пусть файл `users.xml` содержит следующие строки:
 
@@ -171,9 +157,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   пока для них явно не заданы другие.
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## Ограничения на настройки MergeTree
-</div>
+## Ограничения на настройки MergeTree {#constraints-on-merge-tree-settings}
 
 Для [настроек MergeTree](/ru/reference/settings/merge-tree-settings) можно задавать ограничения.
 Эти ограничения применяются при создании таблицы с движком MergeTree
@@ -182,9 +166,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 При указании имени настройки MergeTree в разделе `<constraints>` к нему
 необходимо добавлять префикс `merge_tree_`.
 
-<div id="example-read-only">
-  ### Пример
-</div>
+### Пример {#example-mergetree}
 
 Вы можете запретить создание новых таблиц с явно заданной `storage_policy`
 

@@ -9,67 +9,91 @@ doc_type: 'reference'
 ClickHouse のクエリは、いくつかの種類に分類できます。
 
 1. データの読み取りクエリ: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2. データの書き込みクエリ: `INSERT`, `OPTIMIZE`.
+2. データの書き込みクエリ: `INSERT`, `OPTIMIZE`, [`DELETE`](/ja/reference/statements/delete), [`UPDATE`](/ja/reference/statements/update), `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`.
 3. 設定変更クエリ: `SET`, `USE`.
-4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリ: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
-5. `KILL QUERY`.
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリ: `CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `TRUNCATE`.
+5. アクセス管理クエリ: [`GRANT`](/ja/reference/statements/grant), [`REVOKE`](/ja/reference/statements/revoke), およびユーザー、ロール、行ポリシー、マスキングポリシー、クォータ、SETTINGS PROFILE に対する `CREATE`, `ALTER`, `DROP`。[access control and account management](/ja/concepts/features/security/access-rights) を参照してください。
+6. `KILL QUERY`.
+
+`ALTER TABLE ... DELETE` と `ALTER TABLE ... UPDATE` は、テーブルのメタデータではなくデータを変更するため、上記ではデータの書き込みクエリとして記載されています。これらには `ALTER DELETE` および `ALTER UPDATE` 権限が必要であり、これは単独の `DELETE` および `UPDATE` ステートメントが必要とする権限と同じです。これらの権限は `ALTER TABLE` 権限グループに属しているため、`allow_ddl = 0` の場合、永続テーブルに対するこれら 4 つのステートメントはすべて拒否されます。
 
 以下の設定は、クエリの種類ごとにユーザー権限を制御します。
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
-データの読み取り、データの書き込み、および設定変更クエリに対する権限を制限します。
+セッションが実行できるクエリを制限します。この設定の値、デフォルト、および各値でどの設定を変更できるかについては
+[設定リファレンス](/ja/reference/settings/session-settings/other#readonly)を参照してください。本セクションでは、各値がどの種類のクエリを許可するかを説明します。
 
-1 に設定すると、以下が許可されます。
+1 に設定した場合、次のようなクエリが許可されます。
 
-* すべての種類の読み取りクエリ (SELECT やそれに相当するクエリなど) 。
-* セッションコンテキストのみを変更するクエリ (USE など) 。
+* 読み取りクエリ (`SELECT` および同等のクエリ) 。
+* セッションコンテキストのみを変更するクエリ (`USE` など) 。
 
-2 に設定すると、上記に加えて以下も許可されます。
+2 に設定した場合は、上記に加えて `SET`、`CREATE TEMPORARY TABLE`、`RESTORE` が許可されます。`RESTORE` はテーブルを作成してデータをロードできるため、`readonly = 2` だけではセッションによる書き込みを防げません。`readonly = 1` ではこれが拒否されます。
 
-* SET および CREATE TEMPORARY TABLE
+`BACKUP` はどの値であっても `readonly` による制限を受けません。テーブルをバックアップする権限を持つセッションは、`readonly = 1` であってもバックアップを書き込めます。バックアップを防ぐ目的で `readonly` に頼らないでください。
 
-<Tip>
-  EXISTS、DESCRIBE、EXPLAIN、SHOW PROCESSLIST などのクエリは、システムテーブルに対して select するだけなので、SELECT と同等です。
-</Tip>
+ほとんどのテーブル関数は `CREATE TEMPORARY TABLE` 権限を必要とするため、テーブル関数から読み取る `SELECT` は `readonly = 1` では拒否されますが、`readonly = 2` では拒否されません。`numbers` など一部の関数は読み取り専用モードでも許可されます。
 
-設定可能な値:
+0 より大きい値では、永続テーブルに対して次のいずれも許可されません。データの書き込みクエリ (`INSERT`、`OPTIMIZE`、`DELETE`、`UPDATE`、`ALTER TABLE ... DELETE`、`ALTER TABLE ... UPDATE`) および DDL クエリ (`CREATE`、`ALTER TABLE`、`ALTER VIEW`、`RENAME`、`EXCHANGE`、`ATTACH`、`DETACH`、`DROP`、`TRUNCATE TABLE`) です。`SYSTEM` グループの権限を必要とする `SYSTEM` 文、ならびにユーザー、ロール、行ポリシー、マスキングポリシー、クォータ、SETTINGS PROFILE の `CREATE`、`ALTER`、`DROP` も許可されません。ただし名前付きコレクションの管理は例外で、`readonly` は `CREATE NAMED COLLECTION`、`ALTER NAMED COLLECTION`、`DROP NAMED COLLECTION` を制限しません。
 
-* 0 — 読み取り、書き込み、および設定変更クエリが許可されます。
-* 1 — データの読み取りクエリのみが許可されます。
-* 2 — データの読み取りクエリと設定変更クエリが許可されます。
+`GRANT` による権限の付与も拒否されますが、アクセス管理文のすべてが拒否されるわけではありません。ローカルな `REVOKE` と `GRANT CURRENT GRANTS` は `readonly` の制限を受けないため、読み取り専用のセッションであっても、grant option 付きで保持している権限を取り消したり、自身の権限を他のユーザーへ伝播したりできます。
+`ON CLUSTER` での権限の取り消しは拒否されます。
 
-デフォルト値: 0
+一時テーブルはいずれの設定の対象外です。一時テーブルを作成できるセッションは、その一時テーブルに対する `ALTER`、挿入、削除も実行できます。
 
 <Note>
-  `readonly = 1` を設定すると、ユーザーは現在のセッションで `readonly` と `allow_ddl` の設定を変更できません。
+  [HTTP インターフェイス](/ja/concepts/features/interfaces/http)経由では、メソッドが `POST` 以外のリクエストは、実効値が本来 0 となる場合に `readonly = 2` で実行されます。ユーザーの設定や SETTINGS PROFILE によってすでに設定されている、より厳しい値はそのまま維持されます。`PUT` と `DELETE` は、それらを受け付ける SQL で定義された[ハンドラー](/ja/reference/statements/create/handler)に到達する場合は対象外となるため、実効の `readonly` が 0 であればそのようなリクエストでもデータを変更できます。それ以外の場合、データを変更するには `POST` メソッドを使用してください。
 
-  [HTTP インターフェイス](/ja/concepts/features/interfaces/http) で `GET` メソッドを使用すると、`readonly = 1` が自動的に設定されます。データを変更するには、`POST` メソッドを使用してください。
+  このようにして値が引き上げられたリクエストでは、クエリ文字列内の `readonly` パラメーターは、そのリクエストがすでに持つ値を指定する場合を除き、`Cannot modify 'readonly' setting in readonly mode` というエラーで拒否されます。
 
-  `readonly = 1` を設定すると、ユーザーは設定を変更できなくなります。特定の設定だけ変更を禁止する方法もあります。また、`readonly = 1` の制限下で特定の設定だけ変更を許可する方法もあります。詳しくは、[設定に対する制約](/ja/concepts/features/configuration/settings/constraints-on-settings) を参照してください。
+  特定の設定だけをユーザーが変更できないようにする方法や、`readonly = 1` の制限下で特定の設定だけ変更を許可する方法もあります。詳細は
+  [設定に対する制約](/ja/concepts/features/configuration/settings/constraints-on-settings)を参照してください。
 </Note>
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
-[DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリの許可/拒否を設定します。
+データベース、テーブル、ビュー、Dictionary、ユーザー定義関数、workload、resource、SQL で定義されたハンドラーに対する [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリを許可または拒否します。
 
 設定可能な値:
 
-* 0 — DDL クエリは許可されません。
-* 1 — DDL クエリは許可されます。
+* 0 — 次のいずれかの権限を必要とする永続オブジェクトへのクエリ実行がブロックされます: `CREATE DATABASE`、`DROP DATABASE`、`CREATE TABLE`、`CREATE VIEW`、`ALTER TABLE`、
+  `ALTER VIEW`、`DROP TABLE`、`DROP VIEW`、`TRUNCATE`、`CREATE DICTIONARY`、`DROP DICTIONARY`、
+  `CREATE FUNCTION`、`DROP FUNCTION`、`CREATE WORKLOAD`、`DROP WORKLOAD`、`CREATE RESOURCE`、
+  `DROP RESOURCE`、`CREATE HANDLER`、`ALTER HANDLER`、`DROP HANDLER`。`RENAME`、`EXCHANGE`、
+  `ATTACH`、`DETACH` もこれらの権限を必要とするため、同様にブロックされます。ただし
+  `ALTER TABLE ... ATTACH PARTITION` と `ATTACH PART` は `INSERT` のみを必要とするため、この設定ではブロックされません (ただし `readonly` は永続テーブルに対してこれらをブロックします) 。
+  `ATTACH PARTITION ... FROM` は `ALTER DELETE` も必要とするためブロックされます。これらの権限の付与および取り消しはブロックされません。
+* 1 — この設定によるブロックは行われません。
 
 デフォルト値: 1
 
 <Note>
-  現在のセッションで `allow_ddl = 0` の場合、`SET allow_ddl = 1` は実行できません。
+  現在のセッションで `allow_ddl = 0` の場合、`SET allow_ddl = 1` を実行することはできません。
+
+  `allow_ddl` はアクセス管理クエリを制限しません。`GRANT`、`REVOKE`、およびユーザー、ロール、行ポリシー、マスキングポリシー、クォータ、settings profile に対する `CREATE`、`ALTER`、
+  `DROP` はこの設定の影響を受けません。`CREATE TEMPORARY TABLE` と 名前付きコレクションの管理も影響を受けず、
+  `ALTER DATABASE ... MODIFY SETTING`、`ALTER DATABASE ... MODIFY COMMENT`、`UNDROP TABLE` も同様です。これらは
+  `readonly` でも制限されません。ユーザー、ロール、settings profile の `CREATE` または `ALTER` の内部では、現在のセッションが `allow_ddl = 0` である間、`SETTINGS allow_ddl = 1` 句は拒否され、
+  `SETTINGS allow_ddl = 0` 句は受け入れられます。埋め込まれた設定はセッション自身の設定制約に照らして検査されるため、`SET allow_ddl = 1` も拒否されます。
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  `KILL QUERY` は、readonly と allow&#95;ddl の設定の組み合わせに関係なく実行できます。
+  自分自身のクエリを kill する場合は `KILL QUERY` 権限が不要なため、`readonly` と `allow_ddl` のどの組み合わせでも動作します。ただし `system.processes` に対する `SELECT` は必要です。他のユーザーのクエリを kill する場合、および `KILL QUERY ... ON CLUSTER` には `KILL QUERY` 権限が必要であり、
+  `readonly = 1` および `readonly = 2` ではこれが拒否されます。
 </Info>
+
+## その他の関連する設定 {#other-relevant-settings}
+
+* [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions)
+  は、`readonly` および `allow_ddl` とともに、権限の判定そのものに関与する3つ目の設定です。この設定が無効の場合、
+  introspection functionの実行はブロックされます。ただし、`INTROSPECTION` 権限の付与はブロックされません。
+* [`allow_non_metadata_alters`](/ja/reference/settings/session-settings/allow#allow_non_metadata_alters)
+  は権限設定ではありませんが、`ALTER TABLE` をさらに制限します。この設定が無効の場合、`MergeTree` ファミリーのテーブルでは、
+  適用するとディスク上のデータの書き換えが発生するtable definitionの変更コマンド (`DROP COLUMN`、`RENAME COLUMN`、
+  `MODIFY COLUMN` による型変更、`MODIFY TTL`) は拒否されます。
+  `CLEAR COLUMN`、`CLEAR INDEX`、`CLEAR PROJECTION` は定義自体を変更しませんが、これらも同様に拒否されます。
+  一方、`ALTER TABLE ... DELETE`、`ALTER TABLE ... UPDATE`、`ALTER TABLE ... MATERIALIZE INDEX` のように、
+  それ自体がミューテーションである文は影響を受けません。

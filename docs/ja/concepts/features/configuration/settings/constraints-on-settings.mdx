@@ -6,15 +6,11 @@ title: '設定に関する制約'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 ClickHouse では、設定に対する「制約」とは、設定に適用できる制限やルールを指します。これらの制約は、データベースの安定性、セキュリティ、そして予測可能な動作を維持するために使用できます。
 
-<div id="defining-constraints">
-  ## 制約の定義
-</div>
+## 制約の定義 {#defining-constraints}
 
 設定に対する制約は、`user.xml` 設定ファイルの `profiles` セクションで
 定義できます。これにより、ユーザーが
@@ -61,9 +57,7 @@ ClickHouse では、設定に対する「制約」とは、設定に適用でき
 ユーザーが制約に違反しようとすると、例外が発生し、
 設定は変更されないままです。
 
-<div id="types-of-constraints">
-  ## 制約の種類
-</div>
+## 制約の種類 {#types-of-constraints}
 
 ClickHouse でサポートされている制約には、いくつかの種類があります。
 
@@ -93,9 +87,7 @@ ClickHouse でサポートされている制約には、いくつかの種類が
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## 複数の制約プロファイル
-</div>
+## 複数の制約プロファイル {#multiple-constraint-profiles}
 
 ユーザーに対して複数のプロファイルが有効になっている場合、制約はマージされます。
 マージ処理の動作は `settings_constraints_replace_previous` によって決まります。
@@ -107,22 +99,16 @@ ClickHouse でサポートされている制約には、いくつかの種類が
   未設定の制約タイプはすべて前のプロファイルから引き継がれ、
   設定済みの制約タイプはすべて新しいプロファイルの値で置き換えられます。
 
-<div id="read-only">
-  ## 読み取り専用モード
-</div>
+## 読み取り専用モード {#read-only}
 
-読み取り専用モードは `readonly` 設定で有効になります。これは
-`readonly` 制約タイプと混同しないでください。
+読み取り専用モードは `readonly` 設定によって有効になります。これは `readonly` という CONSTRAINT の種別とは
+別のものなので混同しないでください。`readonly = 1` の場合でも、`changeable_in_readonly` CONSTRAINT が
+許可していれば、通常は拒否される設定であっても変更できます。この設定の各値の意味については
+[設定リファレンス](/ja/reference/settings/session-settings/other#readonly)を、各値がどの種類のクエリを許可するか、
+および HTTP インターフェイスがこの値をどのように設定するかについては
+[クエリの権限](/ja/concepts/features/configuration/settings/permissions-for-queries#readonly)を参照してください。
 
-* `readonly=0`: 読み取り専用の制限はありません。
-* `readonly=1`: 読み取りクエリのみが許可され、`changeable_in_readonly` が設定されて
-  いない限り、設定は変更できません。
-* `readonly=2`: 読み取りクエリのみが許可されますが、
-  `readonly` 設定自体を除き、設定は変更できます。
-
-<div id="example-read-only">
-  ### 例
-</div>
+### 例 {#example-read-only}
 
 `users.xml` に次の行を記述します。
 
@@ -165,9 +151,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   すべてのユーザーに適用されます。
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## MergeTree 設定の制約
-</div>
+## MergeTree 設定の制約 {#constraints-on-merge-tree-settings}
 
 [MergeTree 設定](/ja/reference/settings/merge-tree-settings)には制約を設定できます。
 これらの制約は、MergeTree エンジンのテーブルを作成するとき、
@@ -176,9 +160,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 `<constraints>` セクションで参照する場合、MergeTree 設定名の先頭に
 `merge_tree_` プレフィックスを付ける必要があります。
 
-<div id="example-read-only">
-  ### 例
-</div>
+### 例 {#example-mergetree}
 
 `storage_policy` を明示的に指定した新しいテーブルの作成を禁止できます
 

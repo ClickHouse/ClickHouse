@@ -7,17 +7,13 @@ title: 'القيود على الإعدادات'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
 في ClickHouse، تشير &quot;القيود&quot; المفروضة على الإعدادات إلى الحدود والقواعد التي
 يمكنك تعيينها للإعدادات. ويمكن تطبيق هذه القيود للحفاظ على
 الاستقرار والأمان وسهولة التنبؤ بسلوك قاعدة البيانات.
 
-<div id="defining-constraints">
-  ## تعريف القيود
-</div>
+## تعريف القيود {#defining-constraints}
 
 يمكن تعريف القيود على الإعدادات في قسم `ملف التعريف` ضمن ملف الإعداد `user.xml`.
 وهي تمنع المستخدمين من تغيير بعض الإعدادات باستخدام تعليمة
@@ -63,9 +59,7 @@ doc_type: 'reference'
 إذا حاول المستخدم انتهاك القيود، فسيُطلَق استثناء ويظل
 الإعداد دون تغيير.
 
-<div id="types-of-constraints">
-  ## أنواع القيود
-</div>
+## أنواع القيود {#types-of-constraints}
 
 هناك عدة أنواع من القيود التي يدعمها ClickHouse:
 
@@ -99,9 +93,7 @@ doc_type: 'reference'
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## ملفات تعريف القيود المتعددة
-</div>
+## ملفات تعريف القيود المتعددة {#multiple-constraint-profiles}
 
 إذا كان هناك عدة ملفات تعريف نشطة لمستخدم، فستُدمَج القيود.
 تعتمد عملية الدمج على `settings_constraints_replace_previous`:
@@ -113,22 +105,11 @@ doc_type: 'reference'
   يُؤخَذ فيها كل نوع من القيود غير المعيّنة من ملف التعريف السابق، ويُستبدَل كل
   نوع من القيود المعيّنة بالقيمة من ملف التعريف الجديد.
 
-<div id="read-only">
-  ## وضع القراءة فقط
-</div>
+## وضع القراءة فقط {#read-only}
 
-يتم تفعيل وضع القراءة فقط بواسطة الإعداد `readonly`، ويجب عدم الخلط بينه
-وبين نوع القيد `readonly`:
+يُفعَّل وضع القراءة فقط عبر الإعداد `readonly`، ولا ينبغي الخلط بينه وبين نوع القيد `readonly`. فعندما تكون `readonly = 1`، يبقى بالإمكان تغيير إعدادٍ كان سيُرفض لولا ذلك، إذا سمح بذلك القيد `changeable_in_readonly`. ولمعرفة دلالة قيم هذا الإعداد، راجع [مرجع الإعدادات](/ar/reference/settings/session-settings/other#readonly)؛ ولمعرفة أصناف الاستعلامات التي تسمح بها كل قيمة، وكيفية ضبطها عبر HTTP interface، راجع [أذونات الاستعلامات](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-* `readonly=0`: لا توجد أي قيود على وضع القراءة فقط.
-* `readonly=1`: يُسمح فقط باستعلامات القراءة، ولا يمكن تغيير الإعدادات
-  إلا إذا كان `changeable_in_readonly` مُعيَّنًا.
-* `readonly=2`: يُسمح فقط باستعلامات القراءة، لكن يمكن تغيير الإعدادات،
-  باستثناء الإعداد `readonly` نفسه.
-
-<div id="example-read-only">
-  ### مثال
-</div>
+### مثال {#example-read-only}
 
 ليتضمّن الملف `users.xml` الأسطر التالية:
 
@@ -171,9 +152,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   ما لم يُتجاوز عنها صراحةً لهؤلاء المستخدمين.
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## قيود على إعدادات MergeTree
-</div>
+## قيود على إعدادات MergeTree {#constraints-on-merge-tree-settings}
 
 يمكن فرض قيود على [إعدادات MergeTree](/ar/reference/settings/merge-tree-settings).
 تُطبَّق هذه القيود عند إنشاء جدول يستخدم محرك MergeTree
@@ -182,9 +161,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 يجب أن يُسبق اسم إعداد MergeTree بالبادئة `merge_tree_` عند
 الإشارة إليه في قسم `<constraints>`.
 
-<div id="example-read-only">
-  ### مثال
-</div>
+### مثال {#example-mergetree}
 
 يمكنك منع إنشاء جداول جديدة مع تحديد `storage_policy` صراحةً
 
