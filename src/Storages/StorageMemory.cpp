@@ -570,16 +570,16 @@ namespace
 
             /// Writing sizes.json
             {
-                FileChecker file_checker{"tmp_sizes_json"};
+                std::map<String, size_t> file_sizes;
                 for (size_t i = 0; i != file_paths.size(); ++i)
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
+                    file_sizes[std::filesystem::path{file_paths[i]}.filename()] = backup_entries[i].second->getSize();
                 }
 
                 WriteBufferFromOwnString write_buffer;
-                file_checker.save(write_buffer);
+                FileChecker::save(write_buffer, file_sizes);
                 backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromMemory>(std::move(write_buffer.str()))};
             }
 
