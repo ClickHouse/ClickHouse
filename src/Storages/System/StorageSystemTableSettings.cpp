@@ -3,19 +3,16 @@
 #include <Storages/System/SettingsTableColumns.h>
 
 #include <Access/ContextAccess.h>
-#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <Core/SettingsTierType.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -26,13 +23,13 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
 
 namespace Setting
 {
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -42,16 +39,10 @@ namespace
 
 DataTypePtr originEnum()
 {
-    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"default", static_cast<Int8>(SettingOrigin::Default)},
-        {"config", static_cast<Int8>(SettingOrigin::Config)},
-        {"compatibility", static_cast<Int8>(SettingOrigin::Compatibility)},
-        {"definition", static_cast<Int8>(SettingOrigin::Definition)},
-        {"named_collection", static_cast<Int8>(SettingOrigin::NamedCollection)},
-        {"shared_metadata", static_cast<Int8>(SettingOrigin::SharedMetadata)},
-        {"runtime", static_cast<Int8>(SettingOrigin::Runtime)},
-        {"other", static_cast<Int8>(SettingOrigin::Other)},
-    });
+    DataTypeEnum8::Values values;
+    for (const auto origin : magic_enum::enum_values<SettingOrigin>())
+        values.emplace_back(toString(origin), static_cast<Int8>(origin));
+    return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
 }
@@ -135,7 +126,7 @@ public:
     {
     }
 
-    String getName() const override { return "SettingDescriptions"; }
+    String getName() const override { return "TableSettings"; }
 
 protected:
     Chunk generate() override
@@ -145,11 +136,9 @@ protected:
         const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
-        /// Whether this user may see the real value of a secret setting. The same three conditions
-        /// `SHOW CREATE TABLE` uses, so the two surfaces cannot disagree.
-        const bool show_secrets = context->displaySecretsInShowAndSelect()
-            && context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select]
-            && access->isGranted(AccessType::displaySecretsInShowAndSelect);
+        /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE`
+        /// decides it, so the two surfaces cannot disagree.
+        const bool show_secrets = canDisplaySecrets(context);
 
         size_t rows_count = 0;
 
@@ -164,10 +153,8 @@ protected:
 
             for (const auto & setting : table->getTableSettings(context))
             {
-                String value = setting.value;
                 const bool is_masked = !show_secrets && !setting.masked_value.empty();
-                if (is_masked)
-                    value = setting.masked_value;
+                const String & value = is_masked ? setting.masked_value : setting.value;
 
                 /// A setting that answers to more than one name gets a row per name, as
                 /// `system.settings` does, so that looking it up by the name you happen to know
