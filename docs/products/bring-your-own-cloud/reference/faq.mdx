@@ -37,7 +37,9 @@ BYOC infrastructures onboarded before external IDs were introduced use the place
 <Accordion title="Can BYOC use an existing VPC? What about shared VPCs?">
 On AWS and GCP, you can deploy into an existing VPC that lives in the **same** account or project as the BYOC infrastructure. See the customization guides for [AWS](/products/bring-your-own-cloud/onboarding/customization-aws) and [GCP](/products/bring-your-own-cloud/onboarding/customization-gcp). On GCP, a **Shared VPC** from a separate host project is also supported: the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) accepts the host project and subnet directly — see its "Shared VPC" section for the setup and prerequisites. Bringing your own VNet on Azure is coming soon.
 
-On AWS, subnets shared from another account (AWS RAM) are not supported — use a dedicated account connected to your existing network via VPC peering or PrivateLink instead. Note that with a customer-managed VPC, only the private load balancer is enabled by default (see [configuration](/products/bring-your-own-cloud/configuration/configurations)).
+On AWS, subnets shared from another account with AWS Resource Access Manager (RAM) are also supported, so you can keep networking centralized in a hub account and run the BYOC infrastructure in a spoke account. One prerequisite is specific to this setup: RAM-shared resources have a per-account tag view, so the **spoke** account must apply the required VPC and subnet tags itself — tags applied from the hub account are not visible to the spoke, and provisioning fails without them. Route tables stay owned by the hub account, which remains responsible for NAT and egress routing on the shared subnets. See the [AWS customization guide](/products/bring-your-own-cloud/onboarding/customization-aws) for the tags and other requirements.
+
+Note that with a customer-managed VPC, only the private load balancer is enabled by default (see [configuration](/products/bring-your-own-cloud/configuration/configurations)).
 </Accordion>
 
 <Accordion title="Can BYOC be installed into an existing Kubernetes cluster?">
