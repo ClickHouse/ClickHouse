@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DateLUT.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
@@ -195,5 +196,55 @@ struct TTLTableDescription
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode);
 };
+
+/// Used by the fast path of `MATERIALIZE TTL` to decide whether a rows-TTL change can be applied by
+/// merely shifting a part's stored TTL timestamps instead of rewriting the data. That is correct
+/// only when the change adds the same constant number of seconds to every row's expiry time, i.e.
+/// when `new_ttl(row) - old_ttl(row)` does not depend on the row.
+///
+/// The old rows TTL is given as its serialized expression string, as stored in the part's TTL info
+/// fingerprint (see `getRowsTTLExpressionFingerprint`). It is parsed - a fingerprint that does not parse
+/// means a corrupt `ttl.txt` and the exception propagates - but it is deliberately never resolved against
+/// the table's columns nor evaluated: only its shape is compared with `new_ttl`. An expression naming a
+/// column the table no longer has therefore yields `std::nullopt` (fall back) instead of an error.
+///
+/// This proves that condition structurally: both expressions must be the same single date/time column
+/// shifted by constant fixed-length intervals (`col`, `col + INTERVAL N DAY`, `col - toIntervalHour(N)`,
+/// ...), so each expression is exactly `column + constant seconds` and the delta is the difference of
+/// the two constants. Day/week intervals are additionally accepted only when the relevant time zone
+/// (the column's one for `DateTime`/`DateTime64`, the server's one for `Date`/`Date32`) has a fixed
+/// offset from UTC, because `addDays` preserves the local wall-clock time across DST transitions and
+/// is not a constant number of seconds otherwise.
+///
+/// Returns the constant delta in seconds, or `std::nullopt` when the delta is not provably constant
+/// (several referenced columns, calendar month/year intervals, non-literal intervals, arbitrary
+/// functions, DST-sensitive day/week intervals, or an unsupported result type). A `std::nullopt` result
+/// means the fast path must not be used and the caller must fall back to a regular `MATERIALIZE TTL`
+/// rewrite. An input that is merely unoptimizable never throws - it yields `std::nullopt`; the one thing
+/// that does throw is a fingerprint that does not parse, which is not an unoptimizable TTL but a corrupt
+/// part.
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const String & old_ttl_expression, const TTLDescription & new_ttl, const DateLUTImpl & date_lut);
+
+/// The rows-TTL expression a part's stored TTL timestamps were computed under, as recorded next to them in
+/// `ttl.txt` (see `MergeTreeDataPartTTLInfos::table_ttl_expression`). Since the only reader is the fast
+/// `MATERIALIZE TTL` path, which parses it back to prove its shift, this records only what that path could
+/// accept: an expression of the shape `tryComputeConstantTTLDelta` recognizes, formatted (rather than
+/// `TTLDescription::result_column`, the expression's `getColumnName`, which writes identifiers raw and so
+/// would not round-trip a column name that needs quoting). Returns an empty string - meaning "unknown", the
+/// same as no fingerprint at all - for any other expression.
+String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl);
+
+/// The name of the time zone whose semantics a part's stored rows-TTL timestamps depend on. It is the
+/// column's time zone when the TTL reads a single `DateTime`/`DateTime64` column (`addDays` preserves the
+/// local wall-clock time, so the shift it produces is a property of that zone) and the server time zone
+/// otherwise (a `Date`/`Date32` TTL result is turned into a timestamp with the current `DateLUT` instance).
+///
+/// The fast `MATERIALIZE TTL` path records this next to the part's TTL expression fingerprint and requires it to
+/// still match, because neither the expression text nor the part's column type pins the zone down:
+/// `DataTypeDateTime::equals` ignores the time zone, `DataTypeDateTime64::equals` compares only the scale,
+/// and the server time zone is not part of the table metadata at all. Without it, a part written under one
+/// zone could be shifted by a delta proven under another one.
+String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl, const DateLUTImpl & date_lut);
 
 }
