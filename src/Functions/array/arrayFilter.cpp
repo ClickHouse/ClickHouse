@@ -46,7 +46,7 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         return ColumnArray::create(array.getDataPtr()->cloneEmpty(), std::move(column_offsets));
 
     if (out_pos == filter.size())
-        return ColumnArray::create(array.getDataPtr(), array.getOffsetsPtr());
+        return array.clone();
 
     ColumnPtr filtered = array.getData().filter(filter, out_pos);
     return ColumnArray::create(filtered, std::move(column_offsets));

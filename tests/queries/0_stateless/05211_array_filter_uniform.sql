@@ -21,6 +21,7 @@ SELECT arrayFilter((x, keep) -> keep, [1, 2, 3], materialize([2, 2, 2]));
 
 SELECT arrayFilter((x, keep) -> keep, ['a', 'bb', 'ccc'], materialize([1, 1, 1]));
 SELECT arrayFilter((x, keep) -> keep, ['a', 'bb', 'ccc'], materialize([0, 0, 0]));
+SELECT arrayFilter((x, keep) -> keep, ['a', 'bb', 'ccc'], materialize([1, 0, 1]));
 
 SELECT arraySum(x -> tupleElement(x, 1), arrayFilter((x, keep) -> keep, [(1, 'a'), (2, 'b')], materialize([1, 1])));
 SELECT arraySum(x -> tupleElement(x, 1), arrayFilter((x, keep) -> keep, [(1, 'a'), (2, 'b')], materialize([0, 0])));

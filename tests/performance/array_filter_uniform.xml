@@ -11,7 +11,10 @@
             arr_str Array(String),
             keep_all Array(UInt8),
             keep_none Array(UInt8),
-            keep_half Array(UInt8)
+            keep_half Array(UInt8),
+            keep_all_str Array(UInt8),
+            keep_none_str Array(UInt8),
+            keep_half_str Array(UInt8)
         ) ENGINE = Memory
     </create_query>
     <fill_query>
@@ -22,7 +25,10 @@
             arrayMap(x -&gt; concat(toString(number + x), repeat('x', 64)), range(16)),
             arrayMap(x -&gt; toUInt8(1), range(32)),
             arrayMap(x -&gt; toUInt8(0), range(32)),
-            arrayMap(x -&gt; toUInt8(x % 2), range(32))
+            arrayMap(x -&gt; toUInt8(x % 2), range(32)),
+            arrayMap(x -&gt; toUInt8(1), range(16)),
+            arrayMap(x -&gt; toUInt8(0), range(16)),
+            arrayMap(x -&gt; toUInt8(x % 2), range(16))
         FROM numbers(200000)
     </fill_query>
     <query>
@@ -41,17 +47,17 @@
         FORMAT Null
     </query>
     <query>
-        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_all)
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_all_str)
         FROM array_filter_uniform
         FORMAT Null
     </query>
     <query>
-        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_none)
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_none_str)
         FROM array_filter_uniform
         FORMAT Null
     </query>
     <query>
-        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_half)
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_half_str)
         FROM array_filter_uniform
         FORMAT Null
     </query>
