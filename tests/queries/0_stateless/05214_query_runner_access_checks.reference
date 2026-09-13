@@ -1,0 +1,7 @@
+-- without the CREATE DATABASE privilege, directly
+ACCESS_DENIED
+-- without the CREATE DATABASE privilege, queued into the QueryRunner table
+-- the database was not created
+0
+-- once the privilege is granted, the queued job runs
+1
