@@ -445,6 +445,12 @@ bool groupByTTLAssignsSortKeyColumn(
 NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time)
 {
+    /// With several `GROUP BY` TTLs in one part an earlier `SET` can rewrite a column a later TTL
+    /// groups by, so that TTL aggregates an input no longer ordered by its keys and produces wrong
+    /// groups; re-sorting the result would hide that behind a correctly ordered part.
+    if (metadata_snapshot->getGroupByTTLs().size() > 1)
+        return {};
+
     NameSet targets;
     for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
     {

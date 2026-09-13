@@ -56,6 +56,12 @@ bool groupByTTLAssignsSortKeyColumn(
 /// for a `SET` that never ran. `min == 0` (uninitialized info) or a missing info is treated
 /// conservatively as "may fire". A forced merge is not proof that a TTL fired: it only requires
 /// row-by-row evaluation, and a future TTL can still leave every row unchanged.
+///
+/// Empty for a table with more than one `GROUP BY` TTL, so no repair runs for such a part at all:
+/// an earlier `SET` can rewrite a column a later TTL groups by, which makes that TTL aggregate an
+/// input no longer ordered by its keys and merge rows that belong to different groups. That is a
+/// separate defect, and re-sorting the result would only hide it behind a correctly ordered part, so
+/// such a part is left exactly as it is written without this repair.
 NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time);
 
