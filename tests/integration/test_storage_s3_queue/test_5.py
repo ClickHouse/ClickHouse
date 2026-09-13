@@ -1886,6 +1886,89 @@ def test_drop_finishes_interrupted_metadata_removal(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_drop_finishes_metadata_removal_after_retry(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_retried_drop_{suffix}"
+    table_name = f"t_{suffix}"
+    files_path = f"data_{suffix}"
+    keeper_path = f"/clickhouse/test_retried_drop_{suffix}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+
+    failpoints = [
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    retries_before = int(node.count_in_log("Table is unregistered after retry"))
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_name} SYNC", timeout=180)
+        )
+
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.exists(keeper_path) is not None
+        assert zk.get(keeper_path)[0] == DROP_MARKER
+
+        # The session the removal runs on dies here, so its final multi fails with a hardware
+        # error and the loop retries instead of reaching the `ZNONODE` exit. Keeper removes the
+        # ephemeral lock with the session, which is why the retry finds the root childless.
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        for _ in range(120):
+            if zk.exists(f"{keeper_path}/drop") is None:
+                break
+            time.sleep(0.5)
+        assert zk.exists(f"{keeper_path}/drop") is None
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The retry saw the registry it had already swept and finished removing the root, instead of
+    # returning as if someone else had unregistered the table.
+    assert zk.exists(keeper_path) is None
+    # Without a retry the removal went through the `ZNONODE` exit, which the test above covers,
+    # and this arm would prove nothing about the branch it is here for.
+    assert int(node.count_in_log("Table is unregistered after retry")) > retries_before
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_create_or_replace_table(started_cluster):
     node1 = started_cluster.instances["instance"]
     node2 = started_cluster.instances["instance2"]
