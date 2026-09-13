@@ -2023,11 +2023,16 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// silently corrupt the data). Such a codec would only fail — or lose data — at the first such
     /// write. The table compression settings and the server `<compression>` selector already reject
     /// such codecs up front with the same two properties (see `getReasonUnsafeForUntypedData` in
-    /// `CompressionFactory.cpp`); enforce the same invariant on the metadata-load path too. A literal
-    /// lossy line in `default_compression_codec.txt` (e.g. `CODEC(SZ3)`) already fails the typeless
-    /// parse in `readDefaultCompressionCodec` and only reaches this point through
+    /// `CompressionFactory.cpp`); enforce the same invariant on the metadata-load path too. What reaches
+    /// this check is a codec that requires a column type (e.g. a `CODEC(PCO)` line in
+    /// `default_compression_codec.txt` left by a pre-fix or hand-edited part: such a codec is
+    /// constructible without a column type and only fails where it compresses). The lossy case is a
+    /// fail-safe for both of the routes that produce the codec: a literal lossy line (e.g.
+    /// `CODEC(SZ3)`) already fails the typeless parse in `readDefaultCompressionCodec`, and
     /// `detectDefaultCompressionCodec`, which rebuilds the codec of an attached or pre-fix part from a
-    /// data file's method bytes — so the detected codec must pass the same check as the parsed one.
+    /// data file's method bytes, accepts only a generic-compression stage of the frame as proof of the
+    /// default - which no lossy and no type-requiring codec is. Both properties are still checked here,
+    /// because this is the last place before the codec reaches a writer.
     /// Fall back to the table's normal default codec selection (the `default_compression_codec`
     /// setting, then the server `<compression>` selector — both validated
     /// or sanitized with the same predicate, so the result is always usable for untyped streams), so
