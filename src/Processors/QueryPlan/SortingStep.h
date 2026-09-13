@@ -56,12 +56,16 @@ public:
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
+        bool spill_codec_authorized = false;
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        /// `sorting_is_reachable` is false when these settings ride along a step that may never sort
+        /// (a join whose enabled algorithms include no sorting-based one): the spill-codec opt-in must
+        /// then stay off the wire (see `spillCodecAuthorizationMustBeSerialized`).
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };
@@ -155,6 +159,7 @@ public:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope,
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
@@ -195,7 +200,9 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_,
+        TopKThresholdTrackerPtr threshold_tracker,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -211,6 +218,7 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         QueryPipelineProcessorsCollector & collector,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope,
         bool skip_partial_sort = false);
 
     Type type;

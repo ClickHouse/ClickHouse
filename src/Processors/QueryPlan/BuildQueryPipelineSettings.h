@@ -20,6 +20,8 @@ struct IParameterLookup;
 using ParameterLookupPtr = std::shared_ptr<IParameterLookup>;
 struct IExchangeLookup;
 using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 struct BuildQueryPipelineSettings
 {
@@ -35,6 +37,11 @@ struct BuildQueryPipelineSettings
     BlockMarshallingCallback block_marshalling_callback;
     ParameterLookupPtr parameter_lookup;
     ExchangeLookupPtr exchange_lookup;
+
+    /// Temporary data scope of the query that is being executed (per-query scope installed by `ProcessList::insert`,
+    /// or the server-wide root when there is none). Steps that spill to disk must create their child scopes from it,
+    /// otherwise `max_temporary_data_on_disk_size_for_query` / `..._for_user` are not accounted.
+    TemporaryDataOnDiskScopePtr tmp_data_scope;
 
 
     size_t max_threads;

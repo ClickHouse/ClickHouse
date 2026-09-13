@@ -311,7 +311,7 @@ GraceHashJoin::GraceHashJoin(
             .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
             .num_files = ProfileEvents::ExternalJoinWritePart,
-        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
+        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec(), table_join->spillCodecAuthorized()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -340,9 +340,13 @@ void GraceHashJoin::initBuckets()
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    auto kind = table_join->kind();
-    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();
+    return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
+}
+
+bool GraceHashJoin::isSupported(JoinKind kind, JoinStrictness strictness)
+{
+    bool is_asof = (strictness == JoinStrictness::Asof);
+    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
 }
 
 GraceHashJoin::~GraceHashJoin() = default;

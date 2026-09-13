@@ -31,6 +31,8 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace
@@ -109,6 +111,9 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
+        settings[Setting::temporary_files_codec],
+        spillCodecAuthorizedBySession(settings),
+        settings[Setting::temporary_files_buffer_size],
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
