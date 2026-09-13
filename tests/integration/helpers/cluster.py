@@ -2698,7 +2698,11 @@ class ClickHouseCluster:
         )
         node.ip_address = self.get_instance_ip(node.name)
         node.ipv6_address = self.get_instance_global_ipv6(node.name)
-        node.client = Client(node.ip_address, command=self.client_bin_path)
+        node.client = Client(
+            node.ip_address,
+            command=self.client_bin_path,
+            describe_transport_error=node.describe_transport_error,
+        )
 
         logging.info("Restart node with ip change")
         # In builds with sanitizer the server can take a long time to start
@@ -4412,7 +4416,9 @@ class ClickHouseCluster:
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
-                    instance.ip_address, command=self.client_bin_path
+                    instance.ip_address,
+                    command=self.client_bin_path,
+                    describe_transport_error=instance.describe_transport_error,
                 )
 
             self.is_up = True
@@ -5303,6 +5309,50 @@ class ClickHouseInstance:
             "veth name collision."
         )
 
+    def describe_transport_error(self, error_text):
+        """The cause of a failed request that the client cannot see from its side, or "".
+
+        Handed to this instance's `Client`, so every request made through it goes through
+        the same gate - the ones that raise, the ones that hand the error back for the
+        test to assert on, and the handles a test collects later. `CommandRequest` prepends
+        whatever comes back to the text it was going to report anyway, so a caller that
+        catches the error and matches on it keeps working.
+
+        The probe only runs once the client has already reported one of
+        `UNREACHABLE_ADDRESS_ERRORS`, which nothing in the suite produces deliberately -
+        `PartitionManager` drops or resets connections, it does not unplug interfaces. So
+        the normal path costs one substring check, and an ordinary refused connection is
+        not investigated.
+
+        `query(host=...)` aims the same client at another node; the probe still looks at
+        this container, which can only withhold a verdict, never invent one.
+        """
+        if not error_text:
+            return ""
+        if not any(error in error_text for error in UNREACHABLE_ADDRESS_ERRORS):
+            return ""
+        return self.describe_lost_network_interface()
+
+    def _http_request_naming_transport_error(self, request):
+        """Run an HTTP request, naming a lost interface if that is what it ran into.
+
+        The HTTP helpers reach the server directly rather than through `Client`, so the
+        gate has to be applied to them here. The exception keeps its class and its
+        `request`/`response`, because tests catch `requests.exceptions.ConnectionError`
+        and read those; only the message gains the cause.
+        """
+        try:
+            return request()
+        except requests.exceptions.ConnectionError as ex:
+            cause = self.describe_transport_error(str(ex))
+            if not cause:
+                raise
+            raise requests.exceptions.ConnectionError(
+                f"{cause} HTTP request failed with: {ex}",
+                request=ex.request,
+                response=ex.response,
+            ) from ex
+
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(
         self,
@@ -5324,37 +5374,19 @@ class ClickHouseInstance:
         else:
             sql_for_log = sql
         logging.debug("Executing query %s on %s", sql_for_log, self.name)
-        try:
-            return self.client.query(
-                sql,
-                stdin=stdin,
-                timeout=timeout,
-                settings=settings,
-                user=user,
-                password=password,
-                database=database,
-                ignore_error=ignore_error,
-                query_id=query_id,
-                host=host,
-                parse=parse,
-            )
-        except QueryRuntimeException as ex:
-            # Not a fallback: the query stays failed either way. The only thing added is
-            # who broke the connection, which the client cannot tell from its side and
-            # which decides whether the result is a test failure or an infrastructure one.
-            if not any(error in str(ex) for error in UNREACHABLE_ADDRESS_ERRORS):
-                raise
-            lost_interface = self.describe_lost_network_interface()
-            if not lost_interface:
-                raise
-            # Same exception type and same `returncode`/`stderr`, because tests read those:
-            # only the message gains the cause, so `except QueryRuntimeException` arms and
-            # `match=` patterns keep working.
-            raise QueryRuntimeException(
-                f"{lost_interface} Query failed with: {ex}",
-                ex.returncode,
-                ex.stderr,
-            ) from ex
+        return self.client.query(
+            sql,
+            stdin=stdin,
+            timeout=timeout,
+            settings=settings,
+            user=user,
+            password=password,
+            database=database,
+            ignore_error=ignore_error,
+            query_id=query_id,
+            host=host,
+            parse=parse,
+        )
 
     def query_with_retry(
         self,
@@ -5619,7 +5651,11 @@ class ClickHouseInstance:
         if method is None:
             method = "POST" if data else "GET"
 
-        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        r = self._http_request_naming_transport_error(
+            lambda: requester.request(
+                method, url, data=data, auth=auth, timeout=timeout
+            )
+        )
         # Force encoding to UTF-8
         r.encoding = "UTF-8"
 
@@ -5634,8 +5670,10 @@ class ClickHouseInstance:
     def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
         logging.debug(f"Sending HTTP request '{url}' to {self.name}")
         url = f"http://{self.ip_address}:8123/{url}"
-        return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+        return self._http_request_naming_transport_error(
+            lambda: requests.request(
+                method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+            )
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):

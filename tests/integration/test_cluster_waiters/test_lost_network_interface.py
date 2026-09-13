@@ -1,5 +1,5 @@
-"""Pins that the cluster helper names the one docker failure that is indistinguishable
-from a broken server, and names nothing else.
+"""Pins that the harness names the one docker failure that is indistinguishable from a
+broken server, and names nothing else.
 
 Docker picks a new endpoint's host-side `veth` name at random and only checks it against
 the host network namespace, where a running container's peer name is invisible (it has
@@ -19,17 +19,29 @@ to fire on the real state (otherwise the job stays red on infrastructure), and i
 fire on a network error alone (otherwise a genuine failure is relabelled `SKIPPED` and
 disappears from the report).
 
-The helpers are loaded out of helpers/cluster.py by AST extraction and executed against
-stubs, so these assertions track the shipped source rather than a copy of it. No Docker
-and no ClickHouseCluster instance is needed.
+The verdict reaches a pytest result through one gate, `ClickHouseInstance.describe_transport_error`,
+which every request made through the instance's `Client` consults - so it is attached
+wherever the state surfaces, and not only on the entrypoints that raise. `query` is one of
+those; `query_and_get_error` and `query_and_get_answer_with_error` hand the error back for
+the test to assert on, and `get_query_request` hands back a handle the test collects from
+later. The arms below drive the real `CommandRequest` over a failing command, so they pin
+that path rather than a description of it. The HTTP helpers do not go through `Client` and
+have their own arms.
+
+`describe_lost_network_interface`, the gate and the HTTP wrapper are loaded out of
+helpers/cluster.py by AST extraction and executed against stubs, so these assertions track
+the shipped source rather than a copy of it. No Docker and no ClickHouseCluster instance is
+needed.
 """
 
 import ast
 import os
+import shlex
 import sys
 import types
 
 import pytest
+import requests
 
 HELPERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "helpers")
 CLUSTER_PY = os.path.normpath(os.path.join(HELPERS_DIR, "cluster.py"))
@@ -38,10 +50,12 @@ JOB_PY = os.path.normpath(
 )
 
 sys.path.insert(0, os.path.normpath(os.path.join(HELPERS_DIR, "..")))
-from helpers.client import QueryRuntimeException  # noqa: E402
+from helpers.client import CommandRequest, QueryRuntimeException  # noqa: E402
 
 DESCRIBE = "describe_lost_network_interface"
-QUERY = "query"
+GATE = "describe_transport_error"
+HTTP = "_http_request_naming_transport_error"
+HTTP_ENTRYPOINTS = ["http_query_and_get_answer_with_error", "http_request"]
 
 # The module-level names the helpers read, in the order they need them resolved. Taken
 # from the shipped source rather than retyped, so a reworded marker or a renamed loopback
@@ -60,10 +74,21 @@ DOCKER_ID = "roottesthttpsreplication-gw0-node1-1"
 INSTANCE_NAME = "node1"
 IP_ADDRESS = "172.16.1.7"
 
-# The failure the collision produces on the client side, as the CI report rendered it.
+# What the collision leaves on the client's stderr, as the CI report rendered it.
 UNREACHABLE = (
-    "Client failed! Return code: 210, stderr: Code: 210. DB::NetException: "
-    f"Net Exception: No route to host ({IP_ADDRESS}:9000). (NETWORK_ERROR)"
+    "Code: 210. DB::NetException: Net Exception: No route to host "
+    f"({IP_ADDRESS}:9000). (NETWORK_ERROR)"
+)
+
+# A failure of the server itself: the thing the verdict must never be attached to.
+ORDINARY = "Code: 60. DB::Exception: Table test.hits does not exist. (UNKNOWN_TABLE)"
+
+# The same collision seen by `requests`, which wraps the errno rather than reporting it.
+HTTP_UNREACHABLE = (
+    f"HTTPConnectionPool(host='{IP_ADDRESS}', port=8123): Max retries exceeded with url: "
+    "/?query=SELECT+1 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection "
+    "object at 0x7f9>: Failed to establish a new connection: [Errno 113] No route to "
+    "host'))"
 )
 
 
@@ -99,13 +124,13 @@ def _constants(path=CLUSTER_PY, names=None):
     return namespace
 
 
-def _func_ast(name):
-    with open(CLUSTER_PY, encoding="utf-8") as f:
+def _func_ast(name, path=CLUSTER_PY):
+    with open(path, encoding="utf-8") as f:
         module = ast.parse(f.read())
     for node in ast.walk(module):
         if isinstance(node, ast.FunctionDef) and node.name == name:
             return node
-    raise AssertionError(f"{name} not found in {CLUSTER_PY}")
+    raise AssertionError(f"{name} not found in {path}")
 
 
 class _Recorder:
@@ -115,7 +140,6 @@ class _Recorder:
         self.name = INSTANCE_NAME
         self.docker_id = DOCKER_ID
         self.ip_address = ip_address
-        self.client = None
         self._interfaces = interfaces
         self._token = token
         self._probe_raises = probe_raises
@@ -130,18 +154,19 @@ class _Recorder:
                 msg % args if args else msg
             ),
         )
-        namespace["QueryRuntimeException"] = QueryRuntimeException
+        namespace["requests"] = requests
         exec(  # pylint:disable=exec-used
             compile(
                 ast.Module(
-                    body=[_func_ast(DESCRIBE), _func_ast(QUERY)], type_ignores=[]
+                    body=[_func_ast(name) for name in (DESCRIBE, GATE, HTTP)],
+                    type_ignores=[],
                 ),
                 CLUSTER_PY,
                 "exec",
             ),
             namespace,
         )
-        for func in (DESCRIBE, QUERY):
+        for func in (DESCRIBE, GATE, HTTP):
             setattr(self, func, types.MethodType(namespace[func], self))
 
     def exec_in_container(self, cmd, **kwargs):
@@ -154,13 +179,38 @@ class _Recorder:
         return "".join(f"{line}\n" for line in lines)
 
 
-def _client_raising(exception):
-    """A `Client` stub whose `query` fails the way the real one does."""
+def _failing_command(stderr, returncode, stdout=""):
+    """A command that fails the way `clickhouse-client` does, so the real
+    `CommandRequest` can be driven without a server."""
+    return [
+        "/bin/bash",
+        "-c",
+        f"printf %s {shlex.quote(stdout)}; printf %s {shlex.quote(stderr)} >&2; "
+        f"exit {returncode}",
+    ]
 
-    def query(sql, **kwargs):
+
+def _request(instance, stderr=UNREACHABLE, returncode=210, stdout="", **kwargs):
+    """A real `CommandRequest` wired to `instance`'s gate, as `Client` builds them."""
+    return CommandRequest(
+        _failing_command(stderr, returncode, stdout),
+        stdin="",
+        describe_transport_error=instance.describe_transport_error,
+        **kwargs,
+    )
+
+
+def _raising(exception):
+    def request():
         raise exception
 
-    return types.SimpleNamespace(query=query)
+    return request
+
+
+def _connection_error(message):
+    return requests.exceptions.ConnectionError(
+        message, request="the-request", response="the-response"
+    )
 
 
 def test_a_container_with_only_loopback_is_reported():
@@ -227,66 +277,202 @@ def test_a_failing_probe_reports_nothing_and_says_why():
     assert "timed out after 30s" in instance.warnings[0]
 
 
-def test_query_reports_the_cause_and_keeps_the_original_failure():
-    """`query` is where the collision surfaces once the cluster is already up: the
-    module's queries just start failing. The report has to carry the cause and the
-    original error both, as the same exception type with its fields, because callers
-    catch `QueryRuntimeException` and read `returncode`."""
-    original = QueryRuntimeException(UNREACHABLE, 210, "Code: 210.")
+@pytest.mark.parametrize("error", _constants()["UNREACHABLE_ADDRESS_ERRORS"])
+def test_the_gate_investigates_both_unreachable_address_errors(error):
+    """`No route to host` is what the harness sees from outside the victim and `Network
+    is unreachable` what a query inside it reports, so both have to reach the probe."""
     instance = _Recorder(["lo"])
-    instance.client = _client_raising(original)
+    verdict = instance.describe_transport_error(f"Code: 210. DB::NetException: {error}")
+    assert instance.constants["LOST_NETWORK_INTERFACE_ERROR"] in verdict
+
+
+def test_the_gate_does_not_investigate_an_ordinary_error():
+    """Every failing query in the suite goes through the gate, and retry loops run
+    twenty of them, so only the two errors a missing interface produces may cost a
+    `docker exec`."""
+    instance = _Recorder(["lo"])
+    assert instance.describe_transport_error(ORDINARY) == ""
+    assert instance.probes == []
+
+
+def test_the_gate_says_nothing_about_a_request_that_did_not_fail():
+    """A request that succeeded leaves no stderr, and there is nothing to explain."""
+    instance = _Recorder(["lo"])
+    assert instance.describe_transport_error("") == ""
+    assert instance.probes == []
+
+
+def test_a_raised_failure_reports_the_cause_and_keeps_its_fields():
+    """`query` is where the collision surfaces once the cluster is up: the module's
+    queries just start failing. The report has to carry the cause and the original error
+    both, as the same exception type with its fields, because callers catch
+    `QueryRuntimeException` and read `returncode`."""
+    instance = _Recorder(["lo"])
     with pytest.raises(QueryRuntimeException) as raised:
-        instance.query("SELECT count() FROM test_table")
-    assert instance.constants["LOST_NETWORK_INTERFACE_ERROR"] in str(raised.value)
+        _request(instance).get_answer()
+    marker = instance.constants["LOST_NETWORK_INTERFACE_ERROR"]
+    assert str(raised.value).startswith(marker)
     assert UNREACHABLE in str(raised.value)
     assert raised.value.returncode == 210
-    assert raised.value.stderr == "Code: 210."
+    assert raised.value.stderr == UNREACHABLE
+
+
+def test_a_returned_error_carries_the_cause():
+    """`query_and_get_error` hands the error back for the test to assert on instead of
+    raising it, and that assertion is the only text the CI report will carry. So the
+    cause goes into the value - and only when the test was going to fail on it anyway."""
+    instance = _Recorder(["lo"])
+    error = _request(instance).get_error()
+    assert error.startswith(instance.constants["LOST_NETWORK_INTERFACE_ERROR"])
+    assert error.endswith(UNREACHABLE)
+
+
+def test_a_returned_answer_and_error_carries_the_cause():
+    """`query_and_get_answer_with_error` reports through the second element, and its
+    answer must come back untouched."""
+    instance = _Recorder(["lo"])
+    stdout, error = _request(instance, stdout="partial\n").get_answer_and_error()
+    assert stdout == "partial\n"
+    assert error.startswith(instance.constants["LOST_NETWORK_INTERFACE_ERROR"])
+    assert error.endswith(UNREACHABLE)
+
+
+def test_an_ignored_error_is_raised_when_the_interface_is_gone():
+    """`ignore_error` promises to ignore what the *server* answers and cannot promise
+    more: with the container cut off there is no answer to ignore, and handing back the
+    empty stdout would leave the test asserting on nothing, with the run's actual cause
+    nowhere in the report."""
+    instance = _Recorder(["lo"])
+    with pytest.raises(QueryRuntimeException) as raised:
+        _request(instance, ignore_error=True).get_answer()
+    assert str(raised.value).startswith(
+        instance.constants["LOST_NETWORK_INTERFACE_ERROR"]
+    )
+    assert raised.value.returncode == 210
+
+
+def test_an_ignored_error_stays_ignored():
+    """The counter-arm, for the 74 call sites that pass `ignore_error`: a server error is
+    still swallowed, and is not even investigated."""
+    instance = _Recorder(["lo"])
+    request = _request(instance, stderr=ORDINARY, returncode=47, ignore_error=True)
+    assert request.get_answer() == ""
+    assert instance.probes == []
+
+
+def test_a_reachable_container_s_failure_is_untouched():
+    """Same unreachable-address error with the interface still attached: the failure is
+    reported exactly as it was before, so a test asserting on it is unaffected."""
+    instance = _Recorder(["eth0", "lo"])
+    with pytest.raises(QueryRuntimeException) as raised:
+        _request(instance).get_answer()
+    assert str(raised.value) == (
+        f"Client failed! Return code: 210, stderr: {UNREACHABLE}"
+    )
+    assert len(instance.probes) == 1
+
+
+def test_an_ordinary_failure_is_reported_as_it_was():
+    instance = _Recorder(["lo"])
+    with pytest.raises(QueryRuntimeException) as raised:
+        _request(instance, stderr=ORDINARY, returncode=47).get_answer()
+    assert str(raised.value) == f"Client failed! Return code: 47, stderr: {ORDINARY}"
+    assert instance.probes == []
+
+
+def test_a_successful_request_is_not_investigated():
+    """The gate sits on the path of every request in the suite; the passing path must
+    stay exactly what it was."""
+    instance = _Recorder(["lo"])
+    assert _request(instance, stderr="", returncode=0, stdout="100\n").get_answer() == (
+        "100\n"
+    )
+    assert _request(
+        instance, stderr="", returncode=0, stdout="100\n"
+    ).get_answer_and_error() == ("100\n", "")
+    assert instance.probes == []
+
+
+def test_a_request_built_without_the_gate_is_unchanged():
+    """`CommandRequest` is also built directly - by `helpers/keeper_utils.py` and by
+    tests - with nothing to consult. Those requests must behave as they always did."""
+    request = CommandRequest(_failing_command(UNREACHABLE, 210), stdin="")
+    with pytest.raises(QueryRuntimeException) as raised:
+        request.get_answer()
+    assert str(raised.value) == (
+        f"Client failed! Return code: 210, stderr: {UNREACHABLE}"
+    )
+
+
+def test_every_client_in_the_harness_is_wired_to_the_gate():
+    """A `Client` built without the gate loses the classification for that instance, and
+    nothing at runtime would notice. Checked in the shipped source, because constructing
+    one needs a cluster."""
+    with open(CLUSTER_PY, encoding="utf-8") as f:
+        module = ast.parse(f.read())
+    calls = [
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "Client"
+    ]
+    assert calls, f"no Client(...) construction found in {CLUSTER_PY}"
+    for call in calls:
+        assert any(
+            keyword.arg == GATE for keyword in call.keywords
+        ), f"Client(...) at {CLUSTER_PY}:{call.lineno} is built without {GATE}"
+
+
+@pytest.mark.parametrize("entrypoint", HTTP_ENTRYPOINTS)
+def test_every_http_entrypoint_goes_through_the_wrapper(entrypoint):
+    """These are the only two places the harness talks HTTP to the server, and they do
+    not go through `Client`. A direct `requests` call added back here would bypass the
+    gate silently."""
+    assert any(
+        isinstance(node, ast.Attribute) and node.attr == HTTP
+        for node in ast.walk(_func_ast(entrypoint))
+    ), f"{entrypoint} does not go through {HTTP}"
+
+
+def test_an_http_request_reports_the_cause_and_keeps_its_exception():
+    """Tests catch `requests.exceptions.ConnectionError` and read its `request` and
+    `response`, so only the message may change."""
+    instance = _Recorder(["lo"])
+    original = _connection_error(HTTP_UNREACHABLE)
+    with pytest.raises(requests.exceptions.ConnectionError) as raised:
+        instance._http_request_naming_transport_error(_raising(original))
+    assert str(raised.value).startswith(
+        instance.constants["LOST_NETWORK_INTERFACE_ERROR"]
+    )
+    assert HTTP_UNREACHABLE in str(raised.value)
+    assert raised.value.request == "the-request"
+    assert raised.value.response == "the-response"
     assert raised.value.__cause__ is original
 
 
-def test_query_leaves_a_reachable_container_s_failure_alone():
-    """Same unreachable-address error, interface still attached: the original exception
-    propagates untouched, so a test asserting on it sees exactly what it did before."""
-    original = QueryRuntimeException(UNREACHABLE, 210, "Code: 210.")
+def test_an_http_request_to_a_reachable_container_is_untouched():
     instance = _Recorder(["eth0", "lo"])
-    instance.client = _client_raising(original)
-    with pytest.raises(QueryRuntimeException) as raised:
-        instance.query("SELECT count() FROM test_table")
+    original = _connection_error(HTTP_UNREACHABLE)
+    with pytest.raises(requests.exceptions.ConnectionError) as raised:
+        instance._http_request_naming_transport_error(_raising(original))
     assert raised.value is original
 
 
-def test_query_does_not_probe_an_ordinary_query_error():
-    """Every failing query would otherwise pay for a `docker exec`, inside retry loops
-    that run twenty of them. Only the two errors the missing interface produces are
-    worth investigating."""
-    original = QueryRuntimeException("Code: 60. DB::Exception: Table does not exist", 47, "")
+def test_an_http_connection_error_of_another_kind_is_not_investigated():
+    """A refused connection is what a stopped server looks like over HTTP, and tests stop
+    servers on purpose."""
     instance = _Recorder(["lo"])
-    instance.client = _client_raising(original)
-    with pytest.raises(QueryRuntimeException) as raised:
-        instance.query("SELECT count() FROM test_table")
+    original = _connection_error("[Errno 111] Connection refused")
+    with pytest.raises(requests.exceptions.ConnectionError) as raised:
+        instance._http_request_naming_transport_error(_raising(original))
     assert raised.value is original
     assert instance.probes == []
 
 
-@pytest.mark.parametrize("error", _constants()["UNREACHABLE_ADDRESS_ERRORS"])
-def test_query_investigates_both_unreachable_address_errors(error):
-    """`No route to host` is what the harness sees from outside and `Network is
-    unreachable` what a server-to-server query reports from inside the victim, so both
-    have to reach the probe."""
-    original = QueryRuntimeException(f"Client failed! stderr: {error}", 210, "")
+def test_an_http_request_that_succeeds_is_returned():
     instance = _Recorder(["lo"])
-    instance.client = _client_raising(original)
-    with pytest.raises(QueryRuntimeException) as raised:
-        instance.query("SELECT count() FROM test_table")
-    assert instance.constants["LOST_NETWORK_INTERFACE_ERROR"] in str(raised.value)
-
-
-def test_query_returns_its_answer_untouched():
-    """The wrapper sits on the path of every query in the suite; the passing path must
-    stay exactly what it was."""
-    instance = _Recorder(["lo"])
-    instance.client = types.SimpleNamespace(query=lambda sql, **kwargs: "100\n")
-    assert instance.query("SELECT count() FROM test_table") == "100\n"
+    assert instance._http_request_naming_transport_error(lambda: "answer") == "answer"
     assert instance.probes == []
 
 
