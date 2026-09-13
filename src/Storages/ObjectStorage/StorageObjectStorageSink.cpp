@@ -64,7 +64,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const String & format_,
     const String & compression_method_,
     size_t split_on_write_by_size_bytes_,
-    GetNextPathCallback get_next_path_)
+    GetNextPathCallback get_next_path_,
+    PublishPathCallback publish_path_)
     : SinkToStorage(sample_block_)
     , path(path_)
     , object_storage(object_storage_)
@@ -75,6 +76,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , compression_method(compression_method_)
     , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
     , get_next_path(std::move(get_next_path_))
+    , publish_path(std::move(publish_path_))
 {
     if (split_on_write_by_size_bytes && !get_next_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");
@@ -123,6 +125,7 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
     {
         path = get_next_path();
         initialize();
+        path_is_published = false;
     }
 
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
@@ -167,6 +170,16 @@ void StorageObjectStorageSink::finalizeBuffers()
         write_buf->finalize();
     destination_buf->finalize();
     result_file_size = getWriteBuffer().count();
+
+    /// The object is committed - only now it becomes a part of the table. If the insert fails while
+    /// writing it, the table keeps reading the objects of the previous shards, and not a key whose
+    /// object does not exist or is incomplete.
+    if (!path_is_published)
+    {
+        if (publish_path)
+            publish_path(path);
+        path_is_published = true;
+    }
 }
 
 void StorageObjectStorageSink::releaseBuffers()

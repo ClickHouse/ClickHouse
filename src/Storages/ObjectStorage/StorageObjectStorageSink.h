@@ -18,6 +18,11 @@ public:
     /// Returns the path of the next object to write the data into.
     using GetNextPathCallback = std::function<String()>;
 
+    /// Called after the object returned by `GetNextPathCallback` has been written and committed. Only then
+    /// the key is registered in the table, so that a concurrent `SELECT` never sees the key of an object
+    /// that is still being written or that the insert could not create at all.
+    using PublishPathCallback = std::function<void(const String &)>;
+
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage_,
@@ -27,7 +32,8 @@ public:
         const String & format_,
         const String & compression_method_,
         size_t split_on_write_by_size_bytes_ = 0,
-        GetNextPathCallback get_next_path_ = {});
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {});
 
     ~StorageObjectStorageSink() override;
 
@@ -53,6 +59,10 @@ private:
     const String compression_method;
     const size_t split_on_write_by_size_bytes;
     const GetNextPathCallback get_next_path;
+    const PublishPathCallback publish_path;
+    /// The first object of the insert is already a part of the table; the next ones are registered
+    /// in it only after they have been written.
+    bool path_is_published = true;
 
     /// The buffer that writes into the object storage. It is also used to count the number of bytes
     /// written to the object. It is declared before `write_buf` so that it outlives the compressing

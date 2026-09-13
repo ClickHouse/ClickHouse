@@ -885,18 +885,25 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// The numbering is derived per insert from the key of the object this insert starts with:
     /// the next objects continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    StorageObjectStorageSink::PublishPathCallback publish_path;
     if (settings.split_on_write_by_size_bytes)
     {
         get_next_path = [storage = object_storage, config = configuration, settings,
                          key = paths.back().path,
                          sequence_number = getStartSequenceNumber(paths.back().path, 1)]() mutable -> String
         {
-            String new_key = getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
-            /// The registration is a single atomic step on the shared list, so that a `SELECT` that snapshots
-            /// it concurrently sees either the list without this key or the list with it, and never a copy of
-            /// a vector that is being reallocated under it.
+            return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+        };
+
+        /// The key becomes visible for the readers of this table only after the object has been committed:
+        /// a `SELECT` running concurrently with the insert never plans a key whose object is still being
+        /// written, or was never created at all because the insert failed. The registration is a single
+        /// atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
+        /// the list without this key or the list with it, and never a copy of a vector that is being
+        /// reallocated under it.
+        publish_path = [config = configuration](const String & new_key)
+        {
             config->appendPath({new_key});
-            return new_key;
         };
     }
 
@@ -909,7 +916,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         configuration->format,
         configuration->compression_method,
         settings.split_on_write_by_size_bytes,
-        std::move(get_next_path));
+        std::move(get_next_path),
+        std::move(publish_path));
 }
 
 bool StorageObjectStorage::optimize(

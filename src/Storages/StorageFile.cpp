@@ -2835,6 +2835,11 @@ public:
     /// Returns the name of the next file to write the data into.
     using GetNextPathCallback = std::function<String()>;
 
+    /// Called after the data of the file returned by `GetNextPathCallback` has been written and the file
+    /// has been closed. Only then the file is registered in the table, so that a concurrent `SELECT` never
+    /// sees the name of a file that the insert could not create.
+    using PublishPathCallback = std::function<void(const String &)>;
+
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
@@ -2848,7 +2853,8 @@ public:
         const ContextPtr & context_,
         int flags_,
         size_t split_on_write_by_size_bytes_ = 0,
-        GetNextPathCallback get_next_path_ = {})
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2862,6 +2868,7 @@ public:
         , flags(flags_)
         , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
         , get_next_path(std::move(get_next_path_))
+        , publish_path(std::move(publish_path_))
     {
         checkSplittingIsPossible();
         initialize();
@@ -2881,7 +2888,8 @@ public:
         const ContextPtr & context_,
         int flags_,
         size_t split_on_write_by_size_bytes_ = 0,
-        GetNextPathCallback get_next_path_ = {})
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2895,6 +2903,7 @@ public:
         , flags(flags_)
         , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
         , get_next_path(std::move(get_next_path_))
+        , publish_path(std::move(publish_path_))
         , lock(std::move(lock_))
     {
         if (!lock)
@@ -2986,6 +2995,7 @@ public:
         {
             path = get_next_path();
             initialize();
+            path_is_published = false;
         }
 
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
@@ -3026,6 +3036,15 @@ private:
             /// Stop ParallelFormattingOutputFormat correctly.
             cancelBuffers();
             throw;
+        }
+
+        /// The file is complete - only now it becomes a part of the table. If the insert fails while
+        /// writing it, the table keeps reading the files of the previous shards, and not a truncated one.
+        if (!path_is_published)
+        {
+            if (publish_path)
+                publish_path(path);
+            path_is_published = true;
         }
     }
 
@@ -3075,6 +3094,10 @@ private:
     int flags;
     const size_t split_on_write_by_size_bytes;
     const GetNextPathCallback get_next_path;
+    const PublishPathCallback publish_path;
+    /// The first file of the insert is already a part of the table; the next ones are registered
+    /// in it only after they have been written.
+    bool path_is_published = true;
     std::unique_lock<std::shared_timed_mutex> lock;
 };
 
@@ -3309,19 +3332,25 @@ SinkToStoragePtr StorageFile::write(
     }
 
     StorageFileSink::GetNextPathCallback get_next_path;
+    StorageFileSink::PublishPathCallback publish_path;
     if (split_on_write_by_size_bytes && !use_table_fd && !current_paths.empty())
     {
         /// The numbering is derived per insert from the name of the file this insert starts with:
         /// the next files continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
-        get_next_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this()),
-                         first_path = path,
+        get_next_path = [first_path = path,
                          sequence_number = getStartSequenceNumber(path, 1),
                          truncate_on_insert = context->getSettingsRef()[Setting::engine_file_truncate_on_insert].value,
                          allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
         {
-            String new_path = getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+            return getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+        };
+
+        /// The name of a new file becomes visible for the readers of this table only after the file has
+        /// been written: if the insert fails to create it - a directory is in the way, no permissions,
+        /// no space left - the table does not keep a name that a `SELECT` would then fail on.
+        publish_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this())](const String & new_path)
+        {
             storage->appendPath(new_path);
-            return new_path;
         };
     }
 
@@ -3339,7 +3368,8 @@ SinkToStoragePtr StorageFile::write(
         context,
         flags,
         split_on_write_by_size_bytes,
-        std::move(get_next_path));
+        std::move(get_next_path),
+        std::move(publish_path));
 }
 
 bool StorageFile::storesDataOnDisk() const
