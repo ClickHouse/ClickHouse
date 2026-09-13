@@ -193,8 +193,9 @@ private:
 
     /// Read on every node update by every executor thread, written only when
     /// the pipeline expands or processors are removed. A plain shared mutex
-    /// serialises the readers on one cache line and dominates wide pipelines
-    /// that pass small blocks, so the reader side is sharded per thread.
+    /// makes every reader contend for the write permission on one cache line,
+    /// which shows up on wide pipelines that pass small blocks; this one takes
+    /// the read side with a single fetch_add that never retries.
     ReadMostlySharedMutex nodes_mutex;
 
     const bool profile_processors;

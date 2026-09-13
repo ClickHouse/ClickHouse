@@ -781,8 +781,10 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// there are enough streams to split (num_streams >= 2 *
     /// min_outstreams_per_resize_after_split, i.e. 48 by default) it also fires
     /// for a strict N-to-N resize, which the line after it would otherwise
-    /// elide. Every block then pays for an extra pipeline stage: ~2.6x on a
-    /// pipeline passing small blocks.
+    /// elide. Every block then pays for an extra pipeline stage: up to ~2x on
+    /// a pipeline passing small blocks. That figure is a whole-branch CI
+    /// measurement, but it is attributable here because this change is inert
+    /// below 48 streams and only the 48-stream shapes moved.
     ///
     /// Note this is a trade, not a free win. A StrictResize is not a
     /// pass-through even when its port counts match: it matches any input
