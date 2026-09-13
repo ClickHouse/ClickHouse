@@ -14,7 +14,7 @@ query_json='{
         "select": {
             "type": "ExpressionList",
             "children": [
-                {"type": "Literal", "value": 1}
+                {"type": "Literal", "value": {"field_type": "UInt64", "value": 1}}
             ]
         }
     },
