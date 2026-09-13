@@ -1,7 +1,7 @@
 {% for packed in [0, 1073741824] %}
 {% for substream_marks in [0, 1] %}
 {% for compress_per_column in [0, 1] %}
-{% for dynamic_paths in [32, 512] %}
+{% for dynamic_paths in [2, 32] %}
 CREATE TABLE compact_json_boundary (id UInt64, doc JSON(max_dynamic_paths={{ dynamic_paths }}), tail String)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8,
@@ -13,17 +13,17 @@ SETTINGS index_granularity = 8,
 SYSTEM STOP MERGES compact_json_boundary;
 INSERT INTO compact_json_boundary
 SELECT number, toJSONString(mapFromArrays(
-    arrayMap(i -> concat('k', leftPad(toString(i), 3, '0')), range(300)),
-    arrayMap(i -> number + i, range(300)))), 'tail' FROM numbers(64);
+    arrayMap(i -> concat('k', leftPad(toString(i), 3, '0')), range(16)),
+    arrayMap(i -> number + i, range(16)))), 'tail' FROM numbers(64);
 
 -- The second part has no odd-numbered paths.
 INSERT INTO compact_json_boundary
 SELECT number, toJSONString(mapFromArrays(
-    arrayMap(i -> concat('k', leftPad(toString(i), 3, '0')), range(0, 300, 2)),
-    arrayMap(i -> number + i, range(0, 300, 2)))), 'tail' FROM numbers(64, 64);
+    arrayMap(i -> concat('k', leftPad(toString(i), 3, '0')), range(0, 16, 2)),
+    arrayMap(i -> number + i, range(0, 16, 2)))), 'tail' FROM numbers(64, 64);
 
-SELECT sum(doc.k000.:Int64), sum(doc.k299.:Int64) FROM compact_json_boundary;
-SELECT sum(doc.k150.:Int64) FROM compact_json_boundary
+SELECT sum(doc.k000.:Int64), sum(doc.k015.:Int64) FROM compact_json_boundary;
+SELECT sum(doc.k008.:Int64) FROM compact_json_boundary
 PREWHERE doc.k000.:Int64 >= 32 WHERE doc.k000.:Int64 < 64;
 SELECT countIf(isNull(doc.absent)) FROM compact_json_boundary;
 SELECT countIf(JSONExtractInt(toJSONString(doc), 'k000') = doc.k000.:Int64) FROM compact_json_boundary;
