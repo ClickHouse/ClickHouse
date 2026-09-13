@@ -31,16 +31,16 @@ void destroyStored(void * storage) noexcept
     static_cast<Stored *>(storage)->~Stored();
 }
 
-template <typename... Markers>
-Message create(FormatStringHelper<typename std::remove_cvref_t<Markers>::value_type...> fmt, Markers &&... markers)
+template <typename... Args>
+Message create(FormatStringHelper<typename std::remove_cvref_t<Args>::value_type...> fmt, Args &&... args)
 {
     chassert(!fmt.message_format_string.empty(), "LazyPreformattedMessage requires a static format string");
 
-    using Stored = std::tuple<std::remove_cvref_t<Markers>...>;
+    using Stored = std::tuple<std::remove_cvref_t<Args>...>;
     fmt::string_view fmt_str(fmt.message_format_string.data(), fmt.message_format_string.size());
 
     auto [lane, space] = Storage::allocate(fmt.message_format_string_hash, sizeof(Stored), alignof(Stored));
-    new (space) Stored{std::forward<Markers>(markers)...};
+    new (space) Stored{std::forward<Args>(args)...};
     return Message(fmt_str, &formatStored<Stored>, &destroyStored<Stored>, space, lane);
 }
 

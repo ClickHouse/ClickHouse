@@ -25,10 +25,10 @@ LazyPreformattedMessageImpl::CopyArg<std::remove_cvref_t<T>> copyArg(T && x)
     return {std::forward<T>(x)};
 }
 
-template <typename... Markers>
-LazyPreformattedMessage createLazyMessage(FormatStringHelper<typename std::remove_cvref_t<Markers>::value_type...> fmt, Markers &&... markers)
+template <typename... Args>
+LazyPreformattedMessage createLazyMessage(FormatStringHelper<typename std::remove_cvref_t<Args>::value_type...> fmt, Args &&... args)
 {
-    return LazyPreformattedMessageImpl::create(std::move(fmt), std::forward<Markers>(markers)...);
+    return LazyPreformattedMessageImpl::create(std::move(fmt), std::forward<Args>(args)...);
 }
 
 }
