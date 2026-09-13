@@ -28,6 +28,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <prompb/io/prometheus/write/v2/types.pb.h>
 
 #include <chrono>
 
@@ -44,6 +45,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
@@ -121,11 +123,11 @@ public:
         values->insert(value);
     }
 
-    void finishTimeSeries()
+    void finishTimeSeries(int missing_metric_name_error_code)
     {
         if (metric_name.empty())
             throw Exception(
-                ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+                missing_metric_name_error_code,
                 "Metric name is missing: a time series has no `{}` label with a non-empty value",
                 TimeSeriesTagNames::MetricName);
         metric_name_column->insertData(metric_name.data(), metric_name.size());
@@ -189,7 +191,7 @@ Block makeTimeSeriesBlock(
             builder.addLabel(label.name(), label.value());
         for (const auto & sample : element.samples())
             builder.addSample(sample.timestamp(), sample.value());
-        builder.finishTimeSeries();
+        builder.finishTimeSeries(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS);
     }
     return builder.finish(num_metadata_rows);
 }
@@ -261,6 +263,45 @@ Block makeBlock(
             makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
     }
     return block;
+}
+
+size_t countFloatTimeSeries(const io::prometheus::write::v2::Request & request)
+{
+    size_t count = 0;
+    for (const auto & element : request.timeseries())
+        count += !element.samples().empty();
+    return count;
+}
+
+Block makeBlock(const io::prometheus::write::v2::Request & request, const StorageInMemoryMetadata & metadata)
+{
+    const auto num_time_series = countFloatTimeSeries(request);
+    if (!num_time_series)
+        return {};
+
+    const auto & symbols = request.symbols();
+    const auto lookup = [&](UInt32 ref) -> const std::string &
+    {
+        if (ref >= static_cast<UInt32>(symbols.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Prometheus remote write v2 symbol reference {}", ref);
+        return symbols[static_cast<int>(ref)];
+    };
+
+    TimeSeriesBlockBuilder builder(num_time_series, metadata);
+    for (const auto & element : request.timeseries())
+    {
+        if (element.samples().empty())
+            continue;
+        if (element.labels_refs_size() % 2 != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
+
+        for (int i = 0; i < element.labels_refs_size(); i += 2)
+            builder.addLabel(lookup(element.labels_refs(i)), lookup(element.labels_refs(i + 1)));
+        for (const auto & sample : element.samples())
+            builder.addSample(sample.timestamp(), sample.value());
+        builder.finishTimeSeries(ErrorCodes::BAD_ARGUMENTS);
+    }
+    return builder.finish(0);
 }
 
 void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
@@ -358,6 +399,26 @@ void PrometheusRemoteWriteProtocol::write(
         storage_id.getNameForLogs(),
         time_series.size(),
         metrics_metadata.size());
+}
+
+void PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Request & request)
+{
+    const auto storage_id = time_series_storage->getStorageID();
+    const auto num_time_series = countFloatTimeSeries(request);
+    LOG_TRACE(
+        log,
+        "{}: Writing {} time series",
+        storage_id.getNameForLogs(),
+        num_time_series);
+
+    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    insertBlock(makeBlock(request, *metadata), *time_series_storage, getContext());
+
+    LOG_TRACE(
+        log,
+        "{}: {} time series written",
+        storage_id.getNameForLogs(),
+        num_time_series);
 }
 
 }

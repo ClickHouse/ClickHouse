@@ -39,6 +39,9 @@
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#if USE_PROMETHEUS_PROTOBUFS
+#include <prompb/io/prometheus/write/v2/types.pb.h>
+#endif
 
 
 namespace DB
@@ -307,9 +310,12 @@ public:
 #if USE_PROMETHEUS_PROTOBUFS
         /// Unsupported content types and encodings get 415 Unsupported Media Type.
         const String content_type = request.get("Content-Type", "");
-        if (content_type != "application/x-protobuf")
+        const bool is_v2 = content_type.find("proto=io.prometheus.write.v2.Request") != String::npos;
+        const bool is_protobuf = (content_type == "application/x-protobuf") || content_type.starts_with("application/x-protobuf;");
+        if (!is_protobuf || (content_type.find("proto=") != String::npos && !is_v2))
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
-                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf')", content_type);
+                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf' or "
+                "'application/x-protobuf;proto=io.prometheus.write.v2.Request')", content_type);
 
         /// The remote-write 1.0 spec mandates snappy, but some senders can also compress with zstd.
         const String content_encoding = request.get("Content-Encoding", "");
@@ -325,16 +331,24 @@ public:
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
-        prometheus::WriteRequest write_request;
-
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
-            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            if (is_v2)
+            {
+                io::prometheus::write::v2::Request v2_request;
+                if (!v2_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+                protocol.write(v2_request);
+            }
+            else
+            {
+                prometheus::WriteRequest write_request;
+                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+                protocol.write(write_request.timeseries(), write_request.metadata());
+            }
         }
-
-        protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
