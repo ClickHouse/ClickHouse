@@ -1,0 +1,6 @@
+-- Avro, extra unknown field plus a bad value in a known field, input_format_skip_unknown_fields = 0 (no false positive)
+insert failed as expected
+explanation missing
+-- Avro, the same with the default input_format_skip_unknown_fields = 1 (no false positive)
+insert failed as expected
+explanation missing

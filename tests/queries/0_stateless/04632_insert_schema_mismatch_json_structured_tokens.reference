@@ -1,0 +1,24 @@
+-- JSONEachRow, array into unnamed Tuple and object into Map, unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, heterogeneous array (inferred as Array(Dynamic)) into unnamed Tuple, unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, object into named Tuple with a subset of the keys, unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, object with a numeric-string key into Map(UInt64, ...), unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, string elements into a Tuple of UUIDs (parsed from text), unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, array of scalars into a Tuple of Arrays (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, object with an unknown key into a named Tuple with input_format_json_ignore_unknown_keys_in_named_tuple = 0 (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, array token into a Map (genuine mismatch)
+insert failed as expected
+explanation present

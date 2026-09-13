@@ -1,0 +1,8 @@
+-- CSVWithNamesAndTypes: declared type differs from the destination (exact type check applies)
+explanation present
+-- CSVWithNamesAndTypes: declared type matches the destination, only a value fails (no false positive)
+explanation missing
+-- CSVWithNames, input_format_with_names_use_header=0: parser maps positionally, reordered header hides the mismatch
+explanation present
+-- CSVWithNames, input_format_with_names_use_header=1 (default): parser maps by name, structure matches (no false positive)
+explanation missing

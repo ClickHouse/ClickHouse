@@ -1,0 +1,8 @@
+-- BSONEachRow: an integer value for a FixedString column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a string value for a FixedString column is valid (no false positive)
+explanation missing
+-- MsgPack: an integer value for a FixedString column is a genuine structure mismatch
+explanation present
+-- MsgPack: a string value for a FixedString column is valid (no false positive)
+explanation missing

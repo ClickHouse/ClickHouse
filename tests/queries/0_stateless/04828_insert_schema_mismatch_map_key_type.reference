@@ -1,0 +1,8 @@
+-- a non-numeric object key for a Map(UInt64, ...) column is a genuine structure mismatch
+explanation present
+-- a numeric object key for a Map(UInt64, ...) column is valid (no false positive)
+explanation missing
+-- any object key for a Map(String, ...) column is valid (no false positive)
+explanation missing
+-- a non-date object key for a Map(Date, ...) column is a genuine structure mismatch
+explanation present

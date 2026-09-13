@@ -91,13 +91,17 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
         /// Try to parse metadata, if failed, try to parse data as JSONEachRow format
         NamesAndTypesList names_and_types;
         if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types, format_settings.json))
+        {
+            read_metadata_from_input = true;
             return names_and_types;
+        }
 
         peekable_buf->rollbackToCheckpoint(true);
         return JSONEachRowSchemaReader::readSchema();
     }
 
     JSONUtils::skipObjectStart(*peekable_buf);
+    read_metadata_from_input = true;
     return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
 }
 

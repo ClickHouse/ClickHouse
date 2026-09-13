@@ -1,0 +1,9 @@
+-- TSV: the fake marker does not extend the sampled range (no false positive)
+insert failed as expected
+explanation missing
+-- TSV: the failing row itself does not match the destination (explanation still fires)
+insert failed as expected
+explanation present
+-- Values: the fake marker does not extend the sampled range, so the mismatch is still explained
+insert failed as expected
+explanation present

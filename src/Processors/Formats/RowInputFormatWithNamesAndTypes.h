@@ -178,6 +178,51 @@ public:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    /// The -WithNamesAndTypes formats carry the declared column types in the second header row; when the
+    /// parser is configured to use that header (`input_format_with_types_use_header`), it validates those
+    /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix). The same
+    /// applies to a types row auto-detected in the data of a plain format (`*_detect_header`), which
+    /// `readSchema` latches in `types_detected_from_data`.
+    bool hasExactTypesFromData() const override
+    {
+        return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
+    }
+
+    /// When a types row is present but the parser is configured to ignore it
+    /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
+    /// verbatim, while the parser reads the data by value instead. The inferred schema then does not
+    /// describe what is parsed, so a comparison against it would attach a misleading explanation to an
+    /// unrelated value-level parse error (e.g. a `CSVWithNamesAndTypes` types row declaring `String` for a
+    /// `UInt8` destination that happily accepts the quoted number `"1"` in the data).
+    bool schemaDescribesParsedData() const override
+    {
+        return !((with_types || types_detected_from_data) && !format_settings.with_types_use_header);
+    }
+
+    /// A header row with column names auto-detected in the data of a plain format (`*_detect_header`,
+    /// latched by `readSchema` in `names_detected_from_data`) makes the parser map the columns by name,
+    /// like the -WithNames formats do, as long as the parser is configured to use a names header
+    /// (`input_format_with_names_use_header`).
+    bool hasStrictOrderOfColumns() const override
+    {
+        return !(names_detected_from_data && format_settings.with_names_use_header);
+    }
+
+    /// A `*WithNames*` format (`with_names`) carries a names header, and so does a plain format whose
+    /// header was auto-detected in the data (`names_detected_from_data`); in both cases the parser maps
+    /// the columns by name when configured to use that header (`input_format_with_names_use_header`),
+    /// see `RowInputFormatWithNamesAndTypes::readPrefix`. This covers the `*WithNames*` formats that do
+    /// not advertise `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g.
+    /// `RowBinaryWithNamesAndTypes`), which `hasStrictOrderOfColumns` alone does not capture.
+    bool mapsColumnsByName() const override
+    {
+        return (with_names || names_detected_from_data) && format_settings.with_names_use_header;
+    }
+
+    /// The header names are resolved against the destination through `CaseAwareBlockNameMap`
+    /// (see `ColumnMapping::addColumns`), honoring `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
@@ -201,6 +246,8 @@ private:
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
+    bool names_detected_from_data = false;
+    bool types_detected_from_data = false;
     DataTypes buffered_types;
 };
 
