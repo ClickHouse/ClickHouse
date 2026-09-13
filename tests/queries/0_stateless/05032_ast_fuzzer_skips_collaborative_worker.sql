@@ -217,6 +217,11 @@ INSERT INTO t05032_events
 SELECT 'skips_before_declared',
        (SELECT ifNull(sum(value), 0) FROM system.events
         WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
+INSERT INTO t05032_events
+SELECT 'declared_fuzz_copies_before', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_declared_src');
 
 INSERT INTO t05032_dst SELECT id, v FROM t05032_declared_src
 SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3,
@@ -239,6 +244,19 @@ WHERE is_initial_query = 0 AND has(databases, currentDatabase())
 SELECT 'declared_spelling_workers_ran',
       (SELECT workers FROM t05032_events WHERE label = 'declared_after')
     - (SELECT workers FROM t05032_events WHERE label = 'declared_before') > 0;
+
+-- Same per-statement fuzz evidence as initiator_was_fuzzed above. The skip counter this arm reads
+-- below is server-wide, so it holds whenever any other statement on the server was skipped; this
+-- delta is over rows naming this arm's own source, which only its own fuzz copies do.
+INSERT INTO t05032_events
+SELECT 'declared_fuzz_copies_after', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_declared_src');
+
+SELECT 'declared_initiator_was_fuzzed',
+      (SELECT workers FROM t05032_events WHERE label = 'declared_fuzz_copies_after')
+    - (SELECT workers FROM t05032_events WHERE label = 'declared_fuzz_copies_before') > 0;
 
 SELECT 'declared_spelling_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
@@ -278,6 +296,19 @@ INSERT INTO t05032_events
 SELECT 'skips_before_cluster',
        (SELECT ifNull(sum(value), 0) FROM system.events
         WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
+-- This arm's fuzz copies cannot be selected the way its workers are. A worker receives the file name
+-- already folded by the initiator's analyzer, so it carries the database; a fuzz copy is a rewrite of
+-- the statement's own AST, where the name is still the unfolded currentDatabase() call, so only the
+-- suffix literal is there to match, and a rewrite can replace that literal, hence the table function
+-- too. Neither identifies this arm on its own: the fuzzer splices literals and calls collected from
+-- any query into the copies of every other one, so an unrelated statement's copy can name this file.
+-- What no other statement's copy carries is this database, taken from the context it is fuzzed on.
+INSERT INTO t05032_events
+SELECT 'cluster_fuzz_copies_before', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
+  AND (position(query, '_t05032_cluster_src.csv') > 0
+       OR has(tables, '_table_function.fileCluster'));
 
 SELECT 'cluster_function_read',
        sum(c2) = (SELECT sum(number) FROM numbers(500))
@@ -298,6 +329,17 @@ WHERE is_initial_query = 0 AND position(query, '\'' || currentDatabase() || '_t0
 SELECT 'cluster_function_workers_ran',
       (SELECT workers FROM t05032_events WHERE label = 'cluster_after')
     - (SELECT workers FROM t05032_events WHERE label = 'cluster_before') > 0;
+
+INSERT INTO t05032_events
+SELECT 'cluster_fuzz_copies_after', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
+  AND (position(query, '_t05032_cluster_src.csv') > 0
+       OR has(tables, '_table_function.fileCluster'));
+
+SELECT 'cluster_initiator_was_fuzzed',
+      (SELECT workers FROM t05032_events WHERE label = 'cluster_fuzz_copies_after')
+    - (SELECT workers FROM t05032_events WHERE label = 'cluster_fuzz_copies_before') > 0;
 
 -- This arm's own statement is a cluster read, so its fuzzed copies are initiators of worker queries
 -- that match this filter legitimately.
@@ -337,6 +379,14 @@ INSERT INTO t05032_events
 SELECT 'skips_before_view',
        (SELECT ifNull(sum(value), 0) FROM system.events
         WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
+-- A fuzz copy of this arm names the view, not the view's source: the copy is a rewrite of the
+-- statement as the client wrote it, and the expansion into the source happens further in, on the way
+-- to the workers. So this counter and the worker ones above select on different names.
+INSERT INTO t05032_events
+SELECT 'view_fuzz_copies_before', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_view');
 
 SELECT 'view_read', sum(v) FROM t05032_view
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
@@ -357,6 +407,16 @@ WHERE is_initial_query = 0 AND has(databases, currentDatabase())
 SELECT 'view_workers_ran',
       (SELECT workers FROM t05032_events WHERE label = 'view_after')
     - (SELECT workers FROM t05032_events WHERE label = 'view_before') > 0;
+
+INSERT INTO t05032_events
+SELECT 'view_fuzz_copies_after', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_view');
+
+SELECT 'view_initiator_was_fuzzed',
+      (SELECT workers FROM t05032_events WHERE label = 'view_fuzz_copies_after')
+    - (SELECT workers FROM t05032_events WHERE label = 'view_fuzz_copies_before') > 0;
 
 SELECT 'view_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
