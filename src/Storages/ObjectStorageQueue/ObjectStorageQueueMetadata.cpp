@@ -2051,6 +2051,53 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
                         ABSOLUTE_MAX_WAIT_MS / 60000);
                 }
             }
+
+            /// Unreachable: every iteration either returns, throws, or (on the last iteration) throws
+            /// the safety-net timeout above - the loop can never fall through to here. This guard exists
+            /// only because the compiler cannot prove that from the loop bounds alone.
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unreachable: wait loop for concurrent drop command exited without a result");
+        }
+        else
+        {
+            /// The lock is held by something other than a `SYSTEM DROP S3QUEUE FAILED FILES` command -
+            /// most commonly the routine `background_cleanup` task, which runs continuously on unordered
+            /// queues. There is no command id to bind to and no result it will ever publish under this
+            /// lock, so we cannot verify what it does - but we do not need to: like the `LockVanished`
+            /// cases elsewhere in this function, once the lock disappears nobody is doing the work, and
+            /// this drop is free to take it over and run itself. Wait for that instead of failing
+            /// immediately, so `SYSTEM DROP S3QUEUE FAILED FILES` does not spuriously fail just because
+            /// the background sweep happened to be mid-cycle.
+            static constexpr size_t OTHER_HOLDER_POLL_INTERVAL_MS = 100;
+            static constexpr size_t OTHER_HOLDER_MAX_WAIT_MS = 1800000; /// 30 min absolute cap (safety net)
+            const size_t other_holder_max_iterations = OTHER_HOLDER_MAX_WAIT_MS / OTHER_HOLDER_POLL_INTERVAL_MS;
+
+            for (size_t i = 0; i < other_holder_max_iterations; ++i)
+            {
+                sleepForMilliseconds(OTHER_HOLDER_POLL_INTERVAL_MS);
+
+                Coordination::Stat other_stat;
+                std::string other_value;
+                if (!zk_client->tryGet(zookeeper_cleanup_lock_path, other_value, &other_stat))
+                {
+                    /// Lock is gone - whatever held it (background_cleanup or otherwise) is done.
+                    LOG_INFO(log, "The cleanup lock held by a non-drop operation was released after {}ms; "
+                                  "retrying the drop from the start", (i + 1) * OTHER_HOLDER_POLL_INTERVAL_MS);
+                    return WaitOutcome::LockVanished;
+                }
+
+                /// A drop command may have taken the lock over while we were waiting - fall back to the
+                /// ordinary command-tracking wait so we take its published result instead of continuing
+                /// to poll blind existence checks against a command we could actually verify.
+                const std::string new_command_id = extractDropCommandId(other_value);
+                if (!new_command_id.empty())
+                    return waitForConcurrentDropToComplete(zk_client, zookeeper_cleanup_lock_path);
+            }
+
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cleanup lock is held by a non-drop operation and did not release within {} minute "
+                "safety-net timeout. Please retry or investigate.",
+                OTHER_HOLDER_MAX_WAIT_MS / 60000);
         }
     }
     catch (const Coordination::Exception & e)
@@ -2090,10 +2137,6 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
             "Failed file cleanup cannot proceed: transient error reading the cleanup lock ({}). "
             "Please retry.", e.displayText());
     }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
-        "Please retry in a moment.");
 }
 void ObjectStorageQueueMetadata::publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
     const std::string & command_id, const std::string & attempt_id,
