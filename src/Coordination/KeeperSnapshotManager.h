@@ -121,6 +121,12 @@ struct KeeperSnapshotReader
     /// `KeeperStateMachine::findOrphanConflictInLogTail` before the raft server is launched.
     std::vector<std::string> removed_orphan_subtree_roots;
 
+    /// Filled in alongside `removed_orphan_subtree_roots`: the sessions that owned at least one of the
+    /// removed ephemeral nodes. A `Close` for such a session in the raft log above this snapshot would
+    /// remove those ephemerals (and bump their parents' stats) on every other replica but not here, so
+    /// `KeeperStateMachine::findOrphanConflictInLogTail` refuses to replay it. Sorted, unique.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
+
     SnapshotVersion current_version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
@@ -146,6 +152,8 @@ struct SnapshotDeserializationResult
     /// See `KeeperSnapshotReader::removed_orphan_subtree_roots`. Empty unless orphaned nodes were
     /// removed while loading this snapshot.
     std::vector<std::string> removed_orphan_subtree_roots;
+    /// See `KeeperSnapshotReader::removed_orphan_ephemeral_sessions`.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be

@@ -2653,12 +2653,17 @@ void appendEntry(DB::KeeperLogStore & changelog, LogEntryPtr entry)
 /// deliberately never created. Injecting straight into the container bypasses the storage API, which
 /// would otherwise refuse to create a node without a parent. A fresh `KeeperStateMachine::init()` picks
 /// this snapshot up from disk and prunes the orphans.
+///
+/// `present_ephemeral_nodes` / `ephemeral_orphan_nodes` are `(path, owner session)` pairs added the same
+/// way; the restore side rebuilds `committed_ephemerals` from the owner recorded in the node stats.
 void writeSnapshotWithOrphans(
     const DB::KeeperContextPtr & ctx,
     bool enable_compression,
     uint64_t up_to_log_idx,
     const std::vector<std::string> & present_nodes,
-    const std::vector<std::string> & orphan_nodes)
+    const std::vector<std::string> & orphan_nodes,
+    const std::vector<std::pair<std::string, int64_t>> & present_ephemeral_nodes = {},
+    const std::vector<std::pair<std::string, int64_t>> & ephemeral_orphan_nodes = {})
 {
     DB::KeeperSnapshotManager manager(3, ctx, enable_compression);
     const auto storage_ptr = DB::KeeperStorage::create(500, "", ctx);
@@ -2666,12 +2671,21 @@ void writeSnapshotWithOrphans(
 
     for (const auto & path : present_nodes)
         addNode(storage, path, "present");
+    for (const auto & [path, session_id] : present_ephemeral_nodes)
+        addNode(storage, path, "present_ephemeral", session_id);
 
     auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
     for (const auto & path : orphan_nodes)
     {
         DB::KeeperMemNode orphan;
         orphan.setData("orphan");
+        mem_storage.container.insertOrReplace(path, std::move(orphan));
+    }
+    for (const auto & [path, session_id] : ephemeral_orphan_nodes)
+    {
+        DB::KeeperMemNode orphan;
+        orphan.setData("ephemeral_orphan");
+        orphan.stats.makeEphemeral(session_id);
         mem_storage.container.insertOrReplace(path, std::move(orphan));
     }
 
@@ -2880,6 +2894,124 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSiblingRemoveUnderRe
     EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Remove));
     EXPECT_EQ(conflict->request_path, "/a");
     EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// `Close` carries no path, but the storage removes every ephemeral node the session owns and updates
+/// their parents' stats. When one of those ephemerals was pruned from the snapshot, other replicas
+/// still remove it on `Close` while we have nothing to remove -- the tail must be refused.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCloseOfSessionOwningRemovedEphemeral)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_id = 42;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(
+        ctx, this->enable_compression, 1, {"/present"}, {}, /*present_ephemeral_nodes=*/ {}, {{"/missing/ephemeral", session_id}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/missing/ephemeral"));
+    EXPECT_EQ(state_machine->getRemovedOrphanSubtreeRoots(), std::vector<std::string>{"/missing"});
+    EXPECT_EQ(state_machine->getRemovedOrphanEphemeralSessions(), std::vector<int64_t>{session_id});
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_id));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Close));
+    EXPECT_TRUE(conflict->request_path.empty());
+    EXPECT_TRUE(conflict->subtree_root.empty());
+    EXPECT_NE(conflict->reason.find("42"), std::string::npos);
+}
+
+/// A surviving ephemeral directly under the parent of a removed subtree root: `Close` decrements that
+/// parent's repaired `numChildren`, i.e. from a different base than on the other replicas -- the same
+/// divergence as a sibling `Remove` in the tail.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCloseOfSessionOwningEphemeralUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_id = 7;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"}, {{"/a/ephemeral", session_id}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The ephemeral itself survived and is tracked; no session lost an ephemeral to the cleanup.
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/ephemeral"));
+    EXPECT_TRUE(state_machine->getStorageUnsafe().committed_ephemerals.contains(session_id));
+    EXPECT_TRUE(state_machine->getRemovedOrphanEphemeralSessions().empty());
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_id));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Close));
+    EXPECT_EQ(conflict->request_path, "/a/ephemeral");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// Positive control: a `Close` whose ephemerals are nowhere near the damage, and a `Close` of a session
+/// without ephemerals, replay identically everywhere and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsCloseOfUnaffectedSessionsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_with_ephemeral = 9;
+    static constexpr int64_t session_without_ephemerals = 1234;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(
+        ctx, this->enable_compression, 1, {"/present", "/b"}, {"/present/missing/child"}, {{"/b/ephemeral", session_with_ephemeral}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_with_ephemeral));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_without_ephemerals));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+    /// A clean tail consumes both startup tokens.
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_TRUE(state_machine->getRemovedOrphanEphemeralSessions().empty());
 }
 
 /// `ZooKeeperMultiRequest::getPath()` returns an empty string, so sub-requests must be walked.

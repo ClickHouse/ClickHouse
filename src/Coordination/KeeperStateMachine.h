@@ -206,6 +206,7 @@ public:
 
     /// Non-empty only between `init()` and `findOrphanConflictInLogTail()`. For tests/introspection.
     const std::vector<std::string> & getRemovedOrphanSubtreeRoots() const { return removed_orphan_subtree_roots; }
+    const std::vector<int64_t> & getRemovedOrphanEphemeralSessions() const { return removed_orphan_ephemeral_sessions; }
 
 private:
     /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
@@ -298,6 +299,8 @@ private:
     /// `findOrphanConflictInLogTail()`. Both run single-threaded from `KeeperServer::startup` before the
     /// raft server is launched, so no synchronisation is needed.
     std::vector<std::string> removed_orphan_subtree_roots;
+    /// Sessions that owned a removed ephemeral node; same lifecycle as `removed_orphan_subtree_roots`.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
 
     struct DetachedSnapshotReceiveFiles
     {

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -177,6 +178,7 @@ void KeeperStateMachine::init()
             /// Verified by `KeeperServer::startup` via `findOrphanConflictInLogTail` once the log store
             /// is loaded -- we cannot check it here because the log store does not exist yet.
             removed_orphan_subtree_roots = std::move(snapshot_deserialization_result.removed_orphan_subtree_roots);
+            removed_orphan_ephemeral_sessions = std::move(snapshot_deserialization_result.removed_orphan_ephemeral_sessions);
         }
         catch (...)
         {
@@ -297,9 +299,9 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         /// produces exactly the state an unrepaired replica ends up with, even when the path lies in a
         /// pruned subtree. These read requests land in the log only under `quorum_reads`, and treating
         /// them as touched paths would turn a safe recovery tail into a false `CORRUPTED_DATA`.
+        ///
         case OpNum::Heartbeat:
         case OpNum::Auth:
-        case OpNum::Close:
         case OpNum::SessionID:
         case OpNum::Error:
         case OpNum::Sync:
@@ -307,6 +309,13 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::CheckWatch:
         case OpNum::RemoveWatch:
             return true;
+        /// `Close` is deliberately NOT path-free: it carries no path, but its handler removes every
+        /// ephemeral node owned by the session and updates their parents' stats
+        /// (`prepareRemoveEphemeralNodes` in KeeperStorageImpl.cpp). The paths it touches are only known
+        /// from the session's ephemeral bookkeeping, so `findOrphanConflictInLogTail` verifies it
+        /// separately before calling this function; reaching it here (e.g. nested in a `Multi`) fails closed.
+        case OpNum::Close:
+            return false;
         /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
         /// be called on them: it dereferences `data_watches[0]` without checking that the list is
         /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
@@ -447,6 +456,7 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
             removed_orphan_subtree_roots.size(),
             roots_str);
         removed_orphan_subtree_roots.clear();
+        removed_orphan_ephemeral_sessions.clear();
         return {};
     }
 
@@ -530,6 +540,62 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
                 continue;
 
             const auto & request = *request_for_session->request;
+
+            /// `Close` names no path itself: the storage removes every ephemeral node owned by the
+            /// session and decrements each parent's `numChildren` / `cversion`
+            /// (`prepareRemoveEphemeralNodes`). Two ways this replays differently after orphan cleanup:
+            ///  - the session owned a pruned ephemeral: other replicas still remove it (and update its
+            ///    parent), we have nothing to remove;
+            ///  - the session owns a surviving ephemeral under a repaired parent: the parent's stats
+            ///    are updated from a different base, exactly like a sibling `Remove` in the tail.
+            if (request.getOpNum() == Coordination::OpNum::Close)
+            {
+                const auto session_id = request_for_session->session_id;
+                if (std::binary_search(removed_orphan_ephemeral_sessions.begin(), removed_orphan_ephemeral_sessions.end(), session_id))
+                {
+                    OrphanLogTailConflict found;
+                    found.log_idx = log_idx;
+                    found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                    found.reason = fmt::format(
+                        "the entry closes session {} which owned ephemeral nodes that were removed from the snapshot, so the close "
+                        "would no longer remove them and update their parents' stats",
+                        session_id);
+                    return found;
+                }
+
+                std::vector<std::string> session_ephemerals;
+                {
+                    std::lock_guard ephemeral_lock(storage->ephemeral_mutex);
+                    if (auto ephemerals_it = storage->committed_ephemerals.find(session_id);
+                        ephemerals_it != storage->committed_ephemerals.end())
+                        session_ephemerals.assign(ephemerals_it->second.begin(), ephemerals_it->second.end());
+                }
+                std::sort(session_ephemerals.begin(), session_ephemerals.end());
+
+                for (const auto & ephemeral_path : session_ephemerals)
+                {
+                    const auto parent = Coordination::parentNodePath(ephemeral_path);
+                    for (const auto & subtree_root : removed_orphan_subtree_roots)
+                    {
+                        if (conflictsWithRemovedSubtree(ephemeral_path, subtree_root)
+                            || parentStatsDivergeWithRemovedSubtree(parent, subtree_root))
+                        {
+                            OrphanLogTailConflict found;
+                            found.log_idx = log_idx;
+                            found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                            found.request_path = ephemeral_path;
+                            found.subtree_root = subtree_root;
+                            found.reason = fmt::format(
+                                "the entry closes session {} which owns this ephemeral node under a parent whose children were removed "
+                                "from the snapshot, so the parent's stats would be updated from a repaired base",
+                                session_id);
+                            return found;
+                        }
+                    }
+                }
+                continue;
+            }
+
             std::optional<OrphanLogTailConflict> conflict;
             const bool recognised = forEachRequestPath(
                 request,
@@ -602,6 +668,8 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
     /// surviving into a later `apply_snapshot` that replaces `storage`.
     removed_orphan_subtree_roots.clear();
     removed_orphan_subtree_roots.shrink_to_fit();
+    removed_orphan_ephemeral_sessions.clear();
+    removed_orphan_ephemeral_sessions.shrink_to_fit();
     return {};
 }
 

@@ -759,6 +759,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
     result.snapshot_meta = reader->snapshot_meta;
     result.cluster_config = reader->cluster_config;
     result.removed_orphan_subtree_roots = std::move(reader->removed_orphan_subtree_roots);
+    result.removed_orphan_ephemeral_sessions = std::move(reader->removed_orphan_ephemeral_sessions);
     return result;
 }
 

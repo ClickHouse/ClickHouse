@@ -289,7 +289,10 @@ Keeper deliberately refuses to start if a local log entry above the snapshot ref
 region: a removed node, anything below it, or any parent of a removed subtree. A parent counts as a
 conflict because its set of children no longer matches the tree the log was written against, so even an
 entry that only touches the parent — including a create or remove of a *sibling* under it, which updates
-the parent's repaired child counters — could replay differently. Replaying any such entry against the
+the parent's repaired child counters — could replay differently. The same applies to a session close
+(`Close`) in the log tail when that session owned a removed ephemeral node, or owns a surviving ephemeral
+node directly under such a parent: closing the session removes its ephemeral nodes and updates their
+parents' counters. Replaying any such entry against the
 repaired tree would silently produce a different state. If that happens, recover the node from a healthy
 peer instead: stop it, clear its coordination directory, and let it re-sync from the leader, or use
 strategy 1 or 2.

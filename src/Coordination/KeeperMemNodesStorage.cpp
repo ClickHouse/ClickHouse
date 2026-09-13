@@ -464,11 +464,19 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             orphan_roots.size(),
             fmt::join(orphan_roots, ", "));
 
+        /// Sessions whose ephemeral nodes are pruned here. Their `Close` cannot be replayed from the
+        /// local log tail: on every other replica it still removes those nodes and updates their
+        /// parents' stats, so `KeeperStateMachine::findOrphanConflictInLogTail` must refuse it.
+        std::set<int64_t> removed_ephemeral_sessions;
+
         for (const auto & orphan : orphan_paths)
         {
             auto node_it = container.find(orphan);
             if (node_it == container.end())
                 continue;
+
+            if (node_it->value.stats.isEphemeral())
+                removed_ephemeral_sessions.insert(node_it->value.stats.getEphemeralOwner());
 
             /// Decrement ACL usage count
             reader.acl_map.removeUsage(node_it->value.stats.acl_id);
@@ -507,6 +515,7 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             damage_roots.emplace(damaged);
         }
         reader.removed_orphan_subtree_roots.assign(damage_roots.begin(), damage_roots.end());
+        reader.removed_orphan_ephemeral_sessions.assign(removed_ephemeral_sessions.begin(), removed_ephemeral_sessions.end());
 
         LOG_WARNING(
             getLogger("KeeperMemNodeStorage"),
