@@ -115,6 +115,9 @@ protected:
     /// set of streams.
     void prepareBlockForWriting(Block & block);
 
+    /// Fill the block sample with empty columns of all written columns. Used when no data was written at all.
+    void initEmptyBlockSample();
+
     /// Initialize all streams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
     void initStreamsIfNeeded();
 

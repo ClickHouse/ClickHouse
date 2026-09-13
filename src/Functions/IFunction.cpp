@@ -479,9 +479,31 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
+/// True if any argument is a non-native LowCardinality column, i.e. the dictionary-encoded
+/// representation of a column whose data type is not LowCardinality (automatic LowCardinality
+/// serialization). Such columns are never nested, so a top-level check is enough.
+static bool hasNonNativeLowCardinality(const ColumnsWithTypeAndName & arguments)
+{
+    for (const auto & column : arguments)
+        if (column.column && column.column->lowCardinality() && !column.column->isNativeLowCardinality())
+            return true;
+    return false;
+}
+
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    /// Functions key on argument data types, and the data type of a non-native LowCardinality column
+    /// is not LowCardinality, so every LowCardinality-aware code path below would misinterpret it.
+    /// Materialize such columns to full columns first; genuine LowCardinality(T) columns are kept intact.
+    if (hasNonNativeLowCardinality(arguments))
+    {
+        ColumnsWithTypeAndName full_arguments = arguments;
+        for (auto & column : full_arguments)
+            column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+        return executeWithoutSparseColumns(full_arguments, result_type, input_rows_count, dry_run);
+    }
+
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
     {

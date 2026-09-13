@@ -40,6 +40,12 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
+        /// Convert to full column, because cursors compare values across chunks and the merged
+        /// output is built by inserting ranges from all of them. Parts of the same table can be
+        /// stored with and without automatic LowCardinality serialization, so chunks of the same
+        /// column may arrive with different in-memory representations.
+        convertToFullIfNonNativeLowCardinality(chunk);
+
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 

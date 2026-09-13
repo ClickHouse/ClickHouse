@@ -94,6 +94,18 @@ ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
         return kind_stack;
     }
 
+    /// Only a non-native LowCardinality column corresponds to the LOW_CARDINALITY kind.
+    /// A genuine LowCardinality(T) column carries its cardinality in the data type, so its kind is DEFAULT.
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        if (!column_low_cardinality->isNativeLowCardinality())
+        {
+            auto kind_stack = getKindStack(*column_low_cardinality->getDictionary().getNestedColumn());
+            kind_stack.push_back(Kind::LOW_CARDINALITY);
+            return kind_stack;
+        }
+    }
+
     return {Kind::DEFAULT};
 }
 
@@ -109,6 +121,8 @@ static String kindToString(ISerialization::Kind kind)
             return "Detached";
         case ISerialization::Kind::REPLICATED:
             return "Replicated";
+        case ISerialization::Kind::LOW_CARDINALITY:
+            return "LowCardinality";
     }
 }
 
@@ -142,6 +156,8 @@ static ISerialization::Kind stringToKind(std::string_view str)
         return ISerialization::Kind::DETACHED;
     else if (str == "Replicated")
         return ISerialization::Kind::REPLICATED;
+    else if (str == "LowCardinality")
+        return ISerialization::Kind::LOW_CARDINALITY;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 

@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
@@ -403,6 +404,8 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
             serialization = SerializationDetached::create(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
             serialization = SerializationReplicated::create(serialization);
+        else if (canBeInsideLowCardinality() && kind == ISerialization::Kind::LOW_CARDINALITY)
+            serialization = SerializationLowCardinality::create(getPtr(), /*is_native_low_cardinality=*/false);
     }
 
     return serialization;

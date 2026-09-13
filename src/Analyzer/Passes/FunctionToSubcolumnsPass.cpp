@@ -204,6 +204,22 @@ bool canOptimizeToExpectedSubcolumn(
     if (expected_type && !resolved->type->equals(*expected_type))
         return false;
 
+    /// A `String`/`FixedString` column stored with automatic (non-native) `LowCardinality`
+    /// serialization is dictionary-encoded, so the substreams of its data type (here the `.size`
+    /// substream) are not on disk and reading the subcolumn would throw.
+    /// The decision cannot be made per column from the current active parts: a part that encodes the
+    /// column may be committed after the query has been analyzed and still end up in the parts the
+    /// query reads, which would make a valid query throw depending on insert and merge timing.
+    /// The rewrite is therefore skipped for every `String`/`FixedString` column of a table that can
+    /// still produce automatically encoded parts. The type is checked first, because it is the cheaper
+    /// of the two conditions and automatic `LowCardinality` applies to no other type.
+    if (isStringOrFixedString(resolved->getTypeInStorage()))
+    {
+        auto storage = getStorageForColumnSource(column_source);
+        if (storage && storage->hasAutomaticLowCardinalitySerialization())
+            return false;
+    }
+
     auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
     return info && is_expected_subcolumn(info->substreams_path);
 }

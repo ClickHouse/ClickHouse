@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -142,6 +143,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
@@ -998,12 +1000,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+
+    const UInt64 max_uniq_number_for_low_cardinality
+        = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
+
+    /// The automatic `LowCardinality` kind of the source parts is deliberately not seeded into `infos`
+    /// here: the encoding of the result part is chosen below from the merged statistics of that part,
+    /// and seeding an entry for a column that is then not encoded would add a `serialization.json`
+    /// record to an otherwise plain `String` column.
     for (const auto & part : global_ctx->future_part->parts)
     {
+        auto part_infos = part->getSerializationInfos();
+
         if (!info_settings.isAlwaysDefault())
         {
-            auto part_infos = part->getSerializationInfos();
-
             addMissedColumnsToSerializationInfos(
                 part->rows_count,
                 part->getColumns().getNames(),
@@ -1032,6 +1042,29 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         {
             infos.setMissingColumns(std::move(merged_missing));
         }
+    }
+
+    /// Automatic `LowCardinality` serialization: the encoding of the result part is chosen anew from the
+    /// current threshold and the merged cardinality statistics, not inherited from the source parts.
+    /// The kind the source parts contributed through `SerializationInfo::add` is therefore dropped first:
+    /// otherwise a single encoded source part would keep the result encoded even after the threshold is
+    /// lowered below its cardinality, and would also outvote sparse serialization for a column whose
+    /// merged data now qualifies for it. Dropping the kind restores the data-derived choice, and
+    /// `appendAutomaticLowCardinalityKind` then leaves a sparse column alone, which is the documented
+    /// precedence of the two encodings.
+    /// The statistics that have to be rebuilt during the merge are not accounted here (they are not
+    /// calculated yet), so the estimate can be lower than the real cardinality of the result part; the
+    /// choice is a heuristic and does not affect correctness.
+    removeAutomaticLowCardinalityKind(infos, global_ctx->storage_columns);
+
+    if (max_uniq_number_for_low_cardinality != 0)
+    {
+        auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+            global_ctx->storage_columns,
+            global_ctx->gathered_data.statistics,
+            max_uniq_number_for_low_cardinality);
+
+        appendAutomaticLowCardinalityKind(infos, global_ctx->storage_columns, low_cardinality_candidates, info_settings);
     }
 
     if (global_ctx->new_data_part->info.isPatch())

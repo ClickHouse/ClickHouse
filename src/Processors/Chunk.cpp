@@ -178,7 +178,11 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     MutableColumns mutable_columns = mutateColumns();
     for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
-        auto column = chunk.getColumns()[position];
+        /// Chunks from different parts can use different on-disk serializations.
+        /// Keep the generic concatenation boundary representation-independent.
+        ColumnPtr destination_column = std::move(mutable_columns[position]);
+        mutable_columns[position] = IColumn::mutate(recursiveRemoveNonNativeLowCardinality(destination_column));
+        auto column = recursiveRemoveNonNativeLowCardinality(chunk.getColumns()[position]);
         mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
     size_t rows = mutable_columns[0]->size();
@@ -209,6 +213,15 @@ void removeSpecialColumnRepresentations(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = removeSpecialRepresentations(column);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void convertToFullIfNonNativeLowCardinality(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveNonNativeLowCardinality(column);
     chunk.setColumns(std::move(columns), num_rows);
 }
 
