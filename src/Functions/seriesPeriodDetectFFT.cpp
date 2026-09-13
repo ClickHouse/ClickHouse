@@ -32,7 +32,7 @@ extern const int ILLEGAL_COLUMN;
 /*Detect Period in time series data using FFT.
  * FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
  * 1. Convert time series data to frequency domain using FFT.
- * 2. Remove the 0th(the Dc component) and n/2th the Nyquist frequency
+ * 2. Remove the 0th (the DC component)
  * 3. Find the peak value (highest) for dominant frequency component.
  * 4. Inverse of the dominant frequency component is the period.
 */
@@ -141,7 +141,7 @@ public:
 
         pocketfft::r2c(shape, stride_src, stride_out, axes, pocketfft::FORWARD, src.data(), out.data(), static_cast<double>(1));
 
-        size_t spec_end = len / 2 + (len % 2); // removing the nyquist element when len is even
+        size_t spec_end = len / 2 + 1;
 
         double max_mag = 0;
         size_t idx = 1;

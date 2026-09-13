@@ -14,6 +14,7 @@ SELECT seriesPeriodDetectFFT(arrayMap(x -> sin(x / 10), range(1000)));
 SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000)));
 SELECT seriesPeriodDetectFFT(arrayMap(x -> if((x % 6) < 3, 3, 0), range(1000)));
 SELECT seriesPeriodDetectFFT([1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4]);
+SELECT seriesPeriodDetectFFT([1,2,1,2]);
 SELECT seriesPeriodDetectFFT([1,2,3,4]);
 SELECT seriesPeriodDetectFFT([1,2,3]);
 SELECT seriesPeriodDetectFFT(a) FROM tb1;
