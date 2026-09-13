@@ -193,6 +193,71 @@ SETTINGS optimize_functions_to_subcolumns = 1; -- { serverError ILLEGAL_DIVISION
 
 DROP TABLE t_map_contains_like_alias;
 
+-- Nullable patterns must keep NULL results. arrayExists would otherwise turn a NULL lambda
+-- result into false, which is also visible in a NOT predicate.
+DROP TABLE IF EXISTS t_map_contains_like_nullable_pattern;
+
+CREATE TABLE t_map_contains_like_nullable_pattern
+(
+    id UInt8,
+    m Map(String, String),
+    pattern Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_nullable_pattern VALUES
+    (1, {'service': 'api'}, NULL),
+    (2, {'service': 'api'}, 'ser%'),
+    (3, {}, NULL),
+    (4, {'k': 'value'}, 'value%');
+
+SELECT id, mapContainsKeyLike(m, pattern)
+FROM t_map_contains_like_nullable_pattern
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id, mapContainsKeyLike(m, pattern)
+FROM t_map_contains_like_nullable_pattern
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id, mapContainsValueLike(m, pattern)
+FROM t_map_contains_like_nullable_pattern
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id, mapContainsValueLike(m, pattern)
+FROM t_map_contains_like_nullable_pattern
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id
+FROM t_map_contains_like_nullable_pattern
+WHERE NOT mapContainsKeyLike(m, pattern)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id
+FROM t_map_contains_like_nullable_pattern
+WHERE NOT mapContainsKeyLike(m, pattern)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id
+FROM t_map_contains_like_nullable_pattern
+WHERE NOT mapContainsValueLike(m, pattern)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id
+FROM t_map_contains_like_nullable_pattern
+WHERE NOT mapContainsValueLike(m, pattern)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_map_contains_like_nullable_pattern;
+
 -- LowCardinality Map elements and patterns stay on the original Map LIKE implementation.
 SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
 FROM t_map_contains_like_subcolumns

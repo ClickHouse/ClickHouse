@@ -634,8 +634,11 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
     /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep that path for now;
     /// passing a LowCardinality type directly to the lambda would change function resolution.
+    /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
+    const auto & pattern_type = function_arguments_nodes[1]->getResultType();
     if (WhichDataType(map_element_type).isLowCardinality()
-        || WhichDataType(function_arguments_nodes[1]->getResultType()).isLowCardinality())
+        || WhichDataType(pattern_type).isLowCardinality()
+        || WhichDataType(pattern_type).isNullable())
         return;
 
     auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
