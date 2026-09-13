@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -360,9 +361,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -627,7 +626,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
-                configuration->getNamespace(),
+                configuration,
                 local_context,
                 file_progress_callback);
         }
@@ -653,7 +652,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(formatObjectPath(*configuration, key, /*include_connection_info=*/false));
 
             if (is_explicit_archive_member)
             {
@@ -766,7 +765,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path))
+            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();

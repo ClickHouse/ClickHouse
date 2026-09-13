@@ -218,6 +218,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -370,19 +373,30 @@ void LocalServer::initialize(Poco::Util::Application & self)
     std::string config_path;
     if (getClientConfiguration().has("config-file"))
         config_path = getClientConfiguration().getString("config-file");
-    else if (config_path.empty() && fs::exists("config.xml"))
+    else if (fs::exists("config.xml"))
         config_path = "config.xml";
-    else if (config_path.empty())
+    else
         config_path = getLocalConfigPath(home_path).value_or("");
 
-    if (fs::exists(config_path))
+    /// The names of the merge directories are derived from the name of the main config file, see
+    /// `ConfigProcessor::getConfigMergeFiles`, so without a config file there is nothing to derive
+    /// them from and a `config.d` in the current directory would be silently ignored. Process a
+    /// config embedded in the binary in place of the missing file, taking the current directory as
+    /// the base config path: then `./config.d` and `./conf.d` are merged into it, and running
+    /// `clickhouse-local` in a directory with a `config.d` does not additionally require creating
+    /// an otherwise empty `config.xml` next to it.
+    if (!fs::exists(config_path))
     {
-        ConfigProcessor config_processor(config_path);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
-        auto loaded_config = config_processor.loadConfig();
-        getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        loaded_config_path = config_path;
+        config_path = "config.xml";
+        ConfigProcessor::registerEmbeddedConfig(config_path, "<clickhouse/>");
     }
+
+    ConfigProcessor config_processor(config_path);
+    const fs::path config_dir = fs::path(config_path).parent_path();
+    ConfigProcessor::setConfigPath(config_dir.empty() ? fs::path(".") : config_dir);
+    auto loaded_config = config_processor.loadConfig();
+    getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    loaded_config_path = config_path;
 
     /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
     /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.
@@ -478,6 +492,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 }
 
 
@@ -1142,34 +1161,30 @@ void LocalServer::setupUsers()
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
     access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
-    /// Apply user-level configuration from a loaded config file (including those
-    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
-    if (!loaded_config_path.empty())
-    {
-        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
-        bool has_user_directories = getClientConfiguration().has("user_directories");
-        String users_config_path = getClientConfiguration().getString("users_config", "");
+    /// Apply user-level configuration from the config processed in `initialize`: a config file
+    /// auto-discovered via `getLocalConfigPath` (e.g. `~/.clickhouse-local/config.xml`), or the
+    /// merge directories of the current directory processed on top of the embedded config.
+    const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
+    bool has_user_directories = getClientConfiguration().has("user_directories");
+    String users_config_path = getClientConfiguration().getString("users_config", "");
 
-        if (users_config_path.empty() && has_user_directories)
-            users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
+    if (users_config_path.empty() && has_user_directories)
+        users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
 
-        /// Anchor relative paths to the config's directory, not the cwd.
-        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
-        /// which could grant `access_management` to the default user.
-        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = fs::path(config_dir) / users_config_path;
+    /// Anchor relative paths to the config's directory, not the cwd.
+    /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
+    /// which could grant `access_management` to the default user.
+    if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
+        users_config_path = fs::path(config_dir) / users_config_path;
 
-        if (users_config_path.empty())
-            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-        else
-        {
-            ConfigProcessor config_processor(users_config_path);
-            const auto loaded_config = config_processor.loadConfig();
-            users_config = loaded_config.configuration;
-        }
-    }
-    else
+    if (users_config_path.empty())
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+    else
+    {
+        ConfigProcessor config_processor(users_config_path);
+        const auto loaded_config = config_processor.loadConfig();
+        users_config = loaded_config.configuration;
+    }
     if (users_config)
         global_context->setUsersConfig(users_config);
     else

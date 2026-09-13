@@ -19,7 +19,6 @@ namespace DB
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
-public:
     struct Node;
 
     /// Edge represents connection between OutputPort and InputPort.
@@ -69,11 +68,6 @@ public:
     /// Graph node. Represents single Processor.
     struct Node
     {
-        struct StepWallClockCache
-        {
-            uint64_t group = 0;
-            StepWallClock * wall_clock_ptr = nullptr;
-        };
         /// Iterator into the graph's processors list.
         Processors::iterator processor_iter{};
 
@@ -93,9 +87,6 @@ public:
         ExecStatus status = ExecStatus::Idle;
         std::mutex status_mutex;
 
-        /// Exception which happened after processor execution.
-        std::exception_ptr exception;
-
         /// Last state for profiling.
         std::optional<IProcessor::Status> last_processor_status;
 
@@ -112,34 +103,20 @@ public:
         Port::UpdateInfo::UpdateList post_updated_input_ports;
         Port::UpdateInfo::UpdateList post_updated_output_ports;
 
-        /// Counters for profiling.
-        uint64_t num_executed_jobs = 0;
-        uint64_t execution_time_ns = 0;
-        uint64_t preparation_time_ns = 0;
-        /// Cached clock for EXPLAIN ANALYZE
-        StepWallClockCache cached_clock{};
-
         Node(Processors::iterator processor_iter_, uint64_t processors_id_)
             : processor_iter(processor_iter_), processors_id(processors_id_)
         {
         }
     };
 
+
+public:
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
-
-    /// All graph nodes. Nodes type is forward-declared above so Node can hold a self-iterator.
-    Nodes nodes;
-
-    /// Each processor is directly tied to pipeline graph node.
-    using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
-    ProcessorsMap processors_map;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
-
-    const Processors & getProcessors() const { return *processors; }
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);
@@ -147,24 +124,36 @@ public:
     enum class UpdateNodeStatus
     {
         Done,
-        Exception,
         Cancelled,
     };
 
-    /// Update processor at `start_node` (call IProcessor::prepare).
+    /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(Node * start_node, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
 
+    const Processors & getProcessors() const;
+    bool isAllFinished() const;
+
+    String dump() const;
+
 private:
+    /// All graph nodes. Nodes type is forward-declared above so Node can hold a self-iterator.
+    Nodes nodes;
+
+    /// Each processor is directly tied to pipeline graph node.
+    using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
+    ProcessorsMap processors_map;
+
     /// Append a processor to the graph's processors list, create its Node, assign a stable id,
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
+    Node * getNodeToRemove(const ProcessorPtr & processor) const;
+    void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -177,7 +166,7 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
+    void removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
@@ -194,13 +183,8 @@ private:
     };
     std::unordered_map<ProcessorPtr, std::shared_ptr<PendingRemovalGroup>> removed_processors;
 
-    struct RemoveGroupResult
-    {
-        std::unordered_set<const Node *> removed_nodes;
-        std::unordered_set<const void *> removed_edges;
-    };
-    RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
-    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
+    void removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
+    void removeReadyGroups(Processors & delayed_destruction);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 

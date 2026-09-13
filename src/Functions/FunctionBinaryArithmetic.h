@@ -858,7 +858,7 @@ private:
 using namespace traits_;
 using namespace impl_;
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
 class FunctionBinaryArithmetic : public IFunction, WithContext
 {
     static constexpr bool is_plus = IsOperation<Op>::plus;
@@ -875,6 +875,12 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
     bool check_decimal_overflow = true;
+
+    /// Whether the operation is a division with a Nullable denominator (needs the division-by-zero
+    /// protection in executeImpl2). Decided by the overload resolver from the original argument
+    /// types. A runtime flag instead of a template parameter: making it a template parameter would
+    /// instantiate the entire class twice for every division-like operation.
+    bool division_by_nullable = false;
 
     /// Date/Time overflow behavior, captured from the query context at construction time so that
     /// executeImpl does not have to consult the context (which may have been destroyed by the time a
@@ -2252,14 +2258,15 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
-    static FunctionPtr create(ContextPtr context_, const DataTypePtr & left_type, const DataTypePtr & right_type)
+    static FunctionPtr create(ContextPtr context_, const DataTypePtr & left_type, const DataTypePtr & right_type, bool division_by_nullable_ = false)
     {
-        return std::make_shared<FunctionBinaryArithmetic>(context_, left_type, right_type);
+        return std::make_shared<FunctionBinaryArithmetic>(context_, left_type, right_type, division_by_nullable_);
     }
 
-    explicit FunctionBinaryArithmetic(ContextPtr context_, const DataTypePtr & left_type = nullptr, const DataTypePtr & right_type = nullptr)
+    explicit FunctionBinaryArithmetic(ContextPtr context_, const DataTypePtr & left_type = nullptr, const DataTypePtr & right_type = nullptr, bool division_by_nullable_ = false)
     :   WithContext(context_),
         check_decimal_overflow(decimalCheckArithmeticOverflow(context_)),
+        division_by_nullable(division_by_nullable_),
         date_time_overflow_behavior(getDateTimeOverflowBehavior(context_))
     {
         /// Resolve the context-dependent builders for the interval/tuple special cases now, while the
@@ -2273,10 +2280,10 @@ public:
         /// same way here to resolve exactly the builders executeImpl would.
         if (left_type && right_type)
         {
-            auto normalize = [](DataTypePtr type)
+            auto normalize = [this](DataTypePtr type)
             {
                 type = recursiveRemoveLowCardinality(type);
-                if constexpr (!division_by_nullable && !is_division_or_null)
+                if (!division_by_nullable && !is_division_or_null)
                     type = removeNullable(type);
                 return type;
             };
@@ -3115,13 +3122,25 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 && is_integer<T0> && is_integer<T1>
                 && (sizeof(T0) >= sizeof(T1) || (is_unsigned_v<T0> && is_unsigned_v<T1>));
 
-            /// Modulo is computed in the type of the wider operand (`ModuloImpl` casts the other
-            /// operand into it), so pre-converting the operands to it is exact except when the
+            /// Modulo is computed in the signed type of the wider operand when either operand is
+            /// signed, and in the wider type otherwise (`ModuloImpl`), so pre-converting the
+            /// operands to that type is exact except when the
             /// division-by-minimal-signed-number check would move to a wider type: a narrower
             /// signed dividend with a signed divisor, or a sign-flipping conversion of the dividend
             /// to an equally sized signed divisor type.
+            /// This does not apply to `moduloLegacy`: it deliberately keeps the historical,
+            /// C++-`%`-usual-arithmetic-conversion behaviour (see `ModuloLegacyImpl` in
+            /// `DivisionUtils.h`) for backward compatibility with existing MergeTree partition
+            /// keys, so it is pruned via the plain wider-of-the-two-original-types rule below,
+            /// unconditionally on width.
+            /// A `UInt256` operand cannot be widened to a signed type that holds its full range (no
+            /// 512-bit integer type exists), so `modulo`/`moduloOrNull` are not pruned for it: the
+            /// direct kernel needs no such cast and stays exact for every width.
+            constexpr bool modulo_unsigned_operand_too_wide_to_prune = (is_modulo || IsOperation<Op>::modulo_or_null)
+                && ((is_unsigned_v<T0> && sizeof(T0) == 32) || (is_unsigned_v<T1> && sizeof(T1) == 32));
             constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
                 && is_integer<T0> && is_integer<T1>
+                && !modulo_unsigned_operand_too_wide_to_prune
                 && (sizeof(T0) > sizeof(T1)
                     || (!(is_signed_v<T0> && is_signed_v<T1>) && !(sizeof(T0) == sizeof(T1) && is_signed_v<T1>)));
 
@@ -3247,10 +3266,36 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
                     return execute_via_common_type.template operator()<DataTypeNumber<T0>>();
                 }
+                else if constexpr (IsOperation<Op>::modulo_legacy)
+                {
+                    /// `ModuloLegacyImpl` computes via the raw C++ `%` operator on its own argument
+                    /// types (`IntegerAType(a) % IntegerBType(b)`), which - through the usual
+                    /// arithmetic conversions - is exactly what casting both operands to the wider
+                    /// of the two ORIGINAL types (sign included, no widening) and then applying `%`
+                    /// on that single type reproduces. This is deliberately not the `ModuloImpl`
+                    /// (non-legacy) rule below: legacy must keep the historical, sometimes
+                    /// unsigned-computed behaviour byte for byte.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
                 else
                 {
-                    /// `ModuloImpl` computes in the type of the wider operand.
-                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    /// `ModuloImpl` widens an unsigned operand to a signed type wide enough to hold every
+                    /// value of its own width exactly, then computes in whichever safe-signed type is
+                    /// wider (`DivisionUtils.h`). `NumberTraits::nextSize` is not wide enough here: it is
+                    /// capped at 8 bytes for its other, unrelated callers, so it leaves `UInt128` mapped
+                    /// to same-width `Int128`, which cannot hold a `UInt128` value above `Int128::max()` -
+                    /// `castColumn` below would then silently reinterpret it as negative before `%` ever
+                    /// runs, changing what the value MEANS, not just how it is stored. `Int256` exists and
+                    /// holds the full `UInt128` range, so widen up to it specifically for this pruning.
+                    /// (A `UInt256` operand has no such wider signed type to widen into - that case is
+                    /// excluded from `op_is_prunable_modulo` above and never reaches this branch.)
+                    constexpr auto next_integer_size = [](size_t size) { return size < 32 ? size * 2 : size; };
+                    using SafeSignedT0 = typename NumberTraits::Construct<true, false,
+                        is_signed_v<T0> ? sizeof(T0) : next_integer_size(sizeof(T0))>::Type;
+                    using SafeSignedT1 = typename NumberTraits::Construct<true, false,
+                        is_signed_v<T1> ? sizeof(T1) : next_integer_size(sizeof(T1))>::Type;
+                    using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
             }
@@ -3690,28 +3735,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
+class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>
 {
 public:
-    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
+    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>;
     using Monotonicity = typename Base::Monotonicity;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
+        ContextPtr context_,
+        bool division_by_nullable_ = false)
     {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_);
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_, division_by_nullable_);
     }
 
     FunctionBinaryArithmeticWithConstants(
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
-        : Base(context_, left_.type, right_.type), left(left_), right(right_), return_type(return_type_)
+        ContextPtr context_,
+        bool division_by_nullable_ = false)
+        : Base(context_, left_.type, right_.type, division_by_nullable_), left(left_), right(right_), return_type(return_type_)
     {
     }
 
@@ -3824,6 +3871,39 @@ public:
                 }
             }
             return {false, true, false, false};
+        }
+
+        /** `divide` and `multiply` by a constant are modelled as monotonic from the constant alone, but a
+          * `Float` key column may hold `±inf`, and `-inf / inf`, `inf * 0` and `0 * inf` are all `NaN`. A
+          * `NaN` endpoint leaves a transformed range that no point compares into, so index analysis prunes
+          * every part and granule and the query silently loses the finite rows that do match. Only the
+          * transform can tell, so evaluate it at both endpoints, as the `plus`/`minus` branches below do for
+          * their own overflow question. Restricted to a `Float` result: no other result type has a `NaN`,
+          * and an integer division by a zero constant would raise here rather than answer one.
+          */
+        if ((name_view == "divide" || name_view == "multiply") && return_type
+            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
+        {
+            auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+            auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+            auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+            const bool left_is_constant = left.column && isColumnConst(*left.column);
+
+            auto transform = [&](const Field & point)
+            {
+                ColumnsWithTypeAndName columns_with_constant
+                    = {{left_type->createColumnConst(1, left_is_constant ? (*left.column)[0] : point), left_type, left.name},
+                       {right_type->createColumnConst(1, left_is_constant ? point : (*right.column)[0]), right_type, right.name}};
+
+                auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
+                Field point_transformed;
+                col->get(0, point_transformed);
+                return point_transformed;
+            };
+
+            if ((left_is_constant || (right.column && isColumnConst(*right.column)))
+                && (isNaNField(transform(left_point)) || isNaNField(transform(right_point))))
+                return {false, true, false, false};
         }
 
         // For simplicity, we treat every single value interval as positive monotonic,
@@ -4252,9 +4332,6 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         /// Only division-like operations can have division_by_nullable=true.
-        /// Using if constexpr avoids instantiating FunctionBinaryArithmetic<..., true> and
-        /// FunctionBinaryArithmeticWithConstants<..., true> for all other operations,
-        /// significantly reducing template bloat.
         static constexpr bool can_have_division_by_nullable =
             IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::div_floating;
 
@@ -4282,22 +4359,11 @@ public:
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
-            if constexpr (can_have_division_by_nullable)
-            {
-                if (division_by_nullable)
-                    return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
-                        arguments[0], arguments[1], return_type, context));
-            }
-            return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
-                arguments[0], arguments[1], return_type, context));
+            return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
+                arguments[0], arguments[1], return_type, context, division_by_nullable));
         }
 
-        if constexpr (can_have_division_by_nullable)
-        {
-            if (division_by_nullable)
-                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context, arguments[0].type, arguments[1].type));
-        }
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context, arguments[0].type, arguments[1].type));
+        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context, arguments[0].type, arguments[1].type, division_by_nullable));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
