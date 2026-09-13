@@ -1,0 +1,23 @@
+[Event "Test Event"]
+[Site "Test Site"]
+[Date "2024.01.01"]
+[Round "1"]
+[White "Player A"]
+[Black "Player B"]
+[Result "1-0"]
+[WhiteElo "2500"]
+[BlackElo "2400"]
+
+1.e4 e5 2.Nf3 Nc6 1-0
+
+[Event "Test Event 2"]
+[Site "Test Site 2"]
+[Date "2024.01.02"]
+[Round "2"]
+[White "Player C"]
+[Black "Player D"]
+[Result "0-1"]
+[WhiteElo "2600"]
+[BlackElo "2550"]
+
+1.d4 d5 2.c4 dxc4 0-1
