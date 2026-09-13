@@ -3387,6 +3387,13 @@ def test_system_drop_failed_files_azure_queue(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 0,
+            # Fix for CI flakiness: without an explicit fast polling interval, this
+            # table falls back to the default polling_max_timeout_ms (10 minutes),
+            # which under contended CI parallelism can push the first poll past this
+            # test's 60s wait-loop, so the file never gets discovered/failed in time
+            # even though nothing is actually wrong - a false failure, not a product bug.
+            "polling_min_timeout_ms": 3000,
+            "polling_max_timeout_ms": 3000,
         },
     )
 
