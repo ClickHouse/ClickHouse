@@ -61,23 +61,6 @@ FieldType saturatingResultCast(Int64 value)
         return static_cast<FieldType>(value);
 }
 
-/// A DateTime64 value in the scale of `scale_multiplier`, as whole seconds. Truncating division rounds a
-/// negative time towards the epoch, which would move it into the next interval, so a negative time is first
-/// biased by `scale_multiplier - 1` and the truncation then rounds it down. Correcting the quotient afterwards
-/// instead costs more: the compiler keeps the multiplication of the correction on every row, and guarding it
-/// with `t < 0` only trades that for a branch that a column of mixed signs mispredicts.
-Int64 toWholeSecondsFloor(Int64 t, const libdivide::divider<Int64, libdivide::BRANCHFULL> & scale_divider, Int64 scale_multiplier)
-{
-    Int64 biased = 0;
-    if (common::subOverflow(t, (scale_multiplier - 1) & (t >> 63), biased)) [[unlikely]]
-    {
-        /// The bias underflows only within `scale_multiplier` of the bottom of the Int64 range.
-        const Int64 whole = t / scale_divider;
-        return whole * scale_multiplier == t ? whole : whole - 1;
-    }
-    return biased / scale_divider;
-}
-
 /// Seconds per unit of the fixed-length units, nothing for the calendar ones, whose length depends on where
 /// they start. Their buckets with an `origin` are `origin + k * num_units * unit_seconds`, i.e. arithmetic on
 /// the difference from the origin: the `DateLUTImpl` helpers must not see that difference, as they would align
@@ -334,14 +317,14 @@ private:
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
-                        toWholeSecondsFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier));
+                        scaleDivideFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier));
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
 #pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
-                const Int64 t = toWholeSecondsFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier);
+                const Int64 t = scaleDivideFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier);
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:21:10 before 1906), so the rounding is not modular there, nor
                 /// before the epoch unless `valid_before_epoch`.

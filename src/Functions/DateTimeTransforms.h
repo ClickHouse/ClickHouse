@@ -856,16 +856,26 @@ struct ToStartOfInterval;
 
 /// Truncating division rounds a negative time towards the epoch, which would move it into the next interval,
 /// so a negative time is first biased by `scale_multiplier - 1` and the truncation then rounds it down.
-inline Int64 scaleDivideFloor(Int64 t, Int64 scale_multiplier)
+/// Correcting the quotient afterwards instead costs more: the compiler keeps the multiplication of the
+/// correction on every row, and guarding it with `t < 0` only trades that for a branch that a column of
+/// mixed signs mispredicts. `scale_divider` divides by `scale_multiplier`; the overload taking a
+/// precomputed divider (e.g. `libdivide`) is for the hot loops.
+template <typename Divider>
+inline Int64 scaleDivideFloor(Int64 t, const Divider & scale_divider, Int64 scale_multiplier)
 {
     Int64 biased = 0;
     if (common::subOverflow(t, (scale_multiplier - 1) & (t >> 63), biased)) [[unlikely]]
     {
         /// The bias underflows only within `scale_multiplier` of the bottom of the Int64 range.
-        const Int64 res = t / scale_multiplier;
+        const Int64 res = t / scale_divider;
         return res * scale_multiplier == t ? res : res - 1;
     }
-    return biased / scale_multiplier;
+    return biased / scale_divider;
+}
+
+inline Int64 scaleDivideFloor(Int64 t, Int64 scale_multiplier)
+{
+    return scaleDivideFloor(t, scale_multiplier, scale_multiplier);
 }
 
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
