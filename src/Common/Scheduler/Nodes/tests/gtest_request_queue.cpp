@@ -232,6 +232,24 @@ TEST(RequestQueue, FairThresholdSeesPendingCorrectionImmediately)
     EXPECT_DOUBLE_EQ(vr2 - vr1, 200.0);
 }
 
+/// fair: cancelling a still-queued request rolls back the virtual runtime it projected, so the query
+/// is not billed for service it never received (which would delay its later requests). `B` keeps the
+/// queue non-empty so the busy-period rollover does not mask the effect.
+TEST(RequestQueue, FairCancelRollsBackProjectedVruntime)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    f.enqueue(9, b, 1);               // B1 keeps the queue non-empty (no busy-period rollover)
+    auto * r = f.enqueue(1, a, 100);  // A1 projects A's vruntime to 100
+    EXPECT_TRUE(f.queue->cancelRequest(r)); // cancel before serving → roll the projection back to 0
+    f.enqueue(2, a, 1);               // A2: competes fairly from ~0, not from 100
+    f.enqueue(3, b, 1);               // B2
+    // With rollback A2 is not saddled with A1's debt → {9, 2, 3}; without it A2 starts at 100 and is
+    // served last → {9, 3, 2}.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{9, 2, 3}));
+}
+
 /// fair, unequal weights: the heavier query gets a larger share.
 TEST(RequestQueue, FairWeighted)
 {

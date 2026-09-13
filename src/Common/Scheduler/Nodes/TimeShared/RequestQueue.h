@@ -156,7 +156,9 @@ public:
         // moves forward.
         ResourceCost charge = state.drainVruntimeCorrection(request->scheduling.cost);
         double vstart = std::max(system_vruntime, state.vruntime);
-        state.vruntime = vstart + static_cast<double>(charge) / effective_weight;
+        double increment = static_cast<double>(charge) / effective_weight;
+        state.vruntime = vstart + increment;
+        request->scheduling.vruntime_increment = increment; // kept so cancel() can undo this projection
         max_vruntime = std::max(max_vruntime, state.vruntime);
         request->scheduling.key = {vstart, next_seq++};
         requests.insert(*request);
@@ -180,6 +182,12 @@ public:
         if (!request->scheduling_hook.is_linked())
             return false;
         requests.erase(requests.iterator_to(*request));
+        // Cancellation: undo the virtual runtime this request projected onto its query at push, so the
+        // query is not billed for service it never received (which would delay its future requests).
+        // vruntime is a running sum of per-request increments, so subtracting this one yields the
+        // correct value regardless of cancel order — the fixed keys of still-queued requests are
+        // untouched; only future pushes see the corrected sum.
+        request->scheduling.state->vruntime -= request->scheduling.vruntime_increment;
         return true;
     }
 

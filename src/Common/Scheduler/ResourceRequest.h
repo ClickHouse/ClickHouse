@@ -103,6 +103,12 @@ public:
         /// (feed the independent vruntime correction). `fifo`/`priority` set neither.
         bool tracks_attained = false;
         bool tracks_vruntime = false;
+
+        /// `fair` only: the virtual-runtime increment this request added to its query at push
+        /// (`charge / effective_weight`). Kept so cancelling a still-queued request can subtract it
+        /// back out — otherwise the query is charged for service it never received, delaying its
+        /// future requests. Zero for the other algorithms.
+        double vruntime_increment = 0.0;
     } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
@@ -133,6 +139,7 @@ public:
         scheduling.priority = {};
         scheduling.tracks_attained = false;
         scheduling.tracks_vruntime = false;
+        scheduling.vruntime_increment = 0.0;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
