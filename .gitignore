@@ -53,6 +53,9 @@ xray-log.*
 # callgrind files
 callgrind.out.*
 
+# jemalloc heap profiles
+jeprof.*.heap
+
 # ignore kdevelop files
 *.kdev4
 *.kdev_include_paths

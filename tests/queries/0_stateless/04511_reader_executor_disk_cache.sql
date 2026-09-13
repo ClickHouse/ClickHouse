@@ -27,6 +27,15 @@ SET remote_filesystem_read_method = 'read';
 SET enable_filesystem_cache = 1;
 SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
 
+-- One reading thread, so the cold read populates the cache completely and the warm read is a pure
+-- cache hit. With several threads each stream gets its own `ReaderExecutor` over the same file, and
+-- `DiskCacheWriter` appends only at the segment's live write offset: whichever stream loses the
+-- downloader race contributes nothing, so the cold read leaves the segment PARTIALLY populated. The
+-- warm read then re-fetches such a segment from its start (`claimLeadRole`'s `available` prefix is
+-- deliberately unused - see the "Coarse by design" note in `ReaderExecutor::readThroughCaches`), which
+-- can cost MORE source bytes than the cold read did and made the assertion below flaky.
+SET max_threads = 1;
+
 -- Cold read: nothing cached yet, so the executor reads from source and populates the cache. Warm read:
 -- the same bytes must now be served from the cache. Both aggregates prove the served bytes are correct.
 SELECT count(), sum(k) FROM t_re_disk_cache SETTINGS log_comment = 'reader_executor_cold';
@@ -36,8 +45,10 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The read-through contract end to end on the real DiskCacheProvider: the cold read pulled bytes from
 -- source (so the executor engaged) AND populated the cache ITSELF (`ReaderExecutorCachePopulateRequests`
--- > 0, not just the disk's incidental cache-on-read), and the warm reread then served those bytes from
--- that cache, reading strictly fewer source bytes. These counters are emitted only by the executor.
+-- > 0, not just the disk's incidental cache-on-read), and the warm reread then served every byte from
+-- that cache, touching the source not at all. These counters are emitted only by the executor.
+-- `warm = 0` rather than `warm < cold`: the latter compares two source-byte totals that both include
+-- over-read, so it is a proxy that a partially populated cache can invert.
 SELECT check_name, ok
 FROM
 (
@@ -47,7 +58,7 @@ FROM
         SELECT arrayJoin([
             (1, 'cold_read_from_source', cold > 0),
             (2, 'executor_populated_cache', cold_pop > 0),
-            (3, 'warm_served_from_cache', warm < cold)
+            (3, 'warm_served_from_cache', warm = 0)
         ]) AS row
         FROM
         (

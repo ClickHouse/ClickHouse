@@ -267,10 +267,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     try
     {
         connection = std::make_unique<RabbitMQConnection>(configuration, log);
-        if (connection->connect())
-            initRabbitMQ();
-        else if (mode <= LoadingStrictnessLevel::CREATE)
-            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
+        if (!getContext()->getMessageQueueDisableInsertion())
+        {
+            if (connection->connect())
+                initRabbitMQ();
+            else if (mode <= LoadingStrictnessLevel::CREATE)
+                throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
+        }
     }
     catch (...)
     {
@@ -767,7 +770,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
-                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
+                 "which were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -984,6 +987,13 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     if (initialized)
     {
         streaming_task->activateAndSchedule();
@@ -1031,6 +1041,13 @@ void StorageRabbitMQ::shutdown(bool)
     deactivateTask(streaming_task, true, false);
     LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
+
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
+        LOG_TRACE(log, "Shutdown finished");
+        return;
+    }
 
     LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
 
@@ -1099,7 +1116,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             queue_names += queue;
         }
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
                     queues.size(), queue_names);
         return;

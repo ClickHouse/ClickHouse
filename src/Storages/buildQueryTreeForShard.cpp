@@ -387,14 +387,27 @@ private:
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
+            /** A single `IN` function or `JOIN` is reached once per distributed table inside of it.
+              * For example, the right argument of an `IN` function can be a `UNION` of several
+              * distributed tables. Only the first of them rewrites the node, and the node has to be
+              * collected only once, otherwise the same subquery is prepared twice.
+              * A node on the stack is `GLOBAL` only if we made it `GLOBAL` ourselves, because
+              * `enterImpl` puts a node on the stack only while it is local.
+              */
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
             {
+                if (isNameOfGlobalInFunction(in_function_to_modify->getFunctionName()))
+                    return;
+
                 auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
                 auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
                 in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
             }
             else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
             {
+                if (join_node_to_modify->getLocality() == JoinLocality::Global)
+                    return;
+
                 join_node_to_modify->setLocality(JoinLocality::Global);
             }
 
@@ -899,7 +912,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithHashIgnoreAliasesMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 
@@ -1304,8 +1317,12 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
-    const Block & expected_header)
+    const Block & expected_header,
+    std::unordered_map<String, String> * duplicate_to_representative)
 {
+    if (duplicate_to_representative)
+        duplicate_to_representative->clear();
+
     if (!planner_context || !query_tree)
         return {};
 
@@ -1383,11 +1400,23 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
+    /// The first expected column mapping onto a given shard column is its "representative"; any later expected column
+    /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
+    /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
+    std::unordered_map<size_t, String> representative_for_shard_index;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
         const auto & expected_name = expected_header.getByPosition(i).name;
-        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
+        const size_t shard_index = shard_index_for_expected[i];
+        const auto * source_node = shard_input_nodes[shard_index];
         outputs.push_back(&dag.addAlias(*source_node, expected_name));
+
+        if (duplicate_to_representative)
+        {
+            auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
+            if (!inserted && it->second != expected_name)
+                duplicate_to_representative->emplace(expected_name, it->second);
+        }
     }
 
     dag.getOutputs() = std::move(outputs);

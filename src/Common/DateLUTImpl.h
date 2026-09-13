@@ -176,6 +176,12 @@ public:
     /// but they are different types in C++ and this affects function overload resolution).
     using Time = Int64;
 
+    /// `cctz` loads a whole family of names that no time zone can have. Such a name is not a time
+    /// zone, and constructing a `DateLUTImpl` for it throws. Validators that want to reject a time
+    /// zone name early call this in addition to `cctz::load_time_zone`, so that they cannot start
+    /// accepting names that the lookup itself rejects. See the definition for details.
+    static bool isSupportedTimeZoneName(std::string_view time_zone_name);
+
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
@@ -243,6 +249,16 @@ private:
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
     bool offset_is_fixed;
+
+    /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
+    /// stopped changing their offset before 1970. The minute variant is weaker - a whole number of minutes,
+    /// changing only by whole hours - which is what makes the minute independent of the offset.
+    bool offset_is_fixed_during_epoch;
+    bool offset_minute_of_hour_is_constant_during_epoch;
+    /// Added before the division in `toHour` / `toMinute`: one extra whole day (hour) shifts the quotient by
+    /// exactly one cycle, so the result modulo 24 (60) is unchanged, and the dividend stays non-negative.
+    Time hour_of_day_offset_addend;
+    Time minute_of_hour_offset_addend;
 
     /// Time zone name.
     std::string time_zone;
@@ -859,6 +875,9 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.hour);
 
+        if (t >= 0 && offset_is_fixed_during_epoch)
+            return static_cast<unsigned>(((t + hour_of_day_offset_addend) / 3600) % 24);
+
         const LUTIndex index = findIndexInRange(t);
 
         Time time = t - lut[index].date;
@@ -884,21 +903,15 @@ public:
 
         const LUTIndex index = findIndexInRange(t);
 
-        /// Calculate daylight saving offset first.
-        /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
-        /// but we can figure out all the accumulated offsets from 1970-01-01 to that day just by get the whole difference between lut[].date,
-        /// and then, we can directly subtract multiple 86400s to get the real DST offsets for the leap seconds is not considered now.
-        Time res = (lut[index].date - lut[daynum_offset_epoch].date) % 86400;
-
-        /// As so far to know, the maximal DST offset couldn't be more than 2 hours, so after the modulo operation the remainder
-        /// will sits between [-offset --> 0 --> offset] which respectively corresponds to moving clock forward or backward.
-        res = res > 43200 ? (86400 - res) : (0 - res);
+        /// The offset at the start of the day: local midnight is `day_number * 86400` seconds of local
+        /// time from the epoch, while `date` is the UTC instant of that same midnight.
+        Time res = (static_cast<Int64>(index.toUnderType()) - daynum_offset_epoch) * 86400 - lut[index].date;
 
         /// Check if has a offset change during this day. Add the change when cross the line
         if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
             res += lut[index].amount_of_offset_change();
 
-        return res + offset_at_start_of_epoch;
+        return res;
     }
 
 
@@ -941,8 +954,12 @@ public:
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t / 60) % 60;
 
-        /// To consider the DST changing situation within this day
-        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
+        if (t >= 0 && offset_minute_of_hour_is_constant_during_epoch)
+            return static_cast<unsigned>(((t + minute_of_hour_offset_addend) / 60) % 60);
+
+        /// The zones reaching here are the ones whose minute-of-hour offset is not constant during the epoch,
+        /// such as `Australia/Lord_Howe` (a 30-minute DST step) and `Asia/Kathmandu` (a sub-hour offset that
+        /// moved in 1986), so the offset change within the day has to be applied explicitly.
 
         LUTIndex index = findIndexInRange(t);
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
@@ -2032,10 +2049,15 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    NO_SANITIZE_UNDEFINED Time addDays(Time t, Int64 delta) const
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
+    NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        if (unlikely(isOutOfLUTRange(t)))
-            return addDaysOutOfRange(t, delta);
+        /// A `DateTime` (`UInt32`) cannot denote a value outside the lookup table, so only the wide
+        /// timestamp types take the escape path.
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+            if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
+                return addDaysOutOfRange(t, delta);
 
         const LUTIndex index = findIndexInRange(t);
 

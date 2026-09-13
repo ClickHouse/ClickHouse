@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ko/get-started/index",
-        "ko/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "빠른 시작",
+          "pages": [
+            "ko/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "모든 사용 사례",
+              "pages": [
+                "ko/get-started/setup/cloud",
+                "ko/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ko/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ko/get-started/quickstarts/creating-tables",
+                "ko/get-started/quickstarts/writing-queries",
+                "ko/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "실시간 분석",
+              "pages": [
+                "ko/get-started/quickstarts/create-your-first-materialized-view",
+                "ko/get-started/quickstarts/create-your-first-projection",
+                "ko/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "데이터 웨어하우징",
+              "pages": [
+                "ko/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ko/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "관측성",
+              "pages": [
+                "ko/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,

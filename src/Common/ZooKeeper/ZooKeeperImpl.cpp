@@ -1,12 +1,12 @@
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <ranges>
 
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
-#include <Common/StackTrace.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -901,10 +901,18 @@ void ZooKeeper::sendThread()
                     bool callback_registered = false;
                     /// If set, reject the request with this error instead of sending it.
                     std::optional<Error> reject_error;
+                    const auto assert_request_window_exit = [&]
+                    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                        const bool unwinding = std::uncaught_exceptions() > 0;
+                        chassert(unwinding == !reject_error.has_value());
+#endif
+                    };
                     SCOPE_EXIT({
                         if (callback_registered || !info.callback)
                             return;
                         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                        assert_request_window_exit();
                         try
                         {
                             ZooKeeperResponsePtr response = info.request->makeResponse();
@@ -915,7 +923,10 @@ void ZooKeeper::sendThread()
                         }
                         catch (...)
                         {
-                            tryLogCurrentException(log);
+                            if (reject_error.has_value())
+                                tryLogCurrentException(log);
+                            else
+                                deferException(std::current_exception(), "Exception in ZooKeeper sendThread request-window callback");
                         }
                     });
 
@@ -1010,7 +1021,7 @@ void ZooKeeper::sendThread()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        deferException(std::current_exception(), "Exception in sendThread");
         finalize(true, false, "Exception in sendThread");
     }
 }
@@ -1108,7 +1119,7 @@ void ZooKeeper::receiveThread()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        deferException(std::current_exception(), "Exception in receiveThread");
         finalize(false, true, "Exception in receiveThread");
     }
 }
@@ -1369,11 +1380,14 @@ void ZooKeeper::receiveEvent()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        deferException(std::current_exception(), "Exception while processing ZooKeeper response");
 
         /// Unrecoverable. Don't leave incorrect state in memory.
         if (!response)
+        {
+            logDeferredExceptions();
             std::terminate();
+        }
 
         /// In case we cannot read the response, we should indicate it as the error of that type
         ///  when the user cannot assume whether the request was processed or not.
@@ -1390,7 +1404,7 @@ void ZooKeeper::receiveEvent()
         catch (...)
         {
             /// Throw initial exception, not exception from callback.
-            tryLogCurrentException(log);
+            deferException(std::current_exception(), "Exception in ZooKeeper response callback");
         }
 
         throw;
@@ -1407,6 +1421,51 @@ void ZooKeeper::receiveEvent()
 }
 
 
+void ZooKeeper::deferException(std::exception_ptr exception, std::string_view context) noexcept
+{
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
+    try
+    {
+        std::lock_guard lock(deferred_exceptions_mutex);
+        deferred_exceptions.emplace_back(std::move(exception), context);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: failure to defer an exception must not prevent session cleanup.
+    }
+}
+
+
+void ZooKeeper::logDeferredExceptions() noexcept
+{
+    std::vector<std::pair<std::exception_ptr, std::string_view>> exceptions;
+    try
+    {
+        std::lock_guard lock(deferred_exceptions_mutex);
+        exceptions.swap(deferred_exceptions);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: failure to retrieve deferred exceptions must not prevent session cleanup.
+        return;
+    }
+
+    for (auto & [exception, context] : exceptions)
+    {
+        try
+        {
+            LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+            tryLogException(std::move(exception), log, std::string(context));
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: failure to log an exception must not prevent session cleanup.
+        }
+    }
+}
+
+
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
@@ -1418,8 +1477,13 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         return;
     }
 
-    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}' {}",
-             session_id, already_started, requests_queue.isFinished(), reason, StackTrace().toString());
+    LOG_INFO(
+        log,
+        "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
+        session_id,
+        already_started,
+        requests_queue.isFinished(),
+        reason);
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1445,7 +1509,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                tryLogCurrentException(log);
+                deferException(std::current_exception(), "Exception while closing ZooKeeper session");
             }
         }
 
@@ -1480,12 +1544,12 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             if (e.code() == POCO_ENOTCONN)
                 LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
             else
-                tryLogCurrentException(log);
+                deferException(std::current_exception(), "Exception while shutting down ZooKeeper socket");
         }
         catch (...)
         {
             /// We must continue to execute all callbacks, because the user is waiting for them.
-            tryLogCurrentException(log);
+            deferException(std::current_exception(), "Exception while shutting down ZooKeeper socket");
         }
 
         if (!error_receive)
@@ -1497,29 +1561,42 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             for (auto & op : operations)
             {
                 RequestInfo & request_info = op.second;
-                ZooKeeperResponsePtr response = request_info.request->makeResponse();
-
-                response->error = request_info.request->probably_sent
-                    ? Error::ZCONNECTIONLOSS
-                    : Error::ZSESSIONEXPIRED;
-                response->xid = request_info.request->xid;
-
-                chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
-                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.request->create_ts).count();
-
-                if (request_info.callback)
+                try
                 {
-                    try
+                    ZooKeeperResponsePtr response;
                     {
-                        request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
-                        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
+                        /// A memory-limit exception here would otherwise skip all remaining callbacks.
+                        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+                        response = request_info.request->makeResponse();
                     }
-                    catch (...)
+
+                    response->error = request_info.request->probably_sent
+                        ? Error::ZCONNECTIONLOSS
+                        : Error::ZSESSIONEXPIRED;
+                    response->xid = request_info.request->xid;
+
+                    chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
+                    UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.request->create_ts).count();
+
+                    if (request_info.callback)
                     {
-                        /// We must continue to all other callbacks, because the user is waiting for them.
-                        tryLogCurrentException(log);
+                        try
+                        {
+                            request_info.callback(*response);
+                            logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
+                            observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
+                        }
+                        catch (...)
+                        {
+                            /// We must continue to all other callbacks, because the user is waiting for them.
+                            deferException(std::current_exception(), "Exception in ZooKeeper operation callback during session finalization");
+                        }
                     }
+                }
+                catch (...)
+                {
+                    /// We must continue to all other callbacks, because the user is waiting for them.
+                    deferException(std::current_exception(), "Exception while preparing ZooKeeper operation callback during session finalization");
                 }
             }
 
@@ -1553,7 +1630,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                             catch (...)
                             {
                                 /// We must continue to all other callbacks, because the user is waiting for them.
-                                tryLogCurrentException(log);
+                                deferException(std::current_exception(), "Exception in ZooKeeper watch callback during session finalization");
                             }
                         }
                     }
@@ -1591,7 +1668,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log);
+                        deferException(std::current_exception(), "Exception in queued ZooKeeper operation callback during session finalization");
                     }
                 }
             }
@@ -1607,15 +1684,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log);
+                    deferException(std::current_exception(), "Exception in queued ZooKeeper watch callback during session finalization");
                 }
             }
         }
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        deferException(std::current_exception(), "Exception during ZooKeeper session finalization");
     }
+
+    logDeferredExceptions();
 }
 
 

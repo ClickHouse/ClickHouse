@@ -198,6 +198,7 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t latest_logs_cache_entry_count_threshold = 0;
     /// 0 = automatically use the number of CPU cores (resolved by Changelog's constructor).
     uint64_t startup_read_max_streams = 0;
     uint64_t startup_read_buffer_size = 8 * 1024 * 1024;
@@ -250,6 +251,12 @@ struct LogReadPlan
 
 using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 
+/// Bytes charged to the latest logs cache for one entry: the entry's serialized buffer rounded up to
+/// the allocator's size class, plus the fixed cost of the per-entry objects that keep it reachable.
+/// This is what `latest_logs_cache_size_threshold` bounds, so the threshold means resident memory
+/// rather than payload bytes; for small entries the two differ by several times.
+size_t cachedLogEntryBytes(const LogEntryPtr & log_entry);
+
 /// Settings for the decoded changelog read-ahead engine. One shared reader/fill implementation
 /// (ReadAheadReader) backs two independent consumers: peer catch-up read-ahead, gated by `enabled`
 /// and using window_bytes/max_peer_readers/eviction_timeout_ms/pool_threads; and commit read-ahead,
@@ -286,8 +293,10 @@ struct ReadAheadReader;
   * an LRU/SLRU-style cache would not help.
   *
   * The latest logs cache holds the most recent logs in memory (unflushed tail plus a flushed
-  * suffix), bounded by latest_logs_cache_size_threshold; once persisted, its location is recorded
-  * (logs_location) and the entry may be evicted.
+  * suffix), bounded by latest_logs_cache_entry_count_threshold and by
+  * latest_logs_cache_size_threshold, which is charged in `cachedLogEntryBytes`, that is resident
+  * bytes rather than payload bytes; once persisted, its location is recorded (logs_location) and the
+  * entry may be evicted.
   *
   * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
@@ -384,7 +393,7 @@ struct LogEntryStorage
     /// Test-only: whether the commit reader currently exists.
     bool hasCommitReaderForTests() const;
 
-    /// True when latest_logs_cache has no size threshold (retains the whole live log, never evicts).
+    /// True when latest_logs_cache has no size or entry-count threshold (retains the whole live log, never evicts).
     bool isUnlimitedCacheMode() const { return latest_logs_cache.hasUnlimitedSpace(); }
 
     void addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location);
@@ -400,11 +409,11 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_);
+        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
-        void addEntry(uint64_t index, size_t size, LogEntryPtr log_entry);
+        void addEntry(uint64_t index, LogEntryPtr log_entry);
 
-        void updateStatsWithNewEntry(uint64_t index, size_t size);
+        void updateStatsWithNewEntry(uint64_t index, size_t entry_bytes);
 
         void popOldestEntry();
 
@@ -417,18 +426,20 @@ private:
 
         bool empty() const;
         size_t numberOfEntries() const;
-        bool hasSpaceAvailable(size_t log_entry_size) const;
+        bool hasSpaceAvailable(size_t entry_bytes) const;
         void clear();
 
         bool hasUnlimitedSpace() const;
 
         /// Mapping log_id -> log_entry
         IndexToLogEntry cache;
+        /// Sum of `cachedLogEntryBytes` over the cached entries, compared against `size_threshold`.
         size_t cache_size = 0;
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
+        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
@@ -722,7 +733,8 @@ private:
     void backgroundChangelogOperationsThread();
 
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
-    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// Queues asynchronous removal; returns the operation so callers can wait for completion.
+    ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

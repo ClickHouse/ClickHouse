@@ -44,9 +44,24 @@ bool MetadataStorageFromCacheObjectStorage::supportsEmptyFilesWithoutBlobs() con
     return underlying->supportsEmptyFilesWithoutBlobs();
 }
 
+bool MetadataStorageFromCacheObjectStorage::supportsInlineData() const
+{
+    return underlying->supportsInlineData();
+}
+
+bool MetadataStorageFromCacheObjectStorage::appliesOperationsEagerly() const
+{
+    return underlying->appliesOperationsEagerly();
+}
+
 bool MetadataStorageFromCacheObjectStorage::areBlobPathsRandom() const
 {
     return underlying->areBlobPathsRandom();
+}
+
+ObjectStorageKeyGeneratorPtr MetadataStorageFromCacheObjectStorage::getKeyGenerator() const
+{
+    return underlying->getKeyGenerator();
 }
 
 bool MetadataStorageFromCacheObjectStorage::existsFile(const std::string & path) const
@@ -393,6 +408,21 @@ void MetadataStorageFromCacheObjectStorageTransaction::addBlobToMetadata(const s
 void MetadataStorageFromCacheObjectStorageTransaction::truncateFile(const std::string & path, size_t size)
 {
     underlying->truncateFile(path, size);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::incrementBlobRefCount(const std::string & blob)
+{
+    underlying->incrementBlobRefCount(blob);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::decrementBlobRefCount(const std::string & blob)
+{
+    underlying->decrementBlobRefCount(blob);
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::submitBlobForRemoval(const std::string & remote_path)
+{
+    underlying->submitBlobForRemoval(remote_path);
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 
 #include <Client/scaleInteractiveDelayByFanout.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -16,7 +17,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsDialect dialect;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -108,7 +108,7 @@ void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
     for (ReplicaState & state : replica_states)
     {
@@ -116,6 +116,17 @@ void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
         if (connection != nullptr)
             connection->sendQueryPlan(query_plan);
     }
+}
+
+bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    for (const ReplicaState & state : replica_states)
+    {
+        if (state.connection && state.connection->getQueryPlanSerializationVersion() < version)
+            return false;
+    }
+
+    return true;
 }
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -156,9 +167,9 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
-    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-    modified_settings[Setting::dialect] = Dialect::clickhouse;
-    modified_settings[Setting::dialect].changed = false;
+    /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the overrides
+    /// below, so all of them are marked changed afterwards and are serialized.
+    prepareSecondaryQuerySettings(modified_settings);
 
     modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],
@@ -480,31 +491,25 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList except_list;
 
         auto timeout = settings[Setting::receive_timeout];
-        int n = 0;
 
-        /// EINTR loop
-        while (true)
+        read_list.clear();
+        for (const ReplicaState & state : replica_states)
         {
-            read_list.clear();
-            for (const ReplicaState & state : replica_states)
-            {
-                Connection * connection = state.connection;
-                if (connection != nullptr)
-                    read_list.push_back(*connection->socket);
-            }
-
-            /// poco returns 0 on EINTR, let's reset errno to ensure that EINTR came from select().
-            errno = 0;
-
-            n = Poco::Net::Socket::select(
-                read_list,
-                write_list,
-                except_list,
-                timeout);
-            if (n <= 0 && errno == EINTR)
-                continue;
-            break;
+            Connection * connection = state.connection;
+            if (connection != nullptr)
+                read_list.push_back(*connection->socket);
         }
+
+        /// No `EINTR` retry here: `Poco::Net::Socket::select` already retries against a single deadline
+        /// of its own, spending a `remainingTime` budget (`base/poco/Net/src/Socket.cpp`, in each of its
+        /// epoll, poll and select branches). Retrying on top of that restarted the deadline from the full
+        /// `receive_timeout` every time, because an exhausted budget returns 0 with `errno` still holding
+        /// the `EINTR` from Poco's own retry - so on a silent replica the timeout below never fired.
+        int n = Poco::Net::Socket::select(
+            read_list,
+            write_list,
+            except_list,
+            timeout);
 
         if (n == 0)
         {

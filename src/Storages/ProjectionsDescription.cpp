@@ -246,7 +246,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool attach_short_syntax)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -255,6 +256,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
+
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -296,7 +302,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
     }
 
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
+    if (isFreshTableDefinition(mode, attach_short_syntax))
     {
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
@@ -328,16 +335,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
         }
 
-        const auto & ac = query_context->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
+        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
+        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
 
@@ -901,6 +905,19 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+void ProjectionsDescription::replace(ProjectionDescription && projection)
+{
+    auto it = map.find(projection.name);
+    if (it == map.end())
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection.name,
+            getHintsMessage(projection.name));
+
+    *it->second = std::move(projection);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const
