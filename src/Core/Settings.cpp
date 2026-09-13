@@ -7631,6 +7631,7 @@ For the `fair` workload scheduler: once the query has attained this many bytes o
 )", 0) \
     DECLARE(Int64, workload_priority, 0, R"(
 Scheduling priority of the query within its workload, used by the `priority` workload scheduler (see the `scheduler` workload setting). Lower value = higher priority; the default `0` is the neutral baseline, a negative value raises the query above the default and a positive value lowers it. Queries of equal priority are served first-come-first-served. Ignored by the other schedulers.
+)", 0) \
     DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
 The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
 It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
