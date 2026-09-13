@@ -337,14 +337,19 @@ public:
             if (is_v2)
             {
                 io::prometheus::write::v2::Request v2_request;
-                if (!v2_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                if (!v2_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream)
+                    || v2_request.symbols().empty()
+                    || !v2_request.symbols(0).empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
                 protocol.write(v2_request);
             }
             else
             {
                 prometheus::WriteRequest write_request;
-                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream)
+                    || (write_request.timeseries().empty()
+                        && write_request.metadata().empty()
+                        && write_request.GetReflection()->GetUnknownFields(write_request).field_count()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
                 protocol.write(write_request.timeseries(), write_request.metadata());
             }

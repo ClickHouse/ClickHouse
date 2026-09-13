@@ -335,6 +335,8 @@ Block makeBlock(const io::prometheus::write::v2::Request & request, const Storag
         TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata);
         for (const auto & element : request.timeseries())
         {
+            /// Remote Write v2 always transmits available native histograms because `send_native_histograms` is a no-op.
+            /// Ignoring unsupported data preserves supported float samples from mixed requests.
             if (element.samples().empty())
                 continue;
             if (element.labels_refs_size() % 2 != 0)

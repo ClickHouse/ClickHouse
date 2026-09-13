@@ -351,6 +351,51 @@ def test_remote_write_v2_skips_unsupported_data():
     assert series[0].samples[0].value == 42.0
 
 
+def test_remote_write_v2_invalid_first_symbol():
+    metric_name = "rw2_invalid_first_symbol"
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": metric_name}, {1724118375: 1.0})]
+    )
+    protobuf.symbols[0] = "not-empty"
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+    )
+    assert response.status_code == requests.codes.bad_request
+    assert node.query(
+        "SELECT count() FROM timeSeriesMetrics(prometheus) "
+        f"WHERE metric_family_name = '{metric_name}'"
+    ) == "0\n"
+
+
+def test_remote_write_wrong_schema():
+    v1_request = convert_time_series_to_protobuf(
+        [({"__name__": "rw1_as_rw2"}, {1724118380: 1.0})]
+    )
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        v1_request,
+        content_type=WRITE_V2_CONTENT_TYPE,
+    )
+    assert response.status_code == requests.codes.bad_request
+
+    v2_request = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": "rw2_as_rw1"}, {1724118385: 1.0})]
+    )
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        v2_request,
+    )
+    assert response.status_code == requests.codes.bad_request
+
+
 def test_remote_write_v2_missing_metric_name():
     time_series = [({"job": "testjob", "instance": "localhost:9090"}, {1724118400: 1.0})]
     protobuf = convert_time_series_to_write_v2_protobuf(time_series)
