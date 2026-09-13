@@ -18,13 +18,17 @@ class StorageTimeSeries;
 ///   0 - Tables created before the `version` setting was introduced (including "prealpha" tables
 ///       and tables without the recent samples table).
 ///   1 - The `version` setting was introduced.
+///   2 - The samples tables store buckets of samples: a row of the "samples" (and "recent samples") table keeps
+///       the samples of one series within one time bucket as a sorted array `samples` with the columns `bucket`,
+///       `min_time`, `max_time`, and the table engine is `AggregatingMergeTree`. Tables of the older versions
+///       stored one sample per row (columns `timestamp`, `value`), they can be read but not written into.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 1;
+    constexpr UInt64 LATEST = 2;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -32,12 +36,12 @@ namespace TimeSeriesVersion
 
     /// The minimum version which can be written into (INSERT, Prometheus remote-write).
     /// Older supported tables are read-only, so the data can be copied out of them with INSERT-SELECT.
-    constexpr UInt64 MIN_WRITABLE = 0;
+    constexpr UInt64 MIN_WRITABLE = 2;
 
     /// The minimum version supported by the PromQL execution layer (the `prometheusQuery`, `prometheusQueryRange`
     /// and `timeSeriesSelector` table functions, the `promql` dialect, and the Prometheus HTTP query API).
     /// The PromQL layer may support fewer versions than the table engine itself.
-    constexpr UInt64 MIN_SUPPORTED_BY_PROMQL = 0;
+    constexpr UInt64 MIN_SUPPORTED_BY_PROMQL = 2;
 
     static_assert(MIN_SUPPORTED <= MIN_WRITABLE);
     static_assert(MIN_WRITABLE <= LATEST);

@@ -727,7 +727,7 @@ void StorageTimeSeries::readImpl(
     /// Run the generated read query on a child context with a few settings pinned so its results
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
-    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries());
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(*getStorageSettings(), query_info.isFinal()));
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
     auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
@@ -860,7 +860,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 |---|---|---|
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
-| `time_series` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)) |
+| `time_series` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series, sorted by timestamp. A `SELECT` returns the rows of the [samples](#samples-table) table as they are, so a time series is returned in several rows (one per bucket, and `SELECT ... FINAL` merges the rows of the same bucket which are not merged yet); use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series into one array. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)) |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -898,11 +898,11 @@ The outer `time_series` column can be listed explicitly in a `CREATE TABLE` stat
 CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
-This is equivalent to declaring the timestamp and value column types in the samples `INNER COLUMNS` clause directly:
+This is equivalent to declaring the `samples` column of the samples table in the `INNER COLUMNS` clause directly:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))) CODEC(ZSTD(3)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -927,30 +927,45 @@ The target tables are the following:
 
 The _samples_ table contains time series associated with some identifier.
 
+A row of the _samples_ table contains the samples of one time series with timestamps in one time bucket. The length of the buckets
+is defined by the [samples_bucket_step_seconds](#settings) setting (1 hour by default): when data is inserted, the samples of a time series
+are sorted by timestamp, deduplicated (for samples with the same timestamp the sample with the greatest value is kept), and split into buckets;
+each bucket makes a row. The rows with the same `id` and `bucket` are merged in the background by the `AggregatingMergeTree` engine
+using the aggregate function `timeSeriesGroupArray`, which keeps the array of samples sorted and deduplicated.
+Because of that, reading the table before a merge can return several rows for the same `id` and `bucket`.
+
 The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
-| `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
-| `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
+| `samples` | [x] | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))` | `Array(Tuple(DateTime64(X), Float32 or Float64))`, optionally with named tuple elements and optionally wrapped in `SimpleAggregateFunction(timeSeriesGroupArray, ...)` | The samples of a time series within the bucket sorted by timestamp |
+| `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
+| `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(min, ...)` | The minimum timestamp of the samples in the row |
+| `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(max, ...)` | The maximum timestamp of the samples in the row |
 
-Columns the engine creates itself get time-series compression codecs:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
-compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
+The `samples` column the engine creates itself gets the compression codec `ZSTD(3)` because it dominates the on-disk size of the samples table.
 See also [Adjusting types of columns](#adjusting-column-types).
+
+Queries reading a time range use the `bucket` column to select granules by the primary key `(id, bucket)`, and the `min_time` and `max_time`
+columns to skip the rows whose samples are all outside of the range. The function `timeSeriesSliceSortedArray` then cuts out the requested interval
+of the sorted array of samples.
 
 ### Recent samples table {#recent-samples-table}
 
 The _recent samples_ table is optional and enabled by default (see the [recent_samples_ttl_seconds](#settings) setting;
 setting it to zero disables the table). It contains a copy of the samples newer than the TTL defined by that setting,
-and it must have the same columns as the [samples](#samples-table) table.
+and it must have the same columns as the [samples](#samples-table) table. Its buckets are shorter: their length is defined by
+the [recent_samples_bucket_step_seconds](#settings) setting (15 minutes by default).
 
 Every inserted sample is written both to the samples table and to the recent samples table.
 Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
 because it's much smaller (this can be disabled with the query-level setting `time_series_prefer_recent_samples_table`).
 
-The TTL of the inner recent samples table is always derived from the [recent_samples_ttl_seconds](#settings) setting.
+The TTL of the inner recent samples table is always derived from the [recent_samples_ttl_seconds](#settings) setting:
+a row expires when all its samples are older than the TTL, i.e. the TTL expression is
+`bucket + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)`
+(with `toDateTime(bucket)` instead of `bucket` if the timestamps are raw `UInt32`).
 
 ### Tags table {#tags-table}
 
@@ -963,7 +978,7 @@ The _tags_ table must have columns:
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
-| `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
+| `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting |
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 
@@ -1003,21 +1018,25 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 1, recent_samples_ttl_seconds = 345600
+SETTINGS version = 2, recent_samples_ttl_seconds = 345600, samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 900
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
 RECENT SAMPLES INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
@@ -1038,8 +1057,9 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 So the columns were generated automatically and also there are four inner target tables with their own column definitions
-stored in the `INNER COLUMNS` clauses. The `recent_samples_ttl_seconds` setting was written into the `SETTINGS` clause
-with its default value: the setting defines the TTL of the recent samples table, so its effective value is fixed at creation.
+stored in the `INNER COLUMNS` clauses. The `recent_samples_ttl_seconds`, `samples_bucket_step_seconds` and `recent_samples_bucket_step_seconds`
+settings were written into the `SETTINGS` clause with their default values: they define the TTL of the recent samples table and
+the buckets of the samples tables, so their effective values are fixed at creation.
 Also the latest schema version was pinned into the `version` setting (see [Schema versioning](#schema-versioning)).
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -1051,26 +1071,31 @@ and each target table has its own set of columns:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-ENGINE = MergeTree
-ORDER BY (id, timestamp)
-SETTINGS index_granularity = 32768
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(bucket)
+ORDER BY (id, bucket)
+SETTINGS index_granularity = 512, index_granularity_bytes = 524288
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-ENGINE = MergeTree
-PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
-ORDER BY (id, timestamp)
-TTL toDateTime(timestamp) + toIntervalSecond(345600)
-SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+ENGINE = AggregatingMergeTree
+PARTITION BY toStartOfInterval(bucket, toIntervalHour(5))
+ORDER BY (id, bucket)
+TTL bucket + toIntervalSecond(346500)
+SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
 ```
 
 ```sql
@@ -1121,24 +1146,31 @@ The types of the `id`, timestamp and value columns and the replication type of t
 `ReplicatedMergeTree` or `SharedMergeTree`) are taken from `existing_table` too, unless the statement declares them itself.
 The outer column list is regenerated and not copied.
 
-A table created by an older version of ClickHouse can be used as `existing_table`: the new table gets the current
-structure, e.g. the current `id` type and default identifier expression.
-
 ## Adjusting types of columns {#adjusting-column-types}
 
-You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause. For example, to store timestamps in microseconds and values as `Float32` use:
+You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause.
+The simplest way to store timestamps in microseconds and values as `Float32` is to declare the outer `time_series` column
+(see [Specifying outer columns](#specifying-outer-columns)):
+
+```sql
+CREATE TABLE my_table (time_series Array(Tuple(DateTime64(6), Float32))) ENGINE=TimeSeries
+```
+
+The same can be done by declaring the `samples` column of the samples table:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(3)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
+SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))))
 ```
+
+The columns `timestamp` and `value` of the older schema versions are not allowed in the samples `INNER COLUMNS` clause.
 
 ## The `id` column {#id-column}
 
@@ -1181,17 +1213,12 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 This statement will add columns `instance` and `job` to the inner [tags](#tags-table) target table.
 The values of the tags `instance` and `job` will be stored both in those columns and in the `tags` column.
 
-<Note>
-In tables created by older versions of ClickHouse the `tags` column contains only the tags without dedicated
-columns and without the metric name, and the `all_tags` column is an ephemeral column which was filled on insertion
-with all the tags except the metric name.
-</Note>
-
 ## Table engines of inner target tables {#inner-table-engines}
 
 By default inner target tables use the following table engines:
-- the [samples](#samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree);
-- the [recent samples](#recent-samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) partitioned by 5-hour buckets (see the [recent_samples_partition_by](#settings) setting) with a `TTL` derived from
+- the [samples](#samples-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the rows
+of the same time series and the same bucket must be merged into one sorted array of samples; it's partitioned by month (see the [samples_partition_by](#settings) setting);
+- the [recent samples](#recent-samples-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) partitioned by 5-hour intervals (see the [recent_samples_partition_by](#settings) setting) with a `TTL` derived from
 the [recent_samples_ttl_seconds](#settings) setting and with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole;
 - the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
@@ -1212,8 +1239,8 @@ Other table engines also can be used for inner target tables if it's specified s
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES ENGINE=ReplicatedMergeTree
-RECENT SAMPLES ENGINE=ReplicatedMergeTree
+SAMPLES ENGINE=ReplicatedAggregatingMergeTree
+RECENT SAMPLES ENGINE=ReplicatedAggregatingMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -1224,6 +1251,11 @@ This is safe here because those columns are functionally dependent on `id`, whic
 rows that a background merge collapses together share the same values. When the inner tags table is generated or its
 engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
 for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
+The same setting is set on the inner [samples](#samples-table) and [recent samples](#recent-samples-table) tables,
+so that extra columns can be declared in them.
+
+The default partition keys and the TTL of the inner samples tables are expressions over the `bucket` column, which has the type
+of the timestamps. If the timestamps are raw `UInt32`, these expressions use `toDateTime(bucket)` instead of `bucket`.
 
 ## External target tables {#external-target-tables}
 
@@ -1233,11 +1265,13 @@ It's possible to make a `TimeSeries` table use a manually created table:
 CREATE TABLE samples_for_my_table
 (
     `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-ENGINE = MergeTree
-ORDER BY (id, timestamp);
+ENGINE = AggregatingMergeTree
+ORDER BY (id, bucket);
 
 CREATE TABLE tags_for_my_table ...
 
@@ -1250,7 +1284,9 @@ An external table can also be used as the [recent samples](#recent-samples-table
 Such a table must have the same columns as an external samples table, and it must retain at least
 [recent_samples_ttl_seconds](#settings) seconds of data, which is the user's responsibility.
 
-The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
+The external tables' column types (`id`, `samples`, `bucket`, `min_time`, `max_time`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
+
+Rows written into an external samples table directly (not through the `TimeSeries` table) must follow the layout the reader relies on: `bucket` is the timestamps of the row rounded down to a multiple of the bucket step ([samples_bucket_step_seconds](#settings) or [recent_samples_bucket_step_seconds](#settings)), `samples` is sorted by timestamp, and `min_time` and `max_time` are the bounds of the samples in the row. Rows with another alignment are skipped by the filters on `bucket`, `min_time` and `max_time`.
 
 The id-generator expression for an external tags target is resolved at INSERT time in the following order: the [`id_generator`](#settings) setting (if set), then the `DEFAULT` declared on the external table's `id` column (if any), then the canonical generator derived from the `id` type. The setting therefore overrides whatever `DEFAULT` is declared on the external table — see [The `id` column](#id-column) for details.
 
@@ -1284,19 +1320,24 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
-| `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
-| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
-| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
-| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `samples_bucket_step_seconds` | UInt64 | 3600 | The length in seconds of the time buckets of the [samples](#samples-table) table: a row of the table contains the samples of one time series with timestamps in one bucket, and the `bucket` column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time |
+| `samples_partition_by` | Expression | `toYYYYMM(bucket)` | Partition key of the inner [samples](#samples-table) table, for example `toStartOfWeek(bucket)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per month is used. Ignored for an external samples table |
+| `samples_index_granularity` | UInt64 | 512 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
+| `samples_index_granularity_bytes` | UInt64 | 524288 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL bucket + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_bucket_step_seconds` | UInt64 | 900 | The length in seconds of the time buckets of the [recent samples](#recent-samples-table) table, see `samples_bucket_step_seconds`. The default is 15 minutes; the effective value is pinned into the table definition at CREATE time. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_partition_by` | Expression | `toStartOfInterval(bucket, toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(bucket)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity_bytes` | UInt64 | 262144 | Sets `index_granularity_bytes` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 2 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 2) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version. `CREATE TABLE ... AS other_table` doesn't copy the version of the other table, see [Creating a table AS existing table](#create-as).
@@ -1311,6 +1352,29 @@ the `promql` dialect, and the Prometheus HTTP query API):
   create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query, and replace the old table with the new one.
 - If the version is too old to write into, `INSERT` queries and the Prometheus remote-write protocol are rejected, while `SELECT` queries still work.
 - If the version is too old for the server at all, every query over the table (except `SHOW CREATE TABLE`, `DETACH` and `DROP`) is rejected.
+
+The versions are:
+- 0 - tables created before the `version` setting was introduced;
+- 1 - the `version` setting was introduced;
+- 2 - the [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples
+  (columns `samples`, `bucket`, `min_time`, `max_time`) instead of one sample per row (columns `timestamp`, `value`).
+
+### Older versions {#older-versions}
+
+Tables of versions 0 and 1 can be read but not written into, and PromQL can't be evaluated over them.
+They differ from the current version in the following:
+
+- The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store one sample per row
+  in the columns `timestamp` and `value` instead of buckets of samples.
+- In tables of version 0 the `tags` column of the [tags](#tags-table) table contains only the tags without dedicated columns
+  and without the metric name (reading handles both cases), and the `all_tags` column is an ephemeral column which was filled
+  on insertion with all the tags except the metric name. For compatibility an `id_generator` expression can still reference
+  `all_tags`: there is no such column any more, but on insertion it is resolved as the same data as the `tags` column.
+
+A table of an older version can be used as `existing_table` in `CREATE TABLE ... AS existing_table`
+(see [Creating a table AS existing table](#create-as)): the new table gets the current structure, e.g. the current `id` type
+and default identifier expression. This is the way to migrate such a table: create a new table `AS` the old one,
+copy the data with an `INSERT ... SELECT` query, and replace the old table with the new one.
 
 # Functions {#functions}
 

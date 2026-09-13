@@ -3,8 +3,7 @@
 -- because ATTACH TABLE with a TimeSeries engine goes through the replicated DDL log and requires
 -- replica sync (same as 04146_timeseries_attach_detach.sql).
 
--- Auto-created `timestamp` and `value` columns of the TimeSeries samples inner table
--- get compression codecs (DoubleDelta + ZSTD for timestamps, plain ZSTD for values);
+-- The auto-created `samples` column of the TimeSeries samples inner table gets the compression codec ZSTD(3);
 -- explicitly declared columns keep the user's codecs (or none), and the normalized
 -- table round-trips through DETACH/ATTACH unchanged.
 
@@ -29,8 +28,8 @@ DROP TABLE ts_codecs;
 
 -- Explicitly declared samples columns keep the user's choice (here: no codec).
 CREATE TABLE ts_explicit ENGINE = TimeSeries
-SAMPLES INNER COLUMNS (id UUID, timestamp DateTime64(3), value Float64)
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp);
+SAMPLES INNER COLUMNS (id UUID, samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))))
+SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
 
 SELECT 'explicit columns keep user codecs:';
 SELECT name, type, compression_codec FROM system.columns

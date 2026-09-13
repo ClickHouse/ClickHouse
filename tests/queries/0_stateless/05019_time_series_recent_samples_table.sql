@@ -25,8 +25,8 @@ INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
     ('test_metric', map('env', 'dev'), [(now64(3) - INTERVAL 2 MINUTE, 100.)]);
 
 SELECT
-    (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%') AS samples_rows,
-    (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%') AS recent_rows;
+    (SELECT sum(length(samples)) FROM merge(currentDatabase(), '^\\.inner_id\\.samples\\.')) AS samples_count,
+    (SELECT sum(length(samples)) FROM merge(currentDatabase(), '^\\.inner_id\\.recentsamples\\.')) AS recent_samples_count;
 
 SELECT '-- a query fitting in the TTL window reads from the recent samples table and returns the same data';
 
@@ -61,14 +61,14 @@ INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
     ('test_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 44.)]);
 
 SELECT
-    (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%') AS samples_rows,
-    (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%') AS recent_rows;
+    (SELECT sum(length(samples)) FROM merge(currentDatabase(), '^\\.inner_id\\.samples\\.')) AS samples_count,
+    (SELECT sum(length(samples)) FROM merge(currentDatabase(), '^\\.inner_id\\.recentsamples\\.')) AS recent_samples_count;
 
 SELECT '-- custom partitioning and index granularity of the recent samples table';
 
 DROP TABLE IF EXISTS ts_recent_custom;
 CREATE TABLE ts_recent_custom ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 259200, recent_samples_partition_by = 'toStartOfHour(timestamp)', recent_samples_index_granularity = 4096;
+SETTINGS recent_samples_ttl_seconds = 259200, recent_samples_partition_by = 'toStartOfHour(bucket)', recent_samples_index_granularity = 4096;
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%' AND engine_full LIKE '%toStartOfHour%';
 
@@ -79,7 +79,7 @@ SELECT '-- the TTL of a user-declared recent samples engine is derived from the 
 DROP TABLE IF EXISTS ts_recent_declared;
 CREATE TABLE ts_recent_declared ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 432000
-RECENT SAMPLES ENGINE = MergeTree PARTITION BY toStartOfDay(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(1);
+RECENT SAMPLES ENGINE = AggregatingMergeTree PARTITION BY toStartOfDay(bucket) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(1);
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%' AND engine_full LIKE '%toStartOfDay%';
 
@@ -91,18 +91,20 @@ DROP TABLE IF EXISTS ts_recent_ext;
 DROP TABLE IF EXISTS recent_ext;
 CREATE TABLE recent_ext
 (
-    `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
+    `bucket` DateTime64(3),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
 )
-ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
+ENGINE = AggregatingMergeTree PARTITION BY toDate(bucket) ORDER BY (id, bucket);
 
 CREATE TABLE ts_recent_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_ext;
 
 INSERT INTO ts_recent_ext (metric_name, tags, time_series) VALUES
     ('ext_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
 
-SELECT count() FROM recent_ext;
+SELECT sum(length(samples)) FROM recent_ext;
 
 SELECT plan LIKE '%recent_ext%' AS reads_recent
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent_ext, 'ext_metric', now())));
@@ -114,12 +116,12 @@ DROP TABLE recent_ext;
 
 SELECT '-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds';
 
-CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_partition_by = 'toStartOfHour(timestamp)'; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_partition_by = 'toStartOfHour(bucket)'; -- { serverError INVALID_SETTING_VALUE }
 CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_index_granularity = 4096; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- a RECENT SAMPLES clause requires a non-zero recent_samples_ttl_seconds';
 
-CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 RECENT SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp); -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 RECENT SAMPLES ENGINE = AggregatingMergeTree ORDER BY (id, bucket); -- { serverError INCORRECT_QUERY }
 
 SELECT '-- the recent samples inner table requires a MergeTree-family engine';
 

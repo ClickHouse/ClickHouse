@@ -37,10 +37,10 @@ SET default_table_engine = 'None';
 CREATE TABLE ts_default_engine ENGINE = TimeSeries; -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE ts_default_engine ENGINE = TimeSeries
-SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES ENGINE = AggregatingMergeTree ORDER BY (id, bucket)
 TAGS ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
 METRICS ENGINE = ReplacingMergeTree ORDER BY metric_family_name
-RECENT SAMPLES ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
+RECENT SAMPLES ENGINE = AggregatingMergeTree PARTITION BY toDate(bucket) ORDER BY (id, bucket);
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.%';
 

@@ -306,8 +306,6 @@ namespace
         ASTPtr time_series;
         ASTPtr values;
         ASTPtr where;
-        ASTs group_by;
-        ASTPtr having;
 
         switch (result.store_method)
         {
@@ -395,25 +393,36 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesGroupArray(timestamp::timestamp_data_type, value::scalar_data_type) AS time_series
+                /// Step 1: Merge the rows of each series into one array of samples.
+                ///
+                /// SELECT group, timeSeriesGroupArray(time_series) AS time_series
                 /// FROM <raw_data>
                 /// GROUP BY group
-                /// HAVING notEmpty(time_series)
+                {
+                    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
 
-                /// timeSeriesGroupToTags(group) AS tags
+                    SelectQueryBuilder builder;
+                    builder.from_table = context.subqueries.back().name;
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.select_list.push_back(
+                        makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries)));
+                    builder.select_list.back()->setAlias(ColumnNames::TimeSeries);
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+                    result.select_query = builder.getSelectQuery();
+                }
+
+                /// Step 2: Convert the groups to tags and skip the empty series. A separate step because
+                /// the input column and the merged array of step 1 have the same name `time_series`.
+                ///
+                /// SELECT timeSeriesGroupToTags(group) AS tags, time_series
+                /// FROM <step1>
+                /// WHERE notEmpty(time_series)
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// timeSeriesGroupArray(timestamp, value) AS time_series
-                time_series = makeASTFunction(
-                    "timeSeriesGroupArray",
-                    timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.timestamp_data_type),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
-                time_series->setAlias(ColumnNames::TimeSeries);
-
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                time_series = make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries);
+                where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
 
                 break;
             }
@@ -454,8 +463,6 @@ namespace
         builder.select_list.push_back(std::move(time_series));
 
         builder.where = std::move(where);
-        builder.group_by = std::move(group_by);
-        builder.having = std::move(having);
 
         /// Data from range queries comes sorted alphabetically by tags.
         builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));

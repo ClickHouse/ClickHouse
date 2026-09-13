@@ -27,9 +27,11 @@ CREATE TABLE tags_table
 CREATE TABLE samples_table
 (
     id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+    bucket DateTime64(3),
+    min_time SimpleAggregateFunction(min, DateTime64(3)),
+    max_time SimpleAggregateFunction(max, DateTime64(3))
+) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
 
 CREATE TABLE prometheus ENGINE = TimeSeries
 SAMPLES samples_table TAGS tags_table;
@@ -40,10 +42,10 @@ INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
     (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
     (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
 
-INSERT INTO samples_table (id, timestamp, value) VALUES
-    (1583154, toDateTime64(100, 3), 10.),
-    (2836623, toDateTime64(100, 3), 10.),
-    (3691271, toDateTime64(100, 3), 20.);
+INSERT INTO samples_table (id, samples, bucket, min_time, max_time) VALUES
+    (1583154, [(toDateTime64(100, 3), 10.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3)),
+    (2836623, [(toDateTime64(100, 3), 10.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3)),
+    (3691271, [(toDateTime64(100, 3), 20.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3));
 
 
 -- PromQL query `(foo == bar)[50:10]` internally evaluates a SQL query like this:
@@ -51,23 +53,25 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
 -- SELECT timeSeriesGroupToTags(foo.group) AS tags, foo.timestamp, foo.value
 -- FROM
 -- (
---     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     SELECT timeSeriesIdToGroup(id) AS group, timeSeriesSliceSortedArray(samples, toDateTime64(60, 3), toDateTime64(150, 3)) AS time_series
 --     FROM samples_table
---     WHERE id IN (
+--     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
+--       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
+--       AND id IN (
 --         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
 --         FROM tags_table
 --         WHERE metric_name = 'foo' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
---       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS foo
 -- ANY INNER JOIN
 -- (
---     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     SELECT timeSeriesIdToGroup(id) AS group, timeSeriesSliceSortedArray(samples, toDateTime64(60, 3), toDateTime64(150, 3)) AS time_series
 --     FROM samples_table
---     WHERE id IN (
+--     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
+--       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
+--       AND id IN (
 --         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
 --         FROM tags_table
 --         WHERE metric_name = 'bar' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
---       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS bar
 -- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
 --    AND foo.timestamp = bar.timestamp AND foo.value = bar.value
