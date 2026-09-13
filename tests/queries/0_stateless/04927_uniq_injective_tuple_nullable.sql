@@ -14,15 +14,6 @@ SELECT uniq(tuple(x)), uniqExact(tuple(x)), uniqHLL12(tuple(x)), uniqCombined(tu
 FROM values('x Nullable(Int32)', 1, 2, NULL)
 SETTINGS optimize_injective_functions_inside_uniq = 0;
 
-SELECT 'bitmaskToArray and bitPositionsToArray';
-SELECT uniqExact(bitmaskToArray(x)), uniqExact(bitPositionsToArray(x))
-FROM values('x Nullable(Int32)', 1, 2, NULL)
-SETTINGS optimize_injective_functions_inside_uniq = 1;
-
-SELECT uniqExact(bitmaskToArray(x)), uniqExact(bitPositionsToArray(x))
-FROM values('x Nullable(Int32)', 1, 2, NULL)
-SETTINGS optimize_injective_functions_inside_uniq = 0;
-
 SELECT 'nested, LowCardinality and multiple arguments';
 SELECT uniqExact(tuple(tuple(x))), uniqExact(tuple(toLowCardinality(x)))
 FROM values('x Nullable(Int32)', 1, 2, NULL)

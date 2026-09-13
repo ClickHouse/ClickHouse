@@ -14,7 +14,6 @@
 # to S3 for future runs. All discovered failures will be reported along with coverage stats.
 
 import argparse
-import json
 import logging
 import os
 import re
@@ -30,12 +29,7 @@ from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
 
-TIMEOUT_MASTER = 5 * 60 * 60  # 5 hours of fuzzing for nightly/master runs
-TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
-# Corpus minimization is a fixed amount of work proportional to the corpus (the
-# slowest target takes about 40 minutes), so its cap does not move with the
-# fuzzing budget.
-TIMEOUT_MINIMIZATION = 60 * 60
+TIMEOUT = 60 * 60  # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
 RUNNER_OUTPUT = "/test_output"
 
@@ -50,6 +44,31 @@ def zipdir(path, ziph):
             )
 
 
+def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
+    result = []
+    if "DatabaseReplicated" in check_name:
+        result.append("USE_DATABASE_REPLICATED=1")
+    if "DatabaseOrdinary" in check_name:
+        result.append("USE_DATABASE_ORDINARY=1")
+    if "wide parts enabled" in check_name:
+        result.append("USE_POLYMORPHIC_PARTS=1")
+    if "ParallelReplicas" in check_name:
+        result.append("USE_PARALLEL_REPLICAS=1")
+    if "s3 storage" in check_name:
+        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
+    if "analyzer" in check_name:
+        result.append("USE_OLD_ANALYZER=1")
+    if "distributed plan" in check_name:
+        result.append("USE_DISTRIBUTED_PLAN=1")
+
+    if run_by_hash_total != 0:
+        result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
+        result.append(f"RUN_BY_HASH_TOTAL={run_by_hash_total}")
+
+    return result
+
+
 def get_run_command(
     fuzzers_path: Path,
     repo_path: Path,
@@ -57,6 +76,12 @@ def get_run_command(
     additional_envs: List[str],
     image: DockerImage,
 ) -> str:
+    additional_options = ["--hung-check"]
+
+    additional_options_str = (
+        '-e ADDITIONAL_OPTIONS="' + " ".join(additional_options) + '"'
+    )
+
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com"',
@@ -76,23 +101,14 @@ def get_run_command(
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         f"--volume={result_path}:{RUNNER_OUTPUT} "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {image} "
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
-
-
-def count_fuzzers(path: Path) -> int:
-    return max(1, len([f for f in os.listdir(path) if f.endswith("_fuzzer")]))
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
-    parser.add_argument(
-        "--minimize-only",
-        action="store_true",
-        help="Only minimize the corpora and upload the result, do not fuzz.",
-    )
     return parser.parse_args()
 
 
@@ -104,7 +120,7 @@ def download_corpus(path):
 
     try:
         S3.copy_file_from_s3(
-            s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus",
+            s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus",
             local_path=str(corpus_path),
             include_pattern="*.zip",
             recursive=True,
@@ -120,17 +136,8 @@ def download_corpus(path):
     logging.info("...downloaded %d corpora", len(list(corpus_path.glob("*.zip"))))
 
     total_units = 0
-    orphans = []
 
     for zip_file in corpus_path.glob("*.zip"):
-        if not (path / zip_file.stem).exists():
-            # A corpus left behind by a fuzzer that no longer exists. Deploying it
-            # would be wasted work, and it would then be uploaded again, keeping
-            # the dead corpus alive forever.
-            orphans.append(zip_file.stem)
-            zip_file.unlink()
-            continue
-
         logging.info("Deploying corpus %s", zip_file.stem)
         target_dir = corpus_path / zip_file.stem
         target_dir.mkdir(exist_ok=True)
@@ -149,14 +156,6 @@ def download_corpus(path):
 
     logging.info("...downloaded total %d units", total_units)
 
-    if orphans:
-        logging.warning(
-            "Skipped corpora with no matching fuzzer binary; delete them from "
-            "s3://%s/fuzzer/corpus/: %s",
-            Settings.S3_ARTIFACT_BUCKET,
-            ", ".join(f"{name}.zip" for name in sorted(orphans)),
-        )
-
 
 def upload_corpus(path):
     corpus_dir = Path(path) / "corpus"
@@ -166,7 +165,7 @@ def upload_corpus(path):
             with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 zipdir(fuzzer_dir, zipf)
             S3.copy_file_to_s3(
-                s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus/{fuzzer_dir.name}.zip",
+                s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus/{fuzzer_dir.name}.zip",
                 local_path=str(zip_file_path),
             )
 
@@ -198,27 +197,6 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     with open(output_log, "r", encoding="utf-8", errors="replace") as file:
         for line in file:
             line = line.rstrip("\n")
-
-            match = re.search(TEST_UNIT_LINE, line)
-            if match:
-                test_unit = os.path.basename(match.group(1))
-                trace_file = f"{test_unit}.trace"
-                trace_path = f"{fuzzer_result_dir}/{trace_file}"
-
-                if not is_error and len(stack_trace) > 0:
-                    with open(trace_path, "w", encoding="utf-8") as tracef:
-                        tracef.write("\n".join(stack_trace))
-                    error_info.append(
-                        (error_source, error_reason, test_unit, trace_file)
-                    )
-                    # reset for next error
-                    error_source = ""
-                    error_reason = ""
-                    test_unit = ""
-                    trace_file = ""
-                    stack_trace = []
-                continue
-
             if is_error:
                 match = re.search(ERROR_END, line)
                 if match:
@@ -246,6 +224,25 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 error_source = match.group(1)
                 error_reason = match.group(2)
                 is_error = True
+                continue
+
+            match = re.search(TEST_UNIT_LINE, line)
+            if match:
+                test_unit = os.path.basename(match.group(1))
+                trace_file = f"{test_unit}.trace"
+                trace_path = f"{fuzzer_result_dir}/{trace_file}"
+                if len(stack_trace) > 0:
+                    with open(trace_path, "w", encoding="utf-8") as tracef:
+                        tracef.write("\n".join(stack_trace))
+                    error_info.append(
+                        (error_source, error_reason, test_unit, trace_file)
+                    )
+                    # reset for next error
+                    error_source = ""
+                    error_reason = ""
+                    test_unit = ""
+                    trace_file = ""
+                    stack_trace = []
 
     return error_info
 
@@ -256,70 +253,6 @@ def read_status(status_path: Path):
         for line in file:
             result.append(line.rstrip("\n"))
     return result
-
-
-def read_stats(stats_path: Path) -> dict:
-    if not stats_path.exists():
-        return {}
-    with open(stats_path, "r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-def format_fuzzing_stats(stats: dict) -> list:
-    """Turn the numbers `runner.py` scraped out of the libFuzzer output into report lines.
-
-    Without these the report only says OK or FAIL, so a target that spends its
-    whole budget replaying its corpus, or that stopped executing inputs at all,
-    is indistinguishable from a healthy one.
-    """
-    lines = []
-
-    last = stats.get("last", {})
-    if last:
-        summary = [f"executed {last.get('executed', 0)} inputs"]
-        for key in ("exec/s", "cov", "ft", "corp", "rss"):
-            if key in last:
-                summary.append(f"{key}: {last[key]}")
-        lines.append(", ".join(summary))
-
-    input_files = stats.get("input_files", {})
-    if input_files:
-        lines.append(
-            "input directories: "
-            + ", ".join(f"{name} ({count} files)" for name, count in input_files.items())
-        )
-
-    inited = stats.get("inited", {})
-    total = last.get("executed", 0)
-    if inited and total:
-        replayed = inited.get("executed", 0)
-        lines.append(
-            f"replaying the initial corpus took {replayed} of {total} executed inputs "
-            f"({replayed * 100 // total}%), leaving {total - replayed} mutations"
-        )
-
-    before = stats.get("corpus_size_before")
-    after = stats.get("corpus_size_after")
-    if before is not None and after is not None:
-        lines.append(
-            f"{stats.get('new_units', 0)} new corpus units ({before} -> {after})"
-        )
-
-    return lines
-
-
-def format_minimization_stats(stats: dict) -> list:
-    if not stats:
-        return []
-    return [
-        "corpus {} -> {} units ({}%), processed {}, not processed {}".format(
-            stats.get("original_corpus_size"),
-            stats.get("minimized_corpus_size"),
-            stats.get("reduction_percent"),
-            stats.get("processed"),
-            stats.get("not_processed"),
-        )
-    ]
 
 
 def process_results(result_path: Path):
@@ -347,31 +280,31 @@ def process_results(result_path: Path):
                 duration=float(status_mini[2]),
             )
 
-            raw_logs += format_minimization_stats(
-                read_stats(fuzzer_result_dir / "stats_mini.txt")
-            )
-
-            if file_path_out_mini.exists():
-                log_files.append(str(file_path_out_mini))
-            if file_path_stdout_mini.exists():
-                log_files.append(str(file_path_stdout_mini))
-
             if status_mini[0] == "ERROR":
                 errors += 1
                 raw_logs.append("Corpus minimization FAILED.")
-            else:
-                oks += 1
+                if file_path_out_mini.exists():
+                    err = process_error(file_path_out_mini, fuzzer_result_dir)
+                    if len(err):
+                        raw_logs.append("Possible regressions:")
+                        for line in err:
+                            raw_logs.append("\t".join(s for s in line))
 
-            if file_path_out_mini.exists():
-                err = process_error(file_path_out_mini, fuzzer_result_dir)
-                if len(err):
-                    raw_logs.append(
-                        "Possible regressions:"
-                        if status_mini[0] == "ERROR"
-                        else "Regressions:"
-                    )
-                    for line in err:
-                        raw_logs.append("\t".join(s for s in line))
+                if file_path_out_mini.exists():
+                    log_files.append(str(file_path_out_mini))
+                if file_path_stdout_mini.exists():
+                    log_files.append(str(file_path_stdout_mini))
+            else:
+                if file_path_out_mini.exists():
+                    err = process_error(file_path_out_mini, fuzzer_result_dir)
+                    if len(err):
+                        raw_logs.append("Regressions:")
+                        for line in err:
+                            raw_logs.append("\t".join(s for s in line))
+                        if file_path_out_mini.exists():
+                            log_files.append(str(file_path_out_mini))
+                        if file_path_stdout_mini.exists():
+                            log_files.append(str(file_path_stdout_mini))
 
             # Collect all crash, timeout and trace files
             for file in list(fuzzer_result_dir.glob("mini-crash-*")):
@@ -393,25 +326,17 @@ def process_results(result_path: Path):
         file_path_out = fuzzer_result_dir / "out.txt"
         file_path_stdout = fuzzer_result_dir / "stdout.txt"
 
-        if not file_path_status.exists():
-            # A corpus minimization run: there is no fuzzing result to report.
-            continue
-
         status = read_status(file_path_status)
         result = Result(fuzzer, status[0], duration=float(status[2]))
-
-        raw_logs += format_fuzzing_stats(read_stats(fuzzer_result_dir / "stats.txt"))
-
-        if file_path_out.exists():
-            log_files.append(str(file_path_out))
-        if file_path_stdout.exists():
-            log_files.append(str(file_path_stdout))
-
         if status[0] == "OK":
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
-            raw_logs.append("Fuzzing FAILED.")
+            raw_logs.append(f"Fuzzing FAILED.")
+            if file_path_out.exists():
+                log_files.append(str(file_path_out))
+            if file_path_stdout.exists():
+                log_files.append(str(file_path_stdout))
         else:
             fails += 1
             if file_path_out.exists():
@@ -424,15 +349,17 @@ def process_results(result_path: Path):
                     raw_logs.append(
                         "No stack traces found - this is unusual - check output files"
                     )
+                if file_path_out.exists():
+                    log_files.append(str(file_path_out))
+                if file_path_stdout.exists():
+                    log_files.append(str(file_path_stdout))
 
-        # Collect all crash-, timeout-, slow-unit-, oom- and .trace files
+        # Collect all crash, timeout and trace files
         for file in list(fuzzer_result_dir.glob("crash-*")):
             log_files.append(str(file))
         for file in list(fuzzer_result_dir.glob("timeout-*")):
             log_files.append(str(file))
         for file in list(fuzzer_result_dir.glob("slow-unit-*")):
-            log_files.append(str(file))
-        for file in list(fuzzer_result_dir.glob("oom-*")):
             log_files.append(str(file))
 
         result.set_info("\n".join(raw_logs))
@@ -451,18 +378,22 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(Utils.cwd())
 
-    # The check name is accepted for consistency with the other job scripts,
-    # which all take it as a positional argument; only the flags are used.
     args = parse_args()
+    check_name = args.check_name
     info = Info()
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
+    if "RUN_BY_HASH_NUM" in os.environ:
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+    else:
+        run_by_hash_num = 0
+        run_by_hash_total = 0
+
     docker_image = DockerImage.get_docker_image(
         "clickhouse/stateless-test"
     ).pull_image()
-
-    is_master = info.pr_number == 0 and info.git_branch == "master"
 
     fuzzers_path = temp_path
     download_corpus(fuzzers_path)
@@ -480,25 +411,11 @@ def main():
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    additional_envs = []
+    additional_envs = get_additional_envs(
+        check_name, run_by_hash_num, run_by_hash_total
+    )
 
-    if args.minimize_only:
-        timeout = TIMEOUT_MINIMIZATION
-    else:
-        timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
-    additional_envs.append(f"TIMEOUT={timeout}")
-
-    # Every fuzzer holds its runner thread for the whole run, so anything above
-    # this many targets would not start until another one finishes - at a 5 hour
-    # budget that doubles the length of the job instead of queueing for minutes.
-    additional_envs.append(f"RUNNERS={count_fuzzers(fuzzers_path)}")
-
-    if args.minimize_only:
-        additional_envs.append("MINIMIZE_ONLY=1")
-    else:
-        # Corpus minimization is a separate scheduled job, so that a fuzzing run
-        # always gets its whole budget for fuzzing.
-        additional_envs.append("SKIP_MERGE=1")
+    additional_envs.append(f"TIMEOUT={TIMEOUT}")
 
     run_command = get_run_command(
         fuzzers_path,
@@ -511,7 +428,7 @@ def main():
 
     if Shell.run(run_command) == 0:
         logging.info("Run successfully")
-        if is_master:
+        if info.pr_number == 0 and info.git_branch == "master":
             logging.info("Uploading corpus - running in master")
             upload_corpus(fuzzers_path)
         else:

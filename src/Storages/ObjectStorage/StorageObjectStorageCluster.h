@@ -19,45 +19,9 @@ public:
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
         ContextPtr context_,
-        bool is_table_function_ = false,
-        std::optional<FormatSettings> format_settings_ = std::nullopt,
-        std::shared_ptr<DataLake::ICatalog> catalog_ = nullptr);
+        bool is_table_function_ = false);
 
     std::string getName() const override;
-
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
-
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
-
-    bool isObjectStorage() const override { return true; }
-
-    bool supportsParallelInsert() const override;
-
-    bool supportsDelete() const override;
-
-    bool optimize(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & partition,
-        bool final,
-        bool deduplicate,
-        const Names & deduplicate_by_columns,
-        bool cleanup,
-        ContextPtr context) override;
-
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-
-    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
-
-    void drop() override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
@@ -82,8 +46,7 @@ private:
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    const std::optional<FormatSettings> format_settings;
-    const std::shared_ptr<DataLake::ICatalog> catalog;
+    NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 

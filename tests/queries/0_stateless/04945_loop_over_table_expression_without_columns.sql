@@ -1,6 +1,10 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: the guard lives in the planner, so the old analyzer returns UNKNOWN_TABLE here.
 
+-- The `Alias` engine is still experimental on this branch, unlike on master where the setting is
+-- obsolete and the guard is gone, so every alias test here has to enable it.
+SET allow_experimental_alias_table_engine = 1;
+
 DROP TABLE IF EXISTS loop_no_columns_target;
 DROP TABLE IF EXISTS loop_no_columns_alias;
 DROP TABLE IF EXISTS loop_no_columns_base;
