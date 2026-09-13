@@ -1,0 +1,51 @@
+-- basic
+c	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
+id	UInt8	<none>	<none>
+1	(0,'Hello')
+-- nested tuple
+Tuple(a UInt8, t Tuple(x String, y UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), tuple(\'q\', defaultValueOfTypeName(\'UInt8\')))
+1	(5,('z',1))
+2	(0,('q',0))
+-- default referencing a column
+Tuple(a UInt8, s String)	tuple(x, defaultValueOfTypeName(\'String\'))
+(7,'')
+-- constant expression default
+Tuple(a UInt8, s String)	tuple(1 + 2, upper(\'hi\'))
+(3,'HI')
+-- errors
+-- default null
+Tuple(a Nullable(UInt8), b String)	DEFAULT	tuple(NULL, defaultValueOfTypeName(\'String\'))
+(NULL,'')
+-- alter add column
+Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
+1	(0,'Hi')
+-- alter modify column
+Tuple(a UInt8, b UInt8)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), 42)
+1	(0,42)
+-- alter errors
+-- old distributed DDL format
+Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
+-- nullable tuple
+Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
+1	(0,'Hi')
+-- variant alternative
+Variant(Tuple(a UInt32, b UInt32), UInt64)	DEFAULT	CAST(tuple(defaultValueOfTypeName(\'UInt32\'), 5), \'Tuple(a UInt32, b UInt32)\')
+1	(0,5)	Tuple(a UInt32, b UInt32)
+2	7	UInt64
+-- simple aggregate function
+SimpleAggregateFunction(any, Tuple(a UInt8, b UInt8))	DEFAULT	tuple(1, defaultValueOfTypeName(\'UInt8\'))
+1	(1,0)
+2	(3,4)
+SimpleAggregateFunction(max, Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
+1	(0,'Hi')
+2	(0,'Hi')
+SimpleAggregateFunction(max, Tuple(a UInt16, s String))	DEFAULT	tuple(9, defaultValueOfTypeName(\'String\'))
+Tuple(x SimpleAggregateFunction(any, Tuple(a UInt8)), y String)	DEFAULT	tuple(tuple(7), defaultValueOfTypeName(\'String\'))
+1	((7),'')
+-- lambda parameter shadowing an element name
+Tuple(x UInt8, y Array(UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), arrayMap(x -> (x + 1), [1, 2, 3]))
+(0,[2,3,4])
+-- lambda body free identifier colliding with an element name
+-- element name scope
+Tuple(a UInt8, nested Tuple(x String, y UInt8))	tuple(x, defaultValueOfTypeName(\'Tuple(x String, y UInt8)\'))
+(5,('',0))
