@@ -107,11 +107,10 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
-    /// Without these two the library reports asynchronous errors - a rejected authentication, most
-    /// notably - by printing them to `stderr`, and says nothing at all when it gives up on a
-    /// connection, which leaves a table that has stopped consuming without an explanation.
+    /// Without this the library reports asynchronous errors - a rejected authentication, most
+    /// notably - by printing them to `stderr`, which leaves a table that has stopped consuming
+    /// without an explanation in the server log.
     natsOptions_SetErrorHandler(options.get(), errorCallback, this);
-    natsOptions_SetClosedCB(options.get(), closedCallback, this);
 }
 NATSConnection::~NATSConnection()
 {
@@ -219,11 +218,6 @@ void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscri
         connection,
         natsStatus_GetText(status),
         last_error && *last_error ? last_error : "none");
-}
-
-void NATSConnection::closedCallback(natsConnection *, void * connection)
-{
-    LOG_WARNING(callback_logger, "Connection {} was closed by the NATS client library", connection);
 }
 
 }

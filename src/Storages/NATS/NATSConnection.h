@@ -83,7 +83,6 @@ private:
     static void disconnectedCallback(natsConnection * nc, void * connection);
     static void reconnectedCallback(natsConnection * nc, void * connection);
     static void errorCallback(natsConnection * nc, natsSubscription * subscription, natsStatus status, void * connection);
-    static void closedCallback(natsConnection * nc, void * connection);
 
     NATSConfiguration configuration;
     LoggerPtr log;

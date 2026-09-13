@@ -131,7 +131,9 @@ def test_nats_credentials_rejected_after_rotation(started_cluster):
     # has been rotated on its side, and drops the live connection. The client library retries once
     # and gives up on the second identical authorization error, closing the connection for good.
     set_broker_state("reject")
-    instance.wait_for_log_line("was closed by the NATS client library", timeout=120)
+    instance.wait_for_log_line(
+        "The NATS client library closed the connection to", timeout=120
+    )
 
     # The connection was closed on the thread which serves every NATS table of the server, and
     # before the fix the event loop adapter segfaulted there, taking the whole server down.
