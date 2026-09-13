@@ -73,6 +73,15 @@ WHERE explain LIKE '%Read type%';
 SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
 SET parallel_replicas_filter_pushdown = 0;
 
+SELECT 'a condition that prunes every branch away still answers';
+-- One branch of this fragment reads in order, and a coordinator serving an in-order stream used to
+-- report that stream as still holding ranges even when the announcement carried none. With the
+-- condition pruning both branches to nothing, no replica is ever given work, and releasing the
+-- replicas that got none then tripped over its own check that someone must have been used
+-- (`!replicas_used.empty()`, a debug build only).
+SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 65535 ORDER BY ts LIMIT 5;
+SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 65535;
+
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP VIEW v_pr_union_mode_ordered;
