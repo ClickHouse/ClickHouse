@@ -58,6 +58,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/OverlappingPartCovering.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -4601,15 +4602,38 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             for (const auto & part : data_parts)
             {
                 fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
+
+                /// Looked up once and reused for the log entry below: this reads live queue state, so
+                /// asking twice could classify one mutation version and create an entry for another.
+                std::optional<std::pair<Int64, int>> expected;
+
                 if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
                 {
-                    queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
-                    continue;
-                }
+                    /// The size of the part is what a full rewrite needs, but a mutation that only
+                    /// hardlinks the files it does not touch needs almost nothing, so do not refuse it
+                    /// for being large. Only this branch looks the commands up: unlike the
+                    /// non-replicated selection they are not in hand here, and getMutationCommands
+                    /// takes the queue's mutex and copies them, so a part within budget must not pay.
+                    expected = merge_predicate->getExpectedMutationVersion(part);
+                    if (!expected)
+                        continue;
 
-                auto expected = merge_predicate->getExpectedMutationVersion(part);
-                if (!expected)
-                    continue;
+                    Strings mutation_ids;
+                    auto commands = queue.getMutationCommands(part, expected->first, mutation_ids);
+
+                    if (!MutationHelpers::isHardlinkOnlyMutation(
+                            *this, part, commands, queue.hasPendingRenameForPart(part, expected->first)))
+                    {
+                        queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
+                        continue;
+                    }
+                }
+                else
+                {
+                    expected = merge_predicate->getExpectedMutationVersion(part);
+                    if (!expected)
+                        continue;
+                }
 
                 create_result = createLogEntryToMutatePart(
                     *part,
