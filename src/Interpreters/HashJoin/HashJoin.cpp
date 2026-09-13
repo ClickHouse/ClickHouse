@@ -229,6 +229,9 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
+    if (const auto & mixed_join_expression = table_join->getMixedJoinExpression())
+        mixed_join_expression_pool = std::make_shared<ExpressionActionsPool>(mixed_join_expression);
+
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
 
     if (table_join->collectAnalyzeStats())
