@@ -2,14 +2,23 @@
 # Tags: no-fasttest
 # When a part has no (or an unparsable) `default_compression_codec.txt`, `loadDefaultCompressionCodec`
 # falls back to `detectDefaultCompressionCodec`, which rebuilds the codec from a data file's method
-# bytes (`getCompressionCodecForFile`). Such a detected codec can be lossy — e.g. a column that was
-# compressed with `SZ3` while it had an explicit `CODEC(SZ3)` in the table definition, before the
-# definition changed and the codec file was lost (an attached or pre-fix part). A lossy part default
-# is unsafe: a mutation copies it into the writer of the new part and feeds it raw into untyped
-# streams (statistics, text indexes), where it either throws or silently corrupts the opaque bytes.
-# Check that the metadata-load guard sanitizes a detected lossy codec — both a bare `SZ3` frame and a
-# `Multiple` frame whose chain contains `SZ3` — the same way it sanitizes a codec that requires a
-# column type, and that a statistics-rewriting mutation then succeeds.
+# bytes (`getCompressionCodecForFile`). The probed file can belong to a column that was compressed
+# with `SZ3` while it had an explicit `CODEC(SZ3)` in the table definition, before the definition
+# changed and the codec file was lost (an attached or pre-fix part). A lossy part default is unsafe:
+# a mutation copies it into the writer of the new part and feeds it raw into untyped streams
+# (statistics, text indexes), where it either throws or silently corrupts the opaque bytes.
+#
+# Two independent guards keep such a part usable, and this test covers their combination end to end
+# — both for a bare `SZ3` frame and for a `Multiple` frame whose chain contains `SZ3`:
+#   - `detectDefaultCompressionCodec` accepts only a generic-compression stage of the probed frame as
+#     proof of the default, so a lossy frame proves nothing: the bare `SZ3` file is skipped in favor
+#     of the next default-coded column, and the `Multiple` chain yields its `LZ4` stage. Either way
+#     the recovery is inexact, so the part default is reported as `UNKNOWN`.
+#   - should a lossy codec reach `loadDefaultCompressionCodec` anyway, its guard replaces it with the
+#     table's normal default codec selection, the same way it sanitizes a codec that requires a
+#     column type (which is the branch that a literal `CODEC(PCO)` line still reaches, see `04616`).
+# What must hold in both cases is that the part default is never the lossy codec, so a
+# statistics-rewriting mutation succeeds.
 
 # The `Ordinary` database engine used for the offline metadata emits a warning; do not let it fail the test.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -56,10 +65,10 @@ EOF
 rm "${WORKING_FOLDER}"/data/local/t_detect/all_*/default_compression_codec.txt
 rm "${WORKING_FOLDER}"/data/local/t_chain/all_*/default_compression_codec.txt
 
-# On load the detected lossy default must be replaced with the table's normal default codec
-# selection (LZ4 here), and a mutation that rewrites the untyped statistics stream with the part
-# default codec must succeed. Before the fix the part default stayed SZ3 / Multiple(SZ3, LZ4) and
-# the mutation failed to compress the statistics blob.
+# On load the part default must not be the lossy codec: the recovery is inexact, so it is reported as
+# `UNKNOWN`, and a mutation that rewrites the untyped statistics stream with the part default codec
+# must succeed. Before the fix the part default stayed SZ3 / Multiple(SZ3, LZ4) and the mutation
+# failed to compress the statistics blob.
 ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --multiquery "
 SET allow_experimental_statistics = 1;
 SET mutations_sync = 1;
