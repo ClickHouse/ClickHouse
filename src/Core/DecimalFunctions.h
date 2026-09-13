@@ -61,7 +61,7 @@ inline auto scaleMultiplier(UInt32 scale)
  *   `decimalFromComponentsWithMultiplier`, which re-derives the sign of the fractional part from `whole`.
  * - `splitFlooringNegative` rounds towards negative infinity, so -1.123 represents -2 / 0.875 and the
  *   fractional part is always a non-negative offset upwards from `whole`. Its inverse is
- *   `dateTimeFromComponentsWithMultiplier`, which adds the fractional part without flipping its sign.
+ *   `decimalFromFlooredComponents`, which adds the fractional part without flipping its sign.
  */
 template <typename DecimalType>
 struct DecimalComponents
@@ -342,6 +342,31 @@ inline DecimalComponents<DecimalType> splitFlooringNegative(
         --components.whole;
     }
     return components;
+}
+
+/** Make a decimal value from components produced by `splitFlooringNegative`.
+ *
+ * There `fractional` is a non-negative offset upwards from `whole`, so it is added as is. This is what
+ * separates it from `decimalFromComponentsWithMultiplier`, which takes the sign of the fractional part
+ * from `whole` and is therefore the inverse of `splitWithScaleMultiplier` instead.
+ */
+template <typename DecimalType>
+inline DecimalType decimalFromFlooredComponents(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+
+    return DecimalType(multiplyAdd<T>(whole, scale_multiplier, fractional % scale_multiplier));
+}
+
+template <typename DecimalType>
+inline DecimalType decimalFromFlooredComponents(
+        const DecimalComponents<DecimalType> & components,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    return decimalFromFlooredComponents<DecimalType>(components.whole, components.fractional, scale_multiplier);
 }
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.

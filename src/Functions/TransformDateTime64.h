@@ -73,9 +73,8 @@ public:
 
             if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
             {
-                /// `splitFlooringNegative` produced `whole * scale_multiplier + fractional` with a non-negative
-                /// `fractional`, so reassemble with the helper that follows the same convention.
-                return DecimalUtils::dateTimeFromComponentsWithMultiplier(result.whole, result.fractional, scale_multiplier);
+                /// `splitFlooringNegative` made `fractional` a non-negative offset, so reassemble with its inverse.
+                return DecimalUtils::decimalFromFlooredComponents<DateTime64>(result, scale_multiplier);
             }
             else
             {
@@ -117,9 +116,8 @@ public:
 
             if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
             {
-                /// `splitFlooringNegative` produced `whole * scale_multiplier + fractional` with a non-negative
-                /// `fractional`, so reassemble with the helper that follows the same convention.
-                return DecimalUtils::dateTimeFromComponentsWithMultiplier(result.whole, result.fractional, scale_multiplier);
+                /// `splitFlooringNegative` made `fractional` a non-negative offset, so reassemble with its inverse.
+                return DecimalUtils::decimalFromFlooredComponents<DateTime64>(result, scale_multiplier);
             }
             else
             {
