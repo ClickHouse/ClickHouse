@@ -34,10 +34,13 @@ FINAL
 Key range tracking: 0
 no FINAL
 Key range tracking: 1
+read-time skip indexes disabled
+Key range tracking: 1
 results
 10
 10
 990
 990
+10
 10
 10

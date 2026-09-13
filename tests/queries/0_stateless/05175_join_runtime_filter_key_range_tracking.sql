@@ -104,8 +104,8 @@ SELECT trim(explain) FROM (
 ) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%Build runtime join filter%';
 
 -- The read side also refuses to prune for reasons that have nothing to do with the join key: `FINAL`,
--- `use_skip_indexes`, `ignore_data_skipping_indices` and `use_skip_indexes_on_data_read`. Those are all
--- known while the plan is being optimized, so the build side must not track a key range for them either.
+-- `use_skip_indexes` and `ignore_data_skipping_indices`. Those are all known while the plan is being
+-- optimized, so the build side must not track a key range for them either.
 
 -- `idx_v` covers the join key, but the query excludes it; `idx_w` keeps a skip index reader installed on
 -- the read, so this is the case where a stale predicate would still be built for every part.
@@ -154,6 +154,17 @@ SELECT trim(explain) FROM (
     EXPLAIN actions = 1 SELECT count() FROM probe_final AS p INNER JOIN build_side AS b ON p.k = b.k
 ) WHERE explain LIKE '%Key range tracking%';
 
+-- `use_skip_indexes_on_data_read = 0` also switches the pruning off, but it is the one read-side veto the
+-- plan does not act on: `EXPLAIN` forces that setting to `false` in its own context, so a plan decided on
+-- it would differ from the plan of the same query when run. The build side therefore still records the key
+-- range there. This pins that documented exception, so a change of it is a deliberate one.
+SELECT 'read-time skip indexes disabled';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k
+    SETTINGS use_skip_indexes_on_data_read = 0
+) WHERE explain LIKE '%Key range tracking%';
+
 -- The results must not depend on the pruning.
 SELECT 'results';
 SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k;
@@ -163,6 +174,7 @@ SELECT count() FROM probe_pk AS p LEFT ANTI JOIN build_two_keys AS b ON p.k = b.
 SELECT count() FROM probe_two_skip_indexes AS p INNER JOIN build_side AS b ON p.v = b.k WHERE p.w < 500
     SETTINGS ignore_data_skipping_indices = 'idx_v';
 SELECT count() FROM probe_final AS p FINAL INNER JOIN build_side AS b ON p.k = b.k;
+SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k SETTINGS use_skip_indexes_on_data_read = 0;
 
 DROP TABLE probe_pk;
 DROP TABLE probe_skip_index;
