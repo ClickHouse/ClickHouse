@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+# Regression check for the periodic flush in TCPHandler::receivePacketsExpectData: while a
+# client-fed INSERT stalls between two Data packets, the server must keep streaming ProfileEvents
+# at interactive_delay cadence instead of only reacting to received blocks. The client sends one
+# block, then goes silent; a ProfileEvents packet arriving deep into the stall can only come from
+# the timeout-based flush, so a server that lost it fails the final assertion.
+
+import os
+import select
+import socket
+import sys
+import time
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "insert stall native protocol"
+# The oldest revision for which the server streams ProfileEvents inside INSERT
+# (DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT). Keeping it minimal also keeps the
+# framing this client implements: plain packets, no addendum, no chunked mode, no compressed
+# ProfileEvents blocks - all of those are gated on later revisions.
+PROTOCOL_REVISION = 54456
+
+STALL_SECONDS = 3.0
+# A ProfileEvents packet is counted as flush-driven only this deep into the stall: the reaction
+# to the sent block arrives right away, while the periodic flush keeps firing the whole time.
+LATE_ARRIVAL_SECONDS = 1.5
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+
+        ba.append(byte)
+
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8")
+    writeVarUInt(len(s), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise RuntimeError("socket closed by the server")
+        size -= len(cur)
+        res.extend(cur)
+
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt8(s):
+    return readUInt(s)
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+
+        if not byte & 0x80:
+            return x
+
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    s = readStrict(s, size)
+    return s.decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(PROTOCOL_REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # pwd
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    p_type = readVarUInt(s)
+    assert p_type == 0, p_type  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readStringBinary(s)  # timezone
+    readStringBinary(s)  # display name
+    readVarUInt(s)  # version patch
+
+
+def serializeClientInfo(ba, query_id):
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds
+    ba.append(1)  # TCP
+    writeStringBinary("os_user", ba)  # os_user
+    writeStringBinary("client_hostname", ba)  # client_hostname
+    writeStringBinary(CLIENT_NAME, ba)  # client_name
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(PROTOCOL_REVISION, ba)
+    writeStringBinary("", ba)  # quota_key
+    writeVarUInt(0, ba)  # distributed_depth
+    writeVarUInt(1, ba)  # client_version_patch
+    ba.append(0)  # No telemetry
+    writeVarUInt(0, ba)  # collaborate_with_initiator
+    writeVarUInt(0, ba)  # obsolete_count_participating_replicas
+    writeVarUInt(0, ba)  # number_of_current_replica
+
+
+def sendQuery(s, query):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # query
+    writeStringBinary(query_id, ba)
+
+    ba.append(1)  # INITIAL_QUERY
+
+    # client info
+    serializeClientInfo(ba, query_id)
+
+    writeStringBinary("", ba)  # No settings
+    writeStringBinary("", ba)  # No interserver secret
+    writeVarUInt(2, ba)  # Stage - Complete
+    ba.append(0)  # No compression
+    writeStringBinary(query, ba)  # query, finally
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows
+    writeVarUInt(2, ba)  # field 2
+    ba.extend([0] * 4)  # bucket_num
+    writeVarUInt(0, ba)  # end of fields
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def sendOneRowBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(1, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt8", ba)
+    ba.append(0)  # has_custom_serialization (revision >= 54454)
+    ba.append(1)  # the value
+    s.sendall(ba)
+
+
+def assertPacket(packet, expected):
+    assert packet == expected, packet
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    assertPacket(readUInt8(s), 0)  # has_nested
+    return "code {}: {}".format(code, text.replace("DB::Exception:", ""))
+
+
+def skipColumnData(s, type_name, rows):
+    if type_name == "String":
+        for _ in range(rows):
+            readStrict(s, readVarUInt(s))
+        return
+    if type_name.startswith("Enum8"):
+        size = 1
+    else:
+        size = {
+            "UInt8": 1,
+            "Int8": 1,
+            "UInt16": 2,
+            "Int16": 2,
+            "UInt32": 4,
+            "Int32": 4,
+            "DateTime": 4,
+            "UInt64": 8,
+            "Int64": 8,
+        }[type_name]
+    readStrict(s, size * rows)
+
+
+def readBlock(s):
+    """Reads a server-side block (of a Data, ProfileEvents or Log packet), returns its row count."""
+    readStringBinary(s)  # external table name
+    while True:
+        field = readVarUInt(s)
+        if field == 0:
+            break
+        if field == 1:
+            readStrict(s, 1)  # is_overflows
+        elif field == 2:
+            readStrict(s, 4)  # bucket_num
+        else:
+            raise RuntimeError("unexpected block info field {}".format(field))
+    columns = readVarUInt(s)
+    rows = readVarUInt(s)
+    for _ in range(columns):
+        readStringBinary(s)  # name
+        type_name = readStringBinary(s)
+        assertPacket(readUInt8(s), 0)  # has_custom_serialization
+        if rows:
+            skipColumnData(s, type_name, rows)
+    return rows
+
+
+def readProgress(s):
+    readVarUInt(s)  # read_rows
+    readVarUInt(s)  # read_bytes
+    readVarUInt(s)  # total_rows_to_read
+    readVarUInt(s)  # written_rows
+    readVarUInt(s)  # written_bytes
+
+
+def readPacket(s):
+    """Reads one server packet, returns its type; raises on Exception packets."""
+    packet_type = readVarUInt(s)
+    if packet_type == 2:  # Exception
+        raise RuntimeError(readException(s))
+    if packet_type in (1, 14):  # Data, ProfileEvents
+        readBlock(s)
+    elif packet_type == 3:  # Progress
+        readProgress(s)
+    elif packet_type == 11:  # TableColumns
+        readStringBinary(s)
+        readStringBinary(s)
+    elif packet_type == 5:  # EndOfStream
+        pass
+    else:
+        raise RuntimeError("unexpected packet type {}".format(packet_type))
+    return packet_type
+
+
+def main():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+
+        # interactive_delay is pinned so the flush cadence does not depend on defaults;
+        # async inserts are disabled so the plain pushing-executor path runs the packet loop.
+        sendQuery(
+            s,
+            "INSERT INTO {}.t_05026_insert_stall (x) SETTINGS interactive_delay = 100000, "
+            "async_insert = 0 VALUES".format(CLICKHOUSE_DATABASE),
+        )
+
+        # external tables
+        sendEmptyBlock(s)
+
+        # The insert header block ends the preamble; everything before it is metadata.
+        while readPacket(s) != 1:
+            pass
+
+        sendOneRowBlock(s)
+        sent_at = time.monotonic()
+
+        # The stall: send nothing and watch what the server volunteers.
+        late_profile_events = 0
+        while True:
+            remaining = STALL_SECONDS - (time.monotonic() - sent_at)
+            if remaining <= 0:
+                break
+            ready, _, _ = select.select([s], [], [], remaining)
+            if not ready:
+                break
+            packet_type = readPacket(s)
+            if (
+                packet_type == 14
+                and time.monotonic() - sent_at >= LATE_ARRIVAL_SECONDS
+            ):
+                late_profile_events += 1
+
+        sendEmptyBlock(s)  # end of data
+        while readPacket(s) != 5:  # EndOfStream
+            pass
+        s.close()
+
+    if late_profile_events == 0:
+        print(
+            "FAIL: no ProfileEvents packet arrived between {}s and {}s of a client-side stall; "
+            "the periodic flush in TCPHandler::receivePacketsExpectData is not working".format(
+                LATE_ARRIVAL_SECONDS, STALL_SECONDS
+            )
+        )
+        sys.exit(1)
+
+    print("OK")
+
+
+if __name__ == "__main__":
+    main()

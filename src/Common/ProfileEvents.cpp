@@ -190,6 +190,8 @@
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NativeProtocolSend, "Number of non-empty native protocol output buffer flushes.", ValueType::Number) \
+    M(NativeProtocolServiceBytes, "Number of bytes written to the client connection for native protocol service packets (Progress, ProfileEvents, Logs) rather than for query data. A subset of NetworkSendBytes, so that a client can tell its own protocol overhead apart from query data.", ValueType::Bytes) \
+    M(FramingServiceBytes, "Number of bytes written to the response for framed service packets (progress, log, profile_events) rather than for query data. The framing counterpart of NativeProtocolServiceBytes, and likewise a subset of NetworkSendBytes: counted only when the framing writes straight into the socket, so it stays zero for a compressed response (enable_http_compression, compress=1), whose packets have no compressed size of their own.", ValueType::Bytes) \
     M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \
@@ -874,6 +876,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.", ValueType::Microseconds) \
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.", ValueType::Bytes) \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure", ValueType::Number) \
+    \
+    M(WriteBufferFromAzureBytes, "Bytes written to Azure.", ValueType::Bytes) \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.", ValueType::Number) \
