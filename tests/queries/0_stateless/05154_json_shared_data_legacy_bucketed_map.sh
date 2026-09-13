@@ -74,8 +74,11 @@ PART
 $CLICKHOUSE_LOCAL --path "$workdir" --multiquery <<'SQL'
 ALTER TABLE legacy.maps ATTACH PART 'all_1_1_0';
 SELECT 'legacy', j.m, j.t, j.a, j.o FROM legacy.maps;
+SELECT 'types', dynamicType(j.m), dynamicType(j.t), dynamicType(j.a), dynamicType(j.o) FROM legacy.maps;
 SELECT 'subcolumns', j.m.:`Map(String, UInt64)`['k'], j.t.:`Map(String, Tuple(a UInt64))`['k'].a FROM legacy.maps;
 INSERT INTO legacy.maps SELECT j FROM legacy.maps;
 OPTIMIZE TABLE legacy.maps FINAL;
 SELECT 'rewritten', j.m, j.t, j.a, j.o FROM legacy.maps;
+SELECT 'rewritten_types', dynamicType(j.m), dynamicType(j.t), dynamicType(j.a), dynamicType(j.o) FROM legacy.maps;
+SELECT 'rewritten_subcolumns', j.m.:`Map(String, UInt64)`['k'], j.t.:`Map(String, Tuple(a UInt64))`['k'].a FROM legacy.maps;
 SQL

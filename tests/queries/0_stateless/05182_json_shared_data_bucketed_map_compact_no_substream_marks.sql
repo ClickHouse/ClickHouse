@@ -22,4 +22,6 @@ SELECT j.m.:`Map(String, UInt64)`['k'], j.t.:`Map(String, Tuple(a UInt64))`['k']
 INSERT INTO json_shared_bucketed_map_compact SELECT j FROM json_shared_bucketed_map_compact;
 OPTIMIZE TABLE json_shared_bucketed_map_compact FINAL;
 SELECT j FROM json_shared_bucketed_map_compact;
+SELECT dynamicType(j.m), j.m, dynamicType(j.t), j.t FROM json_shared_bucketed_map_compact;
+SELECT j.m.:`Map(String, UInt64)`['k'], j.t.:`Map(String, Tuple(a UInt64))`['k'].a FROM json_shared_bucketed_map_compact;
 DROP TABLE json_shared_bucketed_map_compact;
