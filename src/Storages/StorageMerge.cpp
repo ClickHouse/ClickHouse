@@ -2469,10 +2469,20 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
         if (!storage->isMergeTree() || !child.plan.isInitialized())
             return expandable_reads.emplace();
 
+        const auto * node = child.plan.getRootNode();
+
+        /// A row policy with an `IN (subquery)` predicate roots the child plan at a set-creating step
+        /// (`RowPolicyData::addFilterTransform`). Its sets are built by the initiator and a fragment
+        /// referencing them cannot be shipped to the replicas yet - `planHasSubquerySet` in
+        /// `applyParallelReplicas.cpp` keeps such plans local for the same reason - so this child keeps the
+        /// whole `Merge` on a single replica, deliberately and not through the shape check below.
+        if (node
+            && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
+            return expandable_reads.emplace();
+
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
         /// by a plain read, whatever its leaf turns out to be.
-        const auto * node = child.plan.getRootNode();
         while (node && node->children.size() == 1
                && (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get())))
             node = node->children.front();
