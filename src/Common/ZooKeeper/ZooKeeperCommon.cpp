@@ -1297,6 +1297,11 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
                 throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
             if (error != -1)
                 throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+            /// A multi request with no subrequests is not a transaction over anything, and it is not
+            /// handled below the parser either: `preprocess` appends no delta for it, while `process`
+            /// expects at least one. Reject it here, before the request can be written to the changelog.
+            if (requests.empty())
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Multi request must contain at least one subrequest");
             break;
         }
 

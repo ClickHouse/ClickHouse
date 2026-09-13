@@ -1564,8 +1564,17 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     const auto & subrequests = zk_request.requests;
 
-    // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-    chassert(!deltas.empty());
+    /// `preprocess` appends at least `SubDeltaEnd` or `FailedMultiDelta` for every subrequest, so the
+    /// range is empty only for a multi request without subrequests. Such a request is rejected by the
+    /// parser now, but an entry written by an older version is still replayed from the changelog on
+    /// startup, and an exception on the raft commit thread terminates the process.
+    if (deltas.empty())
+    {
+        chassert(subrequests.empty());
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
         const size_t subrequests_count = subrequests.size();
