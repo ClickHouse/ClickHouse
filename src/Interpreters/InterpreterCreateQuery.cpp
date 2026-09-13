@@ -3928,21 +3928,28 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug
     /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
-    /// fail when the old storage is destroyed later.
-    if (!ordinary_database)
+    /// fail when the old storage is destroyed later. An `Ordinary` table may carry
+    /// such files too, after `RENAME TABLE` from an `Atomic` database; it has no UUID,
+    /// so its guard is keyed by table name.
+    const bool wait_for_detached = getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously];
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
     {
-        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+    if (ordinary_database)
+    {
+        auto & ordinary = typeid_cast<DatabaseOrdinary &>(*database);
+        if (wait_for_detached)
+            ordinary.waitDetachedTableByNameNotInUse(create.getTable(), throw_if_cancelled);
         else
-            database->checkDetachedTableNotInUse(create.uuid);
+            ordinary.checkDetachedTableByNameNotInUse(create.getTable());
     }
+    else if (wait_for_detached)
+        database->waitDetachedTableNotInUse(create.uuid, throw_if_cancelled);
+    else
+        database->checkDetachedTableNotInUse(create.uuid);
 
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))

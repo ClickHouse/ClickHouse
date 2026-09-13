@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <thread>
 #include <memory>
 
 #include <Core/Defines.h>
@@ -71,6 +72,8 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNFINISHED;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
@@ -784,6 +787,82 @@ StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
     auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
     eraseAsyncLoadState(table_name);
     return table;
+}
+
+StoragePtr DatabaseOrdinary::detachTable(ContextPtr /* context_ */, const String & table_name)
+{
+    ensurePopulated();
+    std::lock_guard lock(mutex);
+    auto table = detachTableUnlocked(table_name);
+    detached_tables_by_name.insert_or_assign(table_name, table);
+    return table;
+}
+
+bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name)
+{
+    for (auto it = detached_tables_by_name.begin(); it != detached_tables_by_name.end();)
+    {
+        auto storage = it->second.lock();
+        /// A storage that was renamed after being detached (`RENAME TABLE` detaches, renames in memory and
+        /// attaches under the new name) is not this table anymore, so it must not block a re-attach by the old name.
+        if (!storage || storage->getStorageID().database_name != database_name || storage->getStorageID().table_name != it->first)
+            it = detached_tables_by_name.erase(it);
+        else
+            ++it;
+    }
+    return detached_tables_by_name.contains(table_name);
+}
+
+void DatabaseOrdinary::checkDetachedTableByNameNotInUse(const String & table_name)
+{
+    std::lock_guard lock(mutex);
+    if (isDetachedTableByNameInUse(table_name))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{}, "
+                        "because it was detached but still used by some query. Retry later.",
+                        backQuote(database_name), backQuote(table_name));
+}
+
+void DatabaseOrdinary::waitDetachedTableByNameNotInUse(const String & table_name, std::function<void()> throw_if_cancelled)
+{
+    /// The table is in use while some other owner holds its shared_ptr. There is no way to be notified about the
+    /// last owner going away, so the wait polls, the same way `DatabaseAtomic::waitDetachedTableNotInUse` does.
+    LOG_DEBUG(log, "Waiting for detached table {} to be no longer in use", backQuote(table_name));
+
+    unsigned iterations = 0;
+    while (!DatabaseCatalog::instance().isShuttingDown())
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (!isDetachedTableByNameInUse(table_name))
+            {
+                LOG_DEBUG(log, "Detached table {} is no longer in use", backQuote(table_name));
+                return;
+            }
+        }
+
+        /// Checked after the liveness test, so that a wait that has already succeeded does not throw.
+        if (throw_if_cancelled)
+            throw_if_cancelled();
+
+        if (iterations > 0 && iterations % 100 == 0)
+            LOG_INFO(log, "Still waiting for detached table {} to be no longer in use (elapsed ~{}s)", backQuote(table_name), iterations / 10);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ++iterations;
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        if (!isDetachedTableByNameInUse(table_name))
+        {
+            LOG_DEBUG(log, "Detached table {} is no longer in use (resolved during shutdown)", backQuote(table_name));
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::UNFINISHED,
+        "Did not finish waiting for detached table {}.{} to be no longer in use because the server is shutting down",
+        backQuote(getDatabaseName()), backQuote(table_name));
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)

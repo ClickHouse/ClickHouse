@@ -72,6 +72,16 @@ public:
 
     StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex) override;
 
+    /// Remembers the detached storage for the liveness guard below.
+    StoragePtr detachTable(ContextPtr context, const String & name) override;
+
+    /// The detached-table liveness guard for tables without a UUID, keyed by table name. `ATTACH ... AS REPLICATED`
+    /// deletes transaction metadata files from disk, which must not happen while the previous storage instance of
+    /// the same table is still alive: its parts remember those files and check them on destruction.
+    /// `DatabaseAtomic` keeps its own UUID-keyed bookkeeping (`checkDetachedTableNotInUse`) and never fills this one.
+    void waitDetachedTableByNameNotInUse(const String & table_name, std::function<void()> throw_if_cancelled);
+    void checkDetachedTableByNameNotInUse(const String & table_name);
+
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
@@ -105,6 +115,11 @@ protected:
         ContextPtr query_context);
 
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
+
+    /// Weak references: tracking must never extend the lifetime of a detached storage.
+    std::unordered_map<String, std::weak_ptr<IStorage>> detached_tables_by_name TSA_GUARDED_BY(mutex);
+    /// Forgets the storages that are gone or were renamed away, then tells whether `table_name` is still in use.
+    bool isDetachedTableByNameInUse(const String & table_name) TSA_REQUIRES(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
