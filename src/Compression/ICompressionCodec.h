@@ -134,4 +134,16 @@ private:
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
 
+/// How far back `codec` can reference already-seen data when it compresses a repeated payload, in bytes.
+///
+/// It bounds from below how much of one compressed block a repeated payload's copies can be matched
+/// against: a codec whose window is at least the block size lets every copy in the block compress against
+/// the earlier ones, while `LZ4` cannot reference data farther than 64 KiB back and leaves copies larger
+/// than that incompressible. Estimators that measure a truncated sample and extrapolate it to the full
+/// payload need the distinction: for a window smaller than the payload the measured cross-copy compression
+/// does not carry over. Codecs other than `LZ4` are reported as covering a whole compressed block, which is
+/// exact for the only other codecs the interserver protocol can pick (`NONE` and `ZSTD`, see
+/// `chooseNetworkCompressionCodec`) and an upper estimate elsewhere.
+size_t compressionMatchWindowSize(const ICompressionCodec & codec);
+
 }

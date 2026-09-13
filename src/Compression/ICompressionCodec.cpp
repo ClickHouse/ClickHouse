@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Compression/CompressionCodecMultiple.h>
+#include <Core/Defines.h>
 
 
 namespace CurrentMetrics
@@ -154,6 +155,15 @@ UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source) const
 uint8_t ICompressionCodec::readMethod(const char * source)
 {
     return static_cast<uint8_t>(source[0]);
+}
+
+
+size_t compressionMatchWindowSize(const ICompressionCodec & codec)
+{
+    /// `LZ4` and `LZ4HC` share the method byte.
+    if (codec.getMethodByte() == static_cast<uint8_t>(CompressionMethodByte::LZ4))
+        return 64 * 1024;
+    return DBMS_DEFAULT_BUFFER_SIZE;
 }
 
 }
