@@ -1260,7 +1260,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            processUnexpectedData();
+            /// The payload is deliberately left unread: nothing consumes it here (the connection
+            /// closes with no reply), and in interserver mode the connection is not authenticated
+            /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::Ping:
@@ -2795,6 +2803,11 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// Settings
     ///
 
+    /// Must be set before the version-gated compatibility decisions below read it: `query_kind` is a
+    /// handler member that lives as long as the connection, so until it is assigned it still holds
+    /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
+    query_kind = state->query_context->getClientInfo().query_kind;
+
     /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
@@ -2812,7 +2825,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         passed_settings.set("optimize_const_name_size", -1);
 
     auto settings_changes = passed_settings.changes();
-    query_kind = state->query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
