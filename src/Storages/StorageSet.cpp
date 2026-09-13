@@ -11,6 +11,8 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -122,6 +124,10 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
+
+    /// The set or the join table now holds this data: still charged to this query, which keeps the insert under
+    /// the memory limits, and settled to the server total when it ends rather than reported as unaccounted.
+    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -266,6 +272,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
+        /// The data being dropped here was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }

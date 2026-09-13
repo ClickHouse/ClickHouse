@@ -4,6 +4,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -223,7 +225,13 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    auto res = storages.at(name).creator_fn(arguments);
+    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
+    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
+    StoragePtr res;
+    {
+        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        res = storages.at(name).creator_fn(arguments);
+    }
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query

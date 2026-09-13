@@ -1,4 +1,5 @@
 #include <Interpreters/ProcessList.h>
+#include <Common/formatReadable.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -74,6 +75,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -296,14 +298,66 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
+        /// A user without queries starts a new period here rather than when its previous query left, so that
+        /// whatever that query settled on the way out is already accounted for.
+        const bool starts_a_new_period = user_process_list.queries.empty();
+        if (starts_a_new_period)
+            user_process_list.startNewPeriod();
+
+        /// Track memory usage for all simultaneously running queries from single user. Set before this query's
+        /// group is attached to the user below, so that what the query already allocated, and anything a group
+        /// of the previous period allocates meanwhile, is held to this query's limit rather than to the one left
+        /// behind. The first query of a period writes it instead of raising it, so that a lower one takes effect.
+        if (starts_a_new_period)
+            user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
+        else
+            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
+        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
+        user_process_list.user_memory_tracker.setDescription("User");
+
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
-            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-            thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
+
+            /// The group gets a user here, so hand it what the query allocated before that. Groups accounting
+            /// globally on purpose, and nested ones already on a user, keep the parent they have.
+            bool already_on_a_user = false;
+            for (auto * tracker = thread_group->memory_tracker.getParent(); tracker && !already_on_a_user;
+                 tracker = tracker->getParent())
+                already_on_a_user = tracker->level == VariableContext::User;
+
+            if (thread_group->charge_memory_to_query_user && !already_on_a_user)
+            {
+                const Int64 allocated = thread_group->memory_tracker.get();
+                if (allocated > 0)
+                {
+                    /// Moving them is not an allocation, so nothing checks the user's limit on the way in.
+                    /// Check it here, or a query that allocated more than its own limit before it had a user
+                    /// would start already above it and only be stopped by whatever it allocates next.
+                    /// Before the re-parent below, so a refusal does not leave the query freeing these bytes
+                    /// against a user that was never charged for them.
+                    Int64 hard_limit = user_process_list.user_memory_tracker.getHardLimit();
+                    Int64 will_be = user_process_list.user_memory_tracker.get() + allocated;
+                    if (hard_limit && will_be > hard_limit)
+                        throw Exception(
+                            ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                            "User memory limit exceeded: would use {} (attempt to hand over {} allocated before"
+                            " the query had a user), maximum: {}",
+                            ReadableSize(will_be),
+                            ReadableSize(allocated),
+                            ReadableSize(hard_limit));
+                }
+
+                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+                if (allocated > 0)
+                    user_process_list.user_memory_tracker.transferToGlobal(-allocated);
+
+                /// Mirror the tracker parent, so the query's monitor escalates against the user it joined.
+                thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
+            }
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
@@ -389,11 +443,6 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             ++user_process_list.non_internal_queries;
         }
-
-        /// Track memory usage for all simultaneously running queries from single user.
-        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
-        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("User");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
@@ -486,11 +535,9 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker.
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
-    /// reads entries lock-free via raw pointers and relies on them never being erased.
-    if (user_process_list.queries.empty())
-        user_process_list.resetTrackers();
+    /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
+    /// when the user's next query arrives, see `ProcessList::insert`.
 }
 
 
