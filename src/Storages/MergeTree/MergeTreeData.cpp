@@ -10460,6 +10460,7 @@ void MergeTreeData::optimizeDryRun(
 
     time_t current_time = time(nullptr);
     auto storage_policy = getStoragePolicy();
+    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
 
     std::set<MergeTreePartInfo> part_infos;
     for (const auto & part_name : part_names)
@@ -10485,7 +10486,7 @@ void MergeTreeData::optimizeDryRun(
                 part->name, part->info.getPartitionId(), choice.range.front().name, choice.range.front().info.getPartitionId());
         }
 
-        choice.range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
+        choice.range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
     }
 
     if ((*getSettings())[MergeTreeSetting::apply_patches_on_merge])

@@ -13,6 +13,7 @@ PartsRanges constructPartsRanges(
 {
     PartsRanges properties_ranges;
     properties_ranges.reserve(ranges.size());
+    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
 
     for (const auto & range : ranges)
     {
@@ -20,7 +21,7 @@ PartsRanges constructPartsRanges(
         properties_range.reserve(range.size());
 
         for (const auto & part : range)
-            properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
+            properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
 
         properties_ranges.push_back(std::move(properties_range));
     }
