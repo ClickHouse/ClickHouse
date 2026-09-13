@@ -397,7 +397,27 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto subcolumn_name = required_column.getSubcolumnName();
 
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+    }
+    else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+    {
+        /** A leaf of a Nested column is requested as a subcolumn of its parent (`n.z` becomes the
+          * subcolumn `z` of `n`, see `Nested::convertToSubcolumns`), while a pending rename of that
+          * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
+          * misses it, so the part is searched for a column that only exists there under its old name
+          * and the values are read as defaults while the mutation is pending.
+          */
+        auto subcolumn_split = Nested::splitName(subcolumn_name);
+        auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_split.first);
+
+        if (alter_conversions->isColumnRenamed(leaf_name))
+        {
+            auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
+            name_in_storage = old_leaf_split.first;
+            subcolumn_name = Nested::concatenateName(old_leaf_split.second, subcolumn_split.second);
+        }
+    }
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
