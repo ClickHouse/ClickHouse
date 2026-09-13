@@ -173,6 +173,25 @@ public:
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
 
+/// Reads exactly `size` bytes into `s`. The size is declared by the client and the payload may
+/// never arrive, so the string grows as the bytes are received instead of being resized to the
+/// declared size up front: otherwise a tiny packet declaring a huge field makes the server
+/// allocate that much and then wait for data that never comes.
+inline void readStringOfDeclaredSize(String & s, size_t size, ReadBuffer & in)
+{
+    s.clear();
+    while (s.size() < size)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Message from client declares a field of {} bytes, but contains only {}", size, s.size());
+
+        const size_t bytes_to_copy = std::min(size - s.size(), in.available());
+        s.append(in.position(), bytes_to_copy);
+        in.position() += bytes_to_copy;
+    }
+}
+
 class MessageTransport
 {
 private:
@@ -450,7 +469,7 @@ class Terminate : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        in.ignore(4);
+        deserializePayload(in, "Terminate message", [](ReadBuffer &) {});
     }
 
     MessageType getMessageType() const override
@@ -565,22 +584,18 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
-        readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism = 0;
-        readBinaryBigEndian(size_sasl_mechanism, in);
-        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
-        if (size_sasl_mechanism < -1)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
-        if (size_sasl_mechanism > 0)
+        deserializePayload(in, "SASLInitialResponse message", [this](ReadBuffer & payload_in)
         {
-            sasl_mechanism.resize(size_sasl_mechanism);
-            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
-        }
+            readNullTerminated(auth_method, payload_in);
+            Int32 size_sasl_mechanism = 0;
+            readBinaryBigEndian(size_sasl_mechanism, payload_in);
+            /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+            if (size_sasl_mechanism < -1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+            if (size_sasl_mechanism > 0)
+                readStringOfDeclaredSize(sasl_mechanism, size_sasl_mechanism, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -625,15 +640,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
-        if (size < 4)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
-        sasl_mechanism.resize(size - 4);
-        in.readStrict(sasl_mechanism.data(), size - 4);
+        deserializePayload(in, "SASLResponse message", [this](ReadBuffer & payload_in)
+        {
+            readStringUntilEOF(sasl_mechanism, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -671,9 +681,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(password, in);
+        deserializePayload(in, "PasswordMessage", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(password, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -869,8 +880,8 @@ public:
                     parameters.emplace_back(std::nullopt);
                     continue;
                 }
-                String current_param(sz_param, 0);
-                payload_in.readStrict(current_param.data(), sz_param);
+                String current_param;
+                readStringOfDeclaredSize(current_param, sz_param, payload_in);
                 parameters.push_back(std::move(current_param));
             }
 
@@ -1189,9 +1200,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
+        deserializePayload(in, "CopyData message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1259,18 +1271,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        if (sz < static_cast<Int32>(sizeof(Int32)))
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in CopyData, it must be at least 4", sz);
-        query.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        deserializePayload(in, "CopyData message", [this](ReadBuffer & payload_in)
         {
-            char byte = 0;
-            readBinary(byte, in);
-            query.push_back(byte);
-        }
+            readStringUntilEOF(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1605,6 +1609,16 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    /// Both SASL messages of the SCRAM exchange are sent with the `PasswordMessage` type byte.
+    static void expectPasswordMessage(Messaging::MessageTransport & mt)
+    {
+        Messaging::FrontMessageType type = mt.receiveMessageType();
+        if (type != Messaging::FrontMessageType::PASSWORD_MESSAGE)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Client sent wrong message or closed the connection. Message byte was {}.",
+                    static_cast<Int32>(type));
+    }
+
     enum class ScramSaltKind : uint8_t
     {
         /// The user has no `scram_sha256_password` at all.
@@ -1868,6 +1882,7 @@ public:
                 "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
 
         mt.send(Messaging::AuthenticationSASL(), true);
+        expectPasswordMessage(mt);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
         auto server_nonce = generateNonce();
@@ -1878,6 +1893,7 @@ public:
         auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
+        expectPasswordMessage(mt);
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
         auto proof = parseProof(rsp_continue->sasl_mechanism);
         auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
