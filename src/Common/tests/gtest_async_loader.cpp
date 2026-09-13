@@ -40,7 +40,9 @@ UInt64 spawnFailures()
         return ProfileEvents::end();
     }();
 
-    return event == ProfileEvents::end() ? 0 : ProfileEvents::global_counters[event];
+    if (event == ProfileEvents::end())
+        return 0;
+    return ProfileEvents::global_counters[event].load();
 }
 
 }
