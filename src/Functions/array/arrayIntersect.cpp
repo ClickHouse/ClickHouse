@@ -392,10 +392,12 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
-
-                if (initial_column->isNullable())
-                    initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
             }
+
+            /// The cast column can be not `Nullable` while this one is: a `Dynamic` common element type
+            /// cannot be, and the comparison below declares both element types without `Nullable`.
+            if (initial_column->isNullable())
+                initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
 
             /// In case the column was cast, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)

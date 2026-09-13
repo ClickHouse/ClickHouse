@@ -637,7 +637,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -687,8 +687,9 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 22.8 이전 버전용 구성 예시:
@@ -713,8 +714,9 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 파일 캐시 **디스크 구성 설정**:
