@@ -1,0 +1,67 @@
+-- `parallel_replicas_filter_pushdown` asks for the condition to be spliced into the query the
+-- replicas run, and only a condition they have too may order the initiator's copy of the fragment.
+-- The rewrite that does the splicing refuses some fragment shapes, so the two shapes named most often
+-- are pinned here: neither lets the initiator order a read the replicas read unordered.
+--
+--   * a window function in the shipped `SELECT` list is a shape `rewriteSubquery` refuses - and the
+--     fragment derives no ordering from the condition anyway, so there is nothing to withhold;
+--   * `untuple` is expanded to `tupleElement` before the query is shipped, so the rewrite takes it
+--     like any other, the replicas do fix `tenant`, and the read may order itself off it.
+--
+-- The second is why this gate cannot simply withhold ordering whenever it is unsure: the replicas
+-- would read that fragment `InOrder` while the initiator read it `Default`, which is the same
+-- disagreement from the other side.
+
+DROP TABLE IF EXISTS t_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_window_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_untuple_pr_rewrite_shapes;
+
+CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
+    SETTINGS index_granularity = 128;
+INSERT INTO t_pr_rewrite_shapes SELECT number % 10, number FROM numbers(10000);
+
+CREATE VIEW v_window_pr_rewrite_shapes AS
+    SELECT tenant, ts, sum(ts) OVER (PARTITION BY tenant ORDER BY ts) AS s FROM t_pr_rewrite_shapes ORDER BY ts;
+CREATE VIEW v_untuple_pr_rewrite_shapes AS
+    SELECT tenant, ts, untuple((ts, ts + 1)) FROM t_pr_rewrite_shapes ORDER BY ts;
+
+-- For runs with the old analyzer
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 1;
+SET automatic_parallel_replicas_mode = 0;
+SET max_parallel_replicas = 3;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET parallel_replicas_local_plan = 1;
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
+SET parallel_replicas_allow_view_over_mergetree = 0;
+SET parallel_replicas_plan_based = 0;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET optimize_read_in_order = 1;
+-- The condition is asked to travel, and these two decide whether the rewrite that carries it runs.
+SET parallel_replicas_filter_pushdown = 1;
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+SET serialize_query_plan = 0;
+
+SELECT 'window function in the shipped select list: nothing is ordered either way';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts, s FROM v_window_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (SELECT tenant, ts, s FROM v_window_pr_rewrite_shapes WHERE tenant = 5);
+
+SELECT 'untuple: the rewrite takes it, so the read may order itself off the condition';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT * FROM v_untuple_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
+SELECT count() FROM (SELECT * FROM v_untuple_pr_rewrite_shapes WHERE tenant = 5);
+
+DROP VIEW v_untuple_pr_rewrite_shapes;
+DROP VIEW v_window_pr_rewrite_shapes;
+DROP TABLE t_pr_rewrite_shapes;

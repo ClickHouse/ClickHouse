@@ -1,0 +1,7 @@
+window function in the shipped select list: nothing is ordered either way
+Read type: Default
+1000
+untuple: the rewrite takes it, so the read may order itself off the condition
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+1000
