@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# Tag no-parallel -- queries system.text_log
+# Tags: no-parallel-replicas
 # Tag no-parallel-replicas -- the test manages parallel replicas settings itself
 
 # Regression test for "Initiator received more initial requests than there are replicas:
@@ -8,11 +7,11 @@
 # (parallel replicas coordinator). Found by the AST fuzzer.
 #
 # mergeTreeAnalyzeIndexes keeps its predicate as an AST and resolves it at execution time with
-# resolveConstantExpression, which does not run addQueryTreePasses. DisableParallelReplicasPass
-# therefore never saw the predicate, and a correlated IN subquery inside it was distributed to
-# the replicas. Decorrelating that subquery on a replica materializes the referenced subplan a
-# second time, so one table is read twice in one plan, both reads share a stream_id and the
-# replica announces twice on the same coordinator.
+# resolveConstantExpression; addQueryTreePasses does not run on that tree, so
+# DisableParallelReplicasPass never saw the predicate, and a correlated IN subquery inside it was
+# distributed to the replicas. Decorrelating that subquery on a replica materializes the referenced
+# subplan a second time, so one table is read twice in one plan, both reads share a stream_id and
+# the replica announces twice on the same coordinator.
 #
 # Each assertion reports the analysis result as well as the coordinator count: a coordinator
 # count of 0 on its own would also be produced by a query that failed outright.

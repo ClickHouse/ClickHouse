@@ -147,8 +147,8 @@ protected:
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-            /// resolveConstantExpression does not run addQueryTreePasses, so this pass has to be
-            /// invoked here: a correlated subquery must not be read with parallel replicas.
+            /// addQueryTreePasses does not run on this tree, so this pass has to be invoked
+            /// here: a correlated subquery must not be read with parallel replicas.
             DisableParallelReplicasPass{}.run(expression, execution_context);
 
             GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
