@@ -56,12 +56,15 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Fail if the collected output-byte estimate is missing (0, i.e. the join was not instrumented) or
--- deviates from the recorded baseline by more than 2x. Baselines are stable run-to-run because
--- the data is deterministic.
+-- deviates from the recorded baseline by more than 2x. The data is deterministic, so the estimate
+-- moves only with the randomized read geometry, which keeps it within a few percent of these values.
+-- They are calibrated for the `ZSTD(3)` default codec: the estimator serializes the output columns
+-- with `getDefaultCodec`, so switching the default from `LZ4` to `ZSTD(3)` (#108786) shrank each of
+-- them by ~1.68x.
 WITH map(
-    '04305_join_inner', 3943574,
-    '04305_join_left',  19636492,
-    '04305_join_right', 19629360) AS expected
+    '04305_join_inner', 2342133,
+    '04305_join_left',  11707843,
+    '04305_join_right', 11866147) AS expected
 SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
