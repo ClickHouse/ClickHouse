@@ -221,6 +221,14 @@ public:
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
 
+    /** Returns true for a synthetic storage which stands in for a data source inside the server
+      * instead of a table of the catalog - the source of a projection calculation, for example.
+      * Such a storage is not a table the user can query, and it may borrow the name of an existing
+      * table, so reading from it must not be affected by the row policies and the
+      * `additional_table_filters` of that name.
+      */
+    virtual bool isSyntheticDataSource() const { return false; }
+
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
 

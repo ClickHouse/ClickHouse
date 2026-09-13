@@ -800,7 +800,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
-    if (storage)
+    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one, so
+    /// the row policies of that name have nothing to do with the rows it produces.
+    if (storage && !storage->isSyntheticDataSource())
     {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
@@ -823,7 +825,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
-    if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
+    /// The filters keyed by the name of a table must not be applied to a synthetic data source which
+    /// only borrows that name.
+    if (!settings[Setting::additional_table_filters].value.empty() && storage && !storage->isSyntheticDataSource()
+        && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
 
