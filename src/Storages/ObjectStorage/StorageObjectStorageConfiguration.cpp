@@ -94,6 +94,10 @@ bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(Context
     return false;
 }
 
+void StorageObjectStorageConfiguration::checkReadIsAllowed(const StorageSnapshotPtr &, const ContextPtr &) const
+{
+}
+
 
 void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
