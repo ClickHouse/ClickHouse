@@ -22,28 +22,28 @@ ClickHouse® — это высокопроизводительная столб�
 Во многих сценариях [аналитические запросы должны работать «в реальном времени»](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), то есть возвращать результат менее чем за одну секунду.
 
 <div id="row-oriented-vs-column-oriented-storage">
-  ## Строко-ориентированное и столбцово-ориентированное хранение
+  ## Строко-ориентированное и столбцовое хранение
 </div>
 
 Такого уровня производительности можно добиться только при правильной &quot;ориентации&quot; данных.
 
-Базы данных хранят данные либо [строко-ориентированно, либо столбцово-ориентированно](https://clickhouse.com/engineering-resources/what-is-columnar-database).
+Базы данных хранят данные либо [строко-ориентированно, либо столбцово](https://clickhouse.com/engineering-resources/what-is-columnar-database).
 
 В строко-ориентированной базе данных последовательные строки таблицы записываются одна за другой. Такая структура позволяет быстро извлекать строки, поскольку значения всех столбцов для каждой строки хранятся вместе.
 
-ClickHouse — это столбцово-ориентированная база данных. В таких системах таблицы хранятся как набор столбцов, то есть значения каждого столбца записываются последовательно одно за другим. Такая структура затрудняет извлечение отдельных строк (поскольку значения одной строки оказываются разнесены), но операции со столбцами, такие как фильтрация или агрегация, выполняются намного быстрее, чем в строко-ориентированной базе данных.
+ClickHouse — это столбцовая база данных. В таких системах таблицы хранятся как набор столбцов, то есть значения каждого столбца записываются последовательно одно за другим. Такая структура затрудняет извлечение отдельных строк (поскольку значения одной строки оказываются разнесены), но операции со столбцами, такие как фильтрация или агрегация, выполняются намного быстрее, чем в строко-ориентированной базе данных.
 
 Лучше всего эту разницу показывает пример запроса, выполняемого на 100 миллионах строк [анонимизированных реальных данных веб-аналитики](/ru/get-started/sample-datasets/anon-web-analytics-metrica):
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;
@@ -51,7 +51,7 @@ LIMIT 8;
 
 Вы можете [выполнить этот запрос в Песочнице ClickHouse](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), который выбирает и фильтрует [всего несколько из более чем 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) существующих столбцов, и возвращает результат за миллисекунды:
 
-<Image img="/images/column-oriented-example-query.webp" alt="Пример запроса в столбцово-ориентированной базе данных" size="lg" />
+<Image img="/images/column-oriented-example-query.webp" alt="Пример запроса в столбцовой базе данных" size="lg" />
 
 Как видно из раздела статистики на диаграмме выше, запрос обработал 100 миллионов строк за 92 миллисекунды — это чуть более 1 миллиарда строк в секунду или чуть менее 7 ГБ данных в секунду.
 
@@ -61,7 +61,7 @@ LIMIT 8;
 
 <Image img="/images/row-oriented.webp" alt="Структура строко-ориентированной базы данных" size="lg" />
 
-**Столбцово-ориентированная СУБД**
+**Столбцовая СУБД**
 
 Поскольку значения каждого столбца хранятся на диске последовательно, одно за другим, при выполнении приведённого выше запроса не загружаются лишние данные.
 Поскольку блочное хранение и передача данных с диска в память соответствуют шаблону доступа к данным в аналитических запросах, с диска считываются только столбцы, необходимые для запроса, что позволяет избежать лишних операций ввода-вывода для неиспользуемых данных. Это [намного быстрее](https://benchmark.clickhouse.com/) по сравнению с построчным хранением, при котором считываются целые строки (включая нерелевантные столбцы):

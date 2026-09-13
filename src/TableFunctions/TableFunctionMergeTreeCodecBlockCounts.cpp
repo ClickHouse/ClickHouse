@@ -28,6 +28,9 @@ public:
     static constexpr auto name = "mergeTreeCodecBlockCounts";
     std::string getName() const override { return name; }
 
+    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -119,7 +122,7 @@ void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & facto
 {
     factory.registerFunction<TableFunctionMergeTreeCodecBlockCounts>(
         {.description = R"DOCS_MD(
-Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec. This is how you observe adaptive codec selection (enabled by `allow_experimental_adaptive_codec_selection` setting), which can pick a codec per block for default-codec columns.
+Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec. This is how you observe adaptive codec selection (enabled by `enable_adaptive_codec_selection` setting), which can pick a codec per block for default-codec columns.
 
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 

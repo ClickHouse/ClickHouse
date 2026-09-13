@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 أُضيفت في: v24.10.0
 
-تحسب [كمّ](https://en.wikipedia.org/wiki/Quantile) لتسلسل بيانات رقمية باستخدام الاستيفاء الخطي، مع مراعاة وزن كل عنصر.
+تحسب [كمّ](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية باستخدام الاستيفاء الخطي، مع مراعاة وزن كل عنصر.
 
 للحصول على القيمة المستوفاة، تُجمَع جميع القيم المُمرَّرة في Array، ثم تُرتَّب وفقًا لأوزانها المقابلة.
 بعد ذلك، يُجرى استيفاء الكمّ باستخدام [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) من خلال بناء توزيع تراكمي استنادًا إلى الأوزان، ثم يُجرى استيفاء خطي باستخدام الأوزان والقيم لحساب الكمّات.
@@ -51,6 +51,13 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 **حساب كمّ دقيق موزون مع الاستيفاء**
 
 ```sql title=Query
+CREATE TABLE t (
+    n Int32,
+    val UInt32
+) ENGINE = Memory;
+
+INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
+
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
 ```
 

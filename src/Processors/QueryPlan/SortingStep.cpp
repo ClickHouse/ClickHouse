@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -187,7 +188,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -248,14 +249,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
 }
 
@@ -279,10 +280,11 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
+    limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
 void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
@@ -299,7 +301,8 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
+            return std::make_shared<LimitBySortedStreamTransform>(
+                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end);
         });
 }
 
@@ -333,8 +336,23 @@ static void checkScatterConnectionLimit(size_t threads, size_t streams)
             threads, streams, connection_count_limit);
 }
 
+Names SortingStep::getPartitionByColumnNames() const
+{
+    Names names;
+    names.reserve(partition_by_description.size());
+    for (const auto & column : partition_by_description)
+        names.push_back(column.column_name);
+    return names;
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
+    /// The input streams already carry disjoint sets of the partition key values (each stream holds whole
+    /// partitions), so reshuffling rows across streams is redundant: sorting every stream independently
+    /// already keeps each partition contiguous and sorted.
+    if (skip_scatter_by_partition)
+        return;
+
     /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
     /// both sides of the join scatter into the same number of shards even if they read a different number
     /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
@@ -665,6 +683,9 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
 
+    if (skip_scatter_by_partition)
+        settings.out << prefix << "Skip scatter by partition: 1\n";
+
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         settings.out << prefix << "Per-stream LIMIT BY columns: ";
@@ -696,6 +717,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
+
+    if (skip_scatter_by_partition)
+        map.add("Skip scatter by partition", true);
 
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
@@ -732,8 +756,7 @@ void SortingStep::serialize(Serialization & ctx) const
     serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
-    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;
@@ -827,6 +850,7 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
+    cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }
 

@@ -63,6 +63,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
 
@@ -479,7 +480,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot, "
                                                                  "because replicas are created or removed concurrently");
 
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
@@ -1633,6 +1634,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -1737,7 +1742,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown(/*is_drop=*/true);
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "TimeSeries")
+            if (table->getName() == "MaterializedView" || table->getName() == "TimeSeries")
             {
                 /// These storages own inner tables. Drop them here, while the recovery metadata transaction is
                 /// available: the deferred drop runs without one, so the inner DROP would be re-routed into the
@@ -2374,6 +2379,30 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     if (!zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper");
 
+    /// Stop this replica's DDL worker before the calls below re-initialize replication state:
+    /// its recovery reads `max_log_ptr_at_creation` and compares the Keeper metadata with the
+    /// local table set, which those calls rewrite, and a recovery running against a half-updated
+    /// view detaches local tables into `<db>_broken_replicated_tables`.
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
+            ddl_worker->shutdown();
+            ddl_worker_initialized = false;
+            ddl_worker = nullptr;
+        }
+    }
+
+    /// If the restore fails, reinitialize the DDL worker so the database remains functional.
+    /// SAFE: the body runs while an exception propagates and can itself throw (thread
+    /// creation), which must not replace the restore's own error.
+    bool need_reinitialize_ddl_worker = true;
+    SCOPE_EXIT_SAFE({
+        if (need_reinitialize_ddl_worker)
+            reinitializeDDLWorker();
+    });
+
     try
     {
         restoreDatabaseNodesInKeeper(zookeeper);
@@ -2391,6 +2420,8 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     /// Force the database to recover to update the restored metadata
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
+
+    need_reinitialize_ddl_worker = false;
     reinitializeDDLWorker();
 }
 
@@ -2510,7 +2541,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+    if (table->getName() == "MaterializedView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
         || table->getName() == "TimeSeries")
     {
         /// Drop inner tables here while the metadata transaction is available, so the background
@@ -2923,12 +2954,12 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
         if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
-            || alter->isUnlockSnapshot())
+            || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
-        // Allowed ALTER operation on KeeperMap still should be replicated
-        // to update metadata on all nodes and commit it to database metadata
-        if (is_keeper_map_table(query_ptr) && !alter->isCommentAlter())
+        /// A `KeeperMap` `ALTER` the storage applies rewrites the `CREATE` statement kept in Keeper and
+        /// needs a metadata transaction, so this predicate is deliberately wider than the storage's set.
+        if (is_keeper_map_table(query_ptr) && !alter->isSettingsOrCommentAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))

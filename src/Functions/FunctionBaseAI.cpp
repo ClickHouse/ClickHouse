@@ -2,8 +2,8 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Exception.h>
 #include <base/scope_guard.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <algorithm>
@@ -41,7 +41,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -53,7 +52,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
@@ -147,13 +145,6 @@ Field readAIParamFromCollection(AIParamKind kind, const NamedCollectionPtr & col
     std::unreachable();
 }
 
-}
-
-FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
-{
-    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
 bool FunctionBaseAI::isStringToStringMap(const IDataType & type)
@@ -375,7 +366,7 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
-FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
+void FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
     UInt64 dimensions,
@@ -386,10 +377,19 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     UInt64 retry_delay_ms,
     bool throw_on_error,
     AIQuotaTracker & quota,
-    const ConnectionTimeouts & timeouts)
+    const ConnectionTimeouts & timeouts,
+    EmbeddingResult & result)
 {
-    EmbeddingResult result;
     result.embeddings.resize(inputs.size());
+
+    UInt64 api_calls = 0;
+    UInt64 input_tokens = 0;
+
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
+    });
 
     for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
     {
@@ -420,10 +420,13 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
 
             try
             {
-                ++result.api_calls;
-                ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
-                result.input_tokens += ai_embedding_response.input_tokens;
-                quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                /// Count the call before issuing it, so a failed request is still counted.
+                ++api_calls;
+                SCOPE_EXIT({
+                    input_tokens += ai_embedding_response.input_tokens;
+                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                });
+                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
                 batch_ok = true;
                 break;
             }
@@ -457,8 +460,6 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
             ++result.texts_embedded;
         }
     }
-
-    return result;
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -560,11 +561,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 ++total_api_calls;
 
-                auto ai_response = provider->call(ai_request, timeouts);
-
-                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                total_input_tokens += ai_response.input_tokens;
-                total_output_tokens += ai_response.output_tokens;
+                AIResponse ai_response;
+                SCOPE_EXIT({
+                    quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                    total_input_tokens += ai_response.input_tokens;
+                    total_output_tokens += ai_response.output_tokens;
+                });
+                provider->call(ai_request, timeouts, ai_response);
 
                 /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
                 /// interpolating it into an exception message that reaches the logs and `system.query_log`.

@@ -1,12 +1,8 @@
-#include <algorithm>
 #include <unordered_set>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/ProfileEvents.h>
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 
@@ -14,8 +10,8 @@ namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
-    extern const Event AdaptiveAggregationSealNormalizations;
     extern const Event AdaptiveAggregationBucketsRetired;
+    extern const Event AdaptiveAggregationStagedChunkSplits;
 }
 
 namespace DB
@@ -33,8 +29,21 @@ void Aggregator::prepareStagedChunk(StagedChunk & block) const
 
     auto prep = std::make_unique<StagedChunkPreparation>();
     prep->aggregate_columns.resize(params.aggregates_size);
-    prepareAggregateInstructions(
-        payload.argument_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
+    prep->instructions.resize(params.aggregates_size + 1);
+    prep->instructions[params.aggregates_size].that = nullptr;
+
+    /// The payload columns are already in the drain's form - the seal normalized them at the
+    /// gather - so the instructions wire the columns directly and only the combinator
+    /// unwrapping remains. Nothing dense is materialized here, and a staged payload is never
+    /// sparse.
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        prep->aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
+        for (size_t j = 0; j < prep->aggregate_columns[i].size(); ++j)
+            prep->aggregate_columns[i][j] = payload.argument_columns[aggregates_positions[i][j]].get();
+        buildAggregateFunctionInstruction(
+            i, /*has_sparse_arguments=*/false, prep->aggregate_columns, prep->instructions, prep->nested_columns_holder);
+    }
 
     payload.prepared = std::move(prep);
 }
@@ -47,6 +56,7 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
     early_drain_variants->key_sizes = key_sizes;
     early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
 
+    shared.drain_type = early_drain_variants->type;
     shared.early_drain_variants = std::move(early_drain_variants);
     shared.initialized.store(true, std::memory_order_release);
 }
@@ -56,6 +66,31 @@ void Aggregator::publishStagedChunk(
 {
     chassert(block->wellFormed());
 
+    /// The drains claim chunks whole, so a chunk is never let into the backlogs larger than
+    /// the part its claim is bounded by (see `splitStagedChunkAtPartBound`).
+    auto pieces = splitStagedChunkAtPartBound(shared, *block);
+    if (pieces.empty())
+    {
+        enqueueStagedChunk(shared, std::move(block));
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedChunkSplits);
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: split a staged chunk of {} records into {} pieces at the part bound",
+        block->keys.size(),
+        pieces.size());
+    block.reset();
+    for (auto & piece : pieces)
+    {
+        chassert(piece->wellFormed());
+        enqueueStagedChunk(shared, std::move(piece));
+    }
+}
+
+void Aggregator::enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
+{
     /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
     /// see it.
     if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
@@ -278,7 +313,6 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     else
     {
         concatenateStagedKeys(keys, minis);
-        const size_t total = keys.size();
 
         auto columns_of = [](const StagedChunk & mini) -> const Columns &
         { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
@@ -291,40 +325,13 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 if (argument_columns[position])
                     continue;
 
-                /// A constant argument stays constant only when every batch agrees on the value.
-                /// The values can genuinely differ across the blocks of one stream, and
-                /// ColumnConst::insertRangeFrom ignores the source, so a mismatch materializes
-                /// every batch's column instead (the same treatment as Squashing).
-                bool all_const_equal = isColumnConst(*columns_of(*minis.front())[position]);
-                for (size_t m = 1; all_const_equal && m < num_minis; ++m)
-                {
-                    const auto & column = *columns_of(*minis[m])[position];
-                    all_const_equal = isColumnConst(column)
-                        && assert_cast<const ColumnConst &>(*columns_of(*minis.front())[position])
-                                   .getDataColumn()
-                                   .compareAt(0, 0, assert_cast<const ColumnConst &>(column).getDataColumn(), -1)
-                            == 0;
-                }
-                if (all_const_equal)
-                {
-                    argument_columns[position] = columns_of(*minis.front())[position]->cloneResized(total);
-                    continue;
-                }
-
+                /// The seal normalized every batch's payload columns to the dense form the
+                /// drain consumes, so the buffered batches always agree at a position and the
+                /// coalescing is a plain concatenation.
                 VectorWithMemoryTracking<ColumnPtr> sources;
                 sources.reserve(num_minis);
                 for (const auto & mini : minis)
-                    sources.push_back(columns_of(*mini)[position]->convertToFullColumnIfConst());
-
-                /// The clone below takes the destination's class from the first source and the two
-                /// calls after it downcast every source to that class. Lazy replication is decided
-                /// per block, so one position can legitimately mix wrapped and dense columns.
-                if (!std::ranges::all_of(sources, [&](const auto & source) { return source->structureEquals(*sources.front()); }))
-                {
-                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealNormalizations);
-                    for (auto & source : sources)
-                        source = removeSpecialRepresentations(source);
-                }
+                    sources.push_back(columns_of(*mini)[position]);
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);

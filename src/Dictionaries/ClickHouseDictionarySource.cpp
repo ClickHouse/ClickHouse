@@ -329,7 +329,11 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
+        /// A dictionary must not read itself - it would recurse. That can only happen when the source is
+        /// this very server, so the name comparison is meaningful only for a local source: a table on
+        /// another server that merely happens to share the dictionary's database and table name is a
+        /// different object, and reading it is exactly what the dictionary is for.
+        if (configuration->is_local && dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);

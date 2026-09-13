@@ -19,40 +19,36 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 ClickHouse Cloud 서비스에 대한 액세스를 AWS PrivateLink 주소로만 제한하려면 ClickHouse Cloud [IP 액세스 목록](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)의 안내를 따르십시오.
 
-<Note>
-  ClickHouse Cloud는 다음 리전에서 [교차 리전 PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/)를 지원합니다.
+ClickHouse Cloud는 다음 AWS 리전에 호스팅된 서비스에 대해 [교차 리전 PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)를 지원합니다.
 
-  * sa-east-1
-  * il-central-1
-  * me-south-1
-  * mx-central-1
-  * eu-central-2
-  * eu-north-1
-  * eu-south-2
-  * eu-west-3
-  * eu-south-1
-  * eu-west-2
-  * eu-west-1
-  * eu-central-1
-  * ca-west-1
-  * ca-central-1
-  * ap-northeast-1
-  * ap-southeast-2
-  * ap-southeast-1
-  * ap-northeast-2
-  * ap-northeast-3
-  * ap-south-1
-  * ap-southeast-5
-  * ap-southeast-4
-  * ap-southeast-3
-  * ap-south-2
-  * ap-east-1
-  * af-south-1
-  * us-west-2
-  * us-west-1
-  * us-east-2
-  * us-east-1
-</Note>
+이 표에는 서비스 호스팅 리전만 포함됩니다. 소비자 인터페이스 VPC 엔드포인트 리전에는 별도의 허용 목록이 적용됩니다. 예를 들어 `mx-central-1`은 해당 리전에 호스팅된 서비스에서는 교차 리전 액세스를 활성화할 수 없지만 허용된 소비자 리전입니다.
+
+| 리전 코드            | 리전 이름          |
+| ---------------- | -------------- |
+| `af-south-1`     | 아프리카(케이프타운)    |
+| `ap-east-1`      | 아시아 태평양(홍콩)    |
+| `ap-northeast-1` | 아시아 태평양(도쿄)    |
+| `ap-northeast-2` | 아시아 태평양(서울)    |
+| `ap-south-1`     | 아시아 태평양(뭄바이)   |
+| `ap-southeast-1` | 아시아 태평양(싱가포르)  |
+| `ap-southeast-2` | 아시아 태평양(시드니)   |
+| `ap-southeast-3` | 아시아 태평양(자카르타)  |
+| `ap-southeast-5` | 아시아 태평양(말레이시아) |
+| `ca-central-1`   | 캐나다(중부)        |
+| `eu-central-1`   | 유럽(프랑크푸르트)     |
+| `eu-north-1`     | 유럽(스톡홀름)       |
+| `eu-west-1`      | 유럽(아일랜드)       |
+| `eu-west-2`      | 유럽(런던)         |
+| `il-central-1`   | 이스라엘(텔아비브)     |
+| `me-central-1`   | 중동(UAE)        |
+| `sa-east-1`      | 남아메리카(상파울루)    |
+| `us-east-1`      | 미국 동부(북부 버지니아) |
+| `us-east-2`      | 미국 동부(오하이오)    |
+| `us-west-2`      | 미국 서부(오리건)     |
+
+<Warning>
+  `ap-east-2` 또는 `mx-central-1`에 호스팅된 ClickHouse Cloud 서비스에서는 교차 리전 PrivateLink가 지원되지 않습니다. PrivateLink를 사용해 두 리전 중 하나의 서비스에 연결하려면 서비스와 동일한 AWS 리전에 인터페이스 VPC 엔드포인트를 생성하십시오.
+</Warning>
 
 <Note>
   AWS는 교차 리전 데이터 전송에 대해 요금을 부과합니다. 자세한 내용은 [AWS PrivateLink 요금](https://aws.amazon.com/privatelink/pricing/)을 참조하십시오.
@@ -376,61 +372,51 @@ jq .result
   ## 문제 해결
 </div>
 
-<div id="multiple-privatelinks-in-one-region">
-  ### 하나의 리전에서 여러 PrivateLink
-</div>
+<AccordionGroup>
+  <Accordion title="하나의 리전에 여러 PrivateLink" id="multiple-privatelinks-in-one-region">
+    대부분의 경우 각 VPC에 대해 엔드포인트 서비스를 하나만 생성하면 됩니다. 이 엔드포인트는 VPC에서 여러 ClickHouse Cloud 서비스로 요청을 라우팅할 수 있습니다.
+    [여기](#considerations)를 참조하십시오.
+  </Accordion>
 
-대부분의 경우 각 VPC에 대해 endpoint 서비스는 하나만 생성하면 됩니다. 이 endpoint는 해당 VPC의 요청을 여러 ClickHouse Cloud 서비스로 라우팅할 수 있습니다.
-[여기](#considerations)를 참조하세요
+  <Accordion title="Private Endpoint 연결 시간 초과" id="connection-to-private-endpoint-timed-out">
+    * VPC 엔드포인트에 Security Group을 연결하십시오.
+    * 엔드포인트에 연결된 Security Group의 `inbound` 규칙을 확인하고 ClickHouse 포트를 허용하십시오.
+    * 연결 테스트에 사용되는 VM에 연결된 Security Group의 `outbound` 규칙을 확인하고 ClickHouse 포트에 대한 연결을 허용하십시오.
+  </Accordion>
 
-<div id="connection-to-private-endpoint-timed-out">
-  ### Private Endpoint 연결 시간 초과
-</div>
+  <Accordion title="Private Hostname: 호스트 주소를 찾을 수 없음" id="private-hostname-not-found-address-of-host">
+    * DNS 구성을 확인하십시오.
+  </Accordion>
 
-* VPC 엔드포인트에 Security Group을 연결하세요.
-* Endpoint에 연결된 Security Group의 `inbound` 규칙을 확인하고 ClickHouse 포트를 허용하세요.
-* 연결 테스트에 사용되는 VM에 연결된 Security Group의 `outbound` 규칙을 확인하고 ClickHouse 포트에 대한 연결을 허용하세요.
+  <Accordion title="피어에 의해 연결 재설정" id="connection-reset-by-peer">
+    * 엔드포인트 ID가 서비스 허용 목록에 추가되지 않았을 가능성이 높습니다. [단계](#add-endpoint-id-to-services-allow-list)를 확인하십시오.
+  </Accordion>
 
-<div id="private-hostname-not-found-address-of-host">
-  ### 비공개 호스트명: 호스트 주소를 찾을 수 없음
-</div>
+  <Accordion title="엔드포인트 필터 확인" id="checking-endpoint-filters">
+    명령어를 실행하기 전에 다음 환경 변수를 설정하십시오.
 
-* DNS 구성을 확인하세요
+    ```bash
+    KEY_ID=<Key ID>
+    KEY_SECRET=<Key secret>
+    ORG_ID=<please set ClickHouse organization ID>
+    INSTANCE_ID=<Instance ID>
+    ```
 
-<div id="connection-reset-by-peer">
-  ### 상대방에 의해 연결이 재설정됨
-</div>
+    `INSTANCE_ID`는 [단계](#option-2-api)에서 가져올 수 있습니다.
 
-* 대부분 Endpoint ID가 서비스 허용 목록에 추가되지 않은 경우입니다. [단계](#add-endpoint-id-to-services-allow-list)를 참조하십시오.
+    ```shell
+    curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+    -X GET -H "Content-Type: application/json" \
+    "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+    jq .result.privateEndpointIds
+    ```
+  </Accordion>
 
-<div id="checking-endpoint-filters">
-  ### 엔드포인트 필터 확인
-</div>
+  <Accordion title="원격 데이터베이스에 연결하기" id="connecting-to-a-remote-database">
+    [AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)에 따르면 다음과 같습니다.
 
-명령을 실행하기 전에 다음 환경 변수를 설정하십시오.
+    > 하나 이상의 소비자 VPC에서 서비스 제공자 VPC의 특정 서비스 또는 인스턴스 집합에 단방향으로 액세스할 수 있도록 하려는 클라이언트/서버 구성인 경우 AWS PrivateLink를 사용하십시오. 연결은 소비자 VPC의 클라이언트만 서비스 제공자 VPC의 서비스로 시작할 수 있습니다.
 
-```bash
-KEY_ID=<Key ID>
-KEY_SECRET=<Key secret>
-ORG_ID=<ClickHouse 조직 ID를 설정하세요>
-INSTANCE_ID=<Instance ID>
-```
-
-[단계](#option-2-api)에서 `INSTANCE_ID`를 확인할 수 있습니다.
-
-```shell
-curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
--X GET -H "Content-Type: application/json" \
-"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
-jq .result.privateEndpointIds
-```
-
-<div id="connecting-to-a-remote-database">
-  ### 원격 데이터베이스에 연결하기
-</div>
-
-[AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)에 따르면 다음과 같습니다.
-
-> 하나 이상의 소비자 VPC에서 서비스 제공자 VPC의 특정 서비스 또는 인스턴스 집합에 단방향으로 액세스할 수 있도록 하려는 클라이언트/서버 구성인 경우 AWS PrivateLink를 사용하십시오. 연결은 소비자 VPC의 클라이언트만 서비스 제공자 VPC의 서비스로 시작할 수 있습니다.
-
-ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 AWS VPC에 호스팅된 데이터베이스에 연결하려면, ClickHouse Cloud로부터의 연결을 허용하도록 AWS Security Group을 구성하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)도 함께 확인하십시오.
+    ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 AWS VPC에 호스팅된 데이터베이스에 연결하려면, ClickHouse Cloud로부터의 연결을 허용하도록 AWS Security Group을 구성하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)도 함께 확인하십시오.
+  </Accordion>
+</AccordionGroup>
