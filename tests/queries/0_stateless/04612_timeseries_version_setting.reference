@@ -11,6 +11,6 @@
 --- PromQL works on tables of every supported version ---
 0
 0
---- CREATE AS copies the version ---
-ts_version_0_copy	0
+--- CREATE AS does not copy the version: a new table gets the latest one ---
+ts_version_0_copy	1
 ts_version_1_copy	1

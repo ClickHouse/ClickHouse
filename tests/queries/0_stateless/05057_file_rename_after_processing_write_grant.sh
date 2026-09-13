@@ -225,4 +225,10 @@ DROP DATABASE IF EXISTS ${FS_DB};
 DROP DATABASE IF EXISTS ${URL_DB};
 DROP USER IF EXISTS ${READER};
 "
-rm -rf "${FILES_DIR}"
+# Only the files, never the directory: `${FS_DB}` is a `Filesystem` database over it, and the two
+# cleanups above and below cannot be made atomic. The `DROP DATABASE` is a call into the server and
+# fails whenever the server is gone - which is routine under a stress run, where it is killed and
+# restarted while the tests run - while the removal here is local and always succeeds. Removing the
+# directory would then leave a `Filesystem` database pointing at a path that no longer exists, and
+# `loadMetadata` aborts every subsequent server start over it, so the server never comes back.
+rm -f "${FILES_DIR}"/*.csv
