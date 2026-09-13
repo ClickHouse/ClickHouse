@@ -74,7 +74,9 @@ public:
         /// another thread in the meantime gets it by accident. Only this child does, and only under
         /// the number it is told: the original is closed in the child before `exec` whether or not
         /// it was close-on-exec, so a caller handing over a pipe end does not leave a second copy
-        /// of it in the child under the original number.
+        /// of it in the child under the original number - unless that number is itself where
+        /// something else is installed in the child (a standard stream, a `read_fds`/`write_fds`
+        /// pipe, another inherited descriptor), in which case what is there now is what stays.
         std::vector<std::pair<int, int>> inherited_fds;
 
         bool pipe_stdin_only = false;

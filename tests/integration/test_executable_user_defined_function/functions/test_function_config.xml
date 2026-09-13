@@ -459,6 +459,31 @@
     </function>
     <function>
         <type>executable_pool</type>
+        <name>test_function_pool_lingers_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_lingers.py</command>
+        <command_termination_timeout>2</command_termination_timeout>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_lingers_ignore_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_lingers.py</command>
+        <command_termination_timeout>2</command_termination_timeout>
+        <check_exit_code>0</check_exit_code>
+    </function>
+    <function>
+        <type>executable_pool</type>
         <name>test_function_pool_stderr_then_late_exit_python</name>
         <return_type>UInt64</return_type>
         <argument>

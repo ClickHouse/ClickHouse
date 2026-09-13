@@ -13,7 +13,6 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -63,7 +62,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_DLSYM;
     extern const int CANNOT_FORK;
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
@@ -189,21 +187,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
-#endif
-
-    if (!real_vfork)
-        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
-
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
@@ -289,7 +272,25 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         }
     }
 
-    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+    /// `vfork` must be called directly, not through a pointer obtained with `dlsym`: the compiler
+    /// knows `vfork` as a function that returns twice, and only a call it can see as such makes
+    /// it keep the stack slots of this frame intact across the child's execution. The child runs
+    /// the block below on this very frame, and the codegen treats that block as one that never
+    /// comes back (it ends with `_exit`), so without the attribute it happily reuses the spill
+    /// slot of a value the block no longer needs - the `config` reference, say - for one of its
+    /// own temporaries. The child then `exec`s, the parent wakes up, and reads garbage from its
+    /// own frame. This is not a theoretical concern: the MemorySanitizer build did exactly that
+    /// in the loop over `inherited_fds` below.
+    ///
+    /// The pointer from `dlsym` also hid the call from the static analyzer, which has two things
+    /// to say about `vfork`. That `posix_spawn` is the safer API: it is, and moving this code to
+    /// it is a change of its own; until then this is the one place in the server that spawns,
+    /// and it is written with the care `vfork` demands. And that nothing but `exec`/`_exit` may
+    /// be called after it: the child below makes only the calls `posix_spawn` itself makes in its
+    /// own child - `dup2`, `close`, `sigprocmask`, all async-signal-safe - and touches nothing
+    /// the parent shares beyond the descriptor table, which is the child's own. Suppressed, not
+    /// hidden.
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
 
     if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
@@ -297,6 +298,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     if (0 == pid)
     {
         /// We are in the freshly created process.
+        /// NOLINTBEGIN(clang-analyzer-unix.Vfork)
 
         /// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
@@ -348,11 +350,17 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         /// close-on-exec would otherwise survive the `exec` as a second copy - for a pipe, an
         /// extra reader or writer that keeps the parent from ever seeing EOF. Closed here rather
         /// than required to be close-on-exec, so that the contract does not depend on how the
-        /// caller opened the descriptor. An original that is itself one of the targets has just
-        /// been overwritten with the right thing and is left alone.
+        /// caller opened the descriptor. An original whose number is itself a target - of any of
+        /// the `dup2`s above: the standard streams, `read_fds`, `write_fds` or another inherited
+        /// pair - has just been overwritten with the right thing and is left alone; closing it
+        /// would take down what was just installed there.
         for (const auto & [child_fd, parent_fd] : config.inherited_fds)
         {
-            bool is_a_target = false;
+            bool is_a_target = parent_fd <= STDERR_FILENO;
+            for (int fd : config.read_fds)
+                is_a_target |= parent_fd == fd;
+            for (int fd : config.write_fds)
+                is_a_target |= parent_fd == fd;
             for (const auto & [other_child_fd, other_parent_fd] : config.inherited_fds)
                 is_a_target |= parent_fd == other_child_fd;
             if (!is_a_target && 0 != ::close(parent_fd))
@@ -370,6 +378,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         /// If the process is running, then `execv` does not return here.
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+        /// NOLINTEND(clang-analyzer-unix.Vfork)
     }
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(

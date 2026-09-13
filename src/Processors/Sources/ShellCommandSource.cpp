@@ -1537,10 +1537,28 @@ namespace
 
             stopReadingCommandOutput();
 
+            /// The wait below reaps the worker, and `/proc/<pid>` goes with it: read the borrow's
+            /// CPU and peak resident set first, as every other wait that discards a worker does,
+            /// or exactly this case - answered and exited - reports zeros. Idempotent, so
+            /// `cleanup` calling it again afterwards is harmless.
+            recordPooledResourceUsageNoThrow();
+
             try
             {
-                command->waitDrainingOutput(
+                const bool reaped = command->waitDrainingOutput(
                     [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); }, /*check_exit_status=*/ true);
+
+                /// The same rule as the wait in `prepare` that discards a worker: a status that could
+                /// not be read within `command_termination_timeout` is not a passing status. A worker
+                /// that closed its stdout and then lingers has not been checked, and `check_exit_code`
+                /// promises that it is.
+                if (!reaped)
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "The command closed its stdout but did not exit within command_termination_timeout "
+                        "({} seconds), so its exit code could not be checked; it will be signalled. Give it "
+                        "a longer command_termination_timeout, or set check_exit_code to 0 for a command "
+                        "that is not expected to exit on its own",
+                        command->terminationTimeoutSeconds());
             }
             catch (Exception & e)
             {

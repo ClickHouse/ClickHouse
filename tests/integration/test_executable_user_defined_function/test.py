@@ -599,6 +599,30 @@ def test_executable_function_unreadable_exit_code_fails_the_query(started_cluste
     assert node.query("SELECT test_function_lingers_ignore_python(1)") == "Key 1\n"
 
 
+def test_executable_function_pooled_worker_with_unreadable_exit_code_fails_the_query(started_cluster):
+    """A pooled worker that closed its stdout and lingers is not waved through under `check_exit_code`."""
+    skip_test_msan(node)
+
+    # The command answers correctly, closes its stdout and then sleeps far past its
+    # `command_termination_timeout`. A pooled worker that closed its stdout cannot go back to the
+    # pool, so this is the one moment its exit status is read - and there is none to read within
+    # the budget. That is the same situation the plain `executable` test above is about, and it has
+    # the same answer: a status that could not be read is not a passing one.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_pool_lingers_python(1)")
+    elapsed = time.monotonic() - started
+
+    assert "closed its stdout but did not exit within command_termination_timeout" in str(exc.value), str(exc.value)
+    assert elapsed < 60, f"the query took {elapsed:.1f}s to give up on the worker"
+
+    # With `check_exit_code = 0` nothing is checked and the same command answers normally. It is
+    # still discarded - a worker without a stdout is of no use to the next borrow - and the pool
+    # starts a fresh one for the next call, which answers just the same.
+    assert node.query("SELECT test_function_pool_lingers_ignore_python(1)") == "Key 1\n"
+    assert node.query("SELECT test_function_pool_lingers_ignore_python(2)") == "Key 2\n"
+
+
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''

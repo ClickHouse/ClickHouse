@@ -43,6 +43,7 @@ def started_cluster():
             "pool_udf_sleep.py",
             "pool_udf_cpu.py",
             "pool_udf_cpu_short.py",
+            "pool_udf_cpu_exit.py",
             "pool_udf_mem.py",
             "pool_udf_syscall.py",
             "pool_udf_persistent_helper.py",
@@ -195,6 +196,28 @@ def test_cpu_user_microseconds_survives_a_discarded_worker(started_cluster):
     # on failing borrows perfectly green, since peak is otherwise only checked on successful ones.
     peak = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
     assert peak > 0, f"Expected PeakMemoryByteSeconds > 0 for a discarded worker, got {peak}"
+
+
+def test_cpu_and_peak_memory_survive_a_worker_that_answered_and_exited(started_cluster):
+    _skip_msan()
+    qid = "cpu-exit-1"
+
+    # The command does the same work as `test_cpu_user_microseconds`, answers every row, and closes
+    # its stdout: the query succeeds, but the worker cannot go back into the pool, and under
+    # `check_exit_code` its status is read right after the answer. That read reaps it. The borrow's
+    # CPU and peak resident set live in `/proc/<pid>`, so they have to be sampled before the reap -
+    # otherwise exactly this case, a command that did its work and left, reports zeros, while the
+    # one that answered short (the test above) is accounted for.
+    _run(
+        "SELECT sum(test_pool_udf_cpu_exit(number)) FROM numbers(2000)",
+        qid,
+    )
+
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a worker that answered and exited, got {cpu}"
+
+    peak = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    assert peak > 0, f"Expected PeakMemoryByteSeconds > 0 for a worker that answered and exited, got {peak}"
 
 
 def test_system_time_microseconds(started_cluster):

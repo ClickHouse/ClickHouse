@@ -164,6 +164,36 @@ TEST(ShellCommand, InheritsADescriptorUnderAnotherNumber)
     ::close(source);
 }
 
+/// The number an original has in the parent can be where something else is installed in the
+/// child - here a `read_fds` pipe. Closing "the original" then would close that pipe instead:
+/// what is under that number now is what the child was told to have, and it stays.
+TEST(ShellCommand, KeepsAPipeInstalledOnTheNumberOfAnOriginal)
+{
+    const int source = makeInheritableSource("via the region");
+    ASSERT_NE(source, -1);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int target = probe + 1;
+    ::close(probe);
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "cat /dev/fd/" + std::to_string(target) + "; echo via the pipe >/dev/fd/" + std::to_string(source)};
+    config.inherited_fds = {{target, source}};
+    config.read_fds = {source};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_stdout;
+    readStringUntilEOF(from_stdout, command->out);
+    std::string from_pipe;
+    readStringUntilEOF(from_pipe, command->read_fds.at(source));
+    command->wait();
+
+    EXPECT_EQ(from_stdout, "via the region");
+    EXPECT_EQ(from_pipe, "via the pipe\n");
+    ::close(source);
+}
+
 namespace
 {
 
