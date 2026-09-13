@@ -7,7 +7,7 @@
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <fmt/ranges.h>
 
 
