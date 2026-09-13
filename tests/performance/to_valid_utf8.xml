@@ -1,0 +1,111 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep short rows on the existing path. -->
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('a', 63), toString(number % 10)),
+                concat(repeat('a', 95), toString(number % 10)),
+                concat(repeat('a', 126), toString(number % 10))
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('é', 31), toString(number % 10), 'a'),
+                concat(repeat('é', 47), toString(number % 10), 'a'),
+                concat(repeat('é', 63), toString(number % 10))
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('é', 26), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 42), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 58), '中文🙂', toString(number % 10))
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the simdutf path at and above the cutoff. -->
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('a', 127), toString(number % 10), 'a'),
+                concat(repeat('a', 128), toString(number % 10)),
+                concat(repeat('a', 191), toString(number % 10), 'a'),
+                concat(repeat('a', 255), toString(number % 10), 'a'),
+                concat(repeat('a', 511), toString(number % 10), 'a'),
+                concat(repeat('a', 1023), toString(number % 10))
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('é', 63), toString(number % 10), 'a'),
+                concat(repeat('é', 64), toString(number % 10)),
+                concat(repeat('é', 95), toString(number % 10), 'a'),
+                concat(repeat('é', 127), toString(number % 10), 'a'),
+                concat(repeat('é', 255), toString(number % 10), 'a'),
+                concat(repeat('é', 511), toString(number % 10), 'a')
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat(repeat('é', 58), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 59), '中文🙂', toString(number % 10)),
+                concat(repeat('é', 90), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 122), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 250), '中文🙂', toString(number % 10), 'a'),
+                concat(repeat('é', 506), '中文🙂', toString(number % 10), 'a')
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+
+    <!-- Invalid input should repair from the first error without rescanning the prefix. -->
+    <query>
+        SELECT sum(length(toValidUTF8(value)))
+        FROM
+        (
+            SELECT arrayJoin([
+                concat('\xC2', repeat('é', 64), toString(number % 10)),
+                concat(repeat('é', 31), '\xE2\x28\xA1', repeat('é', 31), toString(number % 10)),
+                concat(repeat('é', 64), toString(number % 10), '\xC2')
+            ]) AS value
+            FROM numbers(100000)
+        )
+        FORMAT Null
+    </query>
+</test>

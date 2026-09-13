@@ -42,6 +42,7 @@ struct ToValidUTF8Impl
     static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
     {
 #if USE_SIMDUTF
+        /// Avoid runtime dispatch overhead on short strings.
         static constexpr size_t SIMDUTF_MIN_SIZE = 128;
         const size_t size = static_cast<size_t>(end - begin);
         if (size >= SIMDUTF_MIN_SIZE)
