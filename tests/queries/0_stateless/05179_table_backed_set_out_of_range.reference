@@ -1,0 +1,42 @@
+1
+1
+1
+-1	0
+1	1
+1
+1
+a wider probe type
+1
+1
+a Nullable set key: the cross-type probe agrees with the same-type one
+1	1
+2	0
+\N	\N
+-1	0
+1	1
+\N	\N
+1
+a non-nullable set key with a nullable probe
+1
+1
+a NULL that is an ordinary value: `nullIn` and `transform_null_in`
+0
+0
+1
+0
+0
+0
+-1	0
+1	1
+a Nullable set key with a NULL of its own
+1
+0
+1
+0
+the same through a LowCardinality(Nullable(...)) probe
+-1	0
+1	1
+\N	1
+-1	0
+1	1
+\N	0

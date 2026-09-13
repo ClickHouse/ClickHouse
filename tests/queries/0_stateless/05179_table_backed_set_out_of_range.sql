@@ -1,0 +1,89 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/113854
+-- A table-backed set converts the probe column into the set's key type. A value the key type cannot
+-- represent is simply not a member - which is what the literal `IN` list concludes - but the strict
+-- conversion raised `CANNOT_CONVERT_TYPE` on the rows the read path happened to deliver, so the same
+-- query succeeded or failed depending on how much the plan pruned.
+
+DROP TABLE IF EXISTS t_set_engine;
+DROP TABLE IF EXISTS t_set_probe;
+CREATE TABLE t_set_engine (k UInt64) ENGINE = Set;
+INSERT INTO t_set_engine VALUES (1);
+CREATE TABLE t_set_probe (v Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_set_probe VALUES (1), (-1);
+
+SELECT count() FROM t_set_probe WHERE v IN (1);
+SELECT count() FROM t_set_probe WHERE v IN t_set_engine;
+SELECT v FROM t_set_probe WHERE v IN t_set_engine ORDER BY v;
+SELECT v, v IN t_set_engine FROM t_set_probe ORDER BY v;
+SELECT count() FROM t_set_probe WHERE v NOT IN t_set_engine;
+SELECT count() FROM t_set_probe WHERE v IN t_set_engine SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0;
+
+SELECT 'a wider probe type';
+DROP TABLE IF EXISTS t_set_probe_wide;
+CREATE TABLE t_set_probe_wide (v Int128) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_set_probe_wide VALUES (1), (-1), (18446744073709551616);
+SELECT count() FROM t_set_probe_wide WHERE v IN t_set_engine;
+SELECT v FROM t_set_probe_wide WHERE v IN t_set_engine ORDER BY v;
+DROP TABLE t_set_probe_wide;
+
+SELECT 'a Nullable set key: the cross-type probe agrees with the same-type one';
+DROP TABLE IF EXISTS t_set_nullable;
+DROP TABLE IF EXISTS t_probe_same_type;
+DROP TABLE IF EXISTS t_probe_nullable;
+CREATE TABLE t_set_nullable (k Nullable(UInt64)) ENGINE = Set;
+INSERT INTO t_set_nullable VALUES (1), (NULL);
+CREATE TABLE t_probe_same_type (v Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_probe_same_type VALUES (1), (2), (NULL);
+CREATE TABLE t_probe_nullable (v Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_probe_nullable VALUES (1), (-1), (NULL);
+SELECT v, v IN t_set_nullable FROM t_probe_same_type ORDER BY v NULLS LAST;
+SELECT v, v IN t_set_nullable FROM t_probe_nullable ORDER BY v NULLS LAST;
+SELECT count() FROM t_probe_nullable WHERE v IN t_set_nullable;
+DROP TABLE t_set_nullable;
+DROP TABLE t_probe_same_type;
+DROP TABLE t_probe_nullable;
+
+SELECT 'a non-nullable set key with a nullable probe';
+DROP TABLE IF EXISTS t_probe_nullable2;
+CREATE TABLE t_probe_nullable2 (v Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_probe_nullable2 VALUES (1), (-1), (NULL);
+SELECT count() FROM t_probe_nullable2 WHERE v IN t_set_engine;
+SELECT count() FROM t_probe_nullable2 WHERE v IN (1);
+DROP TABLE t_probe_nullable2;
+
+SELECT 'a NULL that is an ordinary value: `nullIn` and `transform_null_in`';
+-- `FunctionIn` unwraps a `Nullable` argument for plain `IN`, but `nullIn` reaches the set with it,
+-- so the out-of-range value must be a non-member there as well instead of failing the conversion.
+SELECT nullIn(CAST(-1 AS Nullable(Int64)), t_set_engine);
+SELECT nullIn(CAST(NULL AS Nullable(Int64)), t_set_engine);
+SELECT nullIn(CAST(1 AS Nullable(Int64)), t_set_engine);
+SELECT CAST(-1 AS Nullable(Int64)) IN t_set_engine SETTINGS transform_null_in = 1;
+SELECT CAST(-1 AS Nullable(Int64)) IN (SELECT toUInt64(1)) SETTINGS transform_null_in = 1;
+SELECT CAST(-1 AS Int64) IN (SELECT toUInt64(1)) SETTINGS transform_null_in = 1;
+SELECT v, nullIn(v, t_set_engine) FROM t_set_probe ORDER BY v;
+
+SELECT 'a Nullable set key with a NULL of its own';
+DROP TABLE IF EXISTS t_set_nullable2;
+CREATE TABLE t_set_nullable2 (k Nullable(UInt64)) ENGINE = Set;
+INSERT INTO t_set_nullable2 VALUES (1), (NULL);
+-- Under `transform_null_in` a NULL matches the set's NULL, while a value that merely does not fit
+-- the key type is a non-member - the invented NULL of the lenient conversion is not a match.
+SELECT nullIn(CAST(NULL AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(-1 AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(1 AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(-1 AS Int64), t_set_nullable2);
+
+SELECT 'the same through a LowCardinality(Nullable(...)) probe';
+DROP TABLE IF EXISTS t_probe_lc;
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_probe_lc (v LowCardinality(Nullable(Int64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_probe_lc VALUES (1), (-1), (NULL);
+-- A NULL of a wrapped probe is still the set's NULL, and only the value that does not fit the key
+-- type is a non-member.
+SELECT v, nullIn(v, t_set_nullable2) FROM t_probe_lc ORDER BY v NULLS LAST;
+SELECT v, nullIn(v, t_set_engine) FROM t_probe_lc ORDER BY v NULLS LAST;
+DROP TABLE t_probe_lc;
+DROP TABLE t_set_nullable2;
+
+DROP TABLE t_set_engine;
+DROP TABLE t_set_probe;
