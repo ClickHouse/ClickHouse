@@ -474,3 +474,31 @@ def test_invalid_auth_header_format(started_cluster):
         )
     assert "Invalid auth header format" in str(err.value)
 
+
+def test_drop_table(started_cluster):
+    """Lakekeeper returns a URL prefix in /v1/config, so DROP TABLE must send it too"""
+
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_table_{uuid.uuid4().hex[:8]}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog.create_namespace((root_namespace,))
+    catalog.create_table(
+        (root_namespace, table_name),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        ),
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    assert (root_namespace, table_name) in catalog.list_tables((root_namespace,))
+
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+
+    assert catalog.list_tables((root_namespace,)) == []
