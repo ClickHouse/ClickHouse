@@ -641,9 +641,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Nullable, "isNull"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `isNull(nullable_argument)` with `not(not(nullable_argument.null))`. The
-            /// subcolumn holds the stored null map, whose bytes only have to be non-zero to mean NULL,
-            /// and index and statistics analysis see through `not` but not through a comparison with 0.
+            /// Replace `isNull(nullable_argument)` with `not(not(nullable_argument.null))`. A null map
+            /// byte only has to be non-zero to mean NULL, and null-count statistics and the sparsity
+            /// trivial count match a `.null` reference under `not` but not inside a comparison.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
