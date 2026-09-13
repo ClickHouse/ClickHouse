@@ -9,6 +9,7 @@
 
 DROP TABLE IF EXISTS kept_none;
 DROP TABLE IF EXISTS kept_some;
+DROP TABLE IF EXISTS not_advertised;
 
 SELECT '-- an engine that keeps nothing reports nothing, even when its definition states a setting';
 CREATE TABLE kept_none (a UInt64) ENGINE = Set SETTINGS persistent = 0;

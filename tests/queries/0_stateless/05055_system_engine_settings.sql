@@ -11,8 +11,7 @@ SELECT count(DISTINCT engine_name) > 3 FROM system.engine_settings;
 SELECT engine_name, name, value, `default`, changed, type, is_obsolete, tier
 FROM system.engine_settings WHERE engine_name = 'Memory' AND name = 'compress';
 
--- `MergeTree` reports the settings the server actually uses, so the rows are exactly
--- `system.merge_tree_settings` - which is what makes that table expressible as a view.
+-- `MergeTree` reports the settings the server actually uses: the same rows as `system.merge_tree_settings`.
 SELECT count() FROM (
     SELECT name, value, `default`, changed, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.engine_settings WHERE engine_name = 'MergeTree'
@@ -20,11 +19,17 @@ SELECT count() FROM (
     SELECT name, value, `default`, changed, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.merge_tree_settings);
 
--- Engines sharing a settings struct report the same set of settings.
+-- Engines sharing a settings struct report the same set of settings, in both directions.
 SELECT count() FROM (
-    SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'
-    EXCEPT
-    SELECT name FROM system.engine_settings WHERE engine_name = 'ReplicatedMergeTree');
+    SELECT name FROM (
+        SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'
+        EXCEPT
+        SELECT name FROM system.engine_settings WHERE engine_name = 'ReplicatedMergeTree')
+    UNION ALL
+    SELECT name FROM (
+        SELECT name FROM system.engine_settings WHERE engine_name = 'ReplicatedMergeTree'
+        EXCEPT
+        SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'));
 
 -- An engine that rejects a SETTINGS clause must not advertise settings.
 SELECT count() FROM system.engine_settings AS s

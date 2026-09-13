@@ -34,5 +34,13 @@ SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'knc_tbl' AND source != 'default'
 ORDER BY name"
 
+echo "-- a table's own SETTINGS clause wins over the collection"
+$CLICKHOUSE_CLIENT -q "DROP TABLE knc_tbl"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE knc_tbl (a UInt64) ENGINE = Kafka(${NC}) SETTINGS kafka_max_block_size = 17"
+$CLICKHOUSE_CLIENT -q "
+SELECT name, value, source FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'knc_tbl' AND name IN ('kafka_max_block_size', 'kafka_topic_list')
+ORDER BY name"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE knc_tbl"
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC}"
