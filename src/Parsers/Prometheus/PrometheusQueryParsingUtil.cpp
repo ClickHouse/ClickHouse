@@ -698,6 +698,46 @@ namespace
 
         return true;
     }
+
+    /// Parses a PromQL duration and unwraps one pair of redundant parentheses around a literal duration.
+    bool tryParsePromQLDuration(
+        std::string_view input, UInt32 timestamp_scale, DurationType & res_duration, String * error_message, size_t * error_pos)
+    {
+        size_t start_pos = 0;
+        while (start_pos != input.length() && std::isspace(input[start_pos]))
+            ++start_pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != start_pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        size_t duration_start_pos = start_pos;
+        bool negate = false;
+        if (duration_start_pos != end_pos && (input[duration_start_pos] == '+' || input[duration_start_pos] == '-'))
+        {
+            negate = input[duration_start_pos] == '-';
+            ++duration_start_pos;
+            while (duration_start_pos != end_pos && std::isspace(input[duration_start_pos]))
+                ++duration_start_pos;
+        }
+
+        if (duration_start_pos != end_pos && input[duration_start_pos] == '(' && input[end_pos - 1] == ')')
+        {
+            const auto parenthesized_input = input.substr(duration_start_pos + 1, end_pos - duration_start_pos - 2);
+            if (!tryParseNumber(parenthesized_input, timestamp_scale, res_duration, error_message, error_pos))
+            {
+                if (error_pos)
+                    *error_pos += duration_start_pos + 1;
+                return false;
+            }
+
+            if (negate)
+                res_duration = -res_duration;
+            return true;
+        }
+
+        return PrometheusQueryParsingUtil::tryParseDuration(input, timestamp_scale, res_duration, error_message, error_pos);
+    }
 }
 
 
@@ -758,7 +798,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos))
+    if (!tryParsePromQLDuration(input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += start_pos;
@@ -830,7 +870,8 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos))
+    if (!tryParsePromQLDuration(
+            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += range_start_pos;
@@ -841,7 +882,8 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
 
     if (step_start_pos != step_end_pos)
     {
-        if (!tryParseDuration(input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
+        if (!tryParsePromQLDuration(
+                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
         {
             if (error_pos)
                 *error_pos += step_start_pos;
