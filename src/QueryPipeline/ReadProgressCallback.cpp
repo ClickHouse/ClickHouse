@@ -46,10 +46,15 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 
 bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
 {
-    for (const auto & limits : storage_limits)
+    if (!storage_limits.empty())
     {
-        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.local_limits.timeout_overflow_mode))
-            return false;
+        /// One clock read for the whole list rather than one per entry.
+        const UInt64 elapsed = total_stopwatch.elapsed();
+        for (const auto & limits : storage_limits)
+        {
+            if (!limits.local_limits.speed_limits.checkTimeLimit(elapsed, limits.local_limits.timeout_overflow_mode))
+                return false;
+        }
     }
 
     Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
@@ -63,7 +68,12 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             return false;
 
         /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
-
+        /// `getProgressIn` loads ten atomics that every thread of this query is
+        /// concurrently incrementing, and everything below consumes it only
+        /// inside a loop over `storage_limits`. Skip it all when there is
+        /// nothing to check.
+        if (!storage_limits.empty())
+        {
         ProgressValues progress = process_list_elem->getProgressIn();
 
         for (const auto & limits : storage_limits)
@@ -101,11 +111,13 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 
         size_t total_rows = progress.total_rows_to_read;
 
-        CurrentThread::updatePerformanceCountersIfNeeded();
-
         /// TODO: Should be done in PipelineExecutor.
+        const UInt64 elapsed_us = total_stopwatch.elapsedMicroseconds();
         for (const auto & limits : storage_limits)
-            limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_stopwatch.elapsedMicroseconds(), limits.local_limits.timeout_overflow_mode);
+            limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, elapsed_us, limits.local_limits.timeout_overflow_mode);
+        }
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
 
         if (quota)
             quota->usedForQuery(normalized_query_hash, {{QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes}});
