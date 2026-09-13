@@ -121,8 +121,8 @@ static ActionsDAG substituteIdentityPartitionColumns(
         if (it == values_by_name.end())
             continue;
 
-        const auto & constant
-            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+        const auto & constant = substitution.addColumn(
+            ColumnWithTypeAndName(required.type->createColumnConst(0, *it->second), required.type, required.name));
         substitution.getOutputs().push_back(&substitution.materializeNode(constant));
     }
 
@@ -152,7 +152,8 @@ static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
             continue;
         }
 
-        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        const auto & constant = dag.addColumn(
+            ColumnWithTypeAndName(column.type->createColumnConst(1, *it->second), column.type, column.name));
         outputs.push_back(&dag.materializeNode(constant));
     }
     return dag;
