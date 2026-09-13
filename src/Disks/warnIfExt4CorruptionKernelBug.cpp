@@ -133,9 +133,8 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         }
         else if (fs_type.empty() && !ext4Recorded())
         {
-            /// A determined ext4 hit must not be downgraded by a later undetermined probe, but a hit
-            /// dropped with its batch must not hide one: an unreadable /proc/self/mounts must not
-            /// trade the false alarm for a blind spot.
+            /// A committed or staged ext4 hit outranks an undetermined probe, but a hit dropped with
+            /// its batch must not hide one: an unreadable /proc/self/mounts is not a false alarm.
             recordWarning(PreformattedMessage::create(
                 "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
                 "could not be determined. Consider upgrading the kernel.",
