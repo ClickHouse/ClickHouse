@@ -1,4 +1,9 @@
 legacy	{'k':1}	{'k':(2)}	[{'k':3},{'k':4}]	{"m":{"k":5}}
+types	Map(String, UInt64)	Map(String, Tuple(a UInt64))	Array(Map(String, UInt64))	JSON(m Map(String, UInt64))
 subcolumns	1	2
 rewritten	{'k':1}	{'k':(2)}	[{'k':3},{'k':4}]	{"m":{"k":5}}
 rewritten	{'k':1}	{'k':(2)}	[{'k':3},{'k':4}]	{"m":{"k":5}}
+rewritten_types	Map(String, UInt64)	Map(String, Tuple(a UInt64))	Array(Map(String, UInt64))	JSON(m Map(String, UInt64))
+rewritten_types	Map(String, UInt64)	Map(String, Tuple(a UInt64))	Array(Map(String, UInt64))	JSON(m Map(String, UInt64))
+rewritten_subcolumns	1	2
+rewritten_subcolumns	1	2
