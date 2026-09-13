@@ -157,6 +157,9 @@ struct ReplicatedMergeTreeLogEntryData
         return type == MUTATE_PART && alter_version != -1;
     }
 
+    /// If this entry is waiting for fetching from this region, applied to GET_PART and ATTACH_PART
+    int wait_for_fetching_from_same_region = 0;  /// 0 - no wait now but can wait, 1 - waiting, 2 - no wait
+
     void updateLastExeption(std::exception_ptr _exception)
     {
         last_exception_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
