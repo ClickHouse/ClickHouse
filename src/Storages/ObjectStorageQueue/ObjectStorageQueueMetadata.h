@@ -157,6 +157,8 @@ public:
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
     void unregisterActive(const StorageID & storage_id);
+    /// A non-atomic metadata removal marks "zookeeper_path" while it runs, so a CREATE at that path
+    /// can tell what such a removal abandoned from a node this engine never created.
     void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 

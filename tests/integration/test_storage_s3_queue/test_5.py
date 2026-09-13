@@ -20,6 +20,11 @@ from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
+# What a non-atomic metadata removal writes to its keeper_path, so a later CREATE can tell the
+# path it abandons from a node it never created. Mirrors `drop_marker` in
+# src/Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.cpp.
+DROP_MARKER = b"ObjectStorageQueue: dropped"
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -1650,7 +1655,7 @@ def test_no_registration_while_metadata_is_removed(started_cluster):
         assert f"{keeper_path}/drop" in error, error
         # A CREATE refused for finding the path unusable never got as far as the lock, so that
         # wording appearing here would mean this arm proves nothing about the fence.
-        assert "is not an empty node" not in message, message
+        assert "is not this table's" not in message, message
         assert zk.exists(f"{keeper_path}/registry") is None
 
         node.query(
@@ -1701,9 +1706,10 @@ def test_create_at_existing_keeper_path(started_cluster):
     files_path = f"data_{suffix}"
     keeper_path = f"/clickhouse/test_existing_path_{suffix}"
 
-    # Nothing lives at a childless path: an operator created it, or a drop was interrupted
-    # after removing its last child. Only `metadata` says a table is there.
-    zk.create(keeper_path, makepath=True)
+    # The state an interrupted removal leaves: no children left, and the marker it wrote when it
+    # took the drop lock. `test_drop_finishes_interrupted_metadata_removal` asserts a real removal
+    # writes exactly this, so forging it here starts from a state the engine does reach.
+    zk.create(keeper_path, DROP_MARKER, makepath=True)
 
     create_table(
         started_cluster,
@@ -1731,6 +1737,31 @@ def test_create_at_existing_keeper_path(started_cluster):
     generate_random_files(started_cluster, files_path, 1, row_num=1)
     assert_eq_with_retry(node, f"SELECT count() FROM {dst_table_name}", "1")
 
+    # An unmarked childless path carries no proof that this engine left it: `keeper_path` is taken
+    # verbatim, so it can be a barrier or placeholder node another application owns. The CREATE
+    # must refuse it and leave it exactly as it was, which is what it did before this recovery.
+    keeper_path_unmarked = f"/clickhouse/test_existing_path_unmarked_{suffix}"
+    zk.create(keeper_path_unmarked, makepath=True)
+    stat_unmarked = zk.exists(keeper_path_unmarked)
+
+    error = create_table(
+        started_cluster,
+        node,
+        f"{table_name}_unmarked",
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path_unmarked},
+        expect_error=True,
+    )
+    message = error.split("Stack trace:")[0]
+    assert "is not this table's" in message, message
+    assert keeper_path_unmarked in message, message
+    stat_after = zk.exists(keeper_path_unmarked)
+    assert stat_after is not None
+    assert stat_after.version == stat_unmarked.version
+    assert stat_after.czxid == stat_unmarked.czxid
+    assert zk.exists(f"{keeper_path_unmarked}/metadata") is None
+
     # A path with children is not ours to touch: they can be another table's keeper_path
     # nested under this one, or the leftovers of a drop interrupted mid-sweep.
     keeper_path_2 = f"/clickhouse/test_existing_path_children_{suffix}"
@@ -1749,7 +1780,7 @@ def test_create_at_existing_keeper_path(started_cluster):
     # The stack trace names libcxx templates like `default_delete`, so the wording below is
     # checked against the message alone.
     message = error.split("Stack trace:")[0]
-    assert "is not an empty node" in message, message
+    assert "is not this table's" in message, message
     assert keeper_path_2 in message, message
     # One of the states this covers is another table's live metadata, so the message must
     # not send an operator to delete the path.
@@ -1758,8 +1789,8 @@ def test_create_at_existing_keeper_path(started_cluster):
     assert zk.exists(f"{keeper_path_2}/metadata") is None
     assert zk.exists(f"{keeper_path_2}/registry") is not None
 
-    # A childless path that holds data was never written by this engine (every root it creates
-    # holds none), so the CREATE must be refused and the data must survive.
+    # A childless path holding data other than the marker was written by someone else, so the
+    # CREATE must be refused and the data must survive.
     keeper_path_3 = f"/clickhouse/test_existing_path_data_{suffix}"
     zk.create(keeper_path_3, b"payload")
 
@@ -1773,7 +1804,7 @@ def test_create_at_existing_keeper_path(started_cluster):
         expect_error=True,
     )
     message = error.split("Stack trace:")[0]
-    assert "is not an empty node" in message, message
+    assert "is not this table's" in message, message
     assert keeper_path_3 in message, message
     assert zk.get(keeper_path_3)[0] == b"payload"
     assert zk.exists(f"{keeper_path_3}/metadata") is None
@@ -1823,6 +1854,9 @@ def test_drop_finishes_interrupted_metadata_removal(started_cluster):
         assert zk.exists(f"{keeper_path}/metadata") is None
         assert zk.exists(keeper_path) is not None
         assert zk.exists(f"{keeper_path}/drop") is not None
+        # Written with the lock, before anything was removed, and it is what a CREATE at this path
+        # looks for once the lock is gone.
+        assert zk.get(keeper_path)[0] == DROP_MARKER
 
         # The removing session dies here, so its ephemeral lock is gone and the final multi
         # cannot remove the root together with it.

@@ -83,6 +83,11 @@ namespace FailPoints
 
 namespace
 {
+    /// Written to `zookeeper_path` while its metadata is removed without `REMOVE_RECURSIVE`, and
+    /// gone with the path itself. A path carrying it was abandoned by such a removal, which is what
+    /// tells it apart from any other node at a `keeper_path` a query happens to name.
+    constexpr std::string_view drop_marker = "ObjectStorageQueue: dropped";
+
     UInt64 getCurrentTime()
     {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -634,14 +639,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 }
             }
 
-            /// No `metadata` means no table lives here, but the path itself can. A path this table
-            /// may take holds nothing: no children, and no data, which is what every root created
-            /// here holds. The version makes the read and the removal one decision.
+            /// No `metadata` means no table lives here, but the path itself can, and `keeper_path`
+            /// is whatever the query named, so only the marker says this path is ours to finish. Its
+            /// version binds the read to the removal; `ZNOTEMPTY` means something lives under it.
             std::string root_data;
             Coordination::Stat root_stat;
             if (zk_client->tryGet(zookeeper_path, root_data, &root_stat))
             {
-                if (!root_data.empty())
+                if (root_data != drop_marker)
                 {
                     occupied = true;
                     return;
@@ -655,7 +660,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     return;
                 }
                 if (code_remove_root == Coordination::Error::ZOK)
-                    LOG_INFO(log, "Removed empty path {}", zookeeper_path.string());
+                    LOG_INFO(log, "Removed path {} left by an interrupted metadata removal", zookeeper_path.string());
             }
 
             requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
@@ -728,11 +733,12 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     if (last_occupied)
         throw Exception(
             ErrorCodes::REPLICA_ALREADY_EXISTS,
-            "Cannot create table: keeper path {} has no `metadata` node, but it is not an empty node "
-            "this table may take: it has children, or data that no `S3Queue`/`AzureQueue` table "
-            "wrote. Its children can be another table's `keeper_path` nested under it, leftovers of "
-            "an incomplete drop, or a removal still in progress. Retry if a drop is in progress, "
-            "otherwise use another `keeper_path`; check what is there before removing anything",
+            "Cannot create table: keeper path {} has no `metadata` node, but it is not this table's "
+            "to take either: it has children, or data that no interrupted `S3Queue`/`AzureQueue` "
+            "metadata removal left there. Its children can be another table's `keeper_path` nested "
+            "under it, leftovers of an incomplete drop, or a removal still in progress; the path "
+            "itself can belong to something else entirely. Retry if a drop is in progress, otherwise "
+            "use another `keeper_path`; check what is there before removing anything",
             zookeeper_path.string());
 
     throw Exception(
@@ -1087,10 +1093,12 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
-                    /// The removal below is not atomic, so it can be interrupted with the root still there.
+                    /// The removal below is not atomic, so it can be interrupted with the root still
+                    /// there. The marker outlives the session that writes it, unlike `drop`.
                     removal_started = true;
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
                     requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+                    requests.push_back(zkutil::makeSetRequest(zookeeper_path, std::string(drop_marker), -1));
                 }
                 code = zk_client->tryMulti(requests, responses);
             }
