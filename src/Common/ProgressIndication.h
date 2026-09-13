@@ -104,7 +104,7 @@ public:
 
 private:
     double getCPUUsage();
-    /// Average number of threads sleeping in throttlers.
+    /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
     double getWaitedUsage();
 
     UInt64 getElapsedNanoseconds() const;
