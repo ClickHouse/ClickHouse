@@ -1569,13 +1569,34 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
         if (!retriable_paths.empty())
         {
-            auto responses = files_metadata->getZooKeeper()->tryGet(retriable_paths);
-            for (size_t i = 0; i < responses.size(); ++i)
+            /// This lookup is only a success-path optimization (avoids a per-file
+            /// Keeper round-trip later in addClearRetriableRequestIfExists()), so a
+            /// transient Keeper error here must not abort an otherwise successful
+            /// commit. Retry like every other Keeper access on this path; if all
+            /// retries are exhausted, leave the cache unset for the affected files -
+            /// addClearRetriableRequestIfExists() falls back to a direct per-file
+            /// tryGet() read for any entry it finds unset.
+            try
             {
-                if (responses[i].error == Coordination::Error::ZOK)
-                    retriable_paths_metadata[i]->setRetriableNodeStat(responses[i].stat);
-                else
-                    retriable_paths_metadata[i]->setRetriableNodeStat(std::nullopt);
+                ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+                {
+                    auto responses = files_metadata->getZooKeeper()->tryGet(retriable_paths);
+                    for (size_t i = 0; i < responses.size(); ++i)
+                    {
+                        if (responses[i].error == Coordination::Error::ZOK)
+                            retriable_paths_metadata[i]->setRetriableNodeStat(responses[i].stat);
+                        else
+                            retriable_paths_metadata[i]->setRetriableNodeStat(std::nullopt);
+                    }
+                });
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to batch-lookup .retriable markers after retries ({}), "
+                    "will fall back to per-file lookup during cleanup",
+                    e.displayText());
             }
         }
     }

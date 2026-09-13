@@ -2073,7 +2073,7 @@ Manually clears terminal failed file entries from the ZooKeeper metadata of an S
 **Syntax**
 
 ```sql
-SYSTEM DROP S3QUEUE FAILED FILES [db.]table
+SYSTEM DROP S3QUEUE FAILED FILES [db.]table [ON CLUSTER cluster_name]
 ```
 
 **Description**
@@ -2089,13 +2089,13 @@ This command:
 - Clears the corresponding entries from the in-memory metadata cache
 - Is idempotent (safe to run when there are no failed files)
 
-The operation acquires a distributed lock to prevent concurrent cleanup operations. If another cleanup is already in progress, the command will fail with an error message asking you to retry.
+The operation acquires a distributed lock to prevent concurrent cleanup operations. If another cleanup is already in progress, this command waits for it to finish and then returns successfully, rather than failing.
 
 <Note>
 This command is currently supported only for **unordered mode** S3Queue/AzureQueue tables. For ordered mode tables, it throws a `NOT_IMPLEMENTED` error. Support for ordered mode will be added in a future release.
 </Note>
 
-Terminal failed files can also be cleaned up automatically using the [`failed_files_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_files_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
+Terminal failed files can also be cleaned up automatically using the [`failed_files_ttl_sec`](/reference/engines/table-engines/integrations/s3queue#failed_files_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
 
 **Required Permission**
 
