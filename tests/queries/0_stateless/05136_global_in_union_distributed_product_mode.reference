@@ -28,3 +28,8 @@ IN with UNION ALL and prefer_global_in_and_join
 1
 2
 2
+Nested IN with a pinned max_subquery_depth
+1
+1
+2
+2
