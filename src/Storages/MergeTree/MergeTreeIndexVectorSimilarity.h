@@ -152,7 +152,12 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    /// Allows MergeTree index analysis to keep using the vector index even after scalar indexes have
+    /// narrowed the readable marks, provided those restrictions can be passed as row filters.
+    bool supportsInTraversalVectorFilter() const override;
+    /// Optional `filter` is consumed only by the exact filtered-search fallback. Non-exact ANN
+    /// searches keep the existing postfilter behavior.
+    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule, const VectorSearchFilter * filter) const override;
     std::string getDescription() const override { return ""; }
 
 private:
