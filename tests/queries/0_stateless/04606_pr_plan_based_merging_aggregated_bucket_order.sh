@@ -16,17 +16,27 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS d;
     DROP TABLE IF EXISTS t;
+    DROP TABLE IF EXISTS res;
 
     CREATE TABLE t (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO t SELECT number % 200000, number FROM numbers_mt(400000);
     CREATE TABLE d AS t ENGINE = Distributed('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), t);
+    CREATE TABLE res (x UInt64, s UInt64) ENGINE = Memory;
+"
 
-    SELECT count() - uniqExact(x) AS duplicate_groups FROM (SELECT x, sum(y) FROM d GROUP BY x)
+# The result is written to a table, because on this branch such a query cannot be used as a subquery.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO res SELECT x, sum(y) FROM d GROUP BY x
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_plan_based = 1,
         parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 0,
         distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, max_threads = 8,
         enable_producing_buckets_out_of_order_in_aggregation = 0;
+"
 
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() - uniqExact(x) AS duplicate_groups FROM res;
+
+    DROP TABLE res;
     DROP TABLE d;
     DROP TABLE t;
 "
