@@ -216,6 +216,23 @@ TEST(ParserQuery, ImplicitSelectTrailingCommaDoesNotUnderflow)
     }
 }
 
+/// The underflow corrupted the shared token cache used to compute where a statement ends, which
+/// is exactly what `splitMultipartQuery` relies on to find the boundary between two statements
+/// in multi-query input. Exercise that path directly rather than just parsing a single statement
+/// in isolation, matching the original bug report (`1 AS from; upper('Hello')` merged into one
+/// oversized "statement" and was rejected as "Multi-statements are not allowed").
+TEST(ParserQuery, ImplicitSelectTrailingCommaDoesNotCorruptMultiStatementSplit)
+{
+    const String queries_text = "1 AS from; upper('Hello')";
+    std::vector<String> queries_list;
+    auto parse_res = splitMultipartQuery(queries_text, queries_list, 0, 0, 0, false, true);
+
+    ASSERT_TRUE(parse_res.second) << "failed to fully split: " << queries_text;
+    ASSERT_EQ(2, queries_list.size());
+    EXPECT_EQ("1 AS from;", queries_list[0]);
+    EXPECT_EQ("upper('Hello')", queries_list[1]);
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
