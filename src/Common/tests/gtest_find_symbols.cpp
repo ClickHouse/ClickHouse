@@ -40,7 +40,18 @@ static void test_compile_time_boundaries()
         if (size == 0)
         {
             ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end);
+            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), nullptr);
             continue;
+        }
+
+        if (size >= 32)
+        {
+            haystack.back() = '\0';
+            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end);
+            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), nullptr);
+            haystack.assign(size, 'a');
+            begin = haystack.data();
+            end = begin + haystack.size();
         }
 
         for (const size_t position : positions)
@@ -61,6 +72,17 @@ static void test_compile_time_boundaries()
         begin = haystack.data();
         end = begin + haystack.size();
         ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end) << "size: " << size;
+        ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), nullptr) << "size: " << size;
+
+        if (size >= 32)
+        {
+            haystack.back() = '\0';
+            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + size - 1) << "size: " << size;
+            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + size - 1) << "size: " << size;
+            haystack.assign(size, needles[0]);
+            begin = haystack.data();
+            end = begin + haystack.size();
+        }
 
         for (const size_t position : positions)
         {
@@ -69,6 +91,7 @@ static void test_compile_time_boundaries()
 
             haystack[position] = 'a';
             ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
+            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
             haystack[position] = needles[0];
         }
     }
@@ -78,6 +101,8 @@ static void test_compile_time_boundaries()
 TEST(FindSymbols, CompileTimeBoundaries)
 {
     test_compile_time_boundaries<'\n'>();
+    test_compile_time_boundaries<'\n', '\r'>();
+    test_compile_time_boundaries<'\n', '\r', '\\'>();
     test_compile_time_boundaries<'\n', '\r', '\\', '"'>();
 }
 
