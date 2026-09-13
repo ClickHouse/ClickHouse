@@ -289,6 +289,7 @@ def check_system_tables(cluster, backup_query_id=None):
         ("default", "Local", "None", "None"),
         ("disk_s3", "ObjectStorage", "S3", "Local"),
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_encrypted", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
         ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
@@ -379,6 +380,18 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     )
     assert backup_events.get("FileSync", 0) == 0, backup_events
     assert backup_events.get("DirectorySync", 0) == 0, backup_events
+
+    # An encrypting wrapper is the only disk whose metadata root is not the path it reports itself: it
+    # is the delegate's root with the wrapper's prefix re-applied. Addressing it like an unwrapped disk
+    # names metadata files that do not exist, so the backup fails instead of skipping the syncs.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_encrypted', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert backup_events["FileSync"] >= 2, backup_events
+    assert backup_events["DirectorySync"] >= 1, backup_events
 
 
 @pytest.mark.parametrize(
