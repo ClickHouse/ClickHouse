@@ -1282,6 +1282,156 @@ def test_ordered_mode_rejects_mismatched_tracked_files_limit(started_cluster):
     node.query(f"DROP TABLE {table_name}")
 
 
+def test_lowering_loading_retries_is_honored_same_process_hot_cache(started_cluster):
+    """Test that lowering `s3queue_loading_retries` mid-retry is honored immediately
+    in the SAME process, without a restart - i.e. when the in-memory FileStatus cache
+    is already hot (state=Failed) rather than cold (state=None).
+
+    Regression for: trySetProcessing()/prepareSetProcessingRequests()'s `state ==
+    Failed` branch revalidated against Keeper's live retry count and correctly denied
+    a new processing attempt once `keeper_retries >= max_loading_retries`, but never
+    called tryTerminalizeExhaustedRetriableMarker() before returning. So an exhausted
+    `.retriable` marker observed via this hot-cache path stayed a `.retriable` node
+    forever: not retryable, and invisible to both `failed_files_ttl_sec` and `SYSTEM
+    DROP S3QUEUE FAILED FILES` (which intentionally skip `.retriable` nodes). This is
+    the same underlying gap as the cold-cache/after-restart case covered by
+    test_lowering_loading_retries_is_honored_after_restart, but reached via a
+    different code path (state == Failed hot-cache branch vs. state == None fresh-file
+    branch), which is why a restart is deliberately NOT performed here.
+
+    Steps:
+    1. A file fails repeatedly with `s3queue_loading_retries` set high, so it does not
+       reach terminal state on its own; wait until Keeper's `.retriable` marker shows
+       retries == 2. By this point the in-memory FileStatus cache for this file is
+       already state=Failed (set locally after each retriable failure).
+    2. Lower `s3queue_loading_retries` to 2 via ALTER TABLE ... MODIFY SETTING, while
+       the live `.retriable` marker (retries=2) is still present in Keeper, and while
+       the in-memory cache remains hot (no restart).
+    3. Confirm the file does not get granted another processing attempt, and that the
+       `.retriable` marker eventually becomes a terminal `/failed/<hash>` node.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_lower_retries_hot_cache_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 100,
+            "failed_files_ttl_sec": 0,
+            "polling_min_timeout_ms": 3000,
+            "polling_max_timeout_ms": 3000,
+        },
+    )
+
+    invalid_csv = b"not,valid,data\n"
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_lower_retries_hot.csv", invalid_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_retry_count_from_keeper():
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+
+        if not result:
+            return None, False
+
+        import re
+
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if not file_path_match or "bad_lower_retries_hot.csv" not in file_path_match.group(1):
+                continue
+            is_terminal = not node_name.endswith(".retriable")
+            match = re.search(r'"retries"\s*:\s*(\d+)', node_value)
+            if match:
+                return int(match.group(1)), is_terminal
+        return None, False
+
+    logging.info("Waiting for the live .retriable marker to reach retries == 2...")
+    timeout = 60
+    for elapsed in range(timeout):
+        time.sleep(1)
+        retries, is_terminal = get_retry_count_from_keeper()
+        if retries is not None:
+            logging.info(f"[{elapsed}s] Retry count: {retries}, terminal: {is_terminal}")
+            if not is_terminal and retries >= 2:
+                break
+    else:
+        pytest.fail(
+            f"TIMEOUT: .retriable marker did not reach retries >= 2 within {timeout}s "
+            f"(last observed: {get_retry_count_from_keeper()})"
+        )
+
+    retries_before_lowering, terminal_before_lowering = get_retry_count_from_keeper()
+    assert not terminal_before_lowering, (
+        "Precondition failed: file already reached terminal state before the "
+        "setting was lowered - the test did not exercise the intended race."
+    )
+    logging.info(
+        f"Live .retriable marker observed with retries={retries_before_lowering}. "
+        f"Lowering s3queue_loading_retries to 2 WITHOUT restarting (hot-cache path)..."
+    )
+
+    # Deliberately no restart here: the in-memory FileStatus cache for this file
+    # should already be state=Failed at this point (set locally after each retriable
+    # failure), so the next scheduling pass exercises the hot-cache `state == Failed`
+    # branch of trySetProcessing()/prepareSetProcessingRequests(), not the cold-cache
+    # `state == None` branch that the after-restart test covers.
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=2")
+
+    logging.info("Waiting to confirm no extra processing attempt is granted, and the "
+                 "marker eventually becomes terminal, without a restart...")
+    max_retries_seen = retries_before_lowering
+    final_retries, final_is_terminal = get_retry_count_from_keeper()
+    for elapsed in range(60):
+        time.sleep(1)
+        retries, is_terminal = get_retry_count_from_keeper()
+        if retries is not None:
+            if retries > max_retries_seen:
+                max_retries_seen = retries
+            final_retries, final_is_terminal = retries, is_terminal
+            if is_terminal:
+                break
+
+    logging.info(
+        f"Final: retries={final_retries}, terminal={final_is_terminal}, "
+        f"max_retries_seen={max_retries_seen}"
+    )
+
+    assert max_retries_seen <= 2, (
+        f"BUG: file was granted an extra processing attempt in the same process - "
+        f"retry count increased from {retries_before_lowering} to {max_retries_seen} "
+        f"even though s3queue_loading_retries was lowered to 2. This means the hot "
+        f"in-memory cache (state=Failed) was not revalidated against Keeper's live "
+        f"retry count."
+    )
+
+    assert final_is_terminal, (
+        f"BUG: the exhausted .retriable marker (retries={final_retries}) was never "
+        f"terminalized into a terminal /failed/<hash> node via the hot-cache "
+        f"(state == Failed) path. The file is blocked from further processing but "
+        f"remains invisible to both failed_files_ttl_sec and SYSTEM DROP S3QUEUE "
+        f"FAILED FILES, which intentionally skip .retriable nodes."
+    )
+
+
 def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
     """Test that lowering `s3queue_loading_retries` mid-retry is honored immediately
     after a restart, even though the in-memory retry cache is cold.

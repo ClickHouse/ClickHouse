@@ -427,6 +427,12 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         {
             if (keeper_retries >= max_loading_retries)
             {
+                /// The cache's own hot-path Failed state agrees with Keeper that retries
+                /// are exhausted. If a live `.retriable` marker still exists (e.g. retries
+                /// were lowered while this file was already cached as Failed), terminalize
+                /// it now so failed_files_ttl_sec / SYSTEM DROP can pick it up - otherwise
+                /// it would remain a `.retriable` node forever, invisible to both.
+                tryTerminalizeExhaustedRetriableMarker();
                 LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
                          path, keeper_retries, max_loading_retries);
                 return false;
@@ -519,6 +525,12 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         {
             if (keeper_retries >= max_loading_retries)
             {
+                /// The cache's own hot-path Failed state agrees with Keeper that retries
+                /// are exhausted. If a live `.retriable` marker still exists (e.g. retries
+                /// were lowered while this file was already cached as Failed), terminalize
+                /// it now so failed_files_ttl_sec / SYSTEM DROP can pick it up - otherwise
+                /// it would remain a `.retriable` node forever, invisible to both.
+                tryTerminalizeExhaustedRetriableMarker();
                 LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
                          path, keeper_retries, max_loading_retries);
                 return std::nullopt;
