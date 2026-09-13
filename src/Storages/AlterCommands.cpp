@@ -1822,8 +1822,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
-    /// The resolved index type is persisted, so it must be the type a fresh reload resolves, in the
-    /// global context: a session setting must not decide what gets recorded.
+    /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
+    /// in the global context, not in the session that happens to issue the `ALTER`.
     const ContextPtr index_context = context->getGlobalContext();
     for (auto & index : metadata_copy.secondary_indices)
     {
