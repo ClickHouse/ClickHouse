@@ -39,12 +39,11 @@
 #include <Analyzer/Utils.h>
 
 #include <Common/SipHash.h>
-#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <stack>
 
@@ -63,14 +62,11 @@ namespace Setting
 namespace
 {
 
-using CaseInsensitiveColumnNamesCache = std::unordered_map<const IQueryTreeNode *, NameSet>;
-
 struct ColumnContext
 {
     NameAndTypePair column;
     TableExpressionNodePtr column_source;
     ContextPtr context;
-    CaseInsensitiveColumnNamesCache & case_insensitive_column_names_cache;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -163,36 +159,21 @@ bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
     return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
 }
 
-NameSet & getCaseInsensitiveColumnNames(
-    const QueryTreeNodePtr & column_source,
-    CaseInsensitiveColumnNamesCache & cache)
-{
-    auto [it, inserted] = cache.try_emplace(column_source.get());
-    if (!inserted)
-        return it->second;
-
-    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
-    if (!storage_snapshot)
-        return it->second;
-
-    auto columns = storage_snapshot->getColumns(GetColumnsOptions::All);
-    it->second.reserve(columns.size());
-    for (const auto & column : columns)
-        it->second.insert(boost::to_upper_copy(column.name));
-
-    return it->second;
-}
-
 /// True when the source declares a top-level column whose name matches `column_name` up to case.
 /// A reader with case-insensitive column matching (e.g. `input_format_orc_case_insensitive_column_matching`)
 /// binds a flattened subcolumn name like `a.b` to such a column instead of the tuple element,
 /// so the rewrite must not fire.
-bool sourceHasColumnCaseInsensitive(
-    const QueryTreeNodePtr & column_source,
-    const String & column_name,
-    CaseInsensitiveColumnNamesCache & cache)
+bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, const String & column_name)
 {
-    return getCaseInsensitiveColumnNames(column_source, cache).contains(boost::to_upper_copy(column_name));
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
+        return false;
+
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions::All))
+        if (boost::iequals(column.name, column_name))
+            return true;
+
+    return false;
 }
 
 /// Two substreams are the same step only if they are the same kind AND name the same element: `type`
@@ -272,29 +253,14 @@ bool canOptimizeToExpectedSubcolumn(
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
-bool canOptimizeToFlatSubcolumn(
-    const ColumnContext & ctx,
-    const String & subcolumn_name,
-    const SubcolumnPredicate & is_expected_subcolumn,
-    const DataTypePtr & expected_type = nullptr)
-{
-    return !sourceHasColumn(ctx.column_source, subcolumn_name)
-        && !sourceHasColumnCaseInsensitive(ctx.column_source, subcolumn_name, ctx.case_insensitive_column_names_cache)
-        && canOptimizeToExpectedSubcolumn(ctx, subcolumn_name, is_expected_subcolumn, expected_type);
-}
-
-bool canOptimizeStringSizeSubcolumn(const ColumnContext & ctx, const NameAndTypePair & column)
-{
-    return canOptimizeToFlatSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type);
-}
-
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (!canOptimizeStringSizeSubcolumn(ctx, column))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -304,7 +270,9 @@ void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & func
     /// Replace `byteSize(String, ...)` with `String.size + byteSize(String.size, ...)`.
     /// The generic matcher limits this rewrite to at most two arguments.
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (!canOptimizeStringSizeSubcolumn(ctx, column))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
 
     /// `byteSize(String, ...)` includes the storage representation's per-row
@@ -340,7 +308,8 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (!canOptimizeStringSizeSubcolumn(ctx, column))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -358,7 +327,8 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -372,7 +342,8 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -423,7 +394,8 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
     NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
-    if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -573,7 +545,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
-            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name, ctx.case_insensitive_column_names_cache)
+            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
             || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
 
@@ -656,7 +628,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -670,7 +643,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -683,7 +657,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -699,7 +674,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -721,7 +697,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -733,7 +710,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (!canOptimizeToFlatSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -1438,8 +1416,6 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 private:
     IdentifiersToOptimize identifiers_to_optimize;
     std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
-    CaseInsensitiveColumnNamesCache case_insensitive_column_names_cache;
-
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
@@ -1508,7 +1484,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext(), case_insensitive_column_names_cache};
+                ColumnContext ctx{std::move(column), column_source, getContext()};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1531,7 +1507,7 @@ public:
                 && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_source, getContext(), case_insensitive_column_names_cache};
+                ColumnContext ctx{std::move(column), chain_source, getContext()};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))
