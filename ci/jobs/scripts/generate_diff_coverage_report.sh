@@ -119,7 +119,7 @@ if [ ${#patterns[@]} -eq 0 ]; then
   # present, so a flaked download must not fail the script (set -e) and turn an
   # optional stabilization input into a CI-failure path. A failed download only
   # removes its partial file - the slot is reused by the next candidate commit.
-  EXTRA_BASELINES_MAX=3
+  EXTRA_BASELINES_MAX=6
   slot=2
   for (( j=FOUND_INDEX+1; j<${#COMMITS[@]}; j++ )); do
     if [ $((slot - 2)) -ge "$EXTRA_BASELINES_MAX" ]; then
