@@ -35,9 +35,8 @@ DROP ROW POLICY rp_04652_dist_d ON rls_dist;
 
 SELECT '-- the leaf policy still enforces through the Distributed read, matching shard-side model --';
 CREATE ROW POLICY rp_04652_dist_l ON rls_dist_leaf FOR SELECT USING y < 5 TO CURRENT_USER;
--- Plan shipping (`serialize_query_plan = 1` + a non-local replica) skips the leaf's row policy
--- entirely - a pre-existing master bug this row is not about, see
--- https://github.com/ClickHouse/ClickHouse/issues/112891. Pin to text shipping.
+-- This row is about how the leaf policy is enforced through the Distributed read, not about how
+-- the read reaches the shard, so pin one transport rather than letting the setting vary.
 SELECT count() FROM rls_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_04652_dist_l ON rls_dist_leaf;
 
