@@ -15,6 +15,10 @@ PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.realpath(__file__)), "pb2"))
 import prompb.remote_pb2 as remote_pb2
 import prompb.types_pb2 as types_pb2
+import prompb.io.prometheus.write.v2.types_pb2 as write_v2_pb2
+
+
+WRITE_V2_CONTENT_TYPE = "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 
 
 # Converts time series data
@@ -35,6 +39,34 @@ def convert_time_series_to_protobuf(time_series):
                 types_pb2.Sample(timestamp=timestamp_ms, value=value)
             )
         write_request.timeseries.append(dest_timeseries)
+    return write_request
+
+
+# Converts time series data
+# [ ({'label_name1': 'label_value1', ...}, {timestamp1: value1, ...} ), ... ]
+# to a protobuf message of type write_v2_pb2.Request.
+def convert_time_series_to_write_v2_protobuf(time_series):
+    write_request = write_v2_pb2.Request()
+    symbols = {"": 0}
+    write_request.symbols.append("")
+
+    def symbolize(text):
+        ref = symbols.get(text)
+        if ref is None:
+            ref = len(write_request.symbols)
+            symbols[text] = ref
+            write_request.symbols.append(text)
+        return ref
+
+    for src_timeseries in time_series:
+        (src_labels, src_samples) = src_timeseries
+        dest_timeseries = write_request.timeseries.add()
+        for label_name, label_value in src_labels.items():
+            dest_timeseries.labels_refs.append(symbolize(label_name))
+            dest_timeseries.labels_refs.append(symbolize(label_value))
+        for timestamp, value in src_samples.items():
+            timestamp_ms = int(round(timestamp * 1000))
+            dest_timeseries.samples.add(timestamp=timestamp_ms, value=value)
     return write_request
 
 
