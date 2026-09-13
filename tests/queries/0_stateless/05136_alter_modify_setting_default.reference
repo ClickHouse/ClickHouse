@@ -1,0 +1,10 @@
+-- the settings after `CREATE`
+max_bytes_to_merge_at_max_space_in_pool = 1, merge_with_ttl_timeout = 10
+-- `MODIFY SETTING name = DEFAULT` removes the setting from the clause
+max_bytes_to_merge_at_max_space_in_pool = 1
+-- a reset and a change in one command
+merge_with_ttl_timeout = 20
+-- resetting a setting which is not in the clause changes nothing
+merge_with_ttl_timeout = 20
+-- a setting cannot be both modified and reset, or reset twice, in one command
+merge_with_ttl_timeout = 20

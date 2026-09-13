@@ -22,7 +22,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 
@@ -129,7 +129,7 @@ def wait_for_queue_log_rows(node, engine_name, table_name, keeper_path, expected
     return current
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
@@ -730,13 +730,14 @@ def test_direct_select_file(started_cluster, mode):
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
     ] == values
 
-    for i in range(3):
-        node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
+    if mode != "exclusive":
+        for i in range(3):
+            node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
 
     assert [
         list(map(int, l.split()))
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
-    ] == values
+    ] == (values if mode != "exclusive" else [])
 
     assert [
         list(map(int, l.split()))
@@ -758,7 +759,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
         },
     )
 
@@ -778,7 +779,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
         },
     )
 
@@ -825,7 +826,11 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3, "commit_on_select": 1},
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 3,
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
+        },
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
@@ -1047,6 +1052,8 @@ def test_streaming_to_many_views(started_cluster, mode):
 
     for i in range(20, 40):
         log_message = (
+            f"File {files_path}/b_{i}.csv failed at try 2/2"
+            if mode == "exclusive" else
             f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
         )
 

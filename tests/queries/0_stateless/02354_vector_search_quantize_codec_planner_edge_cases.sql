@@ -34,6 +34,45 @@ SELECT 'selects_subcolumn', count(), countDistinct(length(q)) FROM
     ORDER BY cosineDistance(vec, ref) ASC LIMIT 5 SETTINGS vector_search_index_fetch_multiplier = 50
 );
 
+-- Positive oracle for the arm below, whose row-count assertions the unrewritten exact plan also satisfies.
+-- `vector_search_index_fetch_multiplier` is range-checked inside the rewrite, after it has been admitted, so this error
+-- is raised only when the rewrite really runs in the plan fragment. The initiator declines the rewrite while it is
+-- building a distributed plan, so its EXPLAIN cannot show the shortlist steps and the plan shape cannot be asserted
+-- directly. `max_rows_to_group_by` is pinned because the CI test profile sets it and `make_distributed_plan` rejects
+-- aggregation with a non-zero value.
+WITH (SELECT vec FROM quantize_edge WHERE id = 123) AS ref
+SELECT count(), countDistinct(length(q)) FROM
+(
+    SELECT id, vec.quantized AS q FROM quantize_edge
+    ORDER BY cosineDistance(vec, ref) ASC LIMIT 5
+)
+SETTINGS vector_search_index_fetch_multiplier = 0,
+    make_distributed_plan = 1,
+    distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0,
+    enable_parallel_replicas = 0,
+    max_rows_to_group_by = 0; -- { serverError INVALID_SETTING_VALUE }
+
+-- Under a distributed plan the shortlist's internal sort key must not reach the rescore expression: nothing above
+-- consumes it, so it used to be carried through as an extra trailing block column while the exchange steps above the
+-- splice kept the width they were created with, aborting with "Invalid number of columns in chunk pushed to OutputPort.
+-- Expected 2, found 3". The shortlist output needs two surviving columns for the widened block to reach an exchange,
+-- which is why the subcolumn is selected here and `count()` alone would not cover the bug. The fetch multiplier goes in
+-- the outer SETTINGS: a plan fragment is built from the top-level query context, so a subquery-level value never
+-- reaches the shortlist.
+WITH (SELECT vec FROM quantize_edge WHERE id = 123) AS ref
+SELECT 'distributed_plan_subcolumn', count(), countDistinct(length(q)) FROM
+(
+    SELECT id, vec.quantized AS q FROM quantize_edge
+    ORDER BY cosineDistance(vec, ref) ASC LIMIT 5
+)
+SETTINGS vector_search_index_fetch_multiplier = 50,
+    make_distributed_plan = 1,
+    distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0,
+    enable_parallel_replicas = 0,
+    max_rows_to_group_by = 0; -- pinned: the CI test profile sets it, and make_distributed_plan rejects aggregation with a non-zero value
+
 -- A column named like the internal sort key forces the rewrite to bail to the exact path (no shortlist), and the query
 -- still returns the correct exact top-k.
 DROP TABLE IF EXISTS quantize_collide;

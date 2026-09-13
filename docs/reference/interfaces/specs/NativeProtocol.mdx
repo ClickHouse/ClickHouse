@@ -244,7 +244,7 @@ The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE 
 | State              | Description |
 |--------------------|-------------|
 | `HANDSHAKE`        | Initial state after the TCP connection opens. Only [handshake](#handshake-phase) messages are valid. Transitions to `READY` on success or terminates on failure. |
-| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), or close. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). |
+| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), or close. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). A `Data` (2) or `Scalar` (7) packet here is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. |
 | `READING_RESPONSE` | Entered when the client sends a Query. The client must fully drain the server's response stream before returning to `READY`. The only allowed client→server packet here is Cancel (not specified on this page). |
 | Terminated         | No longer usable. The client must open a new TCP connection and restart the handshake. |
 
@@ -462,7 +462,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 10 | password_complexity_rules | Rule[] | universal | PASSWORD_COMPLEXITY_RULES (v54461) | Server's password policy. `VarUInt count` followed by `count × Rule`. See below. |
 | 11 | nonce            | UInt64  | inter-server | INTERSERVER_SECRET_V2 (v54462) | 8-byte LE random nonce. The server's inter-server query-signing scheme uses it. External clients MUST decode it (to keep the stream aligned) and SHOULD ignore the value. |
 | 12 | server_settings  | Setting[] | universal | SERVER_SETTINGS (v54474)        | Server's non-default settings broadcast. Format: zero or more `(String key, VarUInt flags, String value)` triples, terminated by an empty key. Same as the [Query packet's settings list](#setting). |
-| 13 | query_plan_serialization_version | VarUInt | universal | QUERY_PLAN_SERIALIZATION (v54477) | Server's supported query-plan serialization version. Current: `15` (`DBMS_QUERY_PLAN_SERIALIZATION_VERSION`). See [QueryPlan](#queryplan) for compatibility rules. External clients decode and ignore. |
+| 13 | query_plan_serialization_version | VarUInt | universal | QUERY_PLAN_SERIALIZATION (v54477) | Server's supported query-plan serialization version. Current: `18` (`DBMS_QUERY_PLAN_SERIALIZATION_VERSION`). See [QueryPlan](#queryplan) for compatibility rules. External clients decode and ignore. |
 | 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `8`. The value gates additive fields in the inter-server cluster read-task payload (the otherwise-unspecified `ReadTaskResponse` body); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index`. External clients do not participate in cluster reads — they decode and ignore this field. |
 
 **Rule** — an element of `password_complexity_rules`:
@@ -948,7 +948,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 
 Before version `11`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
 
-Version `15` registers the `max_parallel_ordered_merge_materialization_threads` plan setting. Senders may include this setting only when serializing a plan at version `15` or above. For older versions, the setting must be omitted entirely, even when its value is `0`: older receivers reject unknown plan-setting names. Omitting it leaves the older receiver's serial materialization behavior unchanged. This gate applies to the settings inside the plan stream, not to the native TCP protocol revision.
+Version `18` registers the `max_parallel_ordered_merge_materialization_threads` plan setting. Senders may include this setting only when serializing a plan at version `18` or above. For older versions, the setting must be omitted entirely, even when its value is `0`: older receivers reject unknown plan-setting names. Omitting it leaves the older receiver's serial materialization behavior unchanged. This gate applies to the settings inside the plan stream, not to the native TCP protocol revision.
 
 ## Configuration {#configuration}
 
