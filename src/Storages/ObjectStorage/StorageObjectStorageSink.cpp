@@ -65,7 +65,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const String & compression_method_,
     size_t split_on_write_by_size_bytes_,
     GetNextPathCallback get_next_path_,
-    PublishPathCallback publish_path_)
+    PublishPathCallback publish_path_,
+    bool path_is_published_)
     : SinkToStorage(sample_block_)
     , path(path_)
     , object_storage(object_storage_)
@@ -77,6 +78,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
     , get_next_path(std::move(get_next_path_))
     , publish_path(std::move(publish_path_))
+    , path_is_published(path_is_published_)
 {
     if (split_on_write_by_size_bytes && !get_next_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");

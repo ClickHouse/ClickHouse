@@ -33,7 +33,8 @@ public:
         const String & compression_method_,
         size_t split_on_write_by_size_bytes_ = 0,
         GetNextPathCallback get_next_path_ = {},
-        PublishPathCallback publish_path_ = {});
+        PublishPathCallback publish_path_ = {},
+        bool path_is_published_ = true);
 
     ~StorageObjectStorageSink() override;
 
@@ -60,8 +61,10 @@ private:
     const size_t split_on_write_by_size_bytes;
     const GetNextPathCallback get_next_path;
     const PublishPathCallback publish_path;
-    /// The first object of the insert is already a part of the table; the next ones are registered
-    /// in it only after they have been written.
+    /// Whether the object that is being written is already a part of the table. The first object of the
+    /// insert usually is - unless the insert had to step aside from an existing object into a new key with
+    /// `*_create_new_file_on_insert`; the next objects of a split insert never are. An object that is not,
+    /// is registered only after it has been written and committed.
     bool path_is_published = true;
 
     /// The buffer that writes into the object storage. It is also used to count the number of bytes

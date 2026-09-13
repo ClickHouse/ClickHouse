@@ -872,13 +872,17 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         paths.resize(1);
     }
 
+    /// The key this insert starts with, and whether it is already a part of the table. With
+    /// `*_create_new_file_on_insert`, the insert steps aside from an existing object into a new key -
+    /// which is registered in the table only after the object has been written and committed, see below.
+    String first_key = paths.front().path;
+    bool first_key_is_published = true;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, paths.front().path,
-            getStartSequenceNumber(paths.front().path, 1)))
+            *object_storage, *configuration, settings, first_key, getStartSequenceNumber(first_key, 1)))
     {
-        paths.push_back({*new_key});
+        first_key = *new_key;
+        first_key_is_published = false;
     }
-    configuration->setPaths(paths);
 
     /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
     /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
@@ -889,18 +893,22 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     if (settings.split_on_write_by_size_bytes)
     {
         get_next_path = [storage = object_storage, config = configuration, settings,
-                         key = paths.back().path,
-                         sequence_number = getStartSequenceNumber(paths.back().path, 1)]() mutable -> String
+                         key = first_key,
+                         sequence_number = getStartSequenceNumber(first_key, 1)]() mutable -> String
         {
             return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
         };
+    }
 
-        /// The key becomes visible for the readers of this table only after the object has been committed:
-        /// a `SELECT` running concurrently with the insert never plans a key whose object is still being
-        /// written, or was never created at all because the insert failed. The registration is a single
-        /// atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
-        /// the list without this key or the list with it, and never a copy of a vector that is being
-        /// reallocated under it.
+    /// A new key - the first one of the insert when it had to step aside from an existing object, or any next
+    /// one of an insert split by size - becomes visible for the readers of this table only after the object
+    /// has been committed: a `SELECT` running concurrently with the insert never plans a key whose object is
+    /// still being written, or was never created at all because the insert failed. The registration is a
+    /// single atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
+    /// the list without this key or the list with it, and never a copy of a vector that is being
+    /// reallocated under it.
+    if (!first_key_is_published || get_next_path)
+    {
         publish_path = [config = configuration](const String & new_key)
         {
             config->appendPath({new_key});
@@ -908,7 +916,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     }
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+        first_key,
         object_storage,
         format_settings,
         sample_block,
@@ -917,7 +925,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         configuration->compression_method,
         settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
-        std::move(publish_path));
+        std::move(publish_path),
+        first_key_is_published);
 }
 
 bool StorageObjectStorage::optimize(
@@ -970,12 +979,23 @@ void StorageObjectStorage::truncate(
             path.path);
     }
 
+    auto paths = configuration->getPaths();
+
     StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    for (const auto & key : paths)
     {
         objects.emplace_back(key.path);
     }
     object_storage->removeObjectsIfExist(objects);
+
+    /// The keys after the first one were written by the inserts into this table - with `*_create_new_file_on_insert`
+    /// or by splitting the data by size. Their objects are gone, so the table forgets them as well: otherwise
+    /// it would go on planning reads of the objects that do not exist anymore.
+    if (paths.size() > 1)
+    {
+        paths.resize(1);
+        configuration->setPaths(paths);
+    }
 }
 
 void StorageObjectStorage::drop()

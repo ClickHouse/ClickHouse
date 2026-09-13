@@ -1,0 +1,11 @@
+--- The first file of a split insert cannot be created
+FILE_DOESNT_EXIST
+--- The table reads the file that was written, and not the one that could not be created
+300	0	299
+--- The same for a plain insert that steps aside into a new file
+FILE_DOESNT_EXIST
+300	0	299
+--- The rest of the data is written after the obstacle is gone
+400	0	399
+data.1.parquet
+data.parquet

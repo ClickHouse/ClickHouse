@@ -2889,7 +2889,8 @@ public:
         int flags_,
         size_t split_on_write_by_size_bytes_ = 0,
         GetNextPathCallback get_next_path_ = {},
-        PublishPathCallback publish_path_ = {})
+        PublishPathCallback publish_path_ = {},
+        bool path_is_published_ = true)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2904,6 +2905,7 @@ public:
         , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
         , get_next_path(std::move(get_next_path_))
         , publish_path(std::move(publish_path_))
+        , path_is_published(path_is_published_)
         , lock(std::move(lock_))
     {
         if (!lock)
@@ -3095,8 +3097,9 @@ private:
     const size_t split_on_write_by_size_bytes;
     const GetNextPathCallback get_next_path;
     const PublishPathCallback publish_path;
-    /// The first file of the insert is already a part of the table; the next ones are registered
-    /// in it only after they have been written.
+    /// Whether the file that is being written is already a part of the table. The first file of the insert
+    /// usually is - unless the insert had to step aside from a non-empty file into a new one; the next
+    /// files of a split insert never are. A file that is not, is registered only after it has been written.
     bool path_is_published = true;
     std::unique_lock<std::shared_timed_mutex> lock;
 };
@@ -3256,6 +3259,9 @@ SinkToStoragePtr StorageFile::write(
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     String path;
+    /// Whether the file this insert starts with is already a part of the table. A new file is registered
+    /// in it only after it has been written - see `StorageFileSink::PublishPathCallback`.
+    bool first_path_is_published = true;
     Strings current_paths = getPathsSnapshot();
     if (!current_paths.empty())
     {
@@ -3282,9 +3288,8 @@ SinkToStoragePtr StorageFile::write(
                     ++index;
                 }
                 while (fs::exists(new_path));
-                appendPath(new_path);
-                current_paths.push_back(new_path);
                 path = new_path;
+                first_path_is_published = false;
             }
             else
                 throw Exception(
@@ -3344,10 +3349,15 @@ SinkToStoragePtr StorageFile::write(
         {
             return getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
         };
+    }
 
-        /// The name of a new file becomes visible for the readers of this table only after the file has
-        /// been written: if the insert fails to create it - a directory is in the way, no permissions,
-        /// no space left - the table does not keep a name that a `SELECT` would then fail on.
+    /// The name of a new file - the first one of the insert when the insert had to step aside from a non-empty
+    /// file with `engine_file_allow_create_multiple_files`, or any next one of an insert split by size - becomes
+    /// visible for the readers of this table only after the file has been written: if the insert fails to create
+    /// it - a directory is in the way, no permissions, no space left - the table does not keep a name that
+    /// a `SELECT` would then fail on.
+    if (!first_path_is_published || get_next_path)
+    {
         publish_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this())](const String & new_path)
         {
             storage->appendPath(new_path);
@@ -3369,7 +3379,8 @@ SinkToStoragePtr StorageFile::write(
         flags,
         split_on_write_by_size_bytes,
         std::move(get_next_path),
-        std::move(publish_path));
+        std::move(publish_path),
+        first_path_is_published);
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -3459,14 +3470,23 @@ void StorageFile::truncate(
     }
     else
     {
-        for (const auto & path : getPathsSnapshot())
-        {
-            if (!fs::exists(path))
-                continue;
+        Strings current_paths = getPathsSnapshot();
+        if (current_paths.empty())
+            return;
 
-            if (0 != ::truncate(path.c_str(), 0))
-                ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
-        }
+        /// The files after the first one were created by the inserts into this table - with
+        /// `engine_file_allow_create_multiple_files` or by splitting the data by size. The truncated table
+        /// is empty, so they are deleted rather than kept empty: otherwise the next insert split by size
+        /// would find its numbered names taken by these leftovers, and the table would go on reading them.
+        /// Each of them is forgotten right after it is gone, so that a failure in the middle leaves the
+        /// table reading exactly the files that still exist.
+        removeStaleSplitFiles(
+            Strings(current_paths.begin() + 1, current_paths.end()),
+            [this](const String & removed_path) { retirePath(removed_path); });
+
+        const auto & path = current_paths.front();
+        if (fs::exists(path) && 0 != ::truncate(path.c_str(), 0))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
     }
 }
 
