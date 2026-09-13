@@ -1107,6 +1107,20 @@ def get_transactions_list(args):
 LLDB_TIMEOUT = 30
 LLDB_SLOW_BUILD_TIMEOUT = 120
 
+LLDB_BACKTRACE_MARKER = "(lldb) thread backtrace all"
+LLDB_THREAD_HEADER_RE = re.compile(r"^[* ] *thread #(\d+)", re.M)
+
+
+def lldb_backtraces_only(dump: str) -> str:
+    """The part of an lldb --batch dump from the backtraces on.
+
+    Attaching prints a stop summary before lldb echoes the first command: a
+    `thread #N` header and `frame #0` for each thread it reports, plus a few
+    lines of disassembly wherever lldb has no source line for that frame.
+    """
+    _, marker, rest = dump.partition(LLDB_BACKTRACE_MARKER)
+    return marker + rest if marker else dump
+
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
@@ -1447,10 +1461,21 @@ def print_c_stacktraces(
             truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
-            print(trim_for_log(block, 100))
+            backtraces = lldb_backtraces_only(block)
+            print(trim_for_log(backtraces, 100))
+            # Distinct numbers over the whole dump: the two sections share one
+            # numbering, and neither is a census on its own (the summary omits
+            # threads with no stop reason, and lldb can stop printing backtraces
+            # early), so the total is a lower bound and not an exact count.
+            named = len(set(LLDB_THREAD_HEADER_RE.findall(block)))
+            threads = (
+                f" for at least {named} threads"
+                if LLDB_BACKTRACE_MARKER in block
+                else ""
+            )
             print(
-                f"({'partial' if truncated else 'full'} lldb backtrace saved to "
-                f"{C_STACKTRACES_LOG})"
+                f"({'partial' if truncated else 'full'} lldb backtrace{threads} "
+                f"saved to {C_STACKTRACES_LOG})"
             )
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
@@ -4937,7 +4962,13 @@ def run_tests_array(
     # %c enables continuous mode so a client killed mid-write (query timeouts
     # SIGKILL the whole process group) leaves a valid profile instead of a
     # truncated one.
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
+    # Per-test coverage discards client profiles, and under %c concurrently running
+    # clients store their counters into a shared file-backed mapping of one pool file,
+    # so that lane would pay for a profile nobody reads.
+    profile_pattern = "%2m" if args.collect_per_test_coverage else "%c%2m"
+    os.environ["LLVM_PROFILE_FILE"] = (
+        f"clickhouse-client-proc{process_index}-{profile_pattern}.profraw"
+    )
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
@@ -6944,7 +6975,7 @@ ORDER BY (test_name, callee_offset)
                 Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
                 Take a look at:
 
-                SELECT arrayStringConcat(symbols, '\\n'), sum(size)
+                SELECT arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), trace), '\\n'), sum(size)
                 FROM system.trace_log
                 WHERE trace_type = 'MemoryAllocatedWithoutCheck'
                     AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
@@ -6952,6 +6983,7 @@ ORDER BY (test_name, callee_offset)
                 GROUP BY 1
                 ORDER BY 2
                 LIMIT -10
+                SETTINGS allow_introspection_functions = 1
                 FORMAT Vertical
 
                 See also at
@@ -7727,6 +7759,12 @@ if __name__ == "__main__":
 
     if args.secure and os.getenv("CLICKHOUSE_PORT_HTTP_PROTO") is None:
         os.environ["CLICKHOUSE_PORT_HTTP_PROTO"] = "https"
+
+    # A `.sh` test is killed after this many seconds, counted from the start of its own process. A
+    # test that bounds its own waits so that a hang stays reportable needs that number: the cap
+    # differs per job (60s in Fast test, the 600s default in the stateless ones), and a bound past
+    # it is never reached, because the kill truncates the very report it exists to produce.
+    os.environ["CLICKHOUSE_TEST_TIMEOUT"] = str(args.timeout)
 
     client_database = os.getenv("CLICKHOUSE_DATABASE")
     if client_database is not None:
