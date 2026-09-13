@@ -610,8 +610,18 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
 template <size_t map_element>
 void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
+    static_assert(map_element <= 1);
+
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
+        return;
+
+    /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
+    /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
+    /// once per Map element (or not at all for an empty Map). Column and constant nodes preserve
+    /// the original evaluation scope.
+    const auto & pattern_node = function_arguments_nodes[1];
+    if (!pattern_node->as<ColumnNode>() && !pattern_node->as<ConstantNode>())
         return;
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
