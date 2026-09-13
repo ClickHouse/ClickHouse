@@ -115,4 +115,26 @@ SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDa
 
 DROP TABLE t_qcc_json;
 
+-- `formatQuery` and its variants snapshot the parser settings when they are built. `'1 + 1'` is a parse error
+-- without `implicit_select` (so `formatQueryOrNull` returns `NULL`) and the query `SELECT 1 + 1` with it. The
+-- result type is `Nullable(String)` either way.
+DROP TABLE IF EXISTS t_qcc_query;
+CREATE TABLE t_qcc_query (k UInt64, q String) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_query SELECT number, '1 + 1' FROM numbers(1000000);
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_query WHERE formatQueryOrNull(q) IS NULL SETTINGS implicit_select = 1;
+SELECT count() FROM t_qcc_query WHERE formatQueryOrNull(q) IS NULL SETTINGS implicit_select = 0;
+SELECT count() FROM t_qcc_query WHERE formatQueryOrNull(q) IS NULL SETTINGS use_query_condition_cache = 0, implicit_select = 0;
+
+DROP TABLE t_qcc_query;
+
+-- `range` captures `function_range_max_elements_in_block` when it is built and throws when a block would exceed
+-- it. The lenient session computes the condition (no row matches), the strict one is supposed to see the exception
+-- rather than the cached "no marks match" verdict.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE length(range(k % 3 + 2)) = 5 SETTINGS function_range_max_elements_in_block = 500000000;
+SELECT count() FROM t_qcc_formatdatetime WHERE length(range(k % 3 + 2)) = 5 SETTINGS function_range_max_elements_in_block = 1; -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 DROP TABLE t_qcc_formatdatetime;

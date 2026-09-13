@@ -58,6 +58,18 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
+    extern const SettingsBool print_pretty_type_names;
+    extern const SettingsBool implicit_select;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+    extern const SettingsUInt64 highlight_max_matches_per_row;
+    extern const SettingsUInt64 regexp_max_matches_per_row;
+    extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
+    extern const SettingsUInt64 max_wkb_geometry_elements;
+    extern const SettingsUInt64 function_base58_max_input_size;
+    extern const SettingsBool validate_polygons;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -111,10 +123,9 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// throws, without changing the function name or the result type, so the DAG hash cannot tell two such
     /// predicates apart. (`cast_string_to_date_time_mode`, which `JSONOverloadResolver` latches into
     /// `format_settings.date_time_input_format`, is already registered above. The JSONPath parser limits
-    /// `max_parser_depth` / `max_parser_backtracks` deliberately are *not* here: exceeding them raises
-    /// `TOO_DEEP_RECURSION` while the path expression is parsed, before any mark is read, so the restricted
-    /// session sees its exception whatever verdict a permissive one left behind, and registering them would
-    /// split the cache on a generic setting for no gain.)
+    /// `max_parser_depth` / `max_parser_backtracks` would not be needed for this family alone: the path is a
+    /// constant, so exceeding them raises `TOO_DEEP_RECURSION` while it is parsed, before any mark is read. They
+    /// are registered below for `formatQuery`, which parses a column value per row.)
     hash.update(settings[Setting::precise_float_parsing].value);
     hash.update(settings[Setting::input_format_read_datetime_number_as_raw_value].value);
     hash.update(settings[Setting::input_format_json_try_infer_numbers_from_strings].value);
@@ -165,6 +176,28 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::cast_string_to_variant_use_inference].value);
     hash.update(settings[Setting::cast_string_to_dynamic_use_inference].value);
     hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    /// `toTypeName` latches `print_pretty_type_names` and returns `getPrettyName()` or `getName()` of the same type,
+    /// and `formatQuery` / `formatQuerySingleLine` (and their `OrNull` variants) snapshot the parser settings when
+    /// they are built: `implicit_select` decides whether `'1 + 1'` is a query or a parse error, the parser limits
+    /// decide whether a long or deeply nested query is formatted or throws, and `print_pretty_type_names` decides
+    /// how the data types in it are rendered. The result type is `String` (or `Nullable(String)`) either way.
+    hash.update(settings[Setting::print_pretty_type_names].value);
+    hash.update(settings[Setting::implicit_select].value);
+    hash.update(settings[Setting::max_query_size].value);
+    hash.update(settings[Setting::max_parser_depth].value);
+    hash.update(settings[Setting::max_parser_backtracks].value);
+    /// Per-row limits that a function captures when it is built and that decide between a result and an
+    /// exception (`range`, `highlight`, `extractAllGroups*`, `readWKB*`, `base58Decode` and friends), or that
+    /// truncate the result (`extractKeyValuePairs` returns at most that many pairs). `validate_polygons` decides
+    /// whether `pointInPolygon` rejects an invalid polygon or computes with it. A lenient session must not prime
+    /// a "no marks match" verdict that a stricter session is then served instead of its rows or its exception.
+    hash.update(settings[Setting::function_range_max_elements_in_block].value);
+    hash.update(settings[Setting::highlight_max_matches_per_row].value);
+    hash.update(settings[Setting::regexp_max_matches_per_row].value);
+    hash.update(settings[Setting::extract_key_value_pairs_max_pairs_per_row].value);
+    hash.update(settings[Setting::max_wkb_geometry_elements].value);
+    hash.update(settings[Setting::function_base58_max_input_size].value);
+    hash.update(settings[Setting::validate_polygons].value);
     return hash.get64();
 }
 
