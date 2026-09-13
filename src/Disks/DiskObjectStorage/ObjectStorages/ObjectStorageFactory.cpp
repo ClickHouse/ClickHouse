@@ -256,14 +256,6 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
 
-        /// A relative path is resolved against the directory of the server rather than against the
-        /// current working directory of the process. The working directory is not a property of the
-        /// server - it is `/` under systemd and the log directory when running as a daemon - so it
-        /// would place the data of the disk somewhere that the same configuration does not describe
-        /// on the next start, and there would be no directory that such a disk can be confined to.
-        if (!fs::path(object_key_prefix).is_absolute())
-            object_key_prefix = fs::path(context->getPath()) / object_key_prefix;
-
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
 

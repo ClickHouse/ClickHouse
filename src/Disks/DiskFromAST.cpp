@@ -30,51 +30,79 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// A location on the local filesystem that a disk defined in SQL names has to be inside the directory
-/// configured as `custom_local_disks_base_directory`. A relative path is resolved against the
-/// directory of the server, which is what the disk itself does with it.
-static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr & context)
-{
-    static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-    auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+/// Every location on the local filesystem that a disk defined in SQL names has to be inside the
+/// directory configured by this setting.
+static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
 
-    if (disk_path_expected_prefix.empty())
+static String getCustomLocalDisksBaseDirectory(const ContextPtr & context)
+{
+    auto base_directory = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+
+    if (base_directory.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Base path for custom local disks must be defined in config file by `{}`",
             custom_local_disks_base_dir_in_config);
 
-    auto absolute_path = fs::path(path).is_absolute() ? fs::path(path) : fs::path(context->getPath()) / path;
+    return base_directory;
+}
 
-    if (!pathStartsWith(absolute_path.string(), disk_path_expected_prefix))
+static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr & context)
+{
+    auto base_directory = getCustomLocalDisksBaseDirectory(context);
+
+    if (!pathStartsWith(path, base_directory))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path `{}` of the custom local disk must be inside `{}` directory",
             path,
-            disk_path_expected_prefix);
+            base_directory);
 }
 
-/// Locations on the local filesystem that the disk definition names itself. A definition that refers
-/// to a disk of the server configuration (`disk = '<name>'`, as a `cache` or `encrypted` disk does)
-/// inherits the path of that disk, which the administrator chose and the query did not.
-static void checkCustomDiskDefinitionPaths(const Poco::Util::AbstractConfiguration & config, const ContextPtr & context)
+/// A relative location is resolved against the base directory rather than against the working
+/// directory of the process, which is what the filesystem would resolve it against. The working
+/// directory is not a property of the server - it is `/` under systemd and the log directory when
+/// running as a daemon - so the same definition would otherwise name a different place on the next
+/// start, and no directory could be said to contain it.
+static String resolveCustomDiskPath(const String & path, const ContextPtr & context, bool attach)
+{
+    /// A table that already uses such a disk must keep working even if the setting is gone.
+    if (attach && context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "").empty())
+        return path;
+
+    auto base_directory = getCustomLocalDisksBaseDirectory(context);
+
+    auto absolute_path
+        = (fs::path(path).is_absolute() ? fs::path(path) : fs::path(base_directory) / path).lexically_normal();
+
+    if (!attach)
+        checkCustomDiskPathIsAllowed(absolute_path.string(), context);
+
+    return absolute_path.string();
+}
+
+/// Resolves the locations on the local filesystem that the disk definition names itself, and rejects
+/// the ones outside the base directory. A definition that refers to a disk of the server
+/// configuration (`disk = '<name>'`, as a `cache` or an `encrypted` disk does) inherits the location
+/// of that disk, which the administrator chose and the query did not, so it is left alone.
+static void resolveCustomDiskDefinitionPaths(Poco::Util::AbstractConfiguration & config, const ContextPtr & context, bool attach)
 {
     const auto disk_type = config.getString("type", "");
     const auto object_storage_type = config.getString("object_storage_type", "");
 
     /// `local_blob_storage` is the compatibility spelling of `object_storage` over `local`; the
     /// object storage types backed by the local filesystem all start with `local`.
-    const bool names_local_object_storage
-        = disk_type == "local_blob_storage" || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
+    const bool names_local_path = disk_type == "local" || disk_type == "local_blob_storage"
+        || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
 
-    if (names_local_object_storage && config.has("path"))
-        checkCustomDiskPathIsAllowed(config.getString("path"), context);
+    if (names_local_path && config.has("path"))
+        config.setString("path", resolveCustomDiskPath(config.getString("path"), context, attach));
 
     /// The metadata of a disk is written to the local filesystem whenever `metadata_path` is given.
     /// Its default, `<clickhouse path>/disks/<name>/`, needs no check of its own: the check of the
     /// disk name keeps it inside the directory that the server manages itself.
     if (config.has("metadata_path"))
-        checkCustomDiskPathIsAllowed(config.getString("metadata_path"), context);
+        config.setString("metadata_path", resolveCustomDiskPath(config.getString("metadata_path"), context, attach));
 }
 
 static std::string getOrCreateCustomDisk(
@@ -162,10 +190,9 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    /// Checked before the disk is created, so that a rejected definition creates no directory and
-    /// leaves no disk behind for the statements that follow.
-    if (!attach)
-        checkCustomDiskDefinitionPaths(*config, context);
+    /// Resolved and checked before the disk is created, so that a rejected definition creates no
+    /// directory and leaves no disk behind for the statements that follow.
+    resolveCustomDiskDefinitionPaths(*config, context, attach);
 
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(

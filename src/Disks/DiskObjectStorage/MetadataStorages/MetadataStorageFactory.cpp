@@ -130,12 +130,6 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
                                               fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
-        /// As for the data of a local disk, a relative path is resolved against the directory of the
-        /// server: the working directory of the process is not a property of the server, so it is
-        /// neither a stable place for the metadata nor a directory that the path can be confined to.
-        if (!fs::path(metadata_path).is_absolute())
-            metadata_path = fs::path(Context::getGlobalContextInstance()->getPath()) / metadata_path;
-
         fs::create_directories(metadata_path);
         const auto db_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
