@@ -55,35 +55,47 @@ BackgroundWork::BackgroundWork(StorageState * storage_)
 {
     const DB::CoordinationSettings & settings = storage->keeper_context->getCoordinationSettings();
 
-    const size_t num_flush_threads = settings[DB::CoordinationSetting::flush_threads];
-    for (size_t i = 0; i < num_flush_threads; ++i)
-        flush_threads.emplace_back([this]
-            {
-                try
+    try
+    {
+        const size_t num_flush_threads = settings[DB::CoordinationSetting::flush_threads];
+        for (size_t i = 0; i < num_flush_threads; ++i)
+            flush_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
                 {
-                    flushThread();
-                }
-                catch (...)
-                {
-                    DB::tryLogCurrentException(storage->log, "Unexpected exception in flush thread", DB::LogsLevel::fatal);
-                    std::abort();
-                }
-            });
+                    try
+                    {
+                        flushThread();
+                    }
+                    catch (...)
+                    {
+                        DB::tryLogCurrentException(storage->log, "Unexpected exception in flush thread", DB::LogsLevel::fatal);
+                        std::abort();
+                    }
+                });
 
-    const size_t num_merge_threads = settings[DB::CoordinationSetting::merge_threads];
-    for (size_t i = 0; i < num_merge_threads; ++i)
-        merge_threads.emplace_back([this]
-            {
-                try
+        const size_t num_merge_threads = settings[DB::CoordinationSetting::merge_threads];
+        for (size_t i = 0; i < num_merge_threads; ++i)
+            merge_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
                 {
-                    mergeThread();
-                }
-                catch (...)
-                {
-                    DB::tryLogCurrentException(storage->log, "Unexpected exception in merge thread", DB::LogsLevel::fatal);
-                    std::abort();
-                }
-            });
+                    try
+                    {
+                        mergeThread();
+                    }
+                    catch (...)
+                    {
+                        DB::tryLogCurrentException(storage->log, "Unexpected exception in merge thread", DB::LogsLevel::fatal);
+                        std::abort();
+                    }
+                });
+    }
+    catch (...)
+    {
+        /// Starting a thread may throw, e.g. `CANNOT_SCHEDULE_TASK`. Unwinding would then destroy
+        /// the already-started joinable `ThreadFromGlobalPool`s, which aborts. Stop and join them
+        /// first, so the real error propagates instead. `shutdown` releases one semaphore permit
+        /// per started thread and joins exactly the threads that were started.
+        shutdown();
+        throw;
+    }
 }
 
 void BackgroundWork::shutdown()

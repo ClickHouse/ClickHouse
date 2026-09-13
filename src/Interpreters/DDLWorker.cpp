@@ -156,8 +156,21 @@ void DDLWorker::startup()
 {
     chassert(!initialized && !main_thread && !cleanup_thread);
     stop_flag = false;
-    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
+    try
+    {
+        main_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &DDLWorker::runMainThread, this);
+        cleanup_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &DDLWorker::runCleanupThread, this);
+    }
+    catch (...)
+    {
+        /// If starting a thread throws (e.g. CANNOT_SCHEDULE_TASK), stop and join the already
+        /// started one instead of leaving a half-started worker behind: `shutdown` sets `stop_flag`,
+        /// wakes the events and joins whichever threads exist.
+        shutdown();
+        throw;
+    }
 }
 
 void DDLWorker::shutdown()

@@ -43,7 +43,10 @@ TraceCollector::TraceCollector()
     /// through again.
     TraceSender::shutdown.store(false);
 
-    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
+    thread = ThreadFromGlobalPoolWithoutTraceCollector(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        &TraceCollector::run,
+        this);
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)

@@ -665,7 +665,7 @@ void ClusterDiscovery::start()
     constexpr static std::chrono::milliseconds DEFAULT_BACKOFF_TIMEOUT = 10ms;
 
     LOG_DEBUG(log, "Starting working thread");
-    main_thread = ThreadFromGlobalPool([this]
+    main_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
     {
         std::chrono::milliseconds backoff_timeout = DEFAULT_BACKOFF_TIMEOUT;
 
