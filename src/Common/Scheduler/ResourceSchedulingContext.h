@@ -26,8 +26,6 @@ struct ResourceQueryState
     /// by `las` (level) and `fair` (weight-lowering thresholds).
     std::atomic<Int64> attained_cost{0};
 
-    UInt64 last_activity_ns = 0; /// Monotonic time of the last dequeue (introspection); leaf thread only.
-
     /// `fair` only, leaf thread only: SFQ virtual runtime, a cached effective weight, and a one-way
     /// latch — the weight is recomputed at push until a `weight_lowering_*` threshold trips, then frozen.
     double vruntime = 0.0;

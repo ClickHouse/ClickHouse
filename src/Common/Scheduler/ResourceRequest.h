@@ -24,6 +24,9 @@ class PriorityAlgorithm;
 class CPUSlotsAllocation;
 class ResourceSchedulingContext;
 struct ResourceQueryState;
+/// Fallback per-query state for requests not stamped by a classifier (defined in ResourceLink.cpp).
+/// Keeps `scheduling.state` non-null so the schedulers dereference it without a null check.
+extern ResourceQueryState default_scheduling_state;
 
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
@@ -85,8 +88,9 @@ public:
         /// Non-owning pointer to this query's per-resource state for the target leaf: the classifier
         /// resolved it (one slot per attached leaf) and stamped it onto the link; copied here at
         /// enqueue. Lets `fair`/`las` reach the per-resource state with a single dereference — no map
-        /// or lookup. Same lifetime as `context`.
-        ResourceQueryState * state = nullptr;
+        /// or lookup. Same lifetime as `context`. Defaults to the shared fallback state (never null),
+        /// so the schedulers dereference it unconditionally; a classifier link overwrites it.
+        ResourceQueryState * state = &default_scheduling_state;
 
         /// Ordering key for `fair` / `las`, constant while the request is in the intrusive ordered
         /// set. `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
@@ -96,13 +100,6 @@ public:
         /// Ordering key for the `priority` scheduler (lower value first, then `key.second` for FIFO).
         /// Set at enqueue from the query's `workload_priority` setting (`Int64`, negatives allowed).
         Priority priority;
-
-        /// Set at enqueue from the leaf's algorithm so `dequeueRequest`/`finish()` know what to
-        /// account without consulting the leaf: `tracks_attained` on `fair`/`las` (charge attained
-        /// service on serve + apply the finish correction to it); `tracks_vruntime` on `fair` only
-        /// (feed the independent vruntime correction). `fifo`/`priority` set neither.
-        bool tracks_attained = false;
-        bool tracks_vruntime = false;
 
         /// `fair` only: the virtual-runtime increment this request added to its query at push
         /// (`charge / effective_weight`). Kept so cancelling a still-queued request can subtract it
@@ -134,11 +131,9 @@ public:
         // Clear per-request query identity and ordering key so a reused request (e.g. the
         // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
         scheduling.context = nullptr;
-        scheduling.state = nullptr;
+        scheduling.state = &default_scheduling_state;
         scheduling.key = {0.0, 0};
         scheduling.priority = {};
-        scheduling.tracks_attained = false;
-        scheduling.tracks_vruntime = false;
         scheduling.vruntime_increment = 0.0;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }

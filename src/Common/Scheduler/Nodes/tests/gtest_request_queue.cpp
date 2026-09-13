@@ -61,7 +61,9 @@ struct Fixture
         pool.emplace_back(id, cost);
         TestRequest * r = &pool.back();
         r->scheduling.context = ctx;
-        r->scheduling.state = ctx ? ctx->resourceState(0) : nullptr;
+        // A request with no query context keeps the shared fallback state (like an unclassified
+        // request in production), never null — the schedulers dereference state unconditionally.
+        r->scheduling.state = ctx ? ctx->resourceState(0) : &default_scheduling_state;
         queue->enqueueRequest(r);
         return r;
     }
@@ -105,7 +107,7 @@ TEST(RequestQueue, FifoOrder)
     auto * q1 = f.makeQuery();
     auto * q2 = f.makeQuery();
     f.enqueue(1, q1);
-    f.enqueue(2, nullptr); // no query context (fifo never dereferences it)
+    f.enqueue(2, nullptr); // no query context → keeps the shared fallback state (fifo ignores it)
     f.enqueue(3, q2);
     f.enqueue(4, q1);
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
@@ -634,48 +636,17 @@ TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
 }
 
-/// Request tagging at enqueue: accounting algorithms (`fair`/`las`) mark a request `tracks_attained`
-/// so its real service accumulates; `fair` additionally marks `tracks_vruntime` for its private
-/// vruntime correction. `fifo`/`priority` set neither, so ResourceGuard::finish() feeds them nothing.
-TEST(RequestQueue, CostTrackingFlagsPerScheduler)
+/// attained_cost is charged unconditionally, for every algorithm (the per-request accounting flags
+/// were removed). `fifo`/`priority` don't read it, but it is collected all the same — so the charge
+/// no longer depends on which algorithm is (or was) active.
+TEST(RequestQueue, AttainedChargedForEveryAlgorithm)
 {
-    auto attained = [](SchedulerAlgorithm algo)
+    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Priority, SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las})
     {
         Fixture f(algo);
         auto * q = f.makeQuery();
-        return f.enqueue(1, q)->scheduling.tracks_attained;
-    };
-    auto vruntime = [](SchedulerAlgorithm algo)
-    {
-        Fixture f(algo);
-        auto * q = f.makeQuery();
-        return f.enqueue(1, q)->scheduling.tracks_vruntime;
-    };
-    EXPECT_FALSE(attained(SchedulerAlgorithm::Fifo));
-    EXPECT_FALSE(attained(SchedulerAlgorithm::Priority));
-    EXPECT_TRUE(attained(SchedulerAlgorithm::Fair));
-    EXPECT_TRUE(attained(SchedulerAlgorithm::Las));
-    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Fifo));
-    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Priority));
-    EXPECT_TRUE(vruntime(SchedulerAlgorithm::Fair));
-    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Las));
-}
-
-/// A live `setScheduler` swap must re-tag the migrated backlog for the new algorithm's accounting:
-/// enqueueRequest() tags a request only on the normal path, so a request enqueued under `fifo`
-/// (no tags) and migrated to `las`/`fair` must gain `tracks_attained` (and `tracks_vruntime` under
-/// fair) — otherwise dequeue/finish would never charge its service under the new algorithm.
-TEST(RequestQueue, SetSchedulerRetagsMigratedRequests)
-{
-    Fixture f(SchedulerAlgorithm::Fifo);
-    auto * a = f.makeQuery(1.0);
-    auto * r = f.enqueue(1, a, 10);
-    EXPECT_FALSE(r->scheduling.tracks_attained);   // fifo tags nothing
-    EXPECT_FALSE(r->scheduling.tracks_vruntime);
-    f.queue->setScheduler(SchedulerAlgorithm::Las);
-    EXPECT_TRUE(r->scheduling.tracks_attained);    // las tracks attained
-    EXPECT_FALSE(r->scheduling.tracks_vruntime);
-    f.queue->setScheduler(SchedulerAlgorithm::Fair);
-    EXPECT_TRUE(r->scheduling.tracks_attained);    // fair tracks both
-    EXPECT_TRUE(r->scheduling.tracks_vruntime);
+        f.enqueue(1, q, 42);
+        ASSERT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+        EXPECT_EQ(f.attainedOf(q), 42) << "algo=" << static_cast<int>(algo);
+    }
 }

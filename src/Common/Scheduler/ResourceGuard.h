@@ -109,15 +109,13 @@ public:
             state = Finished;
             if (estimated_cost != real_cost_)
                 link_.queue->adjustBudget(estimated_cost, real_cost_);
-            // Now that the real cost is known, correct the per-query service that was charged at the
-            // enqueue estimate. `attained_cost` (common to `fair`/`las`) and `fair`'s independent
-            // `vruntime_correction` receive the same delta but are applied separately by their owners;
-            // a leaf that accounts neither (`fifo`/`priority`) is tagged for neither.
+            // Now that the real cost is known, correct the per-query service charged at the enqueue
+            // estimate. Applied unconditionally (every enqueued request carries a valid per-query
+            // state): `fair` reads `attained_cost` for its thresholds and drains `vruntime_correction`,
+            // `las` reads `attained_cost` for its level, `fifo`/`priority` read neither (harmless).
             const Int64 service_delta = static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost);
-            if (scheduling.tracks_attained)
-                scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
-            if (scheduling.tracks_vruntime)
-                scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+            scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
+            scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);

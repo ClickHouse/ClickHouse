@@ -10,6 +10,7 @@ class IAllocationQueue;
 class ResourceSchedulingContext;
 struct ResourceQueryState;
 class ResourceRequest;
+extern ResourceQueryState default_scheduling_state; // fallback state (see ResourceLink.cpp), keeps scheduling_state non-null
 using ResourceCost = Int64;
 
 /*
@@ -25,10 +26,11 @@ struct ResourceLink
     /// non-owning; the classifier owns them for the query's lifetime). `scheduling_context` is the
     /// query-global config (weight/priority/…); `scheduling_state` points straight at this query's
     /// per-resource slot for this leaf, so the query-aware schedulers reach it with one dereference.
-    /// Requests tagged with this link carry both. Null for links not produced by a classifier
-    /// (internal/test `getLink()`), which never tag query requests.
+    /// Requests tagged with this link carry both. `scheduling_context` is null for links not produced
+    /// by a classifier (internal/test `getLink()`); `scheduling_state` defaults to the shared fallback
+    /// state (never null) so the schedulers dereference it without a null check.
     ResourceSchedulingContext * scheduling_context = nullptr;
-    ResourceQueryState * scheduling_state = nullptr;
+    ResourceQueryState * scheduling_state = &default_scheduling_state;
 
     /// Enqueue `request` into this link's time-shared `queue`, first stamping the query's scheduling
     /// pointers onto it (so the query-aware schedulers reach this query's state with one dereference).
@@ -54,7 +56,7 @@ struct ResourceLink
         queue = nullptr;
         allocation_queue = nullptr;
         scheduling_context = nullptr;
-        scheduling_state = nullptr;
+        scheduling_state = &default_scheduling_state;
     }
 };
 

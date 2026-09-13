@@ -172,7 +172,7 @@ public:
         ResourceRequest * request = &*it;
         requests.erase(it);
         // System virtual time advances to the start tag of the served request (monotonic).
-        // attained_cost + last_activity_ns are charged generically in RequestQueue::dequeueRequest.
+        // attained_cost is charged generically in RequestQueue::dequeueRequest.
         system_vruntime = std::max(system_vruntime, request->scheduling.key.first);
         return request;
     }
@@ -325,7 +325,7 @@ public:
                 continue;
             }
             requests.erase(it);
-            // attained_cost + last_activity_ns are charged generically in RequestQueue::dequeueRequest.
+            // attained_cost is charged generically in RequestQueue::dequeueRequest.
             return request;
         }
         return nullptr;
@@ -528,10 +528,6 @@ public:
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
 
-        // Tag the accounting this leaf's algorithm needs, so dequeueRequest()/finish() act without
-        // consulting the leaf: `fair`/`las` accrue attained service; only `fair` also corrects vruntime.
-        request->scheduling.tracks_attained = algorithm == SchedulerAlgorithm::Fair || algorithm == SchedulerAlgorithm::Las;
-        request->scheduling.tracks_vruntime = algorithm == SchedulerAlgorithm::Fair;
         algo->push(request);
         queue_cost += request->cost;
         bool was_empty = total_requests == 0;
@@ -547,13 +543,10 @@ public:
         ResourceRequest * request = algo->pop();
         if (!request)
             return {nullptr, false};
-        // Charge attained service generically (algorithm-independent): the declared cost is the
-        // estimate now that the request is served; `finish()` corrects it to real cost later.
-        if (request->scheduling.tracks_attained)
-        {
-            request->scheduling.state->attained_cost.fetch_add(request->scheduling.cost, std::memory_order_relaxed);
-            request->scheduling.state->last_activity_ns = clock_gettime_ns();
-        }
+        // Charge attained service unconditionally: every request carries a valid per-query state,
+        // stamped from its classifier link at enqueue. The declared cost is the estimate now that the
+        // request is served; `finish()` corrects it to real cost later. Unread by `fifo`/`priority`.
+        request->scheduling.state->attained_cost.fetch_add(request->scheduling.cost, std::memory_order_relaxed);
         queue_cost -= request->cost;
         total_requests--;
         if (total_requests == 0)
@@ -648,20 +641,12 @@ public:
         algo->pullAll(pending);
         algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
-        // Re-tag the migrated backlog for the new algorithm: enqueueRequest() sets these flags only on
-        // the normal path, but dequeueRequest()/finish() trust them, so a request pushed straight into
-        // the new algorithm here would keep the old algorithm's tags. When switching to `fair`, also
-        // reset each migrated query's vruntime — the fresh instance restarts system virtual time at 0,
-        // so a stale projection would be double-counted. attained_cost is real accrued service, kept.
-        const bool tracks_attained = new_algorithm == SchedulerAlgorithm::Fair || new_algorithm == SchedulerAlgorithm::Las;
-        const bool tracks_vruntime = new_algorithm == SchedulerAlgorithm::Fair;
-        for (ResourceRequest * request : pending)
-        {
-            request->scheduling.tracks_attained = tracks_attained;
-            request->scheduling.tracks_vruntime = tracks_vruntime;
-            if (new_algorithm == SchedulerAlgorithm::Fair)
+        // When switching to `fair`, reset each migrated query's vruntime — the fresh instance restarts
+        // system virtual time at 0, so a stale projection would be double-counted. attained_cost is
+        // real accrued service and is kept.
+        if (new_algorithm == SchedulerAlgorithm::Fair)
+            for (ResourceRequest * request : pending)
                 request->scheduling.state->vruntime = 0.0;
-        }
         for (ResourceRequest * request : pending)
             algo->push(request);
     }
