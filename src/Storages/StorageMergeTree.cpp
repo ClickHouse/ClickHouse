@@ -91,6 +91,7 @@ namespace FailPoints
     extern const char storage_merge_tree_background_schedule_merge_fail[];
     extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
+    extern const char mt_alter_settings_throw_before_metadata_commit[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
@@ -507,17 +508,33 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        changeSettings(new_metadata.settings_changes, table_lock_holder);
-
-        if (statistics_changed)
+        try
         {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(new_metadata);
-        }
+            changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+            if (statistics_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(new_metadata);
+            }
+
+            fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before committing settings metadata");
+            });
+
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// The read-only lifecycle transition below has not run if committing metadata fails.
+            /// Restore the settings and statistics metadata before propagating a failed commit.
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else if (commands.isCommentAlter())
     {
@@ -806,6 +823,7 @@ void StorageMergeTree::alter(
         auto new_storage_settings = getSettings();
 
         /// Wait for an active cleanup iteration and prevent further disk cleanup while read-only.
+        /// Already scheduled merges, mutations and moves may finish, as documented for `table_readonly`.
         if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
             cleanup_thread.stop();
 
