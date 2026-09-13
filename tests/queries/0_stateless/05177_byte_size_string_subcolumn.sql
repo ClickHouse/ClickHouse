@@ -10,7 +10,9 @@ CREATE TABLE t_byte_size_string_subcolumn
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS string_serialization_version = 'with_size_stream';
+SETTINGS
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    string_serialization_version = 'with_size_stream';
 
 INSERT INTO t_byte_size_string_subcolumn VALUES
     (1, ''),
