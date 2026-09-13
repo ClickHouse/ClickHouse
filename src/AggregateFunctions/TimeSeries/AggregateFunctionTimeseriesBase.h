@@ -57,22 +57,6 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
-/// Most timeseries aggregates store their result as their input `Traits::ValueType`, but some (e.g.
-/// `timeSeriesTimestampToGrid`) must project to a fixed type regardless of the input's `ValueType` (a
-/// `DateTime64` timestamp must not be constrained to `Float32` precision). Such `Traits` define their own
-/// `ResultType`; this detects whether `Traits::ResultType` exists and otherwise defaults it to `Traits::ValueType`.
-template <typename Traits, typename = void>
-struct TimeSeriesTraitsResultType
-{
-    using Type = typename Traits::ValueType;
-};
-
-template <typename Traits>
-struct TimeSeriesTraitsResultType<Traits, std::void_t<typename Traits::ResultType>>
-{
-    using Type = typename Traits::ResultType;
-};
-
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
 /// equal sizes and adding the data to the grid buckets. The actual aggregation logic within buckets is implemented in derived classes.
@@ -86,10 +70,9 @@ public:
     using TimestampType = typename Traits::TimestampType;
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
-    using ResultType = typename TimeSeriesTraitsResultType<Traits>::Type;
 
     /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
-    /// return timestamps in seconds as `Float64` regardless of the value type.
+    /// and `timeSeriesTimestampToGrid` return timestamps in seconds as `Float64` regardless of the value type.
     using ResultType = typename Traits::ResultType;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
