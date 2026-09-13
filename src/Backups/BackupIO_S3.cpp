@@ -450,23 +450,69 @@ String BackupReaderS3::getFileGeneration(const String & file_name)
     return S3::getObjectInfo(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id).etag;
 }
 
+BackupReaderS3::CheckedBackupFile BackupReaderS3::checkBackupFile(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation) const
+{
+    /// A plain read that is neither measured nor pinned needs no `HeadObject`, and neither does a
+    /// read that is pinned by its caller and has no size to check: its `GET` carries the generation
+    /// as `If-Match`, and the endpoint refuses another generation itself.
+    const bool pin_here = generation.empty() && pin_plain_reads_to_generation && s3_uri.version_id.empty();
+    if (!expected_file_size && !pin_here)
+        return {.generation = generation, .size = std::nullopt};
+
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    const S3::ObjectInfo object = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id);
+
+    /// Every restore path that reads through the buffer - the buffered fallback of `copyFileToDisk`,
+    /// and `BackupImpl::copyFileToDisk` with `sync` - copies exactly the number of bytes the backup
+    /// metadata records, so a backup file that has been replaced by a longer object since the backup
+    /// was made would be restored as its first bytes and pass unnoticed, and the native copy of the
+    /// whole object would restore the whole replacement. It is refused here, before a single byte is
+    /// read or copied, and with the same `HeadObject` that names the generation the read is pinned
+    /// to: what is measured is what is read.
+    if (expected_file_size && object.size != *expected_file_size)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} is {} bytes long, while the file {} of the backup is {} bytes long: "
+            "the object was replaced after the backup was made",
+            s3_uri.bucket, key, object.size, file_name, *expected_file_size);
+
+    /// A caller that names a generation has read other bytes of this file already - the `.backup`
+    /// entry of an archive, read through a buffer that is long gone by the time the archive reader
+    /// opens the next handle - and every later read has to land on the same generation. An object
+    /// that holds another generation now is refused, including when it is of the very same size.
+    if (!generation.empty() && !object.etag.empty() && object.etag != generation)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} of the backup was replaced while the backup was open: its `ETag` is {} instead of {}",
+            s3_uri.bucket, key, object.etag, generation);
+
+    if (pin_here && object.etag.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the read "
+            "cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return {.generation = pin_here ? object.etag : generation, .size = object.size};
+}
+
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGeneration(
-    const String & file_name, std::optional<size_t> /*expected_file_size*/, const String & generation)
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation)
 {
     /// `generation` is an `ETag`: every `GET` of the buffer carries it as `If-Match`, so an object
     /// replaced in place since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather
     /// than read. A versioned URI is pinned by its version and gets no token.
     ///
-    /// An ordinary read of an unversioned backup names the generation here, with one `HeadObject`,
-    /// the same way the Azure reader does: a buffer makes more than one request - the retries of a
-    /// failed one, and the reopen after a `seek` - and without the token a key rewritten between two
-    /// of them would be restored as the first bytes of one generation followed by the rest of the
-    /// other, without any error. `s3_validate_etag_on_read` opts a plain read out of it, as for every
-    /// other S3 read; a caller that already names a generation (an archive session) is pinned
-    /// regardless, because its other handles have read that generation already.
-    String pinned_generation = generation;
-    if (pinned_generation.empty() && pin_plain_reads_to_generation)
-        pinned_generation = getFileGeneration(file_name);
+    /// An ordinary read of an unversioned backup names the generation in `checkBackupFile`, with one
+    /// `HeadObject` that also checks the size the backup metadata records, the same way the Azure
+    /// reader does: a buffer makes more than one request - the retries of a failed one, and the
+    /// reopen after a `seek` - and without the token a key rewritten between two of them would be
+    /// restored as the first bytes of one generation followed by the rest of the other, without any
+    /// error. `s3_validate_etag_on_read` opts a plain read out of it, as for every other S3 read; a
+    /// caller that already names a generation (an archive session) is pinned regardless, because its
+    /// other handles have read that generation already.
+    const CheckedBackupFile checked = checkBackupFile(file_name, expected_file_size, generation);
 
     return std::make_unique<ReadBufferFromS3>(
         client,
@@ -479,10 +525,10 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGenerati
         /*offset=*/ 0,
         /*read_until_position=*/ 0,
         /*restricted_seek=*/ false,
-        /*file_size=*/ std::nullopt,
+        /*file_size=*/ checked.size,
         /*credentials_refresh_callback=*/ [] { return nullptr; },
         /*blob_storage_log=*/ nullptr,
-        /*expected_etag=*/ pinned_generation);
+        /*expected_etag=*/ checked.generation);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -523,16 +569,18 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             auto dest_client = destination_disk->getS3StorageClient();
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
 
-            /// The copy and its read-and-write fallback are pinned to the same generation of the
-            /// backup file, the one an ordinary read of it would be pinned to (see
-            /// `readFilePinnedToGeneration`): the native copy carries it as
-            /// `x-amz-copy-source-if-match`, and every `GET` of the fallback as `If-Match`. A versioned
-            /// URI is pinned by its version and gets no token, and `s3_validate_etag_on_read = 0` opts
-            /// the copy out, as it does every other plain read of the backup.
-            const String src_etag = pin_plain_reads_to_generation ? getFileGeneration(path_in_backup) : String{};
+            /// One `HeadObject` checks that the object is still as long as the backup metadata says
+            /// the file is - a whole-object `CopyObject` of a longer replacement would restore the
+            /// replacement - and names the generation the copy and its read-and-write fallback are
+            /// both pinned to, the one an ordinary read of the file would be pinned to (see
+            /// `checkBackupFile`): the native copy carries it as `x-amz-copy-source-if-match`, and
+            /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version and
+            /// gets no token, and `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
+            /// it does every other plain read of the backup, but not out of the size check.
+            const String src_etag = checkBackupFile(path_in_backup, file_size, /*generation=*/ {}).generation;
             auto create_read_buffer = [&, this]
             {
-                return readFilePinnedToGeneration(path_in_backup, /*expected_file_size=*/ std::nullopt, src_etag);
+                return readFilePinnedToGeneration(path_in_backup, file_size, src_etag);
             };
 
             if (is_range)

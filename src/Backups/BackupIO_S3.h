@@ -76,6 +76,20 @@ public:
     std::map<String, String> getSerializedSettings() const override;
 
 private:
+    struct CheckedBackupFile
+    {
+        /// The `ETag` every request of the read is pinned to, or empty for an unpinned read.
+        String generation;
+        /// The size of the object, when one `HeadObject` measured it.
+        std::optional<size_t> size;
+    };
+
+    /// One `HeadObject` of a file of the backup, when a read of it needs one: checks the size the
+    /// backup metadata records against the object (a longer replacement would otherwise be restored
+    /// as its first bytes, or copied whole), checks a generation named by the caller, and names the
+    /// generation a plain read is pinned to. Throws `S3_OBJECT_CHANGED_DURING_READ` on a mismatch.
+    CheckedBackupFile checkBackupFile(const String & file_name, std::optional<size_t> expected_file_size, const String & generation) const;
+
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                         WriteMode write_mode);

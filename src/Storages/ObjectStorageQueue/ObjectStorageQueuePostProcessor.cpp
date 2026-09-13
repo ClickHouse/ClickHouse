@@ -250,8 +250,11 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
             );
             /// The object is no longer the generation that was ingested. That does not heal with
             /// time: every retry would be pinned to the same, now gone, generation and be refused
-            /// again, so the object is left in place for the caller to report.
-            if (getCurrentExceptionCode() == ErrorCodes::FILE_CHANGED_DURING_READ)
+            /// again, so the object is left in place for the caller to report. A later retry that
+            /// failed for another reason would also hide the change behind that other error, and
+            /// in non-`EXCLUSIVE` mode that other error is only logged.
+            const int code = getCurrentExceptionCode();
+            if (code == ErrorCodes::FILE_CHANGED_DURING_READ || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
                 throw;
             if (try_no >= retries)
             {
