@@ -100,6 +100,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -419,7 +420,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -962,8 +964,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
-        if (mode < LoadingStrictnessLevel::ATTACH)
-            properties.constraints.assertPreserveRowCount();
     }
     else if (!create.as_table.empty())
     {
@@ -1199,6 +1199,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
+
+    /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
+    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
+    /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
+    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// still attaches.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        properties.constraints.checkExpressionsPreserveRowCount();
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1826,7 +1835,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.isTemporary() && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
@@ -1954,6 +1963,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
         getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
+
+    /// Both a definition supplied to this interpreter directly (RESTORE re-parses one from a backup)
+    /// and one the branch above re-parsed from stored metadata arrive un-normalized: parsing fills
+    /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
+    normalizeSetOperations(query_ptr, getContext());
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
