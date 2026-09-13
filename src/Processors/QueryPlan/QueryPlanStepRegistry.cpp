@@ -78,6 +78,7 @@ void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
 
 
 void QueryPlanStepRegistry::registerPlanSteps()
@@ -120,6 +121,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
     registerReadNothingStep(registry);
     registerReadFromTableStep(registry);
+    registerReadFromSystemOneStep(registry);
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerObjectFilterStep(registry);

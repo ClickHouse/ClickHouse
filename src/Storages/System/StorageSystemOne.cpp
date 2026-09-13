@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemOne.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnConst.h>
@@ -62,6 +64,23 @@ ReadFromSystemOneStep::ReadFromSystemOneStep(
 }
 
 
+ReadFromSystemOneStep::ReadFromSystemOneStep(SharedHeader header_)
+    : ISourceStep(std::move(header_))
+{
+}
+
+
+void ReadFromSystemOneStep::serialize(Serialization &) const
+{
+}
+
+
+QueryPlanStepPtr ReadFromSystemOneStep::deserialize(Deserialization & ctx)
+{
+    return std::make_unique<ReadFromSystemOneStep>(ctx.output_header);
+}
+
+
 void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
@@ -77,3 +96,14 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }
+
+namespace DB
+{
+
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromSystemOne", &ReadFromSystemOneStep::deserialize);
+}
+
+}
