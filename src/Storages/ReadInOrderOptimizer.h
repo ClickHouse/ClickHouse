@@ -35,6 +35,7 @@ private:
     ManyExpressionActions elements_actions;
     NameSet forbidden_columns;
     NameToNameMap array_join_result_to_source;
+    NamesAndTypesList source_columns;
     SortDescription required_sort_description;
     const ASTSelectQuery & query;
 };
