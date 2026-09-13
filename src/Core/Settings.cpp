@@ -9041,7 +9041,7 @@ Maximum total number of posting rows to read when text index LIKE evaluation by 
 
 Each matched token with a large (non-embedded) posting list costs its cardinality in rows, so one very common token can exhaust the budget. Exceeding either this limit or `text_index_like_max_postings_to_read` cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
 
-A token that the rows surviving earlier pruning cannot reach costs nothing; a reachable token costs its full stored cardinality. The budget applies to the index-analysis scan and to the count from the index; the exact direct read applies only `text_index_like_max_postings_to_read`, so a combined predicate such as `pk = ... AND message LIKE ...` is no longer abandoned on whole-part counts.
+A token that the rows surviving earlier pruning cannot reach costs nothing; a reachable token costs its full stored cardinality. The budget applies to the index-analysis scan; the exact direct read applies only `text_index_like_max_postings_to_read`, so a combined predicate such as `pk = ... AND message LIKE ...` is no longer abandoned on whole-part counts.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
@@ -9050,7 +9050,7 @@ Whether a LIKE/ILIKE pattern query whose matched tokens provably cover every row
 
 The proof is exact and costs no extra read: it holds when a matched token's row count, stored in the dictionary next to the token, equals the part's row count, or when the embedded posting lists the dictionary scan has already folded in cover the part on their own. An estimate is never used. A query whose matched posting lists are all read already is left alone, because bypassing it would trade a finished answer for a column scan.
 
-The bypass runs wherever whole-part accounting is the right context: the index-analysis scan and the count from the index. The exact direct read never bypasses. "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
+The bypass runs only in the index-analysis scan, where whole-part accounting is the right context. The exact direct read never bypasses. "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
 
 Disabling turns off only this exact-proof bypass; it does not by itself force the posting lists to be read, because `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still cut the dictionary scan short. A test that must reach the posting-list reader on a broad pattern also needs both budgets set high enough for its data.
 
