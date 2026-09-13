@@ -1,0 +1,5 @@
+the part type	Compact
+the part still has the dropped column	1
+rows after materializing the TTL	100	4950
+the rewrite dropped the column	0
+unfinished mutations	0

@@ -266,7 +266,6 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -283,7 +282,6 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
-        NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
@@ -345,14 +343,6 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
                 }
 
-                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
-                {
-                    for (const auto & col : part_columns)
-                    {
-                        if (!mutated_columns.contains(col.name))
-                            ignored_columns.emplace(col.name);
-                    }
-                }
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
                     const auto & all_indices = metadata_snapshot->getSecondaryIndices();
@@ -4125,7 +4115,6 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
-        suitable_for_ttl_optimization,
         ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
