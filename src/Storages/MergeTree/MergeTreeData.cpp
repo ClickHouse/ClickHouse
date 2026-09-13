@@ -11799,6 +11799,20 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
 
 void MergeTreeData::Transaction::rollbackPartsToTemporaryState(DataPartsLock * acquired_lock)
 {
+    /// A publish that is not followed by a commit must not survive. By the time a transaction with
+    /// `publish_fence_epoch` set can be rolled back, `renameParts` may already have made its parts
+    /// visible under their persistent names on the (possibly shared) storage, and the storage
+    /// listing is all the next leader has to go by: it would load the parts of a statement that
+    /// returned an exception. `validateCommitPreconditions` undoes the renames when its own fence
+    /// rejects the commit, but that is not the only throw point after the publish -- `commit` can
+    /// still fail in `commitTransaction`, in `getActivePartsToReplace`, or with the
+    /// `SERIALIZATION_ERROR` of `NonTransactionalRemovalLocks::lock`, and a caller can fail between
+    /// its own `renameParts` and `commit`. Undoing here covers all of them: the journal stays armed
+    /// until `commit` clears it, so this is a no-op for a transaction that went through, and for
+    /// one that did not it also restores the directories (`detached/attaching_...` for
+    /// `ATTACH PARTITION`) that the state fixups below expect. Runs before the parts lock is taken.
+    undoPublishedRenames();
+
     if (!isEmpty())
     {
         WriteBufferFromOwnString buf;
@@ -11846,6 +11860,9 @@ MergeTreeData::Transaction::~Transaction()
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
+    /// See `rollbackPartsToTemporaryState` for why the publish is taken back before anything else.
+    undoPublishedRenames();
+
     if (!isEmpty())
     {
         for (const auto & part : precommitted_parts)
