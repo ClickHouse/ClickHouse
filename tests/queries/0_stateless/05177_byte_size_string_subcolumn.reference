@@ -4,6 +4,7 @@ FROM default.t_byte_size_string_subcolumn AS __table1
 0
 0
 0
+0
 1	8
 2	9
 3	13
