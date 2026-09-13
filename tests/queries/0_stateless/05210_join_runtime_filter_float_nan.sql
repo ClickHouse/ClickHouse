@@ -10,7 +10,6 @@ SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_optimize_join_order_limit = 1;
-SET allow_experimental_dynamic_type = 1;
 SET allow_dynamic_type_in_join_keys = 1;
 
 -- 1. The reported symptom: a correlated scalar subquery over an all-NaN column is decorrelated into a
@@ -53,9 +52,20 @@ SELECT 'anti join, -0.0 on a JSON path key',
        (SELECT count() FROM json_pos_zero a ANTI LEFT JOIN json_neg_zero b ON a.j = b.j SETTINGS enable_join_runtime_filters = 1)
      = (SELECT count() FROM json_pos_zero a ANTI LEFT JOIN json_neg_zero b ON a.j = b.j SETTINGS enable_join_runtime_filters = 0) AS arms_agree;
 
+-- Liveness. The comparisons above would also pass with no runtime filter installed at all, because
+-- FunctionApplyFilter passes every row when the filter is absent, and the Int64 control below only
+-- exercises the `equals` shortcut that a float key no longer takes. Assert each filter really ran.
+SELECT count() FROM nan_key a JOIN nan_key b ON a.f = b.f
+SETTINGS log_comment = '05210_live_f64', max_threads = 1;
+
+SELECT count() FROM pos_zero a ANTI LEFT JOIN neg_zero b ON a.a = b.a
+SETTINGS log_comment = '05210_live_array', max_threads = 1;
+
+SELECT count() FROM json_pos_zero a ANTI LEFT JOIN json_neg_zero b ON a.j = b.j
+SETTINGS log_comment = '05210_live_json', max_threads = 1;
+
 -- 5. Control on an Int64 key, where `equals` does agree with the hash table. It keeps the shortcut,
--- and the profile events show the filter is still built and still rejects rows, which is also what
--- makes the comparisons above non-vacuous.
+-- and the profile events show the filter is still built and still rejects rows.
 CREATE TABLE int_build (k Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO int_build VALUES (7);
 CREATE TABLE int_probe (k Int64) ENGINE = MergeTree ORDER BY tuple();
@@ -65,6 +75,13 @@ SELECT count() FROM int_probe a JOIN int_build b ON a.k = b.k
 SETTINGS log_comment = '05210_int_control', max_threads = 1;
 
 SYSTEM FLUSH LOGS query_log;
+
+SELECT 'runtime filter ran on every float-bearing key',
+       uniqExactIf(log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0) = 3 AS all_engaged
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+  AND log_comment IN ('05210_live_f64', '05210_live_array', '05210_live_json')
+  AND event_date >= yesterday();
 
 SELECT 'control: Int64 key, filter built and rejecting rows',
        ProfileEvents['RuntimeFilterRowsChecked'] > 0

@@ -6,4 +6,8 @@ inner join, NaN Float64 key	1
 anti join, -0.0 inside an Array(Float64) key	1
 anti join, -0.0 on a JSON path key	1
 1
+1
+1
+1
+runtime filter ran on every float-bearing key	1
 control: Int64 key, filter built and rejecting rows	1
