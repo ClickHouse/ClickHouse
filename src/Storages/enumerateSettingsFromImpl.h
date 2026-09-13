@@ -32,9 +32,7 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
 
         /// While the `Field` is still here: a setting whose value is an AST cannot be masked from
         /// the rendered string alone.
-        String masked = described.value;
-        if (maskEngineSettingValue(described.name, setting.getValue(), masked))
-            described.masked_value = std::move(masked);
+        described.masked_value = maskEngineSettingValue(described.name, setting.getValue(), described.value);
         described.origin = setting.isValueChanged() ? SettingOrigin::Other : SettingOrigin::Default;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());

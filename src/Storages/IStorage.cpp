@@ -344,9 +344,7 @@ SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
         /// value is redacted must not depend on which of the two built the row. A definition can
         /// state `url_base`, `s3_base` or `format_avro_schema_registry_url` with a credential in it,
         /// and `SHOW CREATE TABLE` hides those - so this has to as well.
-        String masked = described.value;
-        if (maskEngineSettingValue(described.name, change.value, masked))
-            described.masked_value = std::move(masked);
+        described.masked_value = maskEngineSettingValue(described.name, change.value, described.value);
 
         result.push_back(std::move(described));
     }
