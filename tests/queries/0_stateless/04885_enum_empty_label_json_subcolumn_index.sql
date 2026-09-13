@@ -3,6 +3,9 @@
 -- A `JSONAllPaths` index may skip a granule that lacks the path only when the compared constant
 -- differs from the value a missing path produces. An `Enum` constant carries its labels in its own
 -- type and the comparison uses the label, so an empty label is that value and nothing may be skipped.
+-- The same holds for a `FixedString` operand on either side: the comparison ignores trailing zero
+-- padding, and a `FixedString` reads its full width of zero bytes where the path is missing, so an
+-- all-zero constant is that value too.
 
 DROP TABLE IF EXISTS t_json_bf;
 DROP TABLE IF EXISTS t_json_tokenbf;
@@ -56,6 +59,26 @@ SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(Strin
 
 -- A tuple constant holding no `Enum` loses nothing in that conversion, so the index stays usable.
 SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple('x') SETTINGS force_data_skipping_indices = 'idx';
+
+-- An all-zero `FixedString` constant equals the empty `String` a missing path reads, so ids 2 and 4
+-- match and nothing may be skipped. Its `Nullable` and `LowCardinality` wrappers compare the same way.
+SELECT arraySort(groupArray(id)) FROM t_json_bf      WHERE data.alpha::String = CAST('', 'FixedString(4)');
+SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = CAST('', 'FixedString(4)');
+SELECT arraySort(groupArray(id)) FROM t_json_bf      WHERE data.alpha::String = CAST('', 'LowCardinality(FixedString(4))');
+
+-- A non-empty constant differs from that value, so the index stays usable and keeps pruning.
+SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST('x', 'FixedString(1)') SETTINGS force_data_skipping_indices = 'idx';
+
+-- A `FixedString` key expression reads its full width of zero bytes where the path is missing, which
+-- the comparison finds equal to an all-zero constant of any width.
+SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::FixedString(4) = CAST('', 'FixedString(4)');
+SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::FixedString(4) = CAST('', 'FixedString(6)');
+
+-- Each element of a composite reads its own default, so a nested `FixedString` carries the same value.
+SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(FixedString(4)) = tuple('');
+
+-- A nested non-empty `Enum` label differs from that value, so the index prunes here as well.
+SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple(CAST('7', 'Enum8(''7'' = 3)')) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE t_json_bf;
 DROP TABLE t_json_tokenbf;
