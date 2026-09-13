@@ -36,6 +36,33 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE byte_size_string_subcolumn_perf FINAL SETTINGS mutations_sync = 1</fill_query>
 
+    <!-- Focused binary byteSize rewrite. -->
+    <query>
+        SELECT sum(byteSize(message, event_time))
+        FROM byte_size_string_subcolumn_perf
+        WHERE event_time &gt;= toDateTime('2026-01-01 00:00:00')
+          AND event_time &lt; toDateTime('2026-01-02 00:00:00')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
+    <query>
+        SELECT sum(byteSize(message, event_time))
+        FROM byte_size_string_subcolumn_perf
+        WHERE event_time &gt;= toDateTime('2026-01-01 00:00:00')
+          AND event_time &lt; toDateTime('2026-01-02 00:00:00')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 0,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
     <!-- Realistic log payload accounting query. -->
     <query>
         SELECT

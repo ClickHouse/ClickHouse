@@ -87,6 +87,27 @@ SELECT id, byteSize(s, 1)
 FROM t_byte_size_string_subcolumn
 ORDER BY id;
 
+SELECT id, byteSize(s, id)
+FROM t_byte_size_string_subcolumn
+ORDER BY id;
+
+SELECT id, byteSize(s, id)
+FROM t_byte_size_string_subcolumn
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id, byteSize(id, s)
+FROM t_byte_size_string_subcolumn
+ORDER BY id;
+
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT byteSize(s, s)
+    FROM t_byte_size_string_subcolumn
+)
+WHERE explain LIKE '%s.size%';
+
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
 SELECT byteSize(s), byteSize(s, 1)
 FROM t_byte_size_string_subcolumn;
