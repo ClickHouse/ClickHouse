@@ -337,6 +337,71 @@ bool ObjectStorageQueueIFileMetadata::isRetriableMarkerExhausted() const
     return retries >= max_loading_retries;
 }
 
+bool ObjectStorageQueueIFileMetadata::tryTerminalizeExhaustedRetriableMarker() const
+{
+    /// isRetriableMarkerExhausted() found a `.retriable` marker whose stored retry count is
+    /// already at or above the current max_loading_retries (most commonly because the setting
+    /// was lowered after the marker was written). Nothing can ever clear that marker through
+    /// the normal failure path - prepareFailedRequestsImpl only terminalizes it when a *new*
+    /// attempt fails, and this exhausted marker is never allowed a new attempt. Do it here
+    /// instead, so the file becomes a normal terminal /failed/<hash> node - visible to and
+    /// cleanable by both failed_files_ttl_sec and SYSTEM DROP S3QUEUE FAILED FILES.
+    ///
+    /// Best-effort: the caller denies processing this round regardless of the outcome here -
+    /// the file is exhausted either way - so a failed/raced attempt is not fatal, it just
+    /// leaves the terminalization for the next time this file is looked at.
+    auto retrieable_failed_node_path = failed_node_path + ".retriable";
+
+    Coordination::Stat retriable_stat;
+    std::string data;
+    bool exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+            retrieable_failed_node_path, data, &retriable_stat);
+    });
+
+    if (!exists)
+    {
+        /// Already resolved concurrently (e.g. another replica terminalized it, or TTL/SYSTEM
+        /// DROP already removed it after it became a terminal node) - nothing to do.
+        return false;
+    }
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_stat.version));
+    requests.push_back(zkutil::makeCreateRequest(failed_node_path, data, zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    Coordination::Error code = {};
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        code = zk_client->tryMulti(requests, responses);
+    });
+
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_INFO(log, "Terminalized exhausted retriable marker for file {} into a terminal failed node", path);
+        return true;
+    }
+
+    if (Coordination::isHardwareError(code))
+    {
+        LOG_WARNING(log, "Keeper session expired terminalizing the exhausted retriable marker for {}; "
+                    "will retry on a later attempt", path);
+        return false;
+    }
+
+    /// Multi is atomic: on any other error neither request was applied. Most likely a
+    /// concurrent modification by another replica doing the same terminalization - benign,
+    /// a later attempt re-reads the (by then presumably terminal) state.
+    LOG_TEST(log, "Could not terminalize exhausted retriable marker for {}: concurrent modification "
+             "(code: {}); will retry on a later attempt", path, code);
+    return false;
+}
+
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
@@ -392,6 +457,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         /// honored immediately even with a cold cache after a restart.
         if (isRetriableMarkerExhausted())
         {
+            tryTerminalizeExhaustedRetriableMarker();
             LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
                      "at or above the current limit", path);
             return false;
@@ -483,6 +549,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         /// honored immediately even with a cold cache after a restart.
         if (isRetriableMarkerExhausted())
         {
+            tryTerminalizeExhaustedRetriableMarker();
             LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
                      "at or above the current limit", path);
             return std::nullopt;

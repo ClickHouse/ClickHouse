@@ -150,6 +150,15 @@ public:
     /// current `max_loading_retries` limit (file should not be claimed).
     bool isRetriableMarkerExhausted() const;
 
+    /// Called when isRetriableMarkerExhausted() returns true: atomically converts the
+    /// exhausted `.retriable` marker into a terminal `/failed/<hash>` node, so the file
+    /// becomes visible to and cleanable by failed_files_ttl_sec / SYSTEM DROP S3QUEUE
+    /// FAILED FILES instead of remaining stuck forever (neither retryable nor cleanable).
+    /// Best-effort: returns false (and leaves nothing changed) on any Keeper error or a
+    /// concurrent race with another replica doing the same terminalization - safe to call
+    /// again on the next attempt at this file regardless of the outcome.
+    bool tryTerminalizeExhaustedRetriableMarker() const;
+
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
 
