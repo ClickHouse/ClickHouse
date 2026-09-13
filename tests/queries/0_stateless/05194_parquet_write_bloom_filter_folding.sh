@@ -19,8 +19,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # as the reference size. `c` takes only 4 distinct values per row group, so its filter folds all the
 # way down to a single block, and every value of `c` belongs to exactly one row group, so a probe for
 # it must read exactly that row group: 500 matching rows out of the 2000 read.
+#
+# The filter sizes are checked for every row group, but only every ${PROBE_STEP}-th row group is probed:
+# each probe is a separate query, and a query over the file takes about a second on a loaded CI machine.
 ROW_GROUPS=100
 ROWS_PER_GROUP=2000
+PROBE_STEP=10
+PROBES=$((ROW_GROUPS / PROBE_STEP))
 
 # One thread and one big block, so the row groups have exactly ${ROWS_PER_GROUP} rows each.
 CH="${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size=${ROWS_PER_GROUP} --max_block_size=1000000 --max_threads=1 --max_insert_threads=1 --output_format_parquet_write_bloom_filter=1 --engine_file_truncate_on_insert=1"
@@ -64,15 +69,15 @@ function check_folding()
     "
 }
 
-# One probe per row group, all of them in a single client invocation. Each probe prints the number of
-# matching rows and the number of rows read; the read count is at least the whole row group holding
-# the value and grows only by false positives in other row groups.
+# One probe per every ${PROBE_STEP}-th row group, all of them in a single client invocation. Each probe
+# prints the number of matching rows and the number of rows read; the read count is at least the whole
+# row group holding the value and grows only by false positives in other row groups.
 function probe()
 {
     local file=$1
     local offset=$2
     local queries=""
-    for ((g = 0; g < ROW_GROUPS; ++g))
+    for ((g = 0; g < ROW_GROUPS; g += PROBE_STEP))
     do
         queries+="select count() as cnt from file('${file}', Parquet) where c = $((g * 1000 + offset)) format JSON;"
     done
@@ -81,14 +86,14 @@ function probe()
 
 function summarize_present()
 {
-    awk -v n="${ROW_GROUPS}" -v rows="${ROWS_PER_GROUP}" '
+    awk -v n="${PROBES}" -v rows="${ROWS_PER_GROUP}" '
         $1 == rows / 4 { found++ }
         $2 >= rows { read_group++ }
         $2 == rows { read_exactly_one_group++ }
         END {
             printf "row groups whose matching value was found: %d of %d\n", found, n;
             printf "row groups read for present values: %d of %d\n", read_group, n;
-            if (read_exactly_one_group >= n - 2)
+            if (read_exactly_one_group >= n - 1)
                 print "pruning still effective for present values";
             else
                 printf "too many row groups read for present values: only %d probes read a single row group\n", read_exactly_one_group;
@@ -97,10 +102,10 @@ function summarize_present()
 
 function summarize_absent()
 {
-    awk -v n="${ROW_GROUPS}" '
+    awk -v n="${PROBES}" '
         $1 == 0 && $2 == 0 { pruned++ }
         END {
-            if (pruned >= n - 2)
+            if (pruned >= n - 1)
                 print "absent values pruned";
             else
                 printf "absent values not pruned: %d of %d\n", pruned, n;
