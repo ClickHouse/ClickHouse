@@ -1409,13 +1409,17 @@ std::optional<JSONPathMatch> tryMatchJSONPath(
 }
 
 bool isJSONBloomPathFilterSafe(
-    const DataTypePtr & key_type, const Field & value, const FormatSettings & format_settings, bool indexes_missing_values)
+    const DataTypePtr & key_type,
+    const Field & value,
+    const DataTypePtr & value_type,
+    const FormatSettings & format_settings,
+    bool indexes_missing_values)
 {
     /// The generic field conversion does not support decimal-to-number conversions. Compare the
     /// numeric default directly instead of introducing a conversion exception during index analysis.
     if (Field::isDecimal(value.getType()) && isNativeNumber(*key_type))
         return indexes_missing_values || !accurateEquals(value, key_type->getDefault());
-    return isJSONPathFilterSafe(key_type, value, format_settings, indexes_missing_values);
+    return isJSONPathFilterSafe(key_type, value, value_type, format_settings, indexes_missing_values);
 }
 
 bool appendTypedProbe(
@@ -2242,7 +2246,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (!isJSONBloomPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings, path->indexes_missing_values))
+            if (!isJSONBloomPathFilterSafe(
+                    key_node.getDAGNode()->result_type, value, set_type, comparison_format_settings, path->indexes_missing_values))
                 return false;
             auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings, path->typed_dynamic);
             out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
@@ -2272,7 +2277,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     if (function_name == "equals")
     {
-        if (!isJSONBloomPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings, path->indexes_missing_values))
+        if (!isJSONBloomPathFilterSafe(
+                key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, path->indexes_missing_values))
             return false;
         if (path->cast_type)
         {

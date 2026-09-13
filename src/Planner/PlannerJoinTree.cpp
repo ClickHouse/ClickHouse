@@ -3461,11 +3461,23 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     int last_right_join_pos = -1;
     bool is_cross_join = false;
     bool has_global_join_preserving_broadcast_rows = false;
+    /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
+    /// join of an n-way tree must be tracked here. Set for JOIN/CROSS_JOIN/ARRAY_JOIN, read only in the JOIN branch.
+    bool leftmost_join_tree_node_seen = false;
+    bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
+
+        const bool is_join_tree_node = table_expression_type == QueryTreeNodeType::JOIN
+            || table_expression_type == QueryTreeNodeType::CROSS_JOIN
+            || table_expression_type == QueryTreeNodeType::ARRAY_JOIN;
+        const bool is_non_leftmost_join_tree_node = is_join_tree_node && leftmost_join_tree_node_seen;
+        if (is_join_tree_node)
+            leftmost_join_tree_node_seen = true;
+
         if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
 
@@ -3511,6 +3523,24 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
+            /// The whole join tree is shipped to every replica, but a leaf's reads are coordinated only for the
+            /// shapes the search for that leaf descends: `LEFT`, `INNER` with `ALL`, and a qualifying `RIGHT`.
+            /// Any other non-leftmost join leaves no leaf coordinated, so every replica evaluates the whole
+            /// join and the initiator concatenates the copies, multiplying every row by the replica count.
+            /// That happens even to a join deciding each left row on its own, such as `INNER ASOF`. Under
+            /// `LEFT` every strictness is admitted, which is the point of the kind exemption; outside it this
+            /// stays a whitelist, so a future `JoinStrictness` is fail-closed.
+            /// `GLOBAL`/`CROSS`, and a misplaced `RIGHT`, remain the business of the disjuncts
+            /// below, which is why `ALL` is still admitted for those kinds here.
+            /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
+            /// pairs rows by position, and `FULL` emits unmatched right rows, which each replica
+            /// would decide from its own slice of the left side.
+            if (is_non_leftmost_join_tree_node
+                && (join_kind == JoinKind::Paste
+                    || join_kind == JoinKind::Full
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
+                has_unsafe_non_leftmost_join = true;
+
             continue;
         }
 
@@ -3526,6 +3556,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
         if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+            return true;
+
+        /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
+        /// `joins_count`: an ARRAY JOIN can occupy the leftmost slot without incrementing it.
+        if (has_unsafe_non_leftmost_join)
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side
