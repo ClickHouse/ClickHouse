@@ -32,7 +32,11 @@ namespace ErrorCodes
 
 namespace JSONUtils
 {
-    template <const char opening_bracket, const char closing_bracket>
+    /// `row_may_be_array` additionally lets `[` and `]` open and close a row, which is what the
+    /// `JSONEachRowWithNames*` formats need: their header rows are JSON arrays while their data rows
+    /// are JSON objects. It is off by default so that the single-bracket formats keep searching for
+    /// the smallest possible symbol set.
+    template <const char opening_bracket, const char closing_bracket, bool row_may_be_array = false>
     static std::pair<bool, size_t>
     fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
     {
@@ -83,19 +87,22 @@ namespace JSONUtils
             }
             else
             {
-                pos = find_first_symbols<opening_bracket, closing_bracket, '"'>(pos, in.buffer().end());
+                if constexpr (row_may_be_array)
+                    pos = find_first_symbols<opening_bracket, closing_bracket, '[', ']', '"'>(pos, in.buffer().end());
+                else
+                    pos = find_first_symbols<opening_bracket, closing_bracket, '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
                 if (pos == in.buffer().end())
                     continue;
 
-                if (*pos == opening_bracket)
+                if (*pos == opening_bracket || (row_may_be_array && *pos == '['))
                 {
                     ++balance;
                     ++pos;
                 }
-                else if (*pos == closing_bracket)
+                else if (*pos == closing_bracket || (row_may_be_array && *pos == ']'))
                 {
                     --balance;
                     ++pos;
@@ -131,6 +138,12 @@ namespace JSONUtils
         ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
     {
         return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows, max_row_size);
+    }
+
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRowWithHeaderRows(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
+    {
+        return fileSegmentationEngineJSONEachRowImpl<'{', '}', /* row_may_be_array */ true>(in, memory, min_bytes, min_rows, max_rows, max_row_size);
     }
 
     template <const char opening_bracket, const char closing_bracket>
@@ -777,6 +790,38 @@ namespace JSONUtils
             return false;
         skipWhitespaceIfAny(in);
         return true;
+    }
+
+    std::vector<String> readStringFieldsFromJSONArrayRow(ReadBuffer & in, const FormatSettings & settings)
+    {
+        skipArrayStart(in);
+        std::vector<String> fields;
+        String field;
+        do
+        {
+            skipWhitespaceIfAny(in);
+            readJSONString(field, in, settings.json);
+            fields.push_back(field);
+            skipWhitespaceIfAny(in);
+        }
+        while (checkChar(',', in));
+
+        skipArrayEnd(in);
+        return fields;
+    }
+
+    void writeStringFieldsAsJSONArrayRow(const Strings & fields, WriteBuffer & out)
+    {
+        writeChar('[', out);
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
+            if (i != 0)
+                writeCString(", ", out);
+            writeChar('"', out);
+            writeString(fields[i], out);
+            writeChar('"', out);
+        }
+        writeCString("]\n", out);
     }
 
     void skipObjectStart(ReadBuffer & in)

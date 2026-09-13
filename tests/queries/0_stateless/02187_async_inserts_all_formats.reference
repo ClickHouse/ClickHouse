@@ -22,10 +22,14 @@ JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
+JSONEachRowWithNames
+JSONEachRowWithNamesAndTypes
 JSONL
 JSONLines
 JSONObjectEachRow
 JSONStringsEachRow
+JSONStringsEachRowWithNames
+JSONStringsEachRowWithNamesAndTypes
 MsgPack
 NDJSON
 Native

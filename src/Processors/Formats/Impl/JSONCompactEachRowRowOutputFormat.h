@@ -47,8 +47,6 @@ protected:
 
     void resetFormatterImpl() override;
 
-    void writeLine(const std::vector<String> & values);
-
     FormatSettings settings;
     bool with_names;
     bool with_types;
