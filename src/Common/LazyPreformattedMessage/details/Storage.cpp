@@ -33,13 +33,14 @@ thread_local std::array<Lane, lanes_count> lanes;
 
 }
 
-std::pair<size_t, void *> Storage::allocate(size_t size, size_t align)
+std::pair<size_t, void *> Storage::allocate(uint64_t hint, size_t size, size_t align)
 {
     if (size > lane_size || align > alignof(std::max_align_t))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lazy message arguments of size {} and alignment {} do not fit a storage lane of {} bytes", size, align, lane_size);
 
-    for (size_t i = 0; i < lanes_count; ++i)
+    for (size_t step = 0; step < lanes_count; ++step)
     {
+        size_t i = (hint + step) % lanes_count;
         Lane & lane = lanes[i];
         if (!lane.in_use)
         {

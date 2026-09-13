@@ -39,7 +39,7 @@ Message create(FormatStringHelper<typename std::remove_cvref_t<Markers>::value_t
     using Stored = std::tuple<std::remove_cvref_t<Markers>...>;
     fmt::string_view fmt_str(fmt.message_format_string.data(), fmt.message_format_string.size());
 
-    auto [lane, space] = Storage::allocate(sizeof(Stored), alignof(Stored));
+    auto [lane, space] = Storage::allocate(fmt.message_format_string_hash, sizeof(Stored), alignof(Stored));
     new (space) Stored{std::forward<Markers>(markers)...};
     return Message(fmt_str, &formatStored<Stored>, &destroyStored<Stored>, space, lane);
 }
