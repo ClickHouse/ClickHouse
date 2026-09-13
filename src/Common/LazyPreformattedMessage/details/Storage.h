@@ -1,0 +1,15 @@
+#pragma once
+
+#include <cstddef>
+#include <utility>
+
+namespace DB::LazyPreformattedMessage
+{
+
+struct Storage
+{
+    static std::pair<size_t, void *> allocate(size_t size, size_t align);
+    static void deallocate(size_t lane) noexcept;
+};
+
+}
