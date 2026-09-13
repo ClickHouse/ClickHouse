@@ -19,11 +19,9 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
 
     constexpr size_t lanes = sizeof(__m256i) / sizeof(T);
 
-    /// Check one vector scalarly so a hit at the beginning does not pay SIMD setup costs.
-    size_t i = 0;
-    for (; i < lanes && i < size; ++i)
-        if (data[i] == value)
-            return i;
+    /// Keep the cheapest possible early-hit path without scanning a whole vector scalarly.
+    if (size && data[0] == value)
+        return 0;
 
     __m256i needle;
     if constexpr (std::is_same_v<T, UInt8>)
@@ -35,9 +33,9 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
     else
         needle = _mm256_set1_epi64x(static_cast<long long>(value));
 
-    for (; i + lanes <= size; i += lanes)
+    const auto findInVector = [&](size_t offset)
     {
-        const auto values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+        const auto values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + offset));
         __m256i equal;
         if constexpr (std::is_same_v<T, UInt8>)
             equal = _mm256_cmpeq_epi8(values, needle);
@@ -55,8 +53,8 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
         }
         else if constexpr (std::is_same_v<T, UInt16>)
         {
-            /// Each matching 16-bit lane produces two set bytes. Keep the low byte of each lane.
-            mask = static_cast<unsigned>(_mm256_movemask_epi8(equal)) & 0x55555555u;
+            /// Matching 16-bit lanes produce two adjacent set bits, so ctz(mask) >> 1 is the lane.
+            mask = static_cast<unsigned>(_mm256_movemask_epi8(equal));
         }
         else if constexpr (std::is_same_v<T, UInt32>)
         {
@@ -67,13 +65,32 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
             mask = static_cast<unsigned>(_mm256_movemask_pd(_mm256_castsi256_pd(equal)));
         }
 
-        if (mask)
-        {
-            unsigned lane = static_cast<unsigned>(__builtin_ctz(mask));
-            if constexpr (std::is_same_v<T, UInt16>)
-                lane >>= 1;
-            return i + lane;
-        }
+        if (!mask)
+            return static_cast<size_t>(-1);
+
+        unsigned lane = static_cast<unsigned>(__builtin_ctz(mask));
+        if constexpr (std::is_same_v<T, UInt16>)
+            lane >>= 1;
+        return static_cast<size_t>(lane);
+    };
+
+    size_t i = 0;
+    for (; i + 2 * lanes <= size; i += 2 * lanes)
+    {
+        const auto first = findInVector(i);
+        if (first != static_cast<size_t>(-1))
+            return i + first;
+
+        const auto second = findInVector(i + lanes);
+        if (second != static_cast<size_t>(-1))
+            return i + lanes + second;
+    }
+
+    for (; i + lanes <= size; i += lanes)
+    {
+        const auto found = findInVector(i);
+        if (found != static_cast<size_t>(-1))
+            return i + found;
     }
 
     for (; i < size; ++i)
