@@ -65,6 +65,6 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment AS query, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS stats_collected
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - toIntervalMinute(15))
-  AND (current_database = currentDatabase()) AND (log_comment LIKE '04655_any_%') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE '04655_any_%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;

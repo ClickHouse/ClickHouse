@@ -12,6 +12,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
+#include <TableFunctions/ITableFunction.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -38,6 +40,9 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
+    /// A parameterized view is resolved as a table function node but has no `ITableFunction` object
+    /// (see `QueryAnalyzer::resolveTableFunction`), and it references no table of its own.
+    referenced_table_id = table_function ? table_function->getReferencedTableID() : StorageID::createEmpty();
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
@@ -150,6 +155,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 
     result->storage = storage;
     result->storage_id = storage_id;
+    result->referenced_table_id = referenced_table_id;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;

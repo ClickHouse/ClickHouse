@@ -55,6 +55,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['IndexAnalysisRounds'] index_analysis_rounds
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '3800_autopr_reuse_index_analysis_query_%') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE '3800_autopr_reuse_index_analysis_query_%') AND (type = 'QueryFinish')
 ORDER BY event_time_microseconds;
 

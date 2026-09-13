@@ -179,8 +179,17 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
 
     // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
-    if (node)
-        typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
+    if (!node)
+    {
+        /// Nothing in the shipped plan would be marked as the coordinated read, so every replica would read
+        /// the whole table and the initiator would union the duplicates. Ship no plan instead: the caller then
+        /// sends the query text, which the replicas plan themselves. This is the case for a read through a
+        /// table function, whose reading step is a `ReadFromTableFunctionStep` and which cannot carry the flag
+        /// without a query-plan serialization version that older replicas would have to be excluded for.
+        return nullptr;
+    }
+
+    typeid_cast<ReadFromTableStep *>(node->step.get())->useParallelReplicas() = true;
 
     return query_plan;
 }

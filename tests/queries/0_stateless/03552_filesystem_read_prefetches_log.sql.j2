@@ -18,6 +18,8 @@ with (
     from system.query_log
     where event_date >= yesterday() AND event_time >= now() - 600
       and current_database = currentDatabase()
+      -- The replicas run their arms in this database too, so name the initial query explicitly.
+      and is_initial_query
       and log_comment = '{{ disk }}'
       and type != 'QueryStart'
 ) as initial_query_id_,

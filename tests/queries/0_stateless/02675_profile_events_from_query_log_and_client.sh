@@ -45,7 +45,7 @@ SELECT type,
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE '%profile_events.csv%'
 AND type = 'QueryFinish'
-AND current_database = currentDatabase()
+AND current_database = currentDatabase() AND is_initial_query
 ORDER BY query_start_time DESC;
 "
 
@@ -92,7 +92,7 @@ SELECT type,
        query,
        'FileOpen', ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND is_initial_query
 AND ( query LIKE '%SELECT % FROM times%' OR query LIKE '%INSERT INTO times%' )
 AND type = 'QueryFinish'
 ORDER BY query_start_time_microseconds ASC, query DESC;

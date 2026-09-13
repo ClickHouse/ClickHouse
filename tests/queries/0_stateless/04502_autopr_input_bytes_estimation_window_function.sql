@@ -67,7 +67,7 @@ SYSTEM FLUSH LOGS query_log;
 -- transfer of all pre-window rows as free.
 SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0 AS read_boundary_skipped
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_function_query') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment = '04502_autopr_window_function_query') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 
@@ -78,7 +78,7 @@ SELECT
              <= maxIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = '04502_autopr_window_wide_output'))
         AS window_result_not_counted_as_output
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_wide_output') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment = '04502_autopr_window_wide_output') AND (type = 'QueryFinish')
 FORMAT TSVWithNames;
 
 -- For the aggregated-window query the replica-output boundary is the Aggregating step, which DOES collect
@@ -93,7 +93,7 @@ SELECT
              <= maxIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = '04502_autopr_aggregated_window'))
         AS output_pinned_to_aggregation_boundary
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_aggregated_window') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment = '04502_autopr_aggregated_window') AND (type = 'QueryFinish')
 FORMAT TSVWithNames;
 
 DROP TABLE t;

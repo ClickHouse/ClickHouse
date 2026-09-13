@@ -38,7 +38,7 @@ WITH (
     SELECT
         ProfileEvents['ReadCompressedBytes']
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment = '03801_autopr_input_bytes_estimation_query_with_subqueries_query_0') AND (type = 'QueryFinish')
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment = '03801_autopr_input_bytes_estimation_query_with_subqueries_query_0') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 ) AS compressed_bytes_subquery
 SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
@@ -48,7 +48,7 @@ FROM (
         ProfileEvents['ReadCompressedBytes'] - compressed_bytes_subquery AS compressed_bytes,
         ProfileEvents['RuntimeDataflowStatisticsInputBytes']::Int64 statistics_input_bytes
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (match(log_comment, '03801_autopr_input_bytes_estimation_query_with_subqueries_query_[12]')) AND (type = 'QueryFinish')
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (is_initial_query) AND (match(log_comment, '03801_autopr_input_bytes_estimation_query_with_subqueries_query_[12]')) AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
 WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 2;

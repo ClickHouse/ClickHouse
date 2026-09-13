@@ -23,6 +23,10 @@ public:
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    /// The call names the target table of the `TimeSeries` table it is given, so it denotes the same
+    /// table on every replica even though the target itself is a hidden table named after a UUID.
+    StorageID getReferencedTableID() const override { return time_series_storage_id; }
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
