@@ -293,6 +293,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_alter_readonly_throw_in_start_background_workers) \
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \

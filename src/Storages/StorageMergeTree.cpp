@@ -92,6 +92,7 @@ namespace FailPoints
     extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_settings_throw_before_metadata_commit[];
+    extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
@@ -508,6 +509,9 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
+        /// Set once the `table_readonly` 1 -> 0 transition has begun starting background workers,
+        /// so that the rollback below knows it has to return them to the read-only state.
+        bool restoring_background_workers = false;
         try
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
@@ -517,6 +521,22 @@ void StorageMergeTree::alter(
                 /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(new_metadata);
+            }
+
+            /// A table that started read-only has no background workers at all: `startup` skipped them.
+            /// `table_readonly` is documented to be toggleable back, so restore them here instead of
+            /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
+            /// must never run them.
+            ///
+            /// Start them *before* the metadata commit, inside this rollback unit: if either the start
+            /// or the commit throws, the setting is reverted to read-only below, and the workers that
+            /// did start are left in the same state as for a writable table that was made read-only.
+            /// Starting is idempotent, so a retried `ALTER` completes the transition. This avoids the
+            /// half-restored state where the table is writable but some workers are absent forever.
+            if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
+            {
+                restoring_background_workers = true;
+                startBackgroundWorkers();
             }
 
             fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
@@ -529,10 +549,15 @@ void StorageMergeTree::alter(
         }
         catch (...)
         {
-            /// The read-only lifecycle transition below has not run if committing metadata fails.
             /// Restore the settings and statistics metadata before propagating a failed commit.
             changeSettings(old_metadata.settings_changes, table_lock_holder);
             setInMemoryMetadata(old_metadata);
+
+            /// The table is read-only again: cleanup must not run on it, whether it was started by
+            /// `startBackgroundWorkers` above or was still active from before. The other workers are
+            /// suppressed by the read-only setting itself, exactly as after a 0 -> 1 transition.
+            if (restoring_background_workers)
+                cleanup_thread.stop();
             throw;
         }
     }
@@ -827,14 +852,13 @@ void StorageMergeTree::alter(
         if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
             cleanup_thread.stop();
 
-        /// A table that started read-only has no background workers at all: `startup` skipped them.
-        /// `table_readonly` is documented to be toggleable back, so restore them here instead of
-        /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
-        /// must never run them.
+        /// The background workers were started together with the settings commit above (see the
+        /// settings-alter branch). Now that the table is durably writable, do the disk cleanup that
+        /// `startup` performs for a writable table. This runs only after the commit because it
+        /// modifies the disk, and a failure here leaves the table in a consistent writable state
+        /// with every worker running.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
         {
-            /// The writable setting is already committed. A cleanup error must not leave workers stopped.
-            startBackgroundWorkers();
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())
             {
@@ -3964,6 +3988,13 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
 void StorageMergeTree::startBackgroundWorkers()
 {
     cleanup_thread.start();
+
+    /// Models a schedule-pool or allocation failure after some workers already started.
+    fiu_do_on(FailPoints::mt_alter_readonly_throw_in_start_background_workers,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting background workers");
+    });
+
     background_operations_assignee.start();
     background_streaming_assignee.start();
     startBackgroundMovesIfNeeded();
