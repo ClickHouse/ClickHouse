@@ -2855,6 +2855,7 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
+
 SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
 {
     auto settings = distributed_settings->enumerateSettings();

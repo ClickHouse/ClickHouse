@@ -250,7 +250,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsString compatibility;
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
@@ -14061,19 +14060,12 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 
 SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
-    auto settings = getSettings()->enumerateSettings();
+    const auto merge_tree_settings = getSettings();
+    auto settings = merge_tree_settings->enumerateSettings();
 
-    /// A `MergeTree` table is created from the settings the server has in effect, not from the
-    /// compiled defaults, and `Context` builds those by applying the `compatibility` setting first
-    /// and the config section second - see `Context::getMergeTreeSettings`.
-    ///
-    /// Ask the context which names each step assigned rather than reconstructing the baselines
-    /// here, for two reasons. Whichever context first asked for the baseline decided the
-    /// `compatibility` for the lifetime of the server, so a reader that consults its own settings
-    /// can compare against a baseline the server never used. And an explicit assignment cannot be
-    /// recovered by comparing values afterwards: assignment sets the changed bit unconditionally,
-    /// so a config section that sets a setting to the value it already had is invisible to a diff
-    /// while still being the answer to "who set this".
+    /// A `MergeTree` table starts from the server's settings, which `Context` builds by applying the
+    /// `compatibility` setting and then the config section. Only the context knows which names each
+    /// step assigned - see `Context::MergeTreeSettingsProvenance` for why it cannot be recovered here.
     const auto provenance = query_context->getMergeTreeSettingsProvenance(supportsReplication());
 
     for (auto & setting : settings)
@@ -14091,7 +14083,7 @@ SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) co
     /// The bounds a profile puts on these settings, reported exactly as
     /// `system.merge_tree_settings` reports them.
     const auto constraints_and_profiles = query_context->getSettingsConstraintsAndCurrentProfiles();
-    getSettings()->applyConstraints(settings, constraints_and_profiles->constraints);
+    merge_tree_settings->applyConstraints(settings, constraints_and_profiles->constraints);
 
     /// Last: the table's own `SETTINGS` clause is applied after everything above.
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);

@@ -2224,38 +2224,28 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
     /// so the rebuilt settings object always carries its default. Report what the table actually
     /// does, which is what `partitioning_mode` now says.
-    for (auto & setting : settings)
+    auto find_setting = [&](std::string_view name)
     {
-        if (setting.name != "use_hive_partitioning")
-            continue;
-
-        const auto mode = std::find_if(settings.begin(), settings.end(),
-            [](const SettingDescription & s) { return s.name == "partitioning_mode"; });
-        if (mode == settings.end())
-            break;
-
-        setting.value = mode->value == "hive" ? "1" : "0";
+        return std::find_if(settings.begin(), settings.end(), [&](const SettingDescription & s) { return s.name == name; });
+    };
+    if (auto hive = find_setting("use_hive_partitioning"), mode = find_setting("partitioning_mode");
+        hive != settings.end() && mode != settings.end())
+    {
+        hive->value = mode->value == "hive" ? "1" : "0";
         /// Unconditionally from `partitioning_mode`, including when the derived value is the
         /// default. They are one setting after the fold, so whatever acted on that one acted on
         /// this one, and `source` answers who set a setting rather than whether the result differs
         /// from the default - `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
-        setting.origin = mode->origin;
-        break;
+        hive->origin = mode->origin;
     }
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
     /// replica's `CREATE` query still states whatever it was created with.
-    /// `parallel_inserts` is deliberately not here, even though two things claim otherwise:
-    /// `getSettings` reads it from the table metadata, and `ObjectStorageQueueTableMetadata::
-    /// isStoredInKeeper` lists its name. Both claims are unbacked - the field is declared and never
-    /// written. The constructor from settings does not set it, `toString` does not serialize it and
-    /// the JSON constructor does not read it, so nothing ever puts it into Keeper and nothing reads
-    /// it back. Serialization is the authority on what the shared metadata holds; a name registry
-    /// is not. Reporting `shared_metadata` here would be wrong about exactly the thing this table
-    /// exists to explain. Whether the value can be reported at all is an engine question, not one
-    /// for this hook: `getSettings` returns the never-written field, so a table created with
-    /// `parallel_inserts = 1` reports `0`, with `source = 'definition'` from the `CREATE` query.
+    /// These are the fields `getSettings` reads from the table metadata serialized to Keeper, and
+    /// serialization - not the `isStoredInKeeper` name list - decides what that metadata holds. So
+    /// not `keeper_path`, which the storage keeps itself, and not `parallel_inserts`, which the table
+    /// metadata declares but never writes or reads: https://github.com/ClickHouse/ClickHouse/issues/119018.
     static const NameSet held_in_shared_metadata{
         "mode", "after_processing", "loading_retries", "processing_threads_num",
         "last_processed_path", "bucketing_mode", "partitioning_mode",

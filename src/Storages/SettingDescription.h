@@ -33,7 +33,9 @@ enum class SettingOrigin : uint8_t
     Config,           /// a server config section, e.g. <merge_tree> or <distributed>
     Compatibility,    /// rolled back to an older release's default by the `compatibility` setting
     Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
-    NamedCollection,  /// a named collection referenced in the engine arguments
+    /// A named collection referenced in the engine arguments. Only an engine that keeps the collection's
+    /// name can report it (`Kafka`); the others report `Other` for a setting the collection changed.
+    NamedCollection,
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
     /// Adjusted by the engine while it runs, and not written back to its settings - the case
     /// `SHOW CREATE TABLE` cannot serve. ⚠️ Reserved: nothing reports it yet. The intended first

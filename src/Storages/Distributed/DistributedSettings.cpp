@@ -1,12 +1,12 @@
-#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -115,10 +115,8 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
     /// defaults, and this is the instance a new table starts from.
     return context->getDistributedSettings().enumerateSettings();
 }
-SettingDescriptions DistributedSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+
+IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)
 
 }
 

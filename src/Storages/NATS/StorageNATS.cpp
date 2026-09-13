@@ -1634,8 +1634,7 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
-    /// A named collection may also have set these, but this storage does not keep the
-    /// collection's name, so a setting it changed reports `other` rather than a guess.
+    /// See `SettingOrigin::NamedCollection`.
     return attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
 }
 

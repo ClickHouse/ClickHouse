@@ -178,7 +178,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
             {
-                if (auto maybe_new_name = ObjectStorageQueueSettings::adjustSettingName(change.name); maybe_new_name.has_value())
+                if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
                     change.name = std::string{*maybe_new_name};
 
                 if (change.name == "current_shard_num")

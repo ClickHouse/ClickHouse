@@ -11,7 +11,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <optional>
 

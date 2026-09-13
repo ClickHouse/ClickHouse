@@ -1,7 +1,7 @@
-#include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Access/SettingsConstraints.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
@@ -10,7 +10,6 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
-#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -19,6 +18,7 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -3276,6 +3276,7 @@ SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(Context
     /// settings differ from the rest of the family and it registers its own function.
     return enumerateServerEffective(context->getReplicatedMergeTreeSettings(), context);
 }
+
 void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const
 {
     for (auto & setting : settings)
@@ -3300,9 +3301,6 @@ void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const S
     }
 }
 
-SettingDescriptions MergeTreeSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
 
 }
