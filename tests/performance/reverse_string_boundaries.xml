@@ -1,0 +1,21 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep the short String paths visible in the performance report. -->
+    <query>SELECT reverse(materialize(repeat('x', 1))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 7))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 9))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 15))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 16))) FROM numbers(10000000) FORMAT Null</query>
+
+    <!-- Keep every FixedString branch boundary visible as well. -->
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 1), 1))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 7), 7))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 8), 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 9), 9))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 15), 15))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 16), 16))) FROM numbers(10000000) FORMAT Null</query>
+</test>
