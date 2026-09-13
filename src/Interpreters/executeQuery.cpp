@@ -3731,6 +3731,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
+        catch (...)
+        {
+            /// A fuzzed copy can also fail with a Poco::Exception (a mutated URI argument reaches
+            /// Poco::URI) or a std::exception. This runs after the client's query has returned its
+            /// result, so an exception escaping here fails a query that was sent correctly.
+            finish_iteration(/*succeeded=*/false);
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        }
     }
 }
 
