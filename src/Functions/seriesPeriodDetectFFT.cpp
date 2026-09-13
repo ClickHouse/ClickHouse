@@ -163,7 +163,7 @@ public:
             return true;
         }
 
-        period = std::round(static_cast<double>(len) / idx);
+        period = std::round(static_cast<double>(len) / static_cast<double>(idx));
         return true;
     }
 };
