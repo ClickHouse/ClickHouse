@@ -9366,6 +9366,22 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_short_circuit_lazy_execution, false, R"(
+Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed.
+
+Lazy execution is not free: the rows which are not needed are filtered out and the result is expanded back
+to the original size. When the filtered out part is small, or the argument itself is cheap, this overhead is
+larger than the saved work. With this setting enabled, the execution of the arguments is profiled and the
+decision is revisited while the query runs.
+
+The setting applies to the expressions evaluated by the query pipeline and by the data sources: `SELECT` and
+`WHERE` expressions, `PREWHERE` and row-level filters of `MergeTree` and of the object storage and `Parquet`
+readers, a filter fused into `ARRAY JOIN`, and the residual `JOIN ON` expression of a hash join or an
+`IEJoin`. It does not apply to the auxiliary expressions evaluated outside of the query pipeline, such as
+`TTL`, `DEFAULT` and `MATERIALIZED` column expressions, table constraints, or partition key calculation:
+those are evaluated by short-lived expression objects with no room for profiling, and they keep the static
+short-circuit behavior controlled by `short_circuit_function_evaluation`.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

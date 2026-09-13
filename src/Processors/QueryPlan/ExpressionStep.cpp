@@ -75,14 +75,28 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    const auto & actions_settings = settings.getActionsSettings();
+    /// An adaptive instance of ExpressionActions collects the execution statistics and is not thread safe,
+    /// so every stream needs its own one. A plain instance is shared between all the streams.
+    const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
+
+    auto expression = ExpressionActions::create(expression_per_stream ? actions_dag.clone() : std::move(actions_dag), actions_settings);
+
+    bool is_first_stream = true;
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every ExpressionTransform instance: the computation is linear in the size
-    /// of the DAG, and there is one transform per stream.
+    /// of the DAG, and there is one transform per stream. Every per-stream instance is built from
+    /// a clone of the same DAG, so the transformed header is shared by all of them.
     auto transformed_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), expression->getActionsDAG()));
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<ExpressionTransform>(header, transformed_header, expression, dataflow_cache_updater); });
+    {
+        auto stream_expression = expression;
+        if (expression_per_stream && !std::exchange(is_first_stream, false))
+            stream_expression = ExpressionActions::create(actions_dag.clone(), actions_settings);
+
+        return std::make_shared<ExpressionTransform>(header, transformed_header, std::move(stream_expression), dataflow_cache_updater);
+    });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {

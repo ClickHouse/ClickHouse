@@ -58,21 +58,40 @@ void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
-    if (element_filter)
+    const auto & actions_settings = settings.getActionsSettings();
+    /// An adaptive instance of ExpressionActions collects the execution statistics and is not thread safe,
+    /// so every stream needs its own fused element filter, and therefore its own ArrayJoinAction.
+    /// A plain instance is shared between all the streams.
+    const bool filter_per_stream = element_filter.has_value() && actions_settings.enable_adaptive_short_circuit_lazy_execution;
+
+    auto make_array_join_action = [&](bool with_element_filter)
     {
-        array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
-        array_join_actions->element_filter_column_name = element_filter_column_name;
-    }
+        auto action = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
+        if (with_element_filter)
+        {
+            action->element_filter = ExpressionActions::create(element_filter->clone(), actions_settings);
+            action->element_filter_column_name = element_filter_column_name;
+        }
+        return action;
+    };
+
+    auto array_join_actions = make_array_join_action(element_filter.has_value());
     /// A standalone FilterStep is a pass-through on the totals stream, so the fused filter must be too -
     /// run the totals stream through an action without the element filter.
-    auto totals_actions = element_filter
-        ? std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication)
-        : array_join_actions;
+    auto totals_actions = element_filter ? make_array_join_action(false) : array_join_actions;
+
+    bool is_first_stream = true;
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<ArrayJoinTransform>(header, on_totals ? totals_actions : array_join_actions, on_totals);
+        if (on_totals)
+            return std::make_shared<ArrayJoinTransform>(header, totals_actions, on_totals);
+
+        auto stream_actions = array_join_actions;
+        if (filter_per_stream && !std::exchange(is_first_stream, false))
+            stream_actions = make_array_join_action(true);
+
+        return std::make_shared<ArrayJoinTransform>(header, std::move(stream_actions), on_totals);
     });
 }
 
