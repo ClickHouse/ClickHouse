@@ -707,11 +707,17 @@ The calculation is performed relative to specific points in time:
 | MICROSECOND | 1970-01-01 00:00:00    |
 | NANOSECOND  | 1970-01-01 00:00:00    |
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
-hour values between 1 and 23 are useful.
+hour values between 1 and 23 are useful. The table above and this footnote describe the first overload only; with an `origin` the
+calculation is performed relative to the `origin` instead, as described below.
 
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
-The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
+The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function. For the
+fixed-length units - `NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY` and `WEEK` - the buckets are
+`origin + k * x unit` for a whole number `k`, so the result is always a whole number of intervals away from the `origin`, whatever
+the time zone and whatever happens to the UTC offset in between. The calendar units - `MONTH`, `QUARTER` and `YEAR` - have no fixed
+length, so their buckets follow the calendar grid anchored at the `origin` instead, and the result can be later than `value` by up to
+the time of day of the `origin`.
         )";
         FunctionDocumentation::Syntax syntax = R"(
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
