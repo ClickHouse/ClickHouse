@@ -13,6 +13,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <cstring>
 
 #include "config.h"
 
@@ -447,7 +448,8 @@ public:
             row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
+            /// A zero null-map byte marks a row that has a value, so one zero means not NULL.
+            if (memchr(null_map + row_begin, 0, row_end - row_begin) != nullptr)
                 this->setFlag(place);
     }
 

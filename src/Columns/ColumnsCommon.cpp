@@ -68,10 +68,8 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 {
     size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
-      */
+    /// `filt` and the null map are both predicates, and `toBits64` tests each byte for equality with
+    /// zero, so the vectorized path and the tail below agree on `!= 0` for every byte value.
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data()) + start;
     const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
@@ -86,8 +84,10 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         /// TODO Add duff device for tail?
 #endif
 
+    /// Both operands are predicates: complementing a truthy null-map byte such as 2 leaves bit 0
+    /// clear, which would count that NULL row as present.
     for (; pos < end_pos; ++pos, ++pos2)
-        count += (*pos & ~*pos2) != 0;
+        count += static_cast<UInt8>(*pos != 0) & static_cast<UInt8>(*pos2 == 0);
 
     return count;
 }
