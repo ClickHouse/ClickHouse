@@ -25,7 +25,8 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
         const char * begin = nullptr;
         auto settings = IColumn::SerializationSettings::createForAggregationState();
         auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
-        chassert(!serialized.empty());
+        /// An empty serialization is a valid key: a state holding no data serializes to zero bytes,
+        /// and a hash table keeps an empty key in its dedicated zero-value slot.
         return SerializedKeyHolder{serialized, arena};
     }
 }
