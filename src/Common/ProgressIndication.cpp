@@ -236,7 +236,13 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             max_count = std::max(progress.read_bytes, progress.total_bytes_to_read);
         }
 
-        if (bar_segments.empty() || bar_segments.back().second != stalled)
+        /// The first segment always covers the bar from its first cell, because `colored_bar`
+        /// treats each stored count as the first cell of its segment. The progress bar appears
+        /// only after some progress has been made, so seeding it with `current_count` would
+        /// drop the already-filled prefix until the stalled state flips for the first time.
+        if (bar_segments.empty())
+            bar_segments.emplace_back(0, stalled);
+        else if (bar_segments.back().second != stalled)
             bar_segments.emplace_back(current_count, stalled);
 
         /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start

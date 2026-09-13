@@ -1,0 +1,62 @@
+#!/usr/bin/expect -f
+
+# Regression test for the "waited" annotation and the history-colored progress bar:
+# a query whose reads are throttled by `max_local_read_bandwidth` must show the
+# `waited` figure next to `CPU`, the bar must be rendered from its very first cell
+# (the initial history segment must start at 0, not at the current progress), and
+# the throttled cells must be yellow.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set local_path $CLICKHOUSE_TMP/$basename.path
+
+log_user 0
+set timeout 60
+match_max 100000
+# The resource usage annotation is shown only when the progress bar is wider than twice the
+# annotation, so the terminal has to be wide enough for "(0.0 CPU, 1.9 waited)" to fit.
+set stty_init "rows 25 cols 240"
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+send "rm -rf $local_path\r"
+expect "bash) "
+
+# A few megabytes of compressed data on disk; the throttler below lets the query read
+# them at 1 MB/s, so the progress bar has several seconds to be rendered.
+send "\$CLICKHOUSE_LOCAL --path $local_path --query 'CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY (); INSERT INTO t SELECT number FROM numbers(2000000)' && echo created\r"
+expect "created"
+expect "bash) "
+
+send "\$CLICKHOUSE_LOCAL --path $local_path --progress --max_threads 2 --max_local_read_bandwidth 1000000 --query 'SELECT count() FROM t WHERE NOT ignore(n)' >/dev/null 2>&1\r"
+
+# The progress bar is rendered right after the counters (") " or ". ") and starts with a full
+# block, either green (working) or yellow (stalled), so no already-filled prefix is dropped.
+expect -re {Progress: [^\r]*[.)] \x1b\[0;3[23]m█}
+
+# The query is sleeping in the throttler most of the time: the `waited` figure is shown
+# next to `CPU` and the bar turns yellow.
+expect -re {\([0-9.]+ CPU, [0-9.]+ waited}
+expect -re {\x1b\[0;33m█}
+
+send "\3"
+expect "bash) "
+
+send "rm -rf $local_path\r"
+expect "bash) "
+
+send "exit\r"
+expect eof
