@@ -266,6 +266,10 @@ std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_d
         return {};
 
     const auto & filter = *dense_filter_description->data;
+    const bool first_value = filter[0] != 0;
+    if ((filter.back() != 0) != first_value)
+        return {};
+
     if (filter[0] == 0)
     {
         if (memoryIsZero(filter.data(), 0, filter.size()))
