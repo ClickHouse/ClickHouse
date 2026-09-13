@@ -334,8 +334,13 @@ inline DecimalComponents<DecimalType> splitFlooringNegative(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
+
+    if (scale_multiplier == T(1))
+        return {decimal.value, T(0)};
+
     auto components = splitWithScaleMultiplier(decimal, scale_multiplier);
-    /// Unreachable at scale 0, where `fractional` is always zero, so `whole` cannot underflow here.
+    /// `fractional` is non-zero only at scale > 0, where `whole` is at most a tenth of `decimal` in
+    /// magnitude, so it is nowhere near the minimum of the type and cannot underflow here.
     if (decimal.value < T(0) && components.fractional)
     {
         components.fractional = scale_multiplier + (components.whole ? T(-1) : T(1)) * components.fractional;
@@ -349,6 +354,11 @@ inline DecimalComponents<DecimalType> splitFlooringNegative(
  * There `fractional` is a non-negative offset upwards from `whole`, so it is added as is. This is what
  * separates it from `decimalFromComponentsWithMultiplier`, which takes the sign of the fractional part
  * from `whole` and is therefore the inverse of `splitWithScaleMultiplier` instead.
+ *
+ * `fractional` is expected to be already reduced - 0 <= fractional < scale_multiplier - which is what
+ * `splitFlooringNegative` produces. It is asserted rather than reduced here: the modulo would be a
+ * run-time division on every row, and silently reducing an out-of-range component would mask a bug in
+ * the caller instead of reporting it.
  */
 template <typename DecimalType>
 inline DecimalType decimalFromFlooredComponents(
@@ -357,8 +367,9 @@ inline DecimalType decimalFromFlooredComponents(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
+    chassert(fractional >= T(0) && fractional < scale_multiplier);
 
-    return DecimalType(multiplyAdd<T>(whole, scale_multiplier, fractional % scale_multiplier));
+    return DecimalType(multiplyAdd<T>(whole, scale_multiplier, fractional));
 }
 
 template <typename DecimalType>
