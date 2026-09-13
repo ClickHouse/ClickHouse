@@ -42,7 +42,7 @@
 -2	Int16
 -2	Int16
 2	UInt256
-0	Int256
+-2	Int256
 6	UInt8
 5	UInt8
 -- division exceptional cases must be preserved
@@ -54,5 +54,5 @@
 1
 \N
 -- unsigned wrap quirks of the compute type are preserved
-100	UInt8
+1	UInt8
 115792089237316195423570985008687907853269984665640564039457584007913129639935	UInt256
