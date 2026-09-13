@@ -675,26 +675,40 @@ def test_doget_unsupported_map_key_is_tagged():
 
 # `serializeText` of an aggregate state writes its raw state bytes, which are not valid UTF-8, so the column
 # stays Arrow `binary` even in `text` mode rather than being advertised as a string.
+#
+# That decision reads the column's declared type, so it cannot reach the same state held in a `Dynamic`: the
+# Arrow schema is fixed before any value is seen and `Dynamic` says nothing about what its rows hold. Such a
+# state is therefore lossy in `text` mode and whole in `binary`.
 def test_doget_aggregate_state_is_binary_in_text_mode():
-    node.query("CREATE TABLE mytable (id Int64, s AggregateFunction(sum, UInt64)) ORDER BY id")
-    node.query("INSERT INTO mytable SELECT 10, sumState(toUInt64(128))")
+    node.query(
+        "CREATE TABLE mytable (id Int64, s AggregateFunction(sum, UInt64), n Dynamic) ORDER BY id"
+    )
+    node.query("INSERT INTO mytable SELECT 10, sumState(toUInt64(128)), sumState(toUInt64(128))")
 
     client, options = get_client()
 
-    descriptor = flight.FlightDescriptor.for_command(
-        "SELECT s FROM mytable SETTINGS output_format_arrow_unsupported_types = 'text'"
-    )
-    flight_info = client.get_flight_info(descriptor, options)
-    ticket = flight_info.endpoints[0].ticket
+    def fetch(mode):
+        descriptor = flight.FlightDescriptor.for_command(
+            f"SELECT s, n FROM mytable SETTINGS output_format_arrow_unsupported_types = '{mode}'"
+        )
+        flight_info = client.get_flight_info(descriptor, options)
+        return client.do_get(flight_info.endpoints[0].ticket, options).read_all()
 
-    reader = client.do_get(ticket, options)
-    actual = reader.read_all()
-
-    field = actual.schema.field("s")
+    as_text = fetch("text")
+    field = as_text.schema.field("s")
     assert field.type == pa.binary()
     assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
     # The high bit of the leading byte is what makes this payload invalid UTF-8.
-    assert actual.column("s").to_pylist() == [b"\x80\x00\x00\x00\x00\x00\x00\x00"]
+    assert as_text.column("s").to_pylist() == [b"\x80\x00\x00\x00\x00\x00\x00\x00"]
+
+    # Carried by a `Dynamic` the same state lands in `utf8`, so its leading byte becomes U+FFFD.
+    assert as_text.schema.field("n").type == pa.string()
+    assert as_text.column("n").to_pylist() == ["\ufffd" + "\x00" * 7]
+
+    as_binary = fetch("binary")
+    assert as_binary.column("s").to_pylist() == [b"\x80\x00\x00\x00\x00\x00\x00\x00"]
+    assert as_binary.schema.field("n").type == pa.binary()
+    assert b"\x80\x00\x00\x00\x00\x00\x00\x00" in as_binary.column("n").to_pylist()[0]
 
 
 # A type whose text form can carry arbitrary bytes still has to fit an Arrow `utf8` column, which the
