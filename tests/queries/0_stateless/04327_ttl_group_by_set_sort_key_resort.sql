@@ -11,7 +11,9 @@
 -- output. Each check below confirms the merge succeeds AND the resulting part is physically
 -- ordered by the sorting key (the natural read order equals the ORDER BY read order).
 
--- Float64 sort key, non-monotonic SET on the first sort column.
+-- Float64 sort key, non-monotonic SET on the first sort column. The last row is not expired, so
+-- the aggregation also takes its flush-and-pass-through path: the aggregated groups and that row
+-- are emitted interleaved, and the row's own k is smaller than both aggregates.
 DROP TABLE IF EXISTS t_f64;
 CREATE TABLE t_f64 (k Float64, ts DateTime, v Float64)
 ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
@@ -20,13 +22,16 @@ TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
 SETTINGS min_bytes_for_full_part_storage = 128;
 SYSTEM STOP MERGES t_f64;
 INSERT INTO t_f64 VALUES (1.0, '2000-06-09 10:00', 96827);
-INSERT INTO t_f64 VALUES (1.0, '2000-06-10 10:00', 41302);
+INSERT INTO t_f64 VALUES (1.0, '2000-06-10 10:00', 41302), (1.0, '2100-01-01 10:00', 5);
 SYSTEM START MERGES t_f64;
 OPTIMIZE TABLE t_f64 FINAL;
 SELECT 'f64 data', k, ts, v FROM t_f64 ORDER BY ALL;
--- Part must be physically sorted: natural read order equals ORDER BY read order.
-SELECT 'f64 sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_f64 SETTINGS optimize_read_in_order = 0))
-                   = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_f64 ORDER BY k, toStartOfDay(ts)));
+-- The part must be physically ordered by the sorting key: the keys in physical row order must
+-- already be sorted. Comparing against a second read with ORDER BY (k, toStartOfDay(ts)) would
+-- prove nothing, because that read is answered from the part's own declared order and returns the
+-- same rows even when the part is not sorted; arraySort does the ordering outside the planner.
+SELECT 'f64 sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_f64 SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_f64;
 
 -- String sort key, SET on the first sort column.
@@ -42,8 +47,8 @@ INSERT INTO t_str VALUES ('p', '2000-06-10 10:00', 'aaa');
 SYSTEM START MERGES t_str;
 OPTIMIZE TABLE t_str FINAL;
 SELECT 'str data', id, ts, value FROM t_str ORDER BY ALL;
-SELECT 'str sorted', (SELECT groupArray((id, toStartOfDay(ts))) FROM (SELECT id, ts FROM t_str SETTINGS optimize_read_in_order = 0))
-                   = (SELECT groupArray((id, toStartOfDay(ts))) FROM (SELECT id, ts FROM t_str ORDER BY id, toStartOfDay(ts)));
+SELECT 'str sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((id, toStartOfDay(ts))) AS phys FROM (SELECT id, ts FROM t_str SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_str;
 
 -- LowCardinality(String) sort key, SET on the first sort column.
@@ -59,8 +64,8 @@ INSERT INTO t_lc VALUES ('a', '2000-06-10 10:00', 'aaa', 100);
 SYSTEM START MERGES t_lc;
 OPTIMIZE TABLE t_lc FINAL;
 SELECT 'lc data', k, ts FROM t_lc ORDER BY ALL;
-SELECT 'lc sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_lc SETTINGS optimize_read_in_order = 0))
-                  = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_lc ORDER BY k, toStartOfDay(ts)));
+SELECT 'lc sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_lc SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_lc;
 
 -- Subcolumn sort key: ORDER BY references the subcolumn t.a, while the SET assigns the whole
@@ -79,29 +84,9 @@ INSERT INTO t_sub VALUES ((5, 0), '2000-06-10 10:00', (100, 0), 20);
 SYSTEM START MERGES t_sub;
 OPTIMIZE TABLE t_sub FINAL;
 SELECT 'sub data', t.a, ts FROM t_sub ORDER BY ALL;
-SELECT 'sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub SETTINGS optimize_read_in_order = 0))
-                   = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub ORDER BY t.a, toStartOfDay(ts)));
+SELECT 'sub sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((`t.a`, toStartOfDay(ts))) AS phys FROM (SELECT t.a, ts FROM t_sub SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_sub;
-
--- SET result type diverges from the declared column type in a NESTED wrapper: the SET target `t`
--- is Tuple(UInt32, UInt32) but the source `cand` has a LowCardinality inner element, so
--- argMax(cand, v) produces Tuple(LowCardinality(UInt32), UInt32). The aggregation-finalization
--- path must coerce the SET result back to the declared type before appending it to the result
--- block; otherwise the block-structure type check aborts the merge (fuzzer STID 2508-3698).
-SET allow_suspicious_low_cardinality_types = 1;
-DROP TABLE IF EXISTS t_subwrap;
-CREATE TABLE t_subwrap (t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a LowCardinality(UInt32), b UInt32), v UInt32)
-ENGINE = MergeTree ORDER BY (t.a, toStartOfDay(ts))
-TTL ts + toIntervalDay(1) GROUP BY t.a, toStartOfDay(ts)
-    SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
-SETTINGS min_bytes_for_full_part_storage = 128;
-SYSTEM STOP MERGES t_subwrap;
-INSERT INTO t_subwrap VALUES ((5, 0), '2000-06-09 10:00', (900, 0), 10);
-INSERT INTO t_subwrap VALUES ((5, 0), '2000-06-10 10:00', (100, 0), 20);
-SYSTEM START MERGES t_subwrap;
-OPTIMIZE TABLE t_subwrap FINAL;
-SELECT 'subwrap data', t.a, ts FROM t_subwrap ORDER BY ALL;
-DROP TABLE t_subwrap;
 
 -- Mutation path: the same violation is reachable through ALTER TABLE ... MATERIALIZE TTL.
 -- The mutation runs the GROUP BY ... SET aggregation through the mutation pipeline and the
@@ -119,8 +104,8 @@ SYSTEM STOP TTL MERGES t_mut;
 INSERT INTO t_mut VALUES (1.0, '2000-06-09 10:00', 96827), (1.0, '2000-06-10 10:00', 41302);
 ALTER TABLE t_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'mut data', k, ts, v FROM t_mut ORDER BY ALL;
-SELECT 'mut sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_mut SETTINGS optimize_read_in_order = 0))
-                   = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_mut ORDER BY k, toStartOfDay(ts)));
+SELECT 'mut sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_mut SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_mut;
 
 DROP TABLE IF EXISTS t_mut_sub;
@@ -133,37 +118,155 @@ SYSTEM STOP TTL MERGES t_mut_sub;
 INSERT INTO t_mut_sub VALUES ((5, 0), '2000-06-09 10:00', (900, 0), 10), ((5, 0), '2000-06-10 10:00', (100, 0), 20);
 ALTER TABLE t_mut_sub MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'mut sub data', t.a, ts FROM t_mut_sub ORDER BY ALL;
-SELECT 'mut sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_mut_sub SETTINGS optimize_read_in_order = 0))
-                       = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_mut_sub ORDER BY t.a, toStartOfDay(ts)));
+SELECT 'mut sub sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((`t.a`, toStartOfDay(ts))) AS phys FROM (SELECT t.a, ts FROM t_mut_sub SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_mut_sub;
 
--- Mutation path, secondary index on a subcolumn of a TTL-rewritten column. A `MATERIALIZE TTL`
--- with a GROUP BY TTL records the rewritten physical column `t` as the changed column, while the
--- skip index depends on the subcolumn `t.a`. The rebuild decision must map `t.a` to its storage
--- column `t`, otherwise the index is hardlinked from the source part and keeps pre-SET minmax
--- values; the index expression must also be recomputed after the TTL SET (computing it before the
--- aggregation makes the mutation fail with an exception). The index column `t.a` is intentionally NOT in the sorting
--- key so the primary key cannot mask a stale skip index during pruning.
-DROP TABLE IF EXISTS t_mut_idx;
-CREATE TABLE t_mut_idx (sk UInt32, t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a UInt32, b UInt32), v UInt32,
-    INDEX idx t.a TYPE minmax GRANULARITY 1)
-ENGINE = MergeTree ORDER BY sk
-TTL ts + toIntervalDay(1) GROUP BY sk SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 1, index_granularity = 4, materialize_ttl_recalculate_only = 0;
-SYSTEM STOP TTL MERGES t_mut_idx;
--- Pre-SET t.a is number (0..39); after SET t = argMax(cand, v) it becomes number + 100000.
-INSERT INTO t_mut_idx SELECT number, (number, 0), '2000-01-01 00:00:00', (number + 100000, 0), 1 FROM numbers(40);
-ALTER TABLE t_mut_idx MATERIALIZE TTL SETTINGS mutations_sync = 2;
--- The skip index must reflect the post-SET values. Force the query to use the index
--- (force_data_skipping_indices) and select the rewritten values: all 40 rows must be returned. A
--- stale (pre-SET) index holds the old `t.a` minmax ranges and would prune the rewritten values
--- away, returning fewer rows. force_data_skipping_indices also fails outright if the index was left
--- unregistered. (EXPLAIN granule counts are avoided here as they depend on randomized settings.)
-SELECT 'mut idx present', count() FROM t_mut_idx WHERE t.a >= 100000 SETTINGS force_data_skipping_indices = 'idx', use_skip_indexes = 1;
--- Result with the index must match the result without it for every rewritten value.
-SELECT 'mut idx matches', (SELECT count() FROM t_mut_idx WHERE t.a IN (100000, 100020, 100039) SETTINGS use_skip_indexes = 1)
-                        = (SELECT count() FROM t_mut_idx WHERE t.a IN (100000, 100020, 100039) SETTINGS use_skip_indexes = 0);
-DROP TABLE t_mut_idx;
+-- Mutation path, COMPUTED secondary index over a sort-key column the SET rewrites. A
+-- `MATERIALIZE TTL` marks every column as changed while a GROUP BY TTL exists, so `idx (k + 1)`
+-- is rebuilt from the stream. Its expression must be computed AFTER the TTL step and the
+-- re-sort: computed before, it holds the pre-SET k and the index then prunes granules that do
+-- hold matching rows. The index column IS in the sorting key here, which is what makes the
+-- rebuilt index reachable through the repair's own shape.
+DROP TABLE IF EXISTS t_mut_computed_idx;
+CREATE TABLE t_mut_computed_idx (k UInt32, ts DateTime, v UInt32,
+    INDEX idx (k + 1) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts) SET ts = max(ts) + interval 100 years, k = max(v)
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 1, index_granularity = 4,
+         materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut_computed_idx;
+-- Pre-SET k is number (0..39); after SET k = max(v) it becomes number + 100000.
+INSERT INTO t_mut_computed_idx SELECT number, '2000-01-01 00:00:00', number + 100000 FROM numbers(40);
+ALTER TABLE t_mut_computed_idx MATERIALIZE TTL SETTINGS mutations_sync = 2;
+-- Three rewritten values from three different granules (rows 0, 20 and 39 at index_granularity 4)
+-- must survive a read forced through the index; against a pre-SET index their granules hold
+-- k + 1 in [1, 40] and every one of them is pruned instead. force_data_skipping_indices also
+-- fails outright if the index was left unregistered. Note that a RANGE condition such as
+-- k + 1 >= 100001 is answered from the primary key here (k is the first sort column), so it
+-- returns every row whatever the skip index holds: it cannot stand in for this oracle.
+SELECT 'computed idx present', count() FROM t_mut_computed_idx WHERE k + 1 IN (100001, 100021, 100040)
+    SETTINGS force_data_skipping_indices = 'idx', use_skip_indexes = 1;
+-- Control: the index must not change the result of that read.
+SELECT 'computed idx matches', (SELECT count() FROM t_mut_computed_idx WHERE k + 1 IN (100001, 100021, 100040) SETTINGS use_skip_indexes = 1)
+                             = (SELECT count() FROM t_mut_computed_idx WHERE k + 1 IN (100001, 100021, 100040) SETTINGS use_skip_indexes = 0);
+DROP TABLE t_mut_computed_idx;
+
+-- A MATERIALIZED sort-key column whose source the SET rewrites is NOT recomputed and NOT
+-- re-sorted: a GROUP BY TTL's keys are a prefix of the primary key and the writer takes the
+-- column from the stream by name, so it keeps the value the index is built from. Both positions
+-- of such a column are covered, with rows per group that straddle the TTL boundary so the
+-- aggregation takes its flush-then-pass-through path and emits aggregated and passed-through
+-- rows interleaved. The expiry reads a separate column, which is what allows one group to hold
+-- both kinds of row. The oracle is the part's order and validity only: `d` is EXPECTED to
+-- disagree with toDate(ts) afterwards, since nothing recomputes it.
+DROP TABLE IF EXISTS t_mat_prefix;
+CREATE TABLE t_mat_prefix (ts DateTime, exp DateTime, d Date MATERIALIZED toDate(ts), v UInt32)
+ENGINE = MergeTree ORDER BY d
+TTL exp + toIntervalDay(1) GROUP BY d SET ts = max(ts) + interval 100 years
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_mat_prefix;
+-- One part per day, so the merged order inside a group is the insert order.
+INSERT INTO t_mat_prefix (ts, exp, v) VALUES
+    ('2000-01-01 00:00:00', '2000-01-01 00:00:00', 10),
+    ('2000-01-01 06:00:00', '2000-01-01 00:00:00', 20),
+    ('2000-01-01 12:00:00', '2100-01-01 00:00:00', 30);
+INSERT INTO t_mat_prefix (ts, exp, v) VALUES
+    ('2000-01-02 00:00:00', '2000-01-01 00:00:00', 40),
+    ('2000-01-02 06:00:00', '2100-01-01 00:00:00', 50);
+SYSTEM START MERGES t_mat_prefix;
+OPTIMIZE TABLE t_mat_prefix FINAL;
+-- Two groups, each collapsing its expired rows into one row and passing its live row through.
+SELECT 'mat prefix rows', count() FROM t_mat_prefix;
+SELECT 'mat prefix sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray(d) AS phys FROM (SELECT d FROM t_mat_prefix SETTINGS optimize_read_in_order = 0));
+CHECK TABLE t_mat_prefix SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_mat_prefix;
+
+DROP TABLE IF EXISTS t_mat_suffix;
+CREATE TABLE t_mat_suffix (k UInt32, ts DateTime, exp DateTime, d Date MATERIALIZED toDate(ts), v UInt32)
+ENGINE = MergeTree ORDER BY (k, d)
+TTL exp + toIntervalDay(1) GROUP BY k SET ts = max(ts) + interval 100 years
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_mat_suffix;
+-- One part per group key, so the merged order inside a group is the insert order. k = 1 has an
+-- expired run, a live row, then another expired run: three emitted rows whose `d` must still
+-- ascend.
+INSERT INTO t_mat_suffix (k, ts, exp, v) VALUES
+    (1, '2000-01-01 00:00:00', '2000-01-01 00:00:00', 10),
+    (1, '2000-01-02 00:00:00', '2000-01-01 00:00:00', 20),
+    (1, '2000-01-03 00:00:00', '2100-01-01 00:00:00', 30),
+    (1, '2000-01-04 00:00:00', '2000-01-01 00:00:00', 40);
+INSERT INTO t_mat_suffix (k, ts, exp, v) VALUES
+    (2, '2000-01-01 00:00:00', '2000-01-01 00:00:00', 50),
+    (2, '2000-01-05 00:00:00', '2100-01-01 00:00:00', 60);
+SYSTEM START MERGES t_mat_suffix;
+OPTIMIZE TABLE t_mat_suffix FINAL;
+SELECT 'mat suffix rows', count() FROM t_mat_suffix;
+SELECT 'mat suffix sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, d)) AS phys FROM (SELECT k, d FROM t_mat_suffix SETTINGS optimize_read_in_order = 0));
+CHECK TABLE t_mat_suffix SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_mat_suffix;
+
+-- Several GROUP BY TTLs in one part: no repair runs at all, because an earlier SET can rewrite a
+-- column a later TTL groups by and the re-sort would only hide the resulting wrong groups behind
+-- a correctly ordered part. Observed through the external-sort counter: the re-sort is bounded at
+-- one byte, so it must spill whenever it runs, and zero spilled parts means it did not. The SET
+-- assigns `ts`, which the sorting key reads through toStartOfDay(ts): the pre-materialized
+-- expression column then goes stale but stays ascending, so the part is still written and the
+-- probe is what tells the two shapes apart. The single-clause control is the same fixture with
+-- one TTL, where the repair must run.
+DROP TABLE IF EXISTS t_multi_ttl;
+CREATE TABLE t_multi_ttl (k UInt32, ts DateTime, v UInt32)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts) SET ts = max(ts) + interval 100 years,
+    ts + toIntervalDay(2) GROUP BY k SET v = max(v)
+SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
+DROP TABLE IF EXISTS t_single_ttl;
+CREATE TABLE t_single_ttl (k UInt32, ts DateTime, v UInt32)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts) SET ts = max(ts) + interval 100 years
+SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
+INSERT INTO t_multi_ttl SELECT number % 100, toDateTime('2000-06-09 10:00:00') + (number % 5) * 86400, number FROM numbers(1000);
+INSERT INTO t_multi_ttl SELECT number % 100, toDateTime('2000-06-09 10:00:00') + (number % 5) * 86400, number FROM numbers(1000, 1000);
+INSERT INTO t_single_ttl SELECT number % 100, toDateTime('2000-06-09 10:00:00') + (number % 5) * 86400, number FROM numbers(1000);
+INSERT INTO t_single_ttl SELECT number % 100, toDateTime('2000-06-09 10:00:00') + (number % 5) * 86400, number FROM numbers(1000, 1000);
+-- optimize_throw_if_noop turns a merge that was not assigned into an error, so the probes below
+-- cannot read pre-merge parts of a table OPTIMIZE reported success on but left untouched.
+OPTIMIZE TABLE t_multi_ttl FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_single_ttl FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'multi ttl rows', count() FROM t_multi_ttl;
+SELECT 'single ttl rows', count() FROM t_single_ttl;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'multi ttl not repaired', sum(ProfileEvents['ExternalSortWritePart']) = 0 FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_multi_ttl' AND event_type = 'MergeParts';
+SELECT 'single ttl repaired', sum(ProfileEvents['ExternalSortWritePart']) > 0 FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_single_ttl' AND event_type = 'MergeParts';
+DROP TABLE t_multi_ttl;
+DROP TABLE t_single_ttl;
+
+-- An unrelated expired TTL must not trigger the repair when the GROUP BY ... SET TTL itself does
+-- not fire: the DELETE TTL is expired, while the GROUP BY toStartOfDay(ts) SET ts clause (the only
+-- one touching the sort key) expires 40 years out. The DELETE result must be correct and the
+-- re-sort must not have run, again read from the external-sort counter.
+DROP TABLE IF EXISTS t_not_firing;
+CREATE TABLE t_not_firing (ts DateTime, payload UInt64)
+ENGINE = MergeTree ORDER BY toStartOfDay(ts)
+TTL ts + toIntervalDay(1) DELETE WHERE payload < 5,
+    ts + toIntervalYear(40) GROUP BY toStartOfDay(ts) SET ts = max(ts), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
+INSERT INTO t_not_firing SELECT toDateTime('2020-01-01 00:00:00') + toIntervalDay(number % 3), number FROM numbers(30);
+INSERT INTO t_not_firing SELECT toDateTime('2020-01-01 00:00:00') + toIntervalDay(number % 3), number FROM numbers(30, 30);
+OPTIMIZE TABLE t_not_firing FINAL SETTINGS optimize_throw_if_noop = 1;
+-- Rows with payload < 5 are deleted, nothing is aggregated.
+SELECT 'not firing rows', count(), min(payload), sum(payload) FROM t_not_firing;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'not firing not repaired', sum(ProfileEvents['ExternalSortWritePart']) = 0 FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_not_firing' AND event_type = 'MergeParts';
+DROP TABLE t_not_firing;
 
 -- Control: SET only a non-sort-key column. The re-sort must not be needed and the merge
 -- must work exactly as before.
@@ -179,7 +282,6 @@ INSERT INTO t_nonkey VALUES (3, '2000-06-10 10:00', 200);
 SYSTEM START MERGES t_nonkey;
 OPTIMIZE TABLE t_nonkey FINAL;
 SELECT 'nonkey data', k, ts, v FROM t_nonkey ORDER BY ALL;
-SELECT 'nonkey sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_nonkey SETTINGS optimize_read_in_order = 0))
-                      = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_nonkey ORDER BY k, toStartOfDay(ts)));
+SELECT 'nonkey sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_nonkey SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_nonkey;
-

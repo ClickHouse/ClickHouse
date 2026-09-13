@@ -31,9 +31,12 @@ OPTIMIZE TABLE t_ttl_resort_spill FINAL;
 SELECT 'count', count() FROM t_ttl_resort_spill;
 -- The aggregated groups must survive the spill: 30 groups, keys rewritten to max(v).
 SELECT 'aggregated', count(), min(k), max(k) FROM t_ttl_resort_spill WHERE k < 1000000;
--- Part must be physically sorted: natural read order equals ORDER BY read order.
-SELECT 'sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_ttl_resort_spill SETTINGS optimize_read_in_order = 0))
-               = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_ttl_resort_spill ORDER BY k, toStartOfDay(ts)));
+-- The part must be physically ordered by the sorting key: the keys in physical row order must
+-- already be sorted. A second read with ORDER BY (k, toStartOfDay(ts)) is not a usable comparison
+-- side, because it is answered from the part's own declared order and returns the same rows even
+-- when the part is not sorted; arraySort does the ordering outside the planner.
+SELECT 'sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill SETTINGS optimize_read_in_order = 0));
 
 -- The sort must actually have spilled: the TTL merge writes external-sort temporary files.
 -- Aggregate over all merges: a follow-up merge of the already-aggregated part has nothing
@@ -67,8 +70,8 @@ ALTER TABLE t_ttl_resort_spill_mat
 ALTER TABLE t_ttl_resort_spill_mat MATERIALIZE TTL SETTINGS mutations_sync = 2;
 
 SELECT 'mat count', count() FROM t_ttl_resort_spill_mat;
-SELECT 'mat sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_ttl_resort_spill_mat SETTINGS optimize_read_in_order = 0))
-                   = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_ttl_resort_spill_mat ORDER BY k, toStartOfDay(ts)));
+SELECT 'mat sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill_mat SETTINGS optimize_read_in_order = 0));
 
 SYSTEM FLUSH LOGS part_log;
 SELECT 'mat spilled', max(ProfileEvents['ExternalSortWritePart']) > 0
