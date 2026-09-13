@@ -71,15 +71,13 @@ public:
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    /// Traits whose documented result is wider than the stored value type (e.g. variance is Float64
-    /// even over Float32 series) declare `ResultValueType`; everything else keeps the value type.
-    template <class T, class = void> struct ResultValueTypeFor { using Type = ValueType; };
-    template <class T> struct ResultValueTypeFor<T, std::void_t<typename T::ResultValueType>> { using Type = typename T::ResultValueType; };
-    using ResultValueType = typename ResultValueTypeFor<Traits>::Type;
+    /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
+    /// return timestamps in seconds as `Float64` regardless of the value type.
+    using ResultType = typename Traits::ResultType;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
     using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ResultValueType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
 
     using Bucket = typename Traits::Bucket;
 
@@ -246,7 +244,8 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            combined_exclude_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            combined_exclude_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 combined_exclude_flags[i] = (!!null_map[i]) | !if_flags[i]; /// Exclude if NULL or if condition is false
             exclude_flags_data = combined_exclude_flags.get();
@@ -404,7 +403,7 @@ protected:
         data_to.resize(old_size + grid_size);
         nulls_to.resize(old_size + grid_size);
 
-        ResultValueType * values = data_to.data() + old_size;
+        ResultType * values = data_to.data() + old_size;
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
@@ -498,7 +497,7 @@ private:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultValueType>>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -1272,7 +1271,7 @@ private:
     }
 
     /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
-    void storeGridResult(size_t grid_index, const std::optional<ResultValueType> & result, ResultValueType * values, UInt8 * nulls) const
+    void storeGridResult(size_t grid_index, const std::optional<ResultType> & result, ResultType * values, UInt8 * nulls) const
     {
         chassert(grid_index < grid_size);
         if (result)
@@ -1282,7 +1281,7 @@ private:
         }
         else
         {
-            values[grid_index] = ResultValueType{};
+            values[grid_index] = ResultType{};
             nulls[grid_index] = 1;
         }
     }

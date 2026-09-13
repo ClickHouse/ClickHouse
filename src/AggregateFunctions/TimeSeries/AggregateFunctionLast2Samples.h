@@ -294,7 +294,8 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            auto final_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 final_flags[i] = (!null_map[i]) & !!if_flags[i];
 

@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <typeinfo>
@@ -177,13 +178,43 @@ std::string_view getTimeZone(const char *) { return {}; }
 extern "C" unsigned int if_nametoindex(const char *) { return 0; }
 extern "C" char * if_indextoname(unsigned int, char * name) { return name; }
 
+#include <Poco/DateTimeParser.h>
 #include <Poco/Process.h>
 #include <Poco/Thread.h>
+#include <Poco/Timezone.h>
+#include <Poco/UnicodeConverter.h>
 
 namespace Poco
 {
     ProcessImpl::PIDImpl ProcessImpl::idImpl() { return 1; }
     ThreadImpl * ThreadImpl::currentImpl() { return nullptr; }
+
+    /// `Poco::LocalDateTime` (a conversion target of `Poco::Dynamic::Var`, which reads the JSON
+    /// handed to `ch_format_json`) asks the local timezone; the real implementation reads
+    /// `tzset`/`tzname`, which wasi-libc does not have. A browser sandbox is UTC.
+    int Timezone::utcOffset() { return 0; }
+    int Timezone::dst() { return 0; }
+    bool Timezone::isDst(const Timestamp &) { return false; }
+    int Timezone::tzd() { return 0; }
+    std::string Timezone::name() { return "UTC"; }
+    std::string Timezone::standardName() { return "UTC"; }
+    std::string Timezone::dstName() { return "UTC"; }
+
+    /// Named by `VarHolderImpl` conversions nothing here performs - AST JSON deserialization
+    /// converts a `Var` to strings, numbers and booleans, never to a `DateTime` or a UTF-16
+    /// string - but virtual `convert` overloads survive the link whether or not they are called.
+    /// Both answers are the fail-closed ones: "the string did not parse as a date", which the
+    /// caller turns into a `Poco::RangeException`, and a thrown `Poco::NotImplementedException`,
+    /// both of which the error boundary below reports as an error.
+    bool DateTimeParser::tryParse(const std::string &, const std::string &, DateTime &, int &)
+    {
+        return false;
+    }
+
+    void UnicodeConverter::convert(const std::string &, UTF16String &)
+    {
+        throw NotImplementedException("There is no UTF-16 conversion in WebAssembly");
+    }
 }
 
 namespace ProfileEvents
@@ -298,7 +329,7 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// and `src/Parsers` contains no `catch` at all, which a style check enforces. But a handful of
 /// checks in the parser still report an invalid query by throwing (`Frame start cannot be
 /// UNBOUNDED FOLLOWING`, for one), and stopping the module on an ordinary user mistake is not
-/// acceptable. So `ch_check` and `ch_format` arm a `setjmp` boundary and a throw returns to it,
+/// acceptable. So every exported entry point arms a `setjmp` boundary and a throw returns to it,
 /// with the message, as a parse failure.
 ///
 /// The unwinding this replaces would have run destructors; `longjmp` does not, so a throw leaks
@@ -306,17 +337,61 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// costs 262 KB and an engine implementing the exception-handling proposal - too much to pay for
 /// tidiness on a path that a browser hits only on an invalid query.
 ///
-/// Recovery is for `DB::Exception` and nothing else. The object arriving at `__cxa_throw` is
-/// untyped, so its dynamic type has to be established from the `type_info` argument before it can
-/// be read as anything; a `std::bad_alloc` from `operator new` or a `Poco` exception is an
-/// unrelated object, and reading it through a `Poco::Exception` pointer would be undefined. For
-/// those only the type name can be reported, and the module stops. The comparison is exact rather
-/// than a `dynamic_cast` - there is no RTTI hierarchy walk available here - so a hypothetical class
-/// derived from `DB::Exception` also lands in the second case, which is the safe direction.
+/// Recovery is for anything deriving from `Poco::Exception` and nothing else. The object arriving
+/// at `__cxa_throw` is untyped, so its dynamic type has to be established from the `type_info`
+/// argument before it can be read as anything; a `std::bad_alloc` from `operator new` is an
+/// unrelated object, so only its type name can be reported, and the module stops. `DB::Exception`
+/// is the exception the parser throws; the rest of the Poco hierarchy is thrown by
+/// `Poco::JSON::Parser` and the `readJSON` overrides below `IAST::createFromJSON`, whose input -
+/// the document handed to `ch_format_json` - is arbitrary, so a malformed one must come back as
+/// an error rather than stop the module. (`createFromJSON` does contain `catch` blocks converting
+/// Poco exceptions, but `-fignore-exceptions` emits no landing pads, so they never run here.)
+///
+/// There is no `dynamic_cast`-style hierarchy walk available - libc++abi's machinery is not linked
+/// - but the Itanium RTTI data is present and self-describing: the `type_info` of a class with a
+/// single public non-virtual base is an `abi::__si_class_type_info` holding a pointer to the
+/// base's `type_info`, and every Poco exception is such a class. wasi-sdk exposes neither the
+/// class (its `cxxabi.h` ends at the `__cxa_*` entry points) nor its `type_info` (so a `typeid`
+/// comparison would not link), which is why the walk below matches the metatype by its mangled
+/// name and reads the base pointer through a hand-declared layout.
 ///
 /// The boundary itself is in `wasm_sjlj.c`, which is not part of the LTO unit; see the comment
 /// there for why the two calls cannot live in this file.
 /// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+
+/// The Itanium ABI layout of `abi::__si_class_type_info`: the `std::type_info` part (a vptr and
+/// the mangled name), then the base class's `type_info`.
+struct SiClassTypeInfoLayout
+{
+    void * vptr;
+    const char * type_name;
+    const std::type_info * base_type;
+};
+
+bool derivesFromPocoException(const std::type_info * type)
+{
+    /// Bounded, though no real hierarchy comes close: an RTTI graph is acyclic, but this reads
+    /// ABI internals and must not loop forever if it misreads them.
+    for (size_t depth = 0; type && depth < 16; ++depth)
+    {
+        if (*type == typeid(Poco::Exception))
+            return true;
+
+        /// Single public non-virtual inheritance is all the Poco hierarchy uses; a class whose
+        /// `type_info` is anything else (`__class_type_info` for a root such as `std::bad_alloc`,
+        /// `__vmi_class_type_info` for multiple or virtual bases) is not a Poco exception.
+        if (strcmp(typeid(*type).name(), "N10__cxxabiv120__si_class_type_infoE") != 0)
+            return false;
+
+        type = reinterpret_cast<const SiClassTypeInfoLayout *>(type)->base_type;
+    }
+    return false;
+}
+
+}
 
 extern "C"
 {
@@ -337,10 +412,25 @@ void __cxa_free_exception(void *) noexcept
 {
     const auto * thrown_type = static_cast<const std::type_info *>(type_info);
 
-    if (thrown_type && *thrown_type == typeid(DB::Exception))
+    if (thrown_type && derivesFromPocoException(thrown_type))
     {
-        /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
-        const char * message = static_cast<const DB::Exception *>(thrown)->what();
+        /// A single-inheritance chain keeps the base at offset zero, so the cast is sound.
+        const auto * exception = static_cast<const Poco::Exception *>(thrown);
+
+        /// A `DB::Exception` message is self-contained; a Poco one is often empty or a detail
+        /// ("Unexpected token", the offending string) that needs the exception's name to mean
+        /// anything. Formatted without allocating: an allocation failing here would throw again.
+        const char * message;
+        static char composed[1024];
+        if (*thrown_type == typeid(DB::Exception))
+        {
+            message = exception->what();
+        }
+        else
+        {
+            std::snprintf(composed, sizeof(composed), "%s: %s", exception->name(), exception->message().c_str());
+            message = composed;
+        }
 
         if (chParserRecoveryArmed())
             chParserLongjmp(message);

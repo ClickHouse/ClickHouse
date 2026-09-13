@@ -91,6 +91,19 @@ private:
     std::optional<CollapsedState> collapsed_state;
 };
 
+/// Parse stack addresses from a jemalloc profile line starting with '@'.
+/// Returns empty vector if the line doesn't start with '@'.
+/// The first address is kept as-is; subsequent ones are decremented by 1
+/// (they are return addresses, so we subtract 1 to point inside the call instruction).
+/// `fully_parsed` (when given) reports whether the whole line was consumed;
+/// on a malformed token the parsed prefix is still returned - strict callers
+/// must check the flag, best-effort callers may ignore it.
+std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed = nullptr);
+
+/// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
+/// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.
+UInt64 parseJemallocSamplingInterval(std::string_view header);
+
 /// Convenience wrapper: runs JemallocProfileSource and writes every output line to output_filename.
 void symbolizeJemallocHeapProfile(
     const std::string & input_filename,

@@ -311,6 +311,8 @@ llvm::Value * nativeCastWithDecimalScale(
             }
             if (from_w.isFloat32() || from_w.isFloat64())
             {
+                /// A float source must not reach here: `fptosi` has no defined result outside the destination range.
+                chassert(false, "Float to Decimal must not be JIT-compiled");
                 /// Float → `Decimal`: multiply by `10^to_scale` in floating point first,
                 /// then truncate to the target integer storage type.
                 if (to_scale == 0)

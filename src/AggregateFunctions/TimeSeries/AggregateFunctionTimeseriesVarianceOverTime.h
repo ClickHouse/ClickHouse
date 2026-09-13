@@ -24,7 +24,7 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
     using ValueType = ValueType_;
     /// Population variance/stddev are documented as Float64 regardless of the stored value type,
     /// matching the ordinary varPop/stddevPop family.
-    using ResultValueType = Float64;
+    using ResultType = Float64;
 
     static String getName()
     {
