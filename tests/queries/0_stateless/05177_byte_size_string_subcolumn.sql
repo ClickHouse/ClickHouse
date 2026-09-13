@@ -32,7 +32,9 @@ DROP TABLE IF EXISTS t_byte_size_string_subcolumn_shadowed;
 CREATE TABLE t_byte_size_string_subcolumn_shadowed
 (
     s String,
-    `S.SIZE` UInt64
+    a Array(UInt8),
+    `S.SIZE` UInt64,
+    `A.SIZE0` UInt64
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -68,6 +70,14 @@ SELECT count() FROM
     FROM t_byte_size_string_subcolumn_shadowed
 )
 WHERE explain LIKE '%s.size%';
+
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT length(a)
+    FROM t_byte_size_string_subcolumn_shadowed
+)
+WHERE explain LIKE '%a.size0%';
 
 DROP TABLE t_byte_size_string_subcolumn_shadowed;
 
