@@ -1499,7 +1499,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     ContextPtr context)
 {
     if (indices.empty())
-        return key.expression;
+        return std::make_shared<ExpressionActions>(key.expression->getActionsDAG().clone(), ExpressionActionsSettings(context));
 
     /// Key and index expressions are already analyzed in the metadata snapshot. Combine their
     /// prepared actions instead of analyzing the same syntax again for every inserted part.
@@ -1525,6 +1525,8 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     for (const auto * input : dag.getInputs())
         if (!dag.tryFindInOutputs(input->result_name))
             dag.addOrReplaceInOutputs(*input);
+
+    dag.deduplicateSubtrees();
 
     return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
