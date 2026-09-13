@@ -453,7 +453,8 @@ def test_flush_ordered_with_regex_partitioning(started_cluster):
     assert count > 0, "Expected rows in destination table after flush, got 0"
 
 
-def test_flush_waits_on_live_retriable_marker(started_cluster):
+@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+def test_flush_waits_on_live_retriable_marker(started_cluster, mode):
     """
     Regression for: getPathState() was widened to return `PathState::Failed` for a
     file that only has a live `/failed/<hash>.retriable` marker (i.e. mid-retry,
@@ -468,7 +469,7 @@ def test_flush_waits_on_live_retriable_marker(started_cluster):
     still running a few seconds later -- i.e. it did not throw immediately.
     """
     node = started_cluster.instances["instance"]
-    table_name = f"flush_retriable_{generate_random_string()}"
+    table_name = f"flush_retriable_{mode}_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     keeper_path = f"/clickhouse/test_{table_name}"
@@ -482,7 +483,7 @@ def test_flush_waits_on_live_retriable_marker(started_cluster):
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         additional_settings={
             "keeper_path": keeper_path,

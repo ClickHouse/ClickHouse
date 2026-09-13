@@ -14,6 +14,7 @@ from helpers.network import PartitionManager
 from helpers.s3_queue_common import (
     generate_random_files,
     put_s3_file_content,
+    put_azure_file_content,
     create_table,
     create_mv,
 )
@@ -39,6 +40,7 @@ def started_cluster():
             "instance",
             user_configs=["configs/users.xml"],
             with_minio=True,
+            with_azurite=True,
             with_zookeeper=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -3205,3 +3207,76 @@ def test_drop_failed_files_waits_for_a_non_drop_cleanup_lock_holder(started_clus
     assert failed_znodes() == 0, "failed files were not cleaned up after the drop completed"
 
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_system_drop_failed_files_azure_queue(started_cluster):
+    """
+    `AzureQueue` and `S3Queue` are the very same `StorageObjectStorageQueue`; only the
+    object storage backend differs (createQueueStorage<StorageAzureConfiguration> vs
+    <StorageS3Configuration>, both going through the shared ObjectStorageQueueMetadata).
+    The failed_files_ttl_sec / SYSTEM DROP S3QUEUE FAILED FILES paths added in this PR
+    are therefore engine-agnostic in principle, but had no regression coverage proving
+    that through the AzureQueue engine specifically. This test drives the core
+    single-file DROP scenario (mirrored from test_system_drop_s3queue_failed_files_single)
+    through AzureQueue instead of S3Queue.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_failed_azure_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        engine_name="AzureQueue",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    # Create one invalid file
+    invalid_csv = b"not,valid,numbers\n"
+    put_azure_file_content(
+        started_cluster, f"{files_path}/failed_1.csv", invalid_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_failed_count():
+        return int(node.query(
+            f"SELECT count() FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+        ).strip())
+
+    def get_failed_znodes_count():
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    # Wait for the file to fail
+    for _ in range(60):
+        if get_failed_count() == 1:
+            break
+        time.sleep(1)
+
+    assert get_failed_count() == 1, "Should have 1 failed file"
+    assert get_failed_znodes_count() > 0, "Should have failed znodes in Keeper"
+
+    # Run SYSTEM DROP command
+    node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+
+    # Verify all failed files are removed
+    assert get_failed_count() == 0, "Failed files should be removed from cache"
+    assert get_failed_znodes_count() == 0, "Failed znodes should be removed from Keeper"
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
