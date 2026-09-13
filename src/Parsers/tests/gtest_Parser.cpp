@@ -289,6 +289,25 @@ TEST(ParserQuery, ExpressionClauseArgumentShapedLikeAnotherKeywordIsStillTheClau
     }
 }
 
+/// A bare column literally named after an expression-bearing keyword (`where`, `group by`, ...)
+/// must still parse as a column, whether it dangles at the end of the query or is followed by a
+/// genuine, different fixed-shape clause (`FROM`/`FORMAT`/`SETTINGS`) - the disambiguation must
+/// not require the matched keyword itself to be one of those three.
+TEST(ParserQuery, BareColumnNamedAfterExpressionClauseKeyword)
+{
+    const std::vector<String> queries = {
+        "WITH 1 AS where SELECT 0, where",
+        "WITH 1 AS where SELECT 0 AS a, where FROM numbers(1)",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry

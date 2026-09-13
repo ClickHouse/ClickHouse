@@ -1040,12 +1040,35 @@ static constexpr Keyword SELECT_LIST_END_KEYWORDS[] = {
     Keyword::INTERSECT,
 };
 
+/// Given `pos` already advanced past `kw` (one of `FROM`/`FORMAT`/`SETTINGS`), returns true if
+/// what follows plausibly starts that keyword's own fixed-shape body, rather than `kw` itself
+/// dangling with nothing meaningful after it (e.g. at the end of the query) or being used as a
+/// function call (`format(...)`).
+static bool looksLikeFixedShapeClauseBody(Keyword kw, IParser::Pos pos)
+{
+    if (!pos.isValid())
+        return false;
+
+    if (kw == Keyword::FROM)
+        /// A table reference: a (possibly quoted) identifier, or a subquery.
+        return pos->type == TokenType::BareWord || pos->type == TokenType::QuotedIdentifier
+            || pos->type == TokenType::OpeningRoundBracket;
+
+    /// `FORMAT <name>` and `SETTINGS <name> = ...` both start with a bare identifier; excluding
+    /// anything else also excludes `format(...)`, a function call rather than the FORMAT clause.
+    return pos->type == TokenType::BareWord;
+}
+
 /// Given test_pos already advanced past `matched_keyword`, returns true if that keyword was
 /// actually a column identifier rather than the start of its clause.
 static bool selectListEndKeywordIsColumnName(Keyword matched_keyword, IParser::Pos test_pos, Expected test_expected)
 {
+    /// None of `SELECT_LIST_END_KEYWORDS` can have an empty body - each needs at least an
+    /// expression, a table reference, or similar. So with nothing (or just `;`) after the
+    /// matched keyword, it cannot be a genuine clause; it is a bare column dangling at the end
+    /// of the query (e.g. `SELECT 0, where`), same as the already-supported `SELECT 1,`.
     if (!test_pos.isValid() || test_pos->type == TokenType::Semicolon)
-        return false;
+        return true;
 
     /// Comma right after the keyword → it is a column name (e.g. `SELECT where, WHERE 1`)
     if (test_pos->type == TokenType::Comma)
@@ -1058,27 +1081,31 @@ static bool selectListEndKeywordIsColumnName(Keyword matched_keyword, IParser::P
     if (matched_keyword == Keyword::FORMAT && test_pos->type == TokenType::OpeningRoundBracket)
         return true;
 
-    /// `FROM`, `FORMAT` and `SETTINGS` each take a fixed, non-expression body (a table
-    /// reference, a format name, a list of `name = value` pairs) that can never itself start
-    /// with one of `SELECT_LIST_END_KEYWORDS`, and none of the three clauses can be immediately
-    /// empty. So a clause-starting keyword showing up right here - the same one again (e.g.
-    /// `SELECT from FROM t`) or a different one (e.g. `SELECT name, settings FROM t`, where
-    /// `settings` is a column of `system.projections`) - means the first match was actually a
-    /// column. This check is deliberately NOT extended to expression-bearing clauses (`WHERE`,
-    /// `PREWHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`, `WINDOW`, `QUALIFY`):
-    /// their first token is an arbitrary expression, which can legitimately be a bare identifier
-    /// spelled like one of these keywords (e.g. `WITH 1 AS from SELECT 1 AS a, GROUP BY from`
-    /// groups by the column `from` - misdetecting `GROUP BY` itself as a column there would
-    /// break the query).
-    if (matched_keyword == Keyword::FROM || matched_keyword == Keyword::FORMAT || matched_keyword == Keyword::SETTINGS)
+    /// Unlike the other keywords here, `FROM`, `FORMAT` and `SETTINGS` each take a fixed,
+    /// non-expression body: a table reference, a bare format name, or a list of `name = value`
+    /// pairs. None of those bodies can itself start with a `SELECT_LIST_END_KEYWORDS` token, and
+    /// none of the three clauses can be immediately empty, so if one of them shows up right here
+    /// - the same one again (e.g. `SELECT from FROM t`) or a different one (e.g. `SELECT name,
+    /// settings FROM t`, where `settings` is a column of `system.projections`) - AND it is
+    /// followed by something that plausibly starts its own body, `matched_keyword` was actually
+    /// a column, regardless of what `matched_keyword` itself is: this also covers
+    /// `WITH 1 AS where SELECT 0 AS a, where FROM numbers(1)`, where `where` is a column and
+    /// `FROM` is a genuine, different clause. We deliberately do NOT conclude the reverse for
+    /// expression-bearing keywords (`WHERE`, `PREWHERE`, `GROUP BY`, `HAVING`, `ORDER BY`,
+    /// `LIMIT`, `OFFSET`, `WINDOW`, `QUALIFY`) found here, because their own first token is an
+    /// arbitrary expression that can legitimately be a bare identifier spelled like one of these
+    /// keywords with nothing plausible after it (e.g. `WITH 1 AS from SELECT 1 AS a, GROUP BY
+    /// from` groups by the column `from`, dangling at the end of the query - `looksLikeFixedShapeClauseBody`
+    /// correctly rejects that as not "FROM"'s own body).
+    for (Keyword kw : SELECT_LIST_END_KEYWORDS)
     {
-        for (Keyword kw : SELECT_LIST_END_KEYWORDS)
-        {
-            auto kw_pos = test_pos;
-            Expected kw_expected;
-            if (ParserKeyword(kw).ignore(kw_pos, kw_expected))
-                return true;
-        }
+        if (kw != Keyword::FROM && kw != Keyword::FORMAT && kw != Keyword::SETTINGS)
+            continue;
+
+        auto kw_pos = test_pos;
+        Expected kw_expected;
+        if (ParserKeyword(kw).ignore(kw_pos, kw_expected) && looksLikeFixedShapeClauseBody(kw, kw_pos))
+            return true;
     }
 
     /// Explicit alias not followed by a table-ref-like token
