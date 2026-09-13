@@ -1,0 +1,14 @@
+1
+1
+2
+json-key is emitted and styled
+json-literal is emitted and styled
+json-number is emitted and styled
+json-string is emitted and styled
+filter: invert(1);
+--json-default: 2
+--json-key: 2
+--json-number: 2
+--json-string: 2
+1
+2

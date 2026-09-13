@@ -131,6 +131,16 @@
             --syntax-bracket-4:  #0D3C8C;
             --syntax-bracket-5:  #4A2A85;
             --syntax-bracket-6:  #8A0F42;
+
+            /* Highlighting of the pretty-printed value of a `JSON` column in a selected result cell
+               (see `prettyPrintJSON`). The expanded overlay of a selected cell is color-inverted
+               (`.td-selected .cell-content`), so in the light theme its background is DARK; the
+               `.json-pretty` block inverts itself back, to show these colors as written. Hence the
+               dark-theme terminal palette here: bright colors for a dark background. */
+            --json-default:      #FFF;
+            --json-key:          #00CDCD;                    /* CYAN */
+            --json-string:       #00CD00;                    /* GREEN */
+            --json-number:       #CDCD00;                    /* BROWN */
         }
 
         [data-theme="dark"] {
@@ -208,6 +218,13 @@
             --syntax-bracket-4:  #BFF3FF;
             --syntax-bracket-5:  #D7C4FC;
             --syntax-bracket-6:  #FFB0DE;
+
+            /* The inverted overlay of a selected cell is LIGHT in the dark theme (see the light
+               theme), so the pretty-printed JSON uses the light-theme palette. */
+            --json-default:      #000;
+            --json-key:          #00838F;                     /* CYAN */
+            --json-string:       #006400;                     /* GREEN */
+            --json-number:       #875F00;                     /* BROWN */
         }
 
         ::selection {
@@ -3781,6 +3798,23 @@ class QueryResultElement extends HTMLElement
                     background-color: var(--element-background-color);
                 }
 
+                /* The pretty-printed value of a JSON column, built by prettyPrintJSON when its cell is
+                   selected. The overlay above inverts everything in it, which would flip the hues of
+                   the highlighting too, so this block inverts itself back and takes its colors from
+                   the --json-* variables, which the two themes define for an inverted background.
+                   Text nodes carry the layout: the overlay's white-space: pre-wrap keeps the line
+                   breaks and the two-space indentation. */
+                .json-pretty
+                {
+                    filter: invert(1);
+                    color: var(--json-default);
+                }
+
+                .json-pretty .json-key { color: var(--json-key); }
+                .json-pretty .json-string { color: var(--json-string); }
+                .json-pretty .json-number { color: var(--json-number); }
+                .json-pretty .json-literal { font-weight: bold; }
+
                 td.empty-result
                 {
                     text-align: center;
@@ -4151,6 +4185,10 @@ class QueryResultElement extends HTMLElement
         /// so the value alone cannot say which it is - but that glyph in a non-nullable column always
         /// is data. See `_cellIsNull`.
         this._column_is_nullable = {};
+        /// Whether a column holds a `JSON` value. Its cells render the compact one-line form like any
+        /// other object value, but a selected one is pretty-printed and highlighted instead (see
+        /// `_expandJSON`), since that is the form a nested document can actually be read in.
+        this._column_is_json = {};
         /// The column names the current header carries more than once. Such columns cannot be told
         /// apart by the name-keyed `order` / `filter` settings, so they get no sort or filter
         /// controls (see `duplicateColumnNames`).
@@ -4366,10 +4404,13 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
             this._removeCellFilterControls(this._current_selected_cell);
+            this._collapseJSON(this._current_selected_cell);
         }
         this._current_selected_cell = td;
         td.classList.add('td-selected');
         td.parentElement.classList.add('tr-selected');
+        /// Before the chips are positioned below: the pretty-printed form is what sets the height.
+        this._expandJSON(td);
         /// The filter funnel belongs to the selected cell only, so it is built here and taken away
         /// again above (and in `clearSelection`) when the selection moves on.
         this._appendCellFilterButton(td);
@@ -4389,10 +4430,33 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
             this._current_selected_cell.removeAttribute('tabindex');
             this._removeCellFilterControls(this._current_selected_cell);
+            this._collapseJSON(this._current_selected_cell);
             this._current_selected_cell.style.removeProperty('--cell-controls-top');
         }
         this._current_selected_cell = null;
         this._scheduleCategoricalEmphasis();
+    }
+
+    /// Show the value of a selected `JSON` cell pretty-printed and highlighted (see `prettyPrintJSON`)
+    /// in place of the compact single line the row was rendered with. Built here, for the one cell
+    /// being selected, rather than for every cell up front: the pretty form is many times the DOM of
+    /// the compact one, and a result can hold thousands of cells of which at most one is expanded.
+    /// The compact text stays the cell's value for copying and filtering (`_filterText`).
+    _expandJSON(td)
+    {
+        if (td._jsonText === undefined) { return; }
+        const pretty = document.createElement('div');
+        pretty.className = 'json-pretty';
+        pretty.appendChild(prettyPrintJSON(JSON.parse(td._jsonText)));
+        td.querySelector('.cell-content').replaceChildren(pretty);
+    }
+
+    /// Undo `_expandJSON` when the selection leaves the cell: back to the compact one-line form the
+    /// rest of the column shows.
+    _collapseJSON(td)
+    {
+        if (td._jsonText === undefined) { return; }
+        td.querySelector('.cell-content').replaceChildren(document.createTextNode(td._filterText));
     }
 
     /// Put the selected cell's chips (copy, filter, and the filter menu under them) below whatever the
@@ -4461,6 +4525,12 @@ class QueryResultElement extends HTMLElement
         /// have to be read back through the rendering, which the digit grouping of a long number and
         /// the `white-space` handling of a multi-line value both distort.
         td._filterText = text;
+
+        /// A cell of a `JSON` column also keeps its compact text for `_expandJSON` to pretty-print when
+        /// the cell is selected. On the page's default format (`JSONCompactStrings…`) the value arrives
+        /// as the JSON text itself; on the `JSON` format, as the parsed object, stringified above - the
+        /// text is the form both share. A NULL is not JSON and is left alone.
+        if (this._column_is_json[name] && !this._cellIsNull(td, name, text)) { td._jsonText = text; }
 
         let node = document.createTextNode(text);
         if (is_link)
@@ -4576,6 +4646,7 @@ class QueryResultElement extends HTMLElement
             this._column_is_string[elem.name] = !!unwrapped_type.match(/^(String|FixedString)/);
             this._column_is_enum[elem.name] = !!unwrapped_type.match(/^Enum/);
             this._column_is_bool[elem.name] = !!unwrapped_type.match(/^Bool/);
+            this._column_is_json[elem.name] = !!unwrapped_type.match(/^JSON\b/);
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
@@ -16491,6 +16562,71 @@ const queryBackdrop = document.getElementById('query-backdrop');
 
 function escapeHTML(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/// Pretty-print a JSON value, as parsed from the response, into a DocumentFragment: two-space
+/// indentation, one member or element per line, an empty object or array kept on its own line as
+/// `{}` / `[]`. Keys, strings, numbers and the literals `true`, `false`, `null` are wrapped in spans
+/// (`.json-key`, `.json-string`, `.json-number`, `.json-literal`) for the highlighting in the result
+/// element's stylesheet; the punctuation and the indentation stay plain text between them. Everything
+/// is added as text nodes, never as HTML, so a value cannot inject markup.
+function prettyPrintJSON(value)
+{
+    const fragment = document.createDocumentFragment();
+    /// Plain text is accumulated and flushed as one node before each highlighted span, so the
+    /// punctuation and indentation between two spans make a single text node rather than several.
+    let pending = '';
+    const flush = () =>
+    {
+        if (pending) { fragment.appendChild(document.createTextNode(pending)); pending = ''; }
+    };
+    const text = (str) => { pending += str; };
+    const token = (cls, str) =>
+    {
+        flush();
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = str;
+        fragment.appendChild(span);
+    };
+
+    const render = (v, indent) =>
+    {
+        if (v === null || typeof v === 'boolean') { token('json-literal', String(v)); }
+        else if (typeof v === 'number') { token('json-number', String(v)); }
+        else if (typeof v === 'string') { token('json-string', JSON.stringify(v)); }
+        else if (Array.isArray(v))
+        {
+            if (v.length === 0) { text('[]'); return; }
+            const inner = indent + '  ';
+            text('[\n' + inner);
+            v.forEach((item, i) =>
+            {
+                if (i > 0) { text(',\n' + inner); }
+                render(item, inner);
+            });
+            text('\n' + indent + ']');
+        }
+        else
+        {
+            const keys = Object.keys(v);
+            if (keys.length === 0) { text('{}'); return; }
+            const inner = indent + '  ';
+            text('{\n' + inner);
+            keys.forEach((key, i) =>
+            {
+                if (i > 0) { text(',\n' + inner); }
+                token('json-key', JSON.stringify(key));
+                text(': ');
+                render(v[key], inner);
+            });
+            text('\n' + indent + '}');
+        }
+    };
+
+    render(value, '');
+    flush();
+    return fragment;
 }
 
 /// Numeric TokenType values, matching the order of the C++ enum in src/Parsers/Lexer.h.
