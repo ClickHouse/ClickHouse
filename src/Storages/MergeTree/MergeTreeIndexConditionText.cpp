@@ -242,6 +242,21 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     }
 }
 
+/// Predicates whose needle is a substring or a LIKE pattern of the value, not the whole value.
+/// `ilike` is absent on purpose: its own branch already refuses an unsuitable preprocessor.
+static bool needleIsSubstringOfValue(const String & function_name)
+{
+    return function_name == "like"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "match"
+        || function_name == "multiSearchAny"
+        || function_name == "multiSearchAnyUTF8"
+        || function_name == "multiMatchAny"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike";
+}
+
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
@@ -1085,6 +1100,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
+
+    /// Index analysis takes the required tokens from preprocessor(needle). That is a valid superset
+    /// filter only if the preprocessor maps each character independently; one that deletes, reorders
+    /// or folds characters across positions would prune a granule holding a row the predicate matches.
+    if (needleIsSubstringOfValue(function_name) && has_preprocessor && !preprocessor->mapsCharactersIndependently())
+        return false;
+
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();

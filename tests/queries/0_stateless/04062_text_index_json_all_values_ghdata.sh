@@ -71,7 +71,9 @@ run_query "SELECT count() FROM ghdata WHERE data.type = 'WatchEvent'"
 echo "-- Equality on nested path"
 run_query "SELECT count() FROM ghdata WHERE data.payload.action = 'opened'"
 
-echo "-- LIKE pattern matching (index cannot help, all granules scanned)"
+# lowerUTF8 does not map characters independently, so the index is refused for LIKE and prints no
+# Condition/Parts/Granules line. The row-level predicate answers the query.
+echo "-- LIKE pattern matching (index not used, all granules scanned)"
 run_query "SELECT count() FROM ghdata WHERE data.repo.name LIKE '%python%'"
 
 echo "-- hasToken on string field"
