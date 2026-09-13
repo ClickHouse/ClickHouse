@@ -80,12 +80,11 @@ private:
 
     std::exception_ptr kill_reason;
     std::exception_ptr fail_reason;
-    bool increase_enqueued = false;
-    bool decrease_enqueued = false;
     bool removed = false;
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
-    ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued (for accurate rollback)
+    ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued
+    ResourceCost enqueued_decrease = 0; // size of the in-flight decrease request
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics

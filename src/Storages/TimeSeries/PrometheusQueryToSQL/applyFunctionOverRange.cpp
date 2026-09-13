@@ -105,6 +105,30 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"max_over_time",
+             {
+                 "timeSeriesMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_max_over_time",
+             {
+                 "timeSeriesTimestampOfMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_min_over_time",
+             {
+                 "timeSeriesTimestampOfMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"first_over_time",
              {
                  "timeSeriesFirstToGrid",
@@ -129,18 +153,6 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
-            {"ts_of_min_over_time",
-             {
-                 "timeSeriesTsOfMinToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"ts_of_max_over_time",
-             {
-                 "timeSeriesTsOfMaxToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
             {"deriv",
              {
                  "timeSeriesDerivToGrid",
@@ -159,13 +171,26 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"sum_over_time",
+             {
+                 "timeSeriesSumToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"avg_over_time",
+             {
+                 "timeSeriesAvgToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"count_over_time",
+             {
+                 "timeSeriesCountToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// predict_linear
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
             /// quantile_over_time
             /// stddev_over_time"
             /// stdvar_over_time
