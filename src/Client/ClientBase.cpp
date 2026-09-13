@@ -5038,7 +5038,8 @@ std::optional<String> ClientBase::serverEffectiveSettingValue(const String & nam
     {
         /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
         /// execution-time limit of the session, a cancelled query - so the failure is not cached as
-        /// an answer. The callers treat the missing answer as the unsafe one.
+        /// an answer. Swallowing it is Ok: the callers treat the missing answer as the unsafe one,
+        /// so a question that could not be asked relaxes nothing.
         return {};
     }
 }
