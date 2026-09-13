@@ -43,6 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_logsql_dialect", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."},
+            {"logsql_database", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."},
+            {"logsql_table", "", "", "New setting to specify the logs table used by the 'logsql' dialect."},
+            {"logsql_time_column", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."},
+            {"logsql_message_column", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
