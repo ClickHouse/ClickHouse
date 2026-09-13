@@ -29,6 +29,13 @@ SELECT count() FROM tab WHERE hasToken(val, 'plain');
 -- The 64-character hash token maps to '' and is never indexed, so it is not found.
 SELECT count() FROM tab WHERE hasToken(val, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
 
+-- The needle above is normalized through the same postprocessor at query time, so inspect the index
+-- dictionary directly: the hash must be absent from it while a short token from the same row is present.
+SELECT token
+FROM mergeTreeTextIndex(currentDatabase(), tab, idx)
+WHERE token IN ('error', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+ORDER BY token;
+
 DROP TABLE tab;
 
 SELECT '2. Preprocessor strips UUIDs that splitByNonAlpha would split into short tokens.';
