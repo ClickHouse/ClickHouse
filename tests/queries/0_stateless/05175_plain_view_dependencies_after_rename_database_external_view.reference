@@ -1,0 +1,4 @@
+before rename: ['other_db.v']
+the view still names the old database: 1
+after rename: []
+after alter: []

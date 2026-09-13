@@ -177,7 +177,10 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    /// Unqualified names in the stored definition are resolved against the database that owns the table
+    /// (as on the metadata loading path), not against the current database of the session that issued
+    /// the `ALTER`, so that a metadata-only `ALTER` does not move the dependencies of the table.
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, table_id.database_name);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
@@ -186,7 +189,14 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         create_queries[table_id.table_name] = create_query;
     }
 
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    /// Temporary views live in the temporary database (`DatabaseMemory`). Their sources must never be
+    /// registered in the global `plain_view_dependencies` graph, otherwise a metadata-only `ALTER`
+    /// (e.g. `MODIFY COMMENT`) on a temporary view would make permanent source tables report the
+    /// session-local `_temporary_and_external_tables._tmp_<uuid>` object in `system.tables.dependencies_*`.
+    /// This mirrors the guard on the `CREATE` path in `InterpreterCreateQuery`.
+    auto plain_view_dependencies = getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE ? TableNamesSet{} : ref_dependencies.plain_view_dependencies;
+
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, plain_view_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
