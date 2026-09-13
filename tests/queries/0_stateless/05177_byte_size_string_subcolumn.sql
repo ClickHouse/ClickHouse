@@ -104,6 +104,36 @@ SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_byte_size_sparse;
 
+DROP TABLE IF EXISTS t_byte_size_sparse_fixed;
+
+CREATE TABLE t_byte_size_sparse_fixed
+(
+    id UInt64,
+    v UInt64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+
+INSERT INTO t_byte_size_sparse_fixed
+SELECT
+    number,
+    if(number % 5 = 0, number + 1, 0)
+FROM numbers(200);
+
+SELECT column, serialization_kind
+FROM system.parts_columns
+WHERE database = currentDatabase()
+  AND table = 't_byte_size_sparse_fixed'
+  AND column = 'v'
+  AND active
+ORDER BY column;
+
+SELECT sum(byteSize(v)) AS actual, sum(8 + 8 * (v != 0)) AS expected
+FROM t_byte_size_sparse_fixed;
+
+DROP TABLE t_byte_size_sparse_fixed;
+
 DROP TABLE IF EXISTS t_byte_size_sparse_single_stream;
 
 CREATE TABLE t_byte_size_sparse_single_stream
