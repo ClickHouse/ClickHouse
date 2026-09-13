@@ -24,8 +24,9 @@ SELECT DISTINCT tuple(if(number % 3, NULL, 'x')) FROM numbers(30) ORDER BY 1;
 (NULL)
 -- A hash-only aggregate reaches the byte through `updateHashWithValue`, and keeps nothing but the
 -- hash. The argument has to be a tuple: a Nullable argument's NULLs are dropped by the aggregate's
--- Null combinator and never reach the hash. The second column is the canonical control.
-SELECT uniqExact(tuple(if(number % 3, NULL, 'x'))), uniqExact(tuple(if(number % 2, NULL, 'x'))) FROM numbers(30);
+-- Null combinator and never reach the hash. Removing that tuple as an injective wrapper drops them
+-- again (#114784, covered by 04927), so the elimination stays off here. Second column: the control.
+SELECT uniqExact(tuple(if(number % 3, NULL, 'x'))), uniqExact(tuple(if(number % 2, NULL, 'x'))) FROM numbers(30) SETTINGS optimize_injective_functions_inside_uniq = 0;
 2	2
 -- Negating a null map must negate its nullness, not its bits: `1 ^ 2` is truthy, which turned rows
 -- holding 'x' into NULLs. Only the group whose condition byte is 2 was affected.
@@ -36,8 +37,9 @@ SELECT number % 3 AS c, countIf(v IS NULL) FROM (SELECT number, if(number % 3, t
 SELECT count(), countIf(e IS NULL), arraySort(groupUniqArray(e)) FROM (SELECT DISTINCT if(number % 3, NULL, CAST('x' AS LowCardinality(Nullable(String)))) AS e FROM numbers(30));
 2	1	['x']
 -- A NULL condition selects no branch. Only a three-argument `multiIf` is rewritten to `if`
--- (`MultiIfToIfPass`), so the five arguments here keep it on `multiIf`'s own columnar path.
-SELECT r, count() FROM (SELECT multiIf(if(number % 3, NULL, toUInt8(1)), toUInt32(11), number % 7 = 0, toUInt32(33), toUInt32(22)) AS r FROM numbers(30)) GROUP BY r ORDER BY r;
+-- (`MultiIfToIfPass`), so the five arguments here keep it on `multiIf`. Its columnar path is the one
+-- that reads the condition's null map; the row-wise fallback is truthiness-based already.
+SELECT r, count() FROM (SELECT multiIf(if(number % 3, NULL, toUInt8(1)), toUInt32(11), number % 7 = 0, toUInt32(33), toUInt32(22)) AS r FROM numbers(30)) GROUP BY r ORDER BY r SETTINGS allow_execute_multiif_columnar = 1;
 11	10
 22	17
 33	3
