@@ -700,6 +700,20 @@ void MergeTreeData::MutationsSnapshotBase::addPatches(DataPartsVector patches_)
     params.need_patch_parts = true;
 }
 
+bool MergeTreeData::MutationsSnapshotBase::hasLightweightDeletedMask() const
+{
+    if (params.has_lightweight_delete_parts)
+        return true;
+
+    return std::ranges::any_of(patches_by_partition, [](const auto & partition)
+    {
+        return std::ranges::any_of(partition.second, [](const auto & patch)
+        {
+            return patch->hasLightweightDelete();
+        });
+    });
+}
+
 NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
 {
     if (!params.need_patch_parts)
@@ -3018,7 +3032,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (unexpected)
                 {
                     LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
-                              " will not count it as suspicious broken part", res.part->name);
+                              "will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
                 }
                 else
@@ -4544,7 +4558,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
+                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts "
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
@@ -13481,7 +13495,7 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     if (!mutations_snapshot)
         return supports_trivial_count();
 
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts() && !mutations_snapshot->hasLightweightDeletedMask();
+    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)

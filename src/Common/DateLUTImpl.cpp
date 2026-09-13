@@ -142,6 +142,8 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_at_start_of_lut = tz.lookup(tz.lookup(lut_start).pre).offset;
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
+    offset_is_whole_number_of_hours_in_lut_range = true;
+    offset_is_whole_number_of_minutes_in_lut_range = true;
     offset_is_fixed = true;
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
@@ -239,6 +241,16 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                 || values.amount_of_offset_change() % 3600 != 0)
                 offset_minute_of_hour_is_constant_during_epoch = false;
         }
+
+        /// The same over the whole LUT, including the days before the epoch: the in-tree tzdata keeps
+        /// sub-minute offsets well into the 20th century (`Europe/Amsterdam` +00:19:32 until 1937,
+        /// `Asia/Kolkata` +05:21:10 until 1906), so a property that holds during the epoch says nothing
+        /// about a pre-1970 `DateTime64`.
+        if (offset_is_whole_number_of_hours_in_lut_range && start_of_day % 3600)
+            offset_is_whole_number_of_hours_in_lut_range = false;
+
+        if (offset_is_whole_number_of_minutes_in_lut_range && start_of_day % 60)
+            offset_is_whole_number_of_minutes_in_lut_range = false;
 
         /// An offset change at midnight makes consecutive days start more or less than 86400 seconds apart;
         /// a change at any other time is recorded in amount_of_offset_change_value of the affected day.

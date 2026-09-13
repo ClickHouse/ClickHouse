@@ -712,7 +712,10 @@ struct ToLastDayOfMonthImpl
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfMonth(DayNum(d));
+        /// Computed in the extended range and clamped: the last day of the month can be past the
+        /// `Date` maximum (2149-06-06), and a `DayNum` result wraps around it instead of saturating.
+        const int res = time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
@@ -904,7 +907,10 @@ struct ToLastDayOfWeekImpl
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
+        /// Computed in the extended range and clamped: the last day of the week can be past the
+        /// `Date` maximum (2149-06-06), and a `DayNum` result wraps around it instead of saturating.
+        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
