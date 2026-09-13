@@ -1,7 +1,9 @@
 #include <Core/BaseSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 
 #include <fmt/ranges.h>
 
@@ -88,6 +90,13 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
 }
 
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.
+String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
+{
+    String str = applyVisitor(FieldVisitorToString(), value);
+    maskURIPassword(&str);
+    return str;
+}
+
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
     unknown_settings.push_back(fmt::format("`{}`", name));
