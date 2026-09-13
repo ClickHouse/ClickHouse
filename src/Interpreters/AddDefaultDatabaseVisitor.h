@@ -197,6 +197,27 @@ private:
     /// `SELECT` is visible in it.
     std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select) const;
 
+    /// Whether `with_element` of a `WITH RECURSIVE` list is a recursive element. `RECURSIVE` is a
+    /// property of the whole list, but `QueryTreeBuilder` marks only the elements it builds as a
+    /// `UnionNode`: a body of two or more `UNION` branches, or an `INTERSECT`/`EXCEPT` body. A
+    /// single-`SELECT` element of a recursive list is an ordinary CTE, and inside its own body its
+    /// name still denotes a table.
+    static bool isRecursiveElement(const ASTSelectQuery & select, const ASTWithElement & with_element)
+    {
+        if (!select.recursive_with || !with_element.subquery || with_element.subquery->children.empty())
+            return false;
+
+        const IAST * body = with_element.subquery->children.front().get();
+        while (const auto * union_query = body->as<ASTSelectWithUnionQuery>())
+        {
+            const auto & branches = union_query->list_of_selects->children;
+            if (branches.size() != 1)
+                return branches.size() > 1;
+            body = branches.front().get();
+        }
+        return body->as<ASTSelectIntersectExceptQuery>() != nullptr;
+    }
+
     /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
     Scope * findScopeDeclaring(const String & name) const
     {
@@ -250,11 +271,11 @@ private:
             /// Every name is registered before any element is walked, as `QueryAnalyzer` does, so
             /// an element may reference a later one. Inside its own definition a plain name still
             /// denotes a table, so it is masked while its element is walked; a recursive name
-            /// references itself there.
-            auto & names = select.recursive_with ? scope.recursive : scope.plain;
+            /// references itself there. The bucket is chosen per element: a `WITH RECURSIVE` list
+            /// may mix recursive elements with ordinary ones.
             for (const auto & child : with->children)
                 if (const auto * with_element = child->as<ASTWithElement>())
-                    names.insert(with_element->name);
+                    (isRecursiveElement(select, *with_element) ? scope.recursive : scope.plain).insert(with_element->name);
 
             for (auto & child : with->children)
             {
@@ -263,7 +284,7 @@ private:
                 {
                     visit(child);
                 }
-                else if (select.recursive_with)
+                else if (isRecursiveElement(select, *with_element))
                 {
                     DefiningAlias defining_alias(scope, with_element->name);
                     visit(child);
