@@ -111,6 +111,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
+void registerInputFormatPCAP(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
 #if USE_HIVE
@@ -158,6 +159,7 @@ void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
+void registerPCAPSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
@@ -280,6 +282,7 @@ void registerFormats()
     registerInputFormatParquetMetadata(factory);
     registerInputFormatPuffin(factory);
     registerInputFormatDWARF(factory);
+    registerInputFormatPCAP(factory);
     registerInputFormatOne(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
@@ -322,6 +325,7 @@ void registerFormats()
     registerParquetMetadataSchemaReader(factory);
     registerPuffinSchemaReaders(factory);
     registerDWARFSchemaReader(factory);
+    registerPCAPSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
