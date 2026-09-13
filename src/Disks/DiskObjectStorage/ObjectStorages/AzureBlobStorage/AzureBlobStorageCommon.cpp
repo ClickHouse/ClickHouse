@@ -381,7 +381,12 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
+    /// Both are read before the check, so that a configuration where only one of them is written
+    /// does not look as if the other one is not an option of this disk at all.
+    const bool has_account_key = config.has(config_prefix + ".account_key");
+    const bool has_account_name = config.has(config_prefix + ".account_name");
+
+    if (has_account_key && has_account_name)
     {
         return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
             config.getString(config_prefix + ".account_name"),

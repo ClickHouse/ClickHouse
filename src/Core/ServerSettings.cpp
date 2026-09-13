@@ -1870,6 +1870,9 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
     DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(
 If set to true, server settings will not be checked for correctness.
 
+It also disables the check of the definitions of disks in `storage_configuration`, where an element
+that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` instead of being ignored.
+
 **Example**
 
 ```xml

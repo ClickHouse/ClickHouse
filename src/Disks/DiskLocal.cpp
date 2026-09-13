@@ -812,7 +812,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(skip_access_check);

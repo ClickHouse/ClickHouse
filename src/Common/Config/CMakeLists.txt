@@ -1,6 +1,7 @@
 set (SRCS
     AbstractConfigurationComparison.cpp
     ConfigProcessor.cpp
+    ConfigurationWithUsageTracking.cpp
     getClientConfigPath.cpp
     getLocalConfigPath.cpp
     ConfigReloader.cpp

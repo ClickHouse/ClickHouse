@@ -575,7 +575,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map,
         bool, bool) -> DiskPtr
     {
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(skip_access_check);
         return disk;

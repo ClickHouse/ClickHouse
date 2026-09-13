@@ -16,6 +16,8 @@
 namespace DB
 {
 
+class ConfigurationWithUsageTracking;
+
 using DisksMap = std::map<String, DiskPtr, std::less<>>;
 /**
  * Disk factory. Responsible for creating new disk objects.
@@ -55,6 +57,14 @@ public:
     void clearRegistry();
 
 private:
+    /// Report the elements of the disk definition that nothing has read while the disk was created.
+    static void checkForUnknownKeys(
+        const ConfigurationWithUsageTracking & tracked_config,
+        const String & name,
+        const String & disk_type,
+        const String & config_prefix,
+        const ContextPtr & context);
+
     using DiskTypeRegistry = std::unordered_map<String, Creator>;
     DiskTypeRegistry registry;
 
