@@ -1,8 +1,16 @@
-mixed-scale Decimal
-1
-1
+integers that overflow the common subtype
 0.5
-1
+0.5
+0.5
+0.33
+0.5
+0.5
+0.5
+0
+mixed-scale Decimal
+0.5
+0.5
+0.5
 mixed-width integers
 1
 0.5
