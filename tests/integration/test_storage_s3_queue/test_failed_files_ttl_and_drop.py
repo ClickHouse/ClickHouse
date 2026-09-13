@@ -1420,6 +1420,29 @@ def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
         f"revalidated against Keeper's live retry count."
     )
 
+    # Regression for a second bug in the same scenario: blocking the file from a new
+    # attempt (above) is not enough on its own. Only a *new* failed attempt can convert
+    # a `.retriable` marker into a terminal `/failed/<hash>` node, and this marker was
+    # never allowed a new attempt - so without an explicit terminalization path, the file
+    # stayed in `.retriable` forever: not retryable (blocked by the assertion above) and
+    # not cleanable, since both `failed_files_ttl_sec` and `SYSTEM DROP S3QUEUE FAILED
+    # FILES` intentionally skip `.retriable` nodes. Wait past the fix's poll window and
+    # confirm the file actually reaches the terminal state instead of staying stuck.
+    if not final_is_terminal:
+        for elapsed in range(30):
+            time.sleep(1)
+            final_retries, final_is_terminal = get_retry_count_from_keeper()
+            if final_is_terminal:
+                break
+
+    assert final_is_terminal, (
+        f"BUG: the exhausted .retriable marker (retries={final_retries}) was never "
+        f"terminalized into a /failed/<hash> node after the limit was lowered below its "
+        f"retry count. The file is permanently stuck: blocked from further processing "
+        f"attempts, but invisible to failed_files_ttl_sec and SYSTEM DROP S3QUEUE FAILED "
+        f"FILES, which both skip .retriable nodes."
+    )
+
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
 
@@ -3075,3 +3098,110 @@ def test_transient_keeper_error_while_waiting_is_retriable(started_cluster):
     for node in (node1, node2):
         node.query(f"DROP TABLE IF EXISTS {table_name}")
         node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_drop_failed_files_waits_for_a_non_drop_cleanup_lock_holder(started_cluster):
+    """`SYSTEM DROP S3QUEUE FAILED FILES` must wait for a `cleanup_lock` held by something other than
+    another drop command - most commonly the routine `background_cleanup` task - instead of failing
+    immediately.
+
+    Regression for: `waitForConcurrentDropToComplete()` only recognized a lock value of the shape
+    `manual_drop_failed:<command_id>`. Any other holder (the periodic background sweep writes no such
+    marker) fell straight through to an unconditional `LOGICAL_ERROR`, so the command spuriously failed
+    on default unordered queues just from colliding with routine cleanup - contradicting the docs, which
+    say a concurrent cleanup is waited out.
+
+    A real race with the background task is not reproducible on demand, so the lock is taken by hand
+    with a value that does not match the `manual_drop_failed:` shape, standing in for any non-drop
+    holder. The command must wait rather than fail, and must succeed once the lock is released.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_waits_other_holder_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,  # fail terminally on the first attempt
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    invalid_csv = b"not,valid,data\n"
+    put_s3_file_content(started_cluster, f"{files_path}/bad.csv", invalid_csv)
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(lambda: failed_znodes() >= 1), "file did not reach the terminal failed state"
+
+    # Stop consuming before touching Keeper by hand, so nothing re-fails files behind the test's back.
+    node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Simulate a non-drop holder (e.g. the routine background_cleanup task) owning cleanup_lock - any
+    # value that does not have the `manual_drop_failed:` prefix takes the same code path.
+    zk.create(cleanup_lock_path, b"background_cleanup", ephemeral=True)
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertion below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+
+    # Give the drop time to reach the wait loop and confirm it has not failed outright.
+    time.sleep(5)
+    assert drop_thread.is_alive(), (
+        "the drop returned immediately instead of waiting for the non-drop cleanup_lock holder - "
+        "it should be polling the lock, not failing with LOGICAL_ERROR"
+    )
+    assert "error" not in drop_result, (
+        f"the drop failed instead of waiting for a non-drop cleanup_lock holder: "
+        f"{drop_result.get('error')}"
+    )
+
+    # Release the lock, simulating the background task finishing its cycle. The waiting drop should
+    # notice within one poll interval (100ms) and take over the lock itself.
+    zk.delete(cleanup_lock_path)
+
+    drop_thread.join(timeout=120)
+    assert not drop_thread.is_alive(), "drop did not return after the non-drop lock holder released it"
+    assert "error" not in drop_result, (
+        f"the drop failed after the non-drop cleanup_lock holder released the lock: "
+        f"{drop_result.get('error')}"
+    )
+
+    assert failed_znodes() == 0, "failed files were not cleaned up after the drop completed"
+
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
