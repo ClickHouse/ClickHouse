@@ -93,6 +93,21 @@ INSERT INTO t05032_events
 SELECT 'plain_before', count()
 FROM system.query_log
 WHERE is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05032_plain_control');
+-- A fuzz run executes its mutated copy of the statement internally, so the copy has an initiating
+-- row of its own carrying is_internal and naming the source the original read. Counting those rows
+-- is how an arm tells a server that fuzzed it from one that did not.
+INSERT INTO t05032_events
+SELECT 'worker_fuzz_copies_before', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_worker_src');
+-- Each arm brackets its own statement with the counter the skip increments, so an arm whose workers
+-- stop reaching the guard fails on its own line instead of being covered by another arm. The counter
+-- is server-wide, so a concurrent copy of this test can only inflate a delta, never erase one.
+INSERT INTO t05032_events
+SELECT 'skips_before_worker',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
 
 -- A distributed INSERT ... SELECT over the parallel replicas cluster. Each replica executes the
 -- statement as a worker for the initiator: it reads its assigned ranges through a coordination
@@ -125,6 +140,19 @@ SELECT 'workers_ran',
       (SELECT workers FROM t05032_events WHERE label = 'worker_after')
     - (SELECT workers FROM t05032_events WHERE label = 'worker_before') > 0;
 
+-- The fuzzer was live on this statement: it executed mutated copies of it. Without this the skip
+-- assertion below also holds on a server that fuzzes nothing at all, which is the state a lost
+-- setting or a declining fuzzer callback leaves behind.
+INSERT INTO t05032_events
+SELECT 'worker_fuzz_copies_after', count()
+FROM system.query_log
+WHERE is_initial_query = 1 AND is_internal = 1
+  AND has(tables, currentDatabase() || '.t05032_worker_src');
+
+SELECT 'initiator_was_fuzzed',
+      (SELECT workers FROM t05032_events WHERE label = 'worker_fuzz_copies_after')
+    - (SELECT workers FROM t05032_events WHERE label = 'worker_fuzz_copies_before') > 0;
+
 -- The workers were not fuzzed.
 SELECT 'workers_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
@@ -137,6 +165,23 @@ SELECT 'workers_not_fuzzed',
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
+SELECT 'worker_skips_recorded',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker')
+     - (SELECT workers FROM t05032_events WHERE label = 'skips_before_worker') > 0;
+
+-- A fuzz run of a worker's own statement executes internally under that worker's initiating id,
+-- so it lands in this group as an is_internal row. This does not go through normalized_query_hash,
+-- which folds literal and setting mutations together, so it holds whatever the fuzzer produced.
+SELECT 'worker_no_internal_workers',
+       (SELECT count() FROM system.query_log
+        WHERE is_initial_query = 0 AND is_internal = 1
+          AND has(databases, currentDatabase())
+          AND has(tables, currentDatabase() || '.t05032_worker_src')
+          AND initial_query_id IN (SELECT query_id FROM system.query_log
+                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                     AND current_database = currentDatabase())) = 0;
+
 -- Every source row arrived, so declining to fuzz the workers did not disturb the statement itself.
 -- The row count is not asserted: the fuzzer re-executes mutated copies of the statement, which write
 -- their own rows, so only the presence of the full source key range is stable here.
@@ -148,15 +193,9 @@ FROM t05032_dst WHERE id < (SELECT count() FROM t05032_worker_src);
 -- rewrites a plain table reference into remote()/cluster() at random, which would let a fuzzed copy
 -- of a table-backed control produce workers on correct code. The alias is what makes its rows
 -- selectable, since a tableless statement names no source of ours.
--- This does not also prove the fuzzer ran: no per-invocation observable separated a fuzzing server
--- from a non-fuzzing one on measurement, because the fuzzer's own attempts are not attributable to
--- the query that triggered them (its finish callback is registered after the logging one, so the
--- initiator's row is already snapshotted). 03833 and 04344 cover the fuzzer being alive at all.
--- For the same reason the test does not pin down that the initiating distributed statement is still
--- fuzzed: the only per-invocation statistic for it, the number of distinct initiator shapes, was
--- measured at 5 to 7 with the skip and 3 to 6 without any fuzzing at all, so no threshold separates
--- them. What the arms here do establish is that a worker is not fuzzed while its read still returns
--- the right answer.
+-- A fuzz attempt leaves nothing on the row of the query that triggered it: the fuzzer's callback is
+-- registered after the logging one, so that row is already snapshotted. The attempt is observable on
+-- the copy's own initiating row instead, which is what initiator_was_fuzzed counts.
 SELECT 1 AS t05032_plain_control
 SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1 FORMAT Null;
 
@@ -174,6 +213,11 @@ SELECT 'plain_query_no_workers',
 -- the declared name allow_experimental_parallel_reading_from_replicas and must reach the same skip.
 -- The decision is taken from the context's own role, so no spelling of the setting re-enables the
 -- fuzz run on a worker.
+INSERT INTO t05032_events
+SELECT 'skips_before_declared',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
+
 INSERT INTO t05032_dst SELECT id, v FROM t05032_declared_src
 SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
@@ -207,6 +251,20 @@ SELECT 'declared_spelling_not_fuzzed',
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
+SELECT 'declared_skips_recorded',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker')
+     - (SELECT workers FROM t05032_events WHERE label = 'skips_before_declared') > 0;
+
+SELECT 'declared_no_internal_workers',
+       (SELECT count() FROM system.query_log
+        WHERE is_initial_query = 0 AND is_internal = 1
+          AND has(databases, currentDatabase())
+          AND has(tables, currentDatabase() || '.t05032_declared_src')
+          AND initial_query_id IN (SELECT query_id FROM system.query_log
+                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                     AND current_database = currentDatabase())) = 0;
+
 -- A cluster table function marks its workers with the same context field, but hands them a task
 -- iterator rather than a reading coordinator, so this arm covers the other channel the skip protects.
 -- fileCluster is used because it needs no network. The file is written through file() first so the
@@ -215,6 +273,11 @@ SELECT 'declared_spelling_not_fuzzed',
 -- file, and because it is what makes this arm's worker queries selectable.
 INSERT INTO FUNCTION file(currentDatabase() || '_t05032_cluster_src.csv', 'CSV', 'c1 UInt64, c2 UInt64')
 SELECT number, number FROM numbers(500) SETTINGS engine_file_truncate_on_insert = 1;
+
+INSERT INTO t05032_events
+SELECT 'skips_before_cluster',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
 
 SELECT 'cluster_function_read',
        sum(c2) = (SELECT sum(number) FROM numbers(500))
@@ -249,6 +312,19 @@ SELECT 'cluster_function_not_fuzzed',
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
+SELECT 'cluster_skips_recorded',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker')
+     - (SELECT workers FROM t05032_events WHERE label = 'skips_before_cluster') > 0;
+
+SELECT 'cluster_no_internal_workers',
+       (SELECT count() FROM system.query_log
+        WHERE is_initial_query = 0 AND is_internal = 1
+          AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0
+          AND initial_query_id IN (SELECT query_id FROM system.query_log
+                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                     AND current_database = currentDatabase())) = 0;
+
 -- A read through a view whose definer is resolved on a rebuilt context. Two properties: the read
 -- succeeds, so the rebuilt context did not lose the coordination callback it needs; and its workers
 -- are skipped too. The rebuilt context keeps the marker because getSQLSecurityOverriddenContext
@@ -256,6 +332,11 @@ SELECT 'cluster_function_not_fuzzed',
 -- The workers name the view's source rather than the view itself: the view is expanded before the
 -- statement is sent to them.
 CREATE VIEW t05032_view SQL SECURITY NONE AS SELECT id, v FROM t05032_view_src;
+
+INSERT INTO t05032_events
+SELECT 'skips_before_view',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker');
 
 SELECT 'view_read', sum(v) FROM t05032_view
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
@@ -287,6 +368,20 @@ SELECT 'view_not_fuzzed',
                                         WHERE is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
+
+SELECT 'view_skips_recorded',
+       (SELECT ifNull(sum(value), 0) FROM system.events
+        WHERE event = 'ASTFuzzerSkippedCollaborativeWorker')
+     - (SELECT workers FROM t05032_events WHERE label = 'skips_before_view') > 0;
+
+SELECT 'view_no_internal_workers',
+       (SELECT count() FROM system.query_log
+        WHERE is_initial_query = 0 AND is_internal = 1
+          AND has(databases, currentDatabase())
+          AND has(tables, currentDatabase() || '.t05032_view_src')
+          AND initial_query_id IN (SELECT query_id FROM system.query_log
+                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                     AND current_database = currentDatabase())) = 0;
 
 -- Server is alive after every arm above.
 SELECT 'alive';

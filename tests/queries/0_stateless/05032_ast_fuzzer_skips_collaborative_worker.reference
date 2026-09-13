@@ -1,13 +1,22 @@
 workers_ran	1
+initiator_was_fuzzed	1
 workers_not_fuzzed	1
+worker_skips_recorded	1
+worker_no_internal_workers	1
 source_rows_written	1
 plain_query_no_workers	1
 declared_spelling_workers_ran	1
 declared_spelling_not_fuzzed	1
+declared_skips_recorded	1
+declared_no_internal_workers	1
 cluster_function_read	1
 cluster_function_workers_ran	1
 cluster_function_not_fuzzed	1
+cluster_skips_recorded	1
+cluster_no_internal_workers	1
 view_read	1999000
 view_workers_ran	1
 view_not_fuzzed	1
+view_skips_recorded	1
+view_no_internal_workers	1
 alive
