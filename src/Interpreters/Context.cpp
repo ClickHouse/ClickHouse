@@ -7530,8 +7530,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        const String compatibility = (*settings)[Setting::compatibility];
-        mt_settings.applyCompatibilitySetting(compatibility);
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
         /// Only `compatibility` has touched the object at this point, so what it reports as changed
         /// is exactly what `compatibility` assigned.
@@ -7578,8 +7577,7 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        const String compatibility = (*settings)[Setting::compatibility];
-        mt_settings.applyCompatibilitySetting(compatibility);
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
         /// See `Context::getMergeTreeSettings` - the same capture, for the baseline that reads the
         /// additional `replicated_merge_tree` section.

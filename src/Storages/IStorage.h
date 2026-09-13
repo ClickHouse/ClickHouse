@@ -272,20 +272,19 @@ public:
     /// settings from Keeper.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
-    /// The settings the table's own `SETTINGS` clause names, for an override of
-    /// `getTableSettings` refining `origin`: a setting stated there came from the definition,
-    /// whatever else may also have set it, because the clause is applied last.
-    NameSet getSettingNamesStatedInDefinition(ContextPtr context) const;
-
-    /// Marks as `Definition` every setting the table's own `SETTINGS` clause names, and leaves the
-    /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
-    /// its definition; an engine with a further source - a config section, a named collection,
-    /// replicated metadata - attributes that itself before or after calling this.
     /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
     /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
     /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
     /// without declaring them as aliases, so nothing else can know they refer to the same setting.
     using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
+
+    /// Marks as `Definition` every setting the table's own `SETTINGS` clause names, and leaves the
+    /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
+    /// its definition; an engine with a further source - a config section, a named collection,
+    /// replicated metadata - attributes that itself before or after calling this.
+    SettingDescriptions attributeSettingsStatedInDefinition(
+        SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
+
     /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
     /// what its settings are, and the base implementation would report only what the definition
     /// states - which looks like a complete answer and is not, since the effective values can come
@@ -293,9 +292,6 @@ public:
     /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
     /// rather than a partial truth. Reporting them properly is its own piece of work.
     static SettingDescriptions settingsNotRetainedByEngine() { return {}; }
-
-    SettingDescriptions attributeSettingsStatedInDefinition(
-        SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

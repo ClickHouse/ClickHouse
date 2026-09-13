@@ -41,7 +41,7 @@ public:
     /// table's - so the two tables describe a setting identically.
     /// Engines that share a settings struct but draw on different server-level instances register
     /// different functions - see the replicated `MergeTree` variants.
-    using EnumerateEngineSettingsFn = SettingDescriptions(*)(ContextPtr context);
+    using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr context);
 
     struct Arguments
     {
@@ -91,7 +91,7 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
-        EnumerateEngineSettingsFn enumerate_engine_settings_fn = nullptr;
+        EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;

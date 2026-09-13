@@ -1,13 +1,8 @@
 #include <Storages/IStorage.h>
-#include <Storages/maskEngineSettingValue.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Common/FieldVisitorToString.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Common/SettingsChanges.h>
-#include <Databases/IDatabase.h>
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -18,11 +13,13 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/maskEngineSettingValue.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
@@ -287,20 +284,20 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
     return create.storage->settings->as<const ASTSetQuery &>().changes;
 }
 
-}
-
-NameSet IStorage::getSettingNamesStatedInDefinition(ContextPtr context) const
+NameSet getSettingNamesStatedInDefinition(const StorageID & table_id, ContextPtr context)
 {
     NameSet names;
-    for (const auto & change : getSettingsStatedInDefinition(getStorageID(), context))
+    for (const auto & change : getSettingsStatedInDefinition(table_id, context))
         names.insert(change.name);
     return names;
+}
+
 }
 
 SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
     SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize) const
 {
-    auto stated_in_definition = getSettingNamesStatedInDefinition(context);
+    auto stated_in_definition = getSettingNamesStatedInDefinition(getStorageID(), context);
     if (normalize)
     {
         NameSet normalized;
