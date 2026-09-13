@@ -4,10 +4,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# `system.table_settings.source` says where a setting's effective value came from. The server config
-# is one of the answers it can give, and it cannot be tested from `tests/queries/0_stateless`: that
-# suite shares a server whose config a test cannot set, so an assertion there would only pin down
-# whichever configuration the suite happens to run with.
+# `system.table_settings.source` for settings a server config section assigns. Most of that is covered
+# by `05058_settings_source_attribution`, which runs `clickhouse-local` with a config file. What needs a
+# real server with Keeper is the `ReplicatedMergeTree` family, which reads its own
+# `<replicated_merge_tree>` section into a separate cached baseline. The exact set of settings reported
+# as `config` is checked here too, because a server's config includes the harness's own sections.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/merge_tree_settings.xml"],
@@ -34,18 +35,6 @@ def source_of(setting, table="t"):
 def test_config_assignment_is_reported(started_cluster):
     node.query("DROP TABLE IF EXISTS t SYNC")
     node.query("CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x")
-
-    # The setting the config assigned the value it already had. Reported as `config` because the
-    # assignment is recorded when the baseline is built; comparing values could never see it.
-    assert node.query(
-        "SELECT value = default FROM system.table_settings "
-        "WHERE database = currentDatabase() AND table = 't' AND name = 'merge_max_block_size'"
-    ).strip() == "1"
-    assert source_of("merge_max_block_size") == "config"
-
-    # The setting the config assigned a different value. This one a comparison of values would also
-    # have found, so it guards the case that already worked.
-    assert source_of("max_suspicious_broken_parts") == "config"
 
     # A setting the config does not mention at all.
     assert source_of("merge_max_block_size_bytes") == "default"
@@ -79,15 +68,3 @@ def test_config_assignment_is_reported_for_replicated(started_cluster):
 
     node.query("DROP TABLE tr SYNC")
 
-
-def test_definition_wins_over_config(started_cluster):
-    # The table's own SETTINGS clause is applied last, so it outranks the config section.
-    node.query("DROP TABLE IF EXISTS td SYNC")
-    node.query(
-        "CREATE TABLE td (x UInt64) ENGINE = MergeTree ORDER BY x "
-        "SETTINGS merge_max_block_size = 8192"
-    )
-
-    assert source_of("merge_max_block_size", "td") == "definition"
-
-    node.query("DROP TABLE td SYNC")

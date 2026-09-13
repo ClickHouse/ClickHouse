@@ -8,6 +8,7 @@
 -- full - to any user with `SHOW TABLES` on the table, whether or not they may see secrets.
 
 DROP TABLE IF EXISTS with_secrets;
+DROP TABLE IF EXISTS no_secrets;
 CREATE TABLE with_secrets (a String) ENGINE = URL('http://localhost:1/', CSV)
     SETTINGS url_base = 'http://user:hunter2@host/',
              s3_base = 'https://bucket/f.csv?X-Amz-Signature=abcdef',

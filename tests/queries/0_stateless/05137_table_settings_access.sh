@@ -2,11 +2,10 @@
 # The privilege boundary of the two new surfaces.
 #
 # `system.table_settings` filters rows by `SHOW TABLES`, per database and then per table, the same
-# way `system.tables` and `system.columns` do. `SHOW TABLE SETTINGS` reads that table, and enables
-# `show_remote_databases_in_system_tables` / `show_data_lake_catalogs_in_system_tables` when the
-# query names such a database explicitly - so it is worth proving that enabling a *visibility*
-# setting does not also hand out rows the user may not see. It runs on a copy of the caller's
-# context, so the grant still decides; these are the assertions that say so.
+# way `system.tables` and `system.columns` do, and `SHOW TABLE SETTINGS` reads that table. Both are
+# checked here, on local tables. The statement also enables `show_remote_databases_in_system_tables`
+# when it names a remote database; that the grant still decides on that path needs a reachable remote
+# database, and `test_mysql_database_engine::test_table_settings_for_mysql_database` covers it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

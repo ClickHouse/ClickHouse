@@ -37,7 +37,8 @@ allow_experimental_block_number_column	1	definition	enable_block_number_column
 enable_block_number_column	1	definition	
 index_granularity	4096	definition	
 -- the columns shared with system.merge_tree_settings agree, except where the definition differs
--- settings the engine makes read-only are reported as such
-1
+-- a setting the engine refuses to change on an existing table is read-only, others are not
+index_granularity	1
+merge_max_block_size	0
 -- filtering by database reaches the scan
 0

@@ -77,8 +77,10 @@ SELECT name FROM (
     FROM system.merge_tree_settings)
 ORDER BY name;
 
-SELECT '-- settings the engine makes read-only are reported as such';
-SELECT countIf(readonly) > 0 FROM system.table_settings WHERE database = currentDatabase() AND table = 'mt';
+SELECT '-- a setting the engine refuses to change on an existing table is read-only, others are not';
+SELECT name, readonly FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'mt' AND name IN ('index_granularity', 'merge_max_block_size')
+ORDER BY name;
 
 SELECT '-- filtering by database reaches the scan';
 SELECT count() FROM system.table_settings WHERE database = 'database_that_does_not_exist';

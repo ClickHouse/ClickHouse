@@ -11,7 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CONFIG="${CLICKHOUSE_TMP}/settings_source_attribution_config.xml"
 cat > "$CONFIG" <<'EOF'
 <clickhouse>
-    <merge_tree><merge_max_block_size>1234</merge_max_block_size></merge_tree>
+    <merge_tree>
+        <merge_max_block_size>1234</merge_max_block_size>
+        <!-- Its default: an explicit assignment of the value a setting already has. -->
+        <max_suspicious_broken_parts>100</max_suspicious_broken_parts>
+    </merge_tree>
     <distributed><bytes_to_throw_insert>1000000</bytes_to_throw_insert></distributed>
     <remote_servers>
         <c1><shard><replica><host>localhost</host><port>9000</port></replica></shard></c1>
@@ -23,6 +27,20 @@ echo "-- a MergeTree setting the config sets"
 $CLICKHOUSE_LOCAL --config-file "$CONFIG" -q "
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a;
 SELECT name, value, \`default\`, source FROM system.table_settings
+WHERE table = 'mt' AND name = 'merge_max_block_size';"
+
+echo "-- a config section assigning the value a setting already has still counts"
+# Recorded while the server-level baseline is built, which is the only place it can be seen: a
+# comparison of values afterwards finds nothing to report.
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" -q "
+CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a;
+SELECT name, value = \`default\` AS same_as_default, source FROM system.table_settings
+WHERE table = 'mt' AND name = 'max_suspicious_broken_parts';"
+
+echo "-- for MergeTree too, the definition wins over the config"
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" -q "
+CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS merge_max_block_size = 4321;
+SELECT name, value, source FROM system.table_settings
 WHERE table = 'mt' AND name = 'merge_max_block_size';"
 
 echo "-- a Distributed setting the config sets"
