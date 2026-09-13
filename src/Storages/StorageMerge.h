@@ -198,7 +198,18 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+
+    /// Returns whether `requestReadingInOrder` can preserve the requested direction without
+    /// changing the child readers. Used by query-plan probes that must not advertise an order
+    /// which the eventual request will reject.
+    bool canReadInOrder(int direction);
+
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+
+    /// Propagate `setPreferMultipleStreams` to child `ReadFromMergeTree` steps, so a
+    /// downstream aggregation/distinct-in-order over a `Merge` table keeps multiple
+    /// parallel input streams instead of collapsing them with per-part `PrefetchingConcat`.
+    void setPreferMultipleStreams();
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 

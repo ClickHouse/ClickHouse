@@ -1,0 +1,19 @@
+replacing_sorted_without_lazy_final
+1
+lazy_final_full_replacement_engaged
+1
+read_in_order_preserved
+1
+no_prefetching_lazy_final_aggregation_in_order
+correctness_full_replacement
+0
+0
+no_partial_split_under_read_in_order
+1
+correctness_intersecting
+0
+0
+sample_rows
+10000	10000
+30000	30000
+50000	500000

@@ -53,7 +53,10 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif
 
-    bool requestReadingInOrder() const;
+    /// Tells whether the data can be read in the requested order. Only the natural (direct) order
+    /// of the sorting key can be delivered - there is no reverse file walk and no `ReverseTransform`
+    /// in `initializePipeline` - so a reverse request is rejected.
+    bool requestReadingInOrder(int direction) const;
 
     // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
     // and is taken from the storage metadata.
