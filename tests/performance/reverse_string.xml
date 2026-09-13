@@ -1,4 +1,4 @@
-<test>
+<test run_all_queries="1">
     <settings>
         <max_threads>1</max_threads>
     </settings>
