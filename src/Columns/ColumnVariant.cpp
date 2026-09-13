@@ -1877,7 +1877,8 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         auto & discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            if (null_map[i] ^ inverted)
+            /// Negating a null map negates its nullness, not its bits: `1 ^ 2` would still be truthy.
+            if ((null_map[i] != 0) ^ inverted)
             {
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.

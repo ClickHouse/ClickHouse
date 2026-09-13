@@ -1164,8 +1164,11 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     if (source_null_map_col)
                     {
                         const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
+                        /// Both operands are predicates: complementing a truthy source byte such as
+                        /// 2 leaves bit 0 clear, which would read that NULL row as present.
                         for (size_t row = 0; row < input_rows_count; ++row)
-                            null_map_data[row] |= result_null_map[row] & ~source_null_map[row];
+                            null_map_data[row] |= static_cast<UInt8>(result_null_map[row] != 0)
+                                & static_cast<UInt8>(source_null_map[row] == 0);
                     }
                     else
                     {
