@@ -15,10 +15,13 @@
 namespace DB
 {
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
 /// Transform 64-byte mask to 64-bit mask.
 static UInt64 toBits64(const Int8 * bytes64)
 {
+#if (defined(__AVX512F__) && defined(__AVX512BW__)) || (defined(__AVX__) && defined(__AVX2__)) || (defined(__aarch64__) && defined(__ARM_NEON))
+    return bytes64MaskToBits64Mask(reinterpret_cast<const UInt8 *>(bytes64));
+#else
     static const __m128i zero16 = _mm_setzero_si128();
     UInt64 res =
         static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
@@ -31,6 +34,7 @@ static UInt64 toBits64(const Int8 * bytes64)
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48);
 
     return ~res;
+#endif
 }
 #endif
 
@@ -54,7 +58,7 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64)
@@ -148,7 +152,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64, pos2 += 64)
