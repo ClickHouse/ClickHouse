@@ -829,7 +829,8 @@ Chunk StorageObjectStorageSource::generate()
                 object_size = object_metadata->size_bytes;
 
             std::optional<Map> headers;
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+            if (configuration->getType() == ObjectStorageType::Web
+                && read_from_format_info.requested_virtual_columns.contains("_headers"))
                 headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
