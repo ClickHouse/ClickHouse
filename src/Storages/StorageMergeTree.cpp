@@ -939,7 +939,15 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /** Resolve the partitions of the commands that name some, once, here: the per-part selection of the
+      * commands to apply on the fly has to respect that scope, and a partition expression is arbitrary
+      * user SQL (`getPartitionIDFromQuery` ends in `evaluateConstantExpression`, and the expression may
+      * contain a subquery over this very table), so it must not be evaluated on the read path.
+      */
+    MutationCommands commands_with_partitions = commands;
+    resolvePartitionIdsOfScopedCommands(commands_with_partitions, query_context);
+
+    MergeTreeMutationEntry entry(std::move(commands_with_partitions), disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1591,6 +1599,25 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
+
+                /** The partition ids of the scoped commands are not persisted with the entry, so resolve
+                  * them again here - once, and not while a storage snapshot is built. The entry was
+                  * accepted when it was created, so a failure here is an anomaly; leave the partition ids
+                  * unresolved then - such a command is applied on the fly to no partition at all, which
+                  * only defers its effect until the mutation materializes - instead of failing to load
+                  * the table.
+                  */
+                try
+                {
+                    resolvePartitionIdsOfScopedCommands(*entry.commands, getContext());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format(
+                        "Cannot resolve the partitions of the commands of mutation {}. "
+                        "They will not be applied on the fly until the mutation is materialized", it->name()));
+                }
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
@@ -3862,6 +3889,12 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 
         addSupportedCommands(*commands, mutation_version, result);
     }
+
+    /// A command that names a partition applies to that partition alone. Selecting the pending commands
+    /// by mutation version alone applied it to every part whose data version predates the mutation, so
+    /// while a `CLEAR COLUMN c IN PARTITION p` was pending, reads of *all* partitions answered the
+    /// column's default, and went back to the stored values once the mutation materialized.
+    filterCommandsOutsidePartition(result, part->info.getOriginalPartitionId());
 
     std::reverse(result.begin(), result.end());
     return result;

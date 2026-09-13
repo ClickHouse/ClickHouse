@@ -739,6 +739,46 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
     }
 }
 
+void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const
+{
+    std::erase_if(commands, [&](const MutationCommand & command)
+    {
+        if (!command.has_partition)
+            return false;
+
+        /// A scoped command whose partitions are not resolved is applied to no partition at all: not
+        /// applying it only defers its effect until the mutation materializes, while applying it to a
+        /// partition it does not name answers wrong values and can persist them.
+        return !command.partition_ids || !command.partition_ids->contains(partition_id);
+    });
+}
+
+void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const
+{
+    for (auto & command : commands)
+    {
+        if (!command.has_partition || command.partition_ids)
+            continue;
+
+        auto command_ast = command.ast();
+        if (!command_ast)
+            continue;
+
+        NameSet partition_ids;
+        if (const auto * partitions = command_ast->partitions)
+        {
+            for (const auto & partition : partitions->children)
+                partition_ids.insert(getPartitionIDFromQuery(partition, local_context, nullptr));
+        }
+        else if (const auto * partition = command_ast->partition)
+        {
+            partition_ids.insert(getPartitionIDFromQuery(ASTPtr(partition->clone()), local_context, nullptr));
+        }
+
+        command.partition_ids = std::move(partition_ids);
+    }
+}
+
 PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPartPtr & part) const
 {
     if (!params.need_patch_parts)
