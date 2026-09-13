@@ -736,6 +736,25 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
 - [s3 table function](/reference/functions/table-functions/s3)
 - [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
+
+## Multi-Region Access Points {#multi-region-access-points}
+
+The `S3` engine accepts an Amazon S3 Multi-Region Access Point ARN with a separate named `key`:
+
+```sql
+CREATE TABLE mrap_data
+(
+    id UInt64,
+    value String
+)
+ENGINE = S3(
+    'arn:aws:s3::123456789012:accesspoint/example.mrap',
+    key = 'data/smoke.csv',
+    format = 'CSV'
+);
+```
+
+Replace the ARN and schema with your access point and data, and configure credentials through an existing permitted credential source. This interface supports MRAP ARNs in the commercial AWS partition and requires signed requests. Named collections can supply `mrap_arn` and `key` instead of `url` and `filename`. See the [MRAP table-function documentation](/reference/functions/table-functions/s3#multi-region-access-points) for argument semantics and limitations.
 )DOCS_MD";
     }
     else

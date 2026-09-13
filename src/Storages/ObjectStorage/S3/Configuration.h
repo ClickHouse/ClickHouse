@@ -41,6 +41,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
           "partition_columnns_in_data_file\n"
           " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, "
           "partition_columnns_in_data_file, storage_class_name\n"
+          " - mrap_arn, key=object_key (with the same optional credentials and format arguments)\n"
           "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static constexpr auto max_number_of_arguments_without_structure = max_number_of_arguments_with_structure - 1;
@@ -61,6 +62,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
           " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy\n"
           " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, "
           "partition_columnns_in_data_file\n"
+          " - mrap_arn, key=object_key (with the same optional credentials and format arguments)\n"
           "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static constexpr std::string getSignatures(bool with_structure = true)
