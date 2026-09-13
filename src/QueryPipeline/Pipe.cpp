@@ -776,14 +776,22 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
     ///
+    /// A strict resize from N streams to N streams does nothing, so it must be
+    /// skipped before considering the split below. Otherwise, once there are
+    /// enough streams to split (num_streams >= 2 * min_outstreams_per_resize_after_split,
+    /// i.e. 48 by default), a no-op resize is turned into several real
+    /// StrictResize processors, and every block pays for an extra pipeline
+    /// stage that cannot rebalance anything. That costs ~2.6x on a pipeline
+    /// passing small blocks, which is the opposite of what the split is for.
+    if (strict && num_streams == numOutputPorts())
+        return;
+
     /// Disable this optimization when min_outstreams_per_resize_after_split is 0
     if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
     {
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
         return;
     }
-    if (strict && num_streams == numOutputPorts())
-        return;
 
     ProcessorPtr resize;
 
