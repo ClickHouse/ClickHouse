@@ -1481,7 +1481,7 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
         auto code = zookeeper->tryRemove(zero_copy_locks_root);
         if (code == Coordination::Error::ZNOTEMPTY)
         {
-            LOG_WARNING(logger, "Zero copy locks are not empty for {}. There are some lost locks inside."
+            LOG_WARNING(logger, "Zero copy locks are not empty for {}. There are some lost locks inside. "
                               "Removing them all.", zero_copy_locks_root);
             zookeeper->tryRemoveRecursive(zero_copy_locks_root);
         }
@@ -1776,7 +1776,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     {
         LOG_ERROR(
             logger,
-            "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage,"
+            "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage, "
             "but someone is removing it right now.",
             zookeeper_path);
     }
@@ -4461,7 +4461,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if (!canEnqueueBackgroundTask())
         {
             ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
-            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
+            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate. "
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));

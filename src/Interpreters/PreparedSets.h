@@ -23,6 +23,11 @@ namespace DB
 
 class QueryPlan;
 
+/// True if any step of `plan` - including the nested plans it owns through `getChildPlans` - holds a
+/// correlated `PLACEHOLDER` expression. Such a plan cannot be optimized or executed standalone: it
+/// has to be decorrelated first.
+bool planHasCorrelatedExpressions(const QueryPlan & plan);
+
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 struct SetKeyColumns;
