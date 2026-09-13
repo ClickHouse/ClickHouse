@@ -43,6 +43,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"weight", 1.0, 1.0, "New query setting: base scheduling weight of a query within its workload, used by the `fair` workload scheduler."},
+            {"weight_lowering_factor", 1.0, 1.0, "New query setting: factor applied to a query's weight once it crosses a weight-lowering threshold in the `fair` workload scheduler."},
+            {"weight_lowering_age_seconds", 0, 0, "New query setting: wall-clock age threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_cpu_seconds", 0, 0, "New query setting: attained CPU-seconds threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_io_bytes", 0, 0, "New query setting: attained IO-bytes threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"workload_priority", 0, 0, "New query setting: scheduling priority of a query within its workload, used by the `priority` workload scheduler."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},

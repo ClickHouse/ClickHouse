@@ -24,6 +24,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <base/getMemoryAmount.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
@@ -90,6 +91,13 @@ public:
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         WorkloadEntityStorageBase::loadEntities(config);
+    }
+
+    // Drive the config/Keeper load path (setLocalEntities) directly from SQL text, the way
+    // WorkloadEntityConfigStorage / WorkloadEntityKeeperStorage do (parse -> setLocalEntities).
+    void loadFromString(const String & data)
+    {
+        setLocalEntities(parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")));
     }
 
     void executeQuery(const String & query)
@@ -465,7 +473,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
         g.waitFailed("is about to be destructed");
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -511,7 +519,7 @@ TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
     });
 
     sync_before_drop.arrive_and_wait();
-    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's FifoQueue
+    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's RequestQueue
     sync_after_drop.arrive_and_wait();
     t.wait();
 }
@@ -548,7 +556,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
         });
     }
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -605,7 +613,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGran
         });
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD child IN production");
     sync_after_drop.arrive_and_wait();
 
@@ -668,7 +676,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGr
 
     sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
     sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
-    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
+    t.query("CREATE WORKLOAD child IN production"); // triggers RequestQueue destruction, failing the worker's request
     sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals
@@ -3553,6 +3561,55 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
+{
+    // `scheduler` can be chosen per resource via the `FOR <resource>` clause (e.g. a different
+    // algorithm for CPU and IO). A resource-specific value wins for that resource; a resource with
+    // no specific value falls back to the workload-wide (regular) value, otherwise the `fifo`
+    // default. This resolution is what lets `WorkloadResourceManager` build each resource's leaf
+    // with its own algorithm.
+    ASTCreateWorkloadQuery::SettingsChanges changes;
+    changes.emplace_back("scheduler", Field(String("fair")), "cpu");
+    changes.emplace_back("scheduler", Field(String("las")), "io");
+    changes.emplace_back("scheduler", Field(String("priority")), ""); // workload-wide value
+
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "cpu");
+        EXPECT_EQ(ws.scheduler, "fair");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "io");
+        EXPECT_EQ(ws.scheduler, "las");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "other"); // no FOR-specific value → workload-wide value
+        EXPECT_EQ(ws.scheduler, "priority");
+    }
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges none;
+        ws.initFromChanges(none);
+        EXPECT_EQ(ws.scheduler, "fifo"); // default when unset
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, CpuLeafUsesConfiguredSchedulerLikeIO)
+{
+    // The `scheduler` setting applies to a CPU leaf exactly as to an IO leaf: it is NOT gated on
+    // `cpu_slot_preemption`, which is a runtime-only server property affecting slot cost, no longer
+    // captured in the node. Other time-shared leaves (e.g. QuerySlot admission) always run fifo.
+    using Traits = WorkloadNodeTraits<ITimeSharedNode>;
+
+    WorkloadSettings ws;
+    ws.scheduler = "fair";
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::IOByte), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::QuerySlot), SchedulerAlgorithm::Fifo);
+}
+
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
 {
     const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
@@ -3606,6 +3663,63 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatio
         changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
         ws.initFromChanges(changes);
         EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+}
+
+// The config/Keeper load path (setLocalEntities) must enforce the same setting-value contract as the
+// SQL path (storeEntity). Regression: it previously ran only the `FOR <resource>` unit check, so an
+// invalid value loaded from config/Keeper was accepted and only surfaced later, when the scheduler
+// node was built.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
+{
+    {
+        ResourceTest t;
+        // Bad value in a `... FOR <resource>` clause (the reported case).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'bogus' FOR cpu"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // Bad value in the base settings.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'nope'"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A valid config loads without error.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
+    }
+    {
+        ResourceTest t;
+        // Forward-compat: an unknown setting NAME loaded from config/Keeper/disk is tolerated (the
+        // load path passes throw_on_unknown_setting=false, matching the runtime NodeInfo parser), so
+        // a newer node's entity does not make an older node reject the whole workload.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS some_future_setting = 5"));
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE WORKLOAD all;\n"
+                "CREATE WORKLOAD bad IN all SETTINGS scheduler = 'fair' FOR all"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause targeting a missing entity is rejected.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
+            DB::Exception);
     }
 }
 

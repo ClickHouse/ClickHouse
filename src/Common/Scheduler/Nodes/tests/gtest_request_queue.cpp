@@ -1,0 +1,663 @@
+#include <gtest/gtest.h>
+
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
+#include <Common/Scheduler/EventQueue.h>
+#include <Common/Scheduler/Nodes/tests/ResourceTest.h>
+#include <Common/Stopwatch.h>
+
+#include <deque>
+#include <memory>
+#include <optional>
+#include <vector>
+
+using namespace DB;
+
+namespace
+{
+
+/// Minimal request that records its id (to assert ordering) and terminal callbacks.
+struct TestRequest : public ResourceRequest
+{
+    int id = 0;
+    int failed_count = 0;
+    explicit TestRequest(int id_ = 0, ResourceCost cost_ = 1)
+        : ResourceRequest(cost_)
+        , id(id_)
+    {}
+    void execute() override {}
+    void failed(const std::exception_ptr &) override { ++failed_count; }
+};
+
+/// Owns request objects (deque = stable addresses) and contexts; the queue is declared last so it
+/// is destroyed first (its purgeQueue fails any still-pending request while requests are alive).
+struct Fixture
+{
+    EventQueue event_queue;
+    std::deque<TestRequest> pool;
+    std::vector<ResourceSchedulingContextPtr> contexts;
+    std::optional<RequestQueue> queue;
+
+    explicit Fixture(SchedulerAlgorithm algo, CostUnit unit = CostUnit::IOByte, Int64 max_queued = std::numeric_limits<Int64>::max())
+    {
+        queue.emplace(event_queue, SchedulerNodeInfo{}, algo, unit, max_queued);
+    }
+
+    ResourceSchedulingContext * makeQuery(
+        Float64 weight = 1.0, Float64 factor = 1.0, Float64 age_s = 0, Float64 cpu_s = 0, Float64 io_b = 0,
+        UInt64 start_ns = 0, Int64 priority = 0)
+    {
+        if (start_ns == 0)
+            start_ns = clock_gettime_ns();
+        contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b, priority));
+        // Single leaf in this fixture → one per-resource slot, pre-sized like the classifier does.
+        contexts.back()->initResourceStates(1);
+        return contexts.back().get();
+    }
+
+    TestRequest * enqueue(int id, ResourceSchedulingContext * ctx, ResourceCost cost = 1)
+    {
+        pool.emplace_back(id, cost);
+        TestRequest * r = &pool.back();
+        r->scheduling.context = ctx;
+        r->scheduling.state = ctx ? ctx->resourceState(0) : nullptr;
+        queue->enqueueRequest(r);
+        return r;
+    }
+
+    /// Dequeue all and return the sequence of request ids.
+    std::vector<int> dequeueIds()
+    {
+        std::vector<int> ids;
+        for (;;)
+        {
+            auto [req, _] = queue->dequeueRequest();
+            if (!req)
+                break;
+            ids.push_back(static_cast<TestRequest *>(req)->id);
+        }
+        return ids;
+    }
+
+    /// Simulate `ResourceGuard::Request::finish()` feeding the real-vs-estimate error back for this
+    /// query on this leaf (single leaf → slot 0, as the classifier pre-resolves). finish() adds the
+    /// delta to attained service (every accounting algorithm) and to the fair-only vruntime
+    /// correction, independently; a `las` query never reads the latter, so feeding both is faithful.
+    void addCorrection(ResourceSchedulingContext * ctx, ResourceCost real, ResourceCost estimate)
+    {
+        const Int64 delta = static_cast<Int64>(real) - static_cast<Int64>(estimate);
+        auto * s = ctx->resourceState(0);
+        s->attained_cost.fetch_add(delta, std::memory_order_relaxed);
+        s->vruntime_correction.fetch_add(delta, std::memory_order_relaxed);
+    }
+
+    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->vruntime; }
+    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->attained_cost.load(); }
+};
+
+}
+
+/// fifo: first-come-first-served regardless of query identity.
+TEST(RequestQueue, FifoOrder)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * q1 = f.makeQuery();
+    auto * q2 = f.makeQuery();
+    f.enqueue(1, q1);
+    f.enqueue(2, nullptr); // no query context (fifo never dereferences it)
+    f.enqueue(3, q2);
+    f.enqueue(4, q1);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
+}
+
+/// fair, equal weights: two queries are interleaved fairly (SFQ round-robin).
+TEST(RequestQueue, FairEqualWeightInterleave)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    f.enqueue(11, a);
+    f.enqueue(21, b);
+    f.enqueue(12, a);
+    f.enqueue(22, b);
+    // A1, B1, A2, B2 — each query advances its vruntime by cost/weight.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
+}
+
+/// fair, single query: requests stay FIFO.
+TEST(RequestQueue, FairSingleQueryFifo)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    f.enqueue(1, a);
+    f.enqueue(2, a);
+    f.enqueue(3, a);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
+}
+
+/// SFQ busy-period rollover: after a query runs alone and the queue drains, a query arriving in the
+/// next busy period must not get a free head-start at a stale, lower system virtual time and
+/// monopolise the resource until it catches up.
+TEST(RequestQueue, FairRollsVirtualTimeAtBusyPeriodEnd)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    // A runs one expensive request alone (its vruntime advances to 100); the queue then drains.
+    f.enqueue(100, a, 100);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{100}));
+    // Fresh query B interleaves with A rather than monopolising. Without the rollover B would run
+    // both of its requests before A ({1, 3, 2, 4}); with it they interleave.
+    f.enqueue(1, b, 1);
+    f.enqueue(2, a, 1);
+    f.enqueue(3, b, 1);
+    f.enqueue(4, a, 1);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
+}
+
+/// The fair-only vruntime correction drain: folds the pending real-vs-estimate delta into the charge,
+/// clamps to a non-negative charge (vruntime never moves backward) and carries any unspent negative
+/// remainder forward so the charge converges to real cost long-term.
+TEST(RequestQueue, DrainVruntimeCorrectionClampsAndCarries)
+{
+    ResourceQueryState s;
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 100);       // no correction → identity
+    s.vruntime_correction.fetch_add(50);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 150);       // under-estimate → charge extra
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
+    s.vruntime_correction.fetch_add(-30);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 70);        // over-estimate → charge less
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
+    s.vruntime_correction.fetch_add(-150);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 0);         // big refund → clamp to 0 (never negative)
+    EXPECT_EQ(s.vruntime_correction.load(), -50);         // carry the unspent -50 forward
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 50);        // applied to the next request
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
+}
+
+/// fair: a query whose first request under-estimated its cost has the shortfall folded into its
+/// NEXT request's vruntime advance — never rewriting the already-served key, never going backward.
+TEST(RequestQueue, FairAppliesCostCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    double vr1 = f.vruntimeOf(a);                         // advanced by the estimate (10)
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);    // request 1 really cost 100
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    double vr2 = f.vruntimeOf(a);
+    EXPECT_GE(vr2, vr1);                                  // never backward
+    EXPECT_DOUBLE_EQ(vr2 - vr1, 100.0);                  // charged the corrected cost (10 + 90), not 10
+}
+
+/// las: the same correction folds into the query's attained service (its level key), so LAS tracks
+/// real bytes/CPU rather than the estimate; attained only ever grows (level never drops).
+TEST(RequestQueue, LasAppliesCostCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Las);
+    auto * a = f.makeQuery();
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    Int64 att1 = f.attainedOf(a);                         // 10 (the estimate)
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    Int64 att2 = f.attainedOf(a);
+    EXPECT_GE(att2, att1);                                // never backward
+    EXPECT_EQ(att2 - att1, 100);                          // attained advanced by the corrected cost
+}
+
+/// The weight-lowering threshold reads the query's attained service, into which finish() folds a
+/// correction immediately: a correction that pushes real service over the threshold lowers the weight
+/// on the very next request, with no one-request lag.
+TEST(RequestQueue, FairThresholdSeesPendingCorrectionImmediately)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    // weight 1.0, halve it once attained IO >= 50 bytes.
+    auto * a = f.makeQuery(/*weight=*/1.0, /*factor=*/0.5, /*age_s=*/0, /*cpu_s=*/0, /*io_b=*/50);
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    double vr1 = f.vruntimeOf(a);                         // 10: full weight, not yet over threshold
+    // Request 1 really moved 100 bytes: attained service (10 + 90) now exceeds 50, so request 2's
+    // effective weight must already be lowered (0.5) — finish() folded the delta into attained.
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    double vr2 = f.vruntimeOf(a);
+    // charge = 10 + 90 = 100; at the lowered weight 0.5 the advance is 100 / 0.5 = 200 (it would be
+    // 100 if the threshold had not yet seen the correction).
+    EXPECT_DOUBLE_EQ(vr2 - vr1, 200.0);
+}
+
+/// fair, unequal weights: the heavier query gets a larger share.
+TEST(RequestQueue, FairWeighted)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * heavy = f.makeQuery(2.0);
+    auto * light = f.makeQuery(1.0);
+    f.enqueue(1, heavy);
+    f.enqueue(2, heavy);
+    f.enqueue(3, heavy);
+    f.enqueue(9, light);
+    // heavy advances vruntime by 0.5/request, light by 1.0 → heavy is served more often.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 9, 2, 3}));
+}
+
+/// fair, weight lowering by age: an old query is deprioritised versus a fresh one.
+TEST(RequestQueue, FairWeightLoweringByAge)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    UInt64 now = clock_gettime_ns();
+    // Old query: started 100s ago, age threshold 10s, factor 0.01 → weight is strongly lowered.
+    auto * old_q = f.makeQuery(/*weight*/ 1.0, /*factor*/ 0.01, /*age_s*/ 10, 0, 0, /*start_ns*/ now - 100'000'000'000ULL);
+    auto * new_q = f.makeQuery(/*weight*/ 1.0, /*factor*/ 1.0, /*age_s*/ 10, 0, 0, /*start_ns*/ now);
+    f.enqueue(101, old_q);
+    f.enqueue(201, new_q);
+    f.enqueue(102, old_q);
+    f.enqueue(202, new_q);
+    // First requests both start at vtime 0; then the old query's vruntime jumps far ahead
+    // (cost/0.01), so its second request is served last.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{101, 201, 202, 102}));
+}
+
+/// fair, weight lowering by attained IO bytes: once a query has attained enough IO its weight is
+/// lowered, deprioritising its later requests versus a fresh query. Attained-service thresholds
+/// (unlike age) only take effect after the query has been served, so the queue is driven
+/// pop-then-push here.
+TEST(RequestQueue, FairWeightLoweringByIoBytes)
+{
+    Fixture f(SchedulerAlgorithm::Fair); // IOByte
+    auto * heavy = f.makeQuery(/*weight*/ 1.0, /*factor*/ 0.5, /*age_s*/ 0, /*cpu_s*/ 0, /*io_b*/ 1);
+    auto * fresh = f.makeQuery(/*weight*/ 1.0, /*factor*/ 1.0, 0, 0, 0);
+    // Serve one 1-byte request from `heavy` so its attained IO (1) reaches the threshold; from here
+    // its effective weight is halved (0.5), so its virtual runtime advances twice as fast.
+    f.enqueue(0, heavy, 1);
+    ASSERT_EQ(f.dequeueIds(), (std::vector<int>{0}));
+    f.enqueue(1, heavy, 1); // H1
+    f.enqueue(2, heavy, 1); // H2
+    f.enqueue(3, fresh, 1); // F1
+    f.enqueue(4, fresh, 1); // F2
+    f.enqueue(5, fresh, 1); // F3
+    // The halved weight delays heavy's second post-threshold request (id 2) behind the fresh query's
+    // F2 (id 4); at full weight it would be served 3rd, ahead of F2. (`fresh` joins at the rolled
+    // system virtual time, so it does not get a head-start for heavy's earlier solo request.)
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 4, 2, 5}));
+}
+
+/// fair, three equal-weight queries are interleaved round-robin.
+TEST(RequestQueue, FairEqualWeightThreeQueries)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    auto * c = f.makeQuery(1.0);
+    f.enqueue(11, a); f.enqueue(21, b); f.enqueue(31, c);
+    f.enqueue(12, a); f.enqueue(22, b); f.enqueue(32, c);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 31, 12, 22, 32}));
+}
+
+/// las: the query that has attained the least service is served first.
+TEST(RequestQueue, LasFavoursLeastAttained)
+{
+    Fixture f(SchedulerAlgorithm::Las); // IOByte, base = 1 MiB
+    auto * a = f.makeQuery();
+    auto * b = f.makeQuery();
+    const ResourceCost big = 4 * 1024 * 1024; // > base, so the level rises after one service
+
+    f.enqueue(1, a, big);
+    // Serve A once so it accrues attained service (moving it to a higher MLFQ level).
+    {
+        auto [r, _] = f.queue->dequeueRequest();
+        ASSERT_TRUE(r);
+        EXPECT_EQ(static_cast<TestRequest *>(r)->id, 1);
+    }
+    f.enqueue(2, a, big); // A: attained ~4 MiB → level >= 1
+    f.enqueue(3, b, big); // B: attained 0 → level 0
+    // B (least attained) is served before A's next request.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 2}));
+}
+
+/// las re-keys a stale request on pop: when a query has several requests queued at once, serving
+/// one advances its attained service, so its remaining requests are deferred to their true (higher)
+/// level instead of being served ahead of a lower-attained query. This is the IO / multi-request
+/// case (concurrent socket ops have independent requests); with one request per query (CPU via
+/// CPULeaseAllocation) it is a no-op.
+TEST(RequestQueue, LasRekeysStaleRequestsOnPop)
+{
+    Fixture f(SchedulerAlgorithm::Las); // IOByte, base = 1 MiB
+    auto * a = f.makeQuery();
+    auto * b = f.makeQuery();
+    const ResourceCost mib = 1'048'576; // one base quantum → serving one lifts A to level 1
+    f.enqueue(1, a, mib); // A1, A2, A3 all queued while A is at level 0
+    f.enqueue(2, a, mib);
+    f.enqueue(3, a, mib);
+    f.enqueue(9, b, 1);   // B1 (level 0)
+    // A1 served → A.attained = 1 MiB → level 1. A2/A3 are now stale (stored level 0); they are
+    // re-keyed to level 1 on pop, so B1 (still level 0) is served before them. Without the recheck
+    // the order would be the stale {1, 2, 3, 9}.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 9, 2, 3}));
+}
+
+/// priority: strict order by `workload_priority` (lower value = higher precedence; `0` is the neutral default).
+TEST(RequestQueue, PriorityStrictOrder)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    auto * p2 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 2);
+    auto * p1 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 1);
+    auto * p0 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0); // neutral default
+    f.enqueue(20, p2);
+    f.enqueue(0, p0);
+    f.enqueue(10, p1);
+    f.enqueue(21, p2);
+    // Lower value first: the priority-0 query, then priority 1, then the priority-2 pair (FIFO within).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{0, 10, 20, 21}));
+}
+
+/// priority ordering is exact for large values: an integer `Priority` key keeps two priorities that
+/// differ only above 2^53 distinct, whereas a double key would collapse them to one value (→ FIFO).
+TEST(RequestQueue, PriorityLargeValuesOrderExactly)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    const Int64 p_lo = (1LL << 53);      // 9007199254740992
+    const Int64 p_hi = (1LL << 53) + 1;  // 9007199254740993 — equal to p_lo once cast to double
+    auto * higher_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_lo); // lower value = higher precedence
+    auto * lower_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_hi);
+    f.enqueue(2, lower_prec); // enqueue the lower-precedence (larger value) request first
+    f.enqueue(1, higher_prec);
+    // p_lo < p_hi, so id 1 is served first despite arriving second. A double key would tie the two
+    // and fall back to FIFO ({2, 1}).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2}));
+}
+
+/// Negative `workload_priority` raises a query above the default `0`; a positive value lowers it
+/// below the default. Order is by signed value (lower = higher precedence), independent of arrival.
+TEST(RequestQueue, PriorityNegativeOutranksDefault)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    auto * high = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ -5); // above the default
+    auto * dflt = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0);
+    auto * low = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 5);  // below the default
+    f.enqueue(2, dflt);
+    f.enqueue(3, low);
+    f.enqueue(1, high);
+    // -5 < 0 < 5, so the negative-priority query is served first and the positive one last.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
+}
+
+/// The swap hook migrates all pending requests to the new algorithm; none are lost, and the
+/// node identity is unchanged.
+TEST(RequestQueue, SwapSchedulerKeepsRequests)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery();
+    for (int i = 1; i <= 5; ++i)
+        f.enqueue(i, a);
+    EXPECT_EQ(f.queue->getScheduler(), SchedulerAlgorithm::Fifo);
+
+    f.queue->setScheduler(SchedulerAlgorithm::Fair);
+    EXPECT_EQ(f.queue->getScheduler(), SchedulerAlgorithm::Fair);
+
+    auto [len, cost] = f.queue->getQueueLengthAndCost();
+    EXPECT_EQ(len, 5u);
+    EXPECT_EQ(cost, 5);
+    // All five requests are still there and dequeue (single query → FIFO under fair too).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4, 5}));
+}
+
+/// Toggling a fair leaf's algorithm away and back must not double-count the pending backlog's
+/// projected virtual runtime: the migrated queries' vruntime is reset on swap-into-fair, so a query
+/// is not pushed behind a fresh one by a doubled projection.
+TEST(RequestQueue, FairSwapRoundTripNoVruntimeDoubleCount)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    f.enqueue(1, a); // A1
+    f.enqueue(2, a); // A2 (A's projected vruntime is now 2)
+    // Swap the leaf's algorithm away from fair and back while A's requests are still queued.
+    f.queue->setScheduler(SchedulerAlgorithm::Priority);
+    f.queue->setScheduler(SchedulerAlgorithm::Fair);
+    f.enqueue(3, b); // B1, a fresh query
+    // With the vruntime reset A's backlog is re-projected once (A1 at vstart 0), so A1 leads the
+    // fresh B1 and A2 follows. Without it, A's doubled vruntime would push both A1 and A2 behind
+    // B1 (i.e. {3, 1, 2}).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 2}));
+}
+
+/// A finish() correction lands in `attained_cost`, which is persistent per-query service independent
+/// of the active algorithm, so it must survive a live `fair` → `las` swap. The migrated request is
+/// charged its estimate at pop under `las` on top of the preserved correction, so attained reflects
+/// real service (100), not just the estimate (10). Regression for a swap dropping accumulated service.
+TEST(RequestQueue, FairToLasSwapPreservesCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery();
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);   // finish() folds +90 into attained (=90)
+    f.enqueue(1, a, 10);                                 // fair charges vruntime; attained untouched at push
+    f.queue->setScheduler(SchedulerAlgorithm::Las);      // migrate the pending request to las
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));    // popped under las (+10 estimate → attained 100)
+    EXPECT_EQ(f.attainedOf(a), 100);                     // real service preserved across the swap, not 10
+}
+
+/// las: the lazy pop-time re-key must see a query's real attained service, not the level it was keyed
+/// at when enqueued. A query that badly under-estimated a finished request has had the shortfall
+/// folded into `attained_cost` by finish(); its next request must re-key to its true (higher) level
+/// and defer behind a genuinely lighter query. Regression for the re-key using the stale enqueue key.
+TEST(RequestQueue, LasRekeySeesPendingCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Las);
+    auto * a = f.makeQuery();
+    auto * c = f.makeQuery();
+    f.enqueue(1, a, 10);   // A: enqueued first, keyed at level(attained=0)
+    f.enqueue(2, c, 10);   // C: keyed at level(attained=0); ties with A → A sorts first by seq
+    // A's finished request really cost far more than estimated → finish() folds it into A's attained.
+    f.addCorrection(a, /*real=*/64 * 1024 * 1024, /*estimate=*/10);
+    // A's front request re-keys to its true (high) level and defers, so C (truly least-attained) is
+    // served first; keyed on the stale enqueue level A would pop first on the level-0 seq tie.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
+}
+
+/// Cancellation from the middle works for both algorithms; counters update.
+TEST(RequestQueue, CancelFromMiddle)
+{
+    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las})
+    {
+        Fixture f(algo);
+        auto * a = f.makeQuery();
+        auto * r1 = f.enqueue(1, a);
+        auto * r2 = f.enqueue(2, a);
+        auto * r3 = f.enqueue(3, a);
+        EXPECT_TRUE(f.queue->cancelRequest(r2));
+        EXPECT_EQ(f.queue->canceled_requests.load(), 1u);
+        EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3}));
+        EXPECT_FALSE(f.queue->cancelRequest(r1)); // already dequeued
+        (void)r3;
+    }
+}
+
+/// max_waiting_queries is enforced on the total pending count for both algorithms.
+TEST(RequestQueue, MaxWaitingQueries)
+{
+    for (auto algo : {SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las})
+    {
+        Fixture f(algo, CostUnit::IOByte, /*max_queued*/ 2);
+        auto * a = f.makeQuery();
+        f.enqueue(1, a);
+        f.enqueue(2, a);
+        TestRequest overflow(3);
+        overflow.scheduling.context = a;
+        EXPECT_THROW(f.queue->enqueueRequest(&overflow), DB::Exception);
+        EXPECT_EQ(f.queue->rejected_requests.load(), 1u);
+    }
+}
+
+/// updateQueueLimit(0) is valid: 0 means "reject every waiting request", the same limit applied at
+/// construction, so CREATE OR REPLACE WORKLOAD does not diverge from CREATE for max_waiting_queries=0.
+/// Only a negative limit is rejected.
+TEST(RequestQueue, UpdateQueueLimitAllowsZero)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery();
+    f.queue->updateQueueLimit(0); // must not throw
+    TestRequest r(1);
+    r.scheduling.context = a;
+    EXPECT_THROW(f.queue->enqueueRequest(&r), DB::Exception);  // zero-length queue rejects any waiter
+    EXPECT_THROW(f.queue->updateQueueLimit(-1), DB::Exception); // a negative limit is still invalid
+}
+
+/// purge fails all pending requests and rejects new ones.
+TEST(RequestQueue, Purge)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery();
+    auto * r1 = f.enqueue(1, a);
+    auto * r2 = f.enqueue(2, a); // a fair leaf requires a non-null context (never-null invariant)
+    f.queue->purgeQueue();
+    EXPECT_EQ(r1->failed_count, 1);
+    EXPECT_EQ(r2->failed_count, 1);
+    TestRequest r3(3);
+    EXPECT_THROW(f.queue->enqueueRequest(&r3), DB::Exception);
+}
+
+/// reset() clears the per-request scheduling state so a reused request carries nothing stale.
+TEST(RequestQueue, ResetClearsSchedulingState)
+{
+    auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, 0);
+    TestRequest r(1, 5);
+    r.scheduling.context = ctx.get();
+    r.scheduling.key = {42.0, 7};
+    r.scheduling.priority = Priority{123};
+    r.reset(9);
+    EXPECT_EQ(r.scheduling.context, nullptr);
+    EXPECT_EQ(r.scheduling.key.first, 0.0);
+    EXPECT_EQ(r.scheduling.key.second, 0u);
+    EXPECT_EQ(r.scheduling.priority.value, 0);
+    EXPECT_EQ(r.cost, 9);
+}
+
+/// Node-level: the leaf is always a RequestQueue (type "request_queue", basename "queue"); the
+/// workload `scheduler` setting selects the algorithm and a change swaps it in place.
+TEST(RequestQueue, NodeTypeAndSchedulerSetting)
+{
+    ResourceTestClass t;
+
+    WorkloadSettings def; // scheduler defaults to "fifo"
+    auto node = t.createUnifiedNode("all", def);
+    auto * queue = node->getLink().queue;
+    EXPECT_EQ(String(queue->getTypeName()), "request_queue");
+
+    WorkloadSettings fair;
+    fair.scheduler = "fair";
+    t.updateUnifiedNode(node, nullptr, nullptr, fair);
+    // Same node object (in-place swap), still a request_queue.
+    EXPECT_EQ(node->getLink().queue, queue);
+    EXPECT_EQ(String(node->getLink().queue->getTypeName()), "request_queue");
+}
+
+/// weight_lowering_factor is clamped to [0, 1] so it can only lower a query's weight: a factor > 1
+/// (which would otherwise RAISE the share and invert the setting) is capped at 1.0, and a negative
+/// factor is floored at 0.0. A non-positive base weight falls back to 1.0.
+TEST(RequestQueue, WeightLoweringFactorClamped)
+{
+    ResourceSchedulingContext raised(clock_gettime_ns(), 1.0, 10.0, 0, 0, 0, 0);
+    EXPECT_EQ(raised.weight_lowering_factor, 1.0);
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, -5.0, 0, 0, 0, 0);
+    EXPECT_EQ(negative.weight_lowering_factor, 0.0);
+    ResourceSchedulingContext normal(clock_gettime_ns(), 1.0, 0.25, 0, 0, 0, 0);
+    EXPECT_EQ(normal.weight_lowering_factor, 0.25);
+    ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, 0);
+    EXPECT_EQ(zero_weight.weight, 1.0);
+    ResourceSchedulingContext negative_weight(clock_gettime_ns(), -3.0, 1.0, 0, 0, 0, 0);
+    EXPECT_EQ(negative_weight.weight, 1.0);
+}
+
+TEST(RequestQueue, WeightLoweringThresholdsClampNegativeToDisabled)
+{
+    // A negative lowering threshold is meaningless and is clamped to 0 (disabled), rather than
+    // stored as-is and only read as disabled by the `> 0` checks in the weight-lowering logic.
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 0.5, -1.0, -2.0, -3.0, 0);
+    EXPECT_EQ(negative.weight_lowering_age_seconds, 0.0);
+    EXPECT_EQ(negative.weight_lowering_cpu_seconds, 0.0);
+    EXPECT_EQ(negative.weight_lowering_io_bytes, 0.0);
+    // Positive thresholds are preserved verbatim.
+    ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 0.5, 3.0, 4.0, 5.0, 0);
+    EXPECT_EQ(positive.weight_lowering_age_seconds, 3.0);
+    EXPECT_EQ(positive.weight_lowering_cpu_seconds, 4.0);
+    EXPECT_EQ(positive.weight_lowering_io_bytes, 5.0);
+}
+
+/// `fair` accounts virtual runtime from `scheduling.cost` (the query's DECLARED cost), not `cost`
+/// (which ResourceBudget::ask rewrites queue-wide). Simulate a budget that inflated query A's first
+/// request `cost` far above its declared cost: A must still interleave fairly with B instead of
+/// being pushed to the back by another query's estimation error bleeding through the shared budget.
+TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+
+    // A1: declared cost 1 (so scheduling.cost == 1), but `cost` inflated to 1000 as if
+    // ResourceBudget::ask() had rewritten it queue-wide after reset().
+    f.pool.emplace_back(11, 1);
+    TestRequest * a1 = &f.pool.back();
+    a1->scheduling.context = a;
+    a1->scheduling.state = a->resourceState(0);
+    a1->cost = 1000;
+    f.queue->enqueueRequest(a1);
+
+    f.enqueue(21, b);
+    f.enqueue(12, a);
+    f.enqueue(22, b);
+    // With scheduling.cost (=1) A and B interleave fairly: 11,21,12,22.
+    // Had fair used `cost` (=1000), A's vruntime would jump and A2 would be served last: 11,21,22,12.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
+}
+
+/// Request tagging at enqueue: accounting algorithms (`fair`/`las`) mark a request `tracks_attained`
+/// so its real service accumulates; `fair` additionally marks `tracks_vruntime` for its private
+/// vruntime correction. `fifo`/`priority` set neither, so ResourceGuard::finish() feeds them nothing.
+TEST(RequestQueue, CostTrackingFlagsPerScheduler)
+{
+    auto attained = [](SchedulerAlgorithm algo)
+    {
+        Fixture f(algo);
+        auto * q = f.makeQuery();
+        return f.enqueue(1, q)->scheduling.tracks_attained;
+    };
+    auto vruntime = [](SchedulerAlgorithm algo)
+    {
+        Fixture f(algo);
+        auto * q = f.makeQuery();
+        return f.enqueue(1, q)->scheduling.tracks_vruntime;
+    };
+    EXPECT_FALSE(attained(SchedulerAlgorithm::Fifo));
+    EXPECT_FALSE(attained(SchedulerAlgorithm::Priority));
+    EXPECT_TRUE(attained(SchedulerAlgorithm::Fair));
+    EXPECT_TRUE(attained(SchedulerAlgorithm::Las));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Fifo));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Priority));
+    EXPECT_TRUE(vruntime(SchedulerAlgorithm::Fair));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Las));
+}
+
+/// A live `setScheduler` swap must re-tag the migrated backlog for the new algorithm's accounting:
+/// enqueueRequest() tags a request only on the normal path, so a request enqueued under `fifo`
+/// (no tags) and migrated to `las`/`fair` must gain `tracks_attained` (and `tracks_vruntime` under
+/// fair) — otherwise dequeue/finish would never charge its service under the new algorithm.
+TEST(RequestQueue, SetSchedulerRetagsMigratedRequests)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery(1.0);
+    auto * r = f.enqueue(1, a, 10);
+    EXPECT_FALSE(r->scheduling.tracks_attained);   // fifo tags nothing
+    EXPECT_FALSE(r->scheduling.tracks_vruntime);
+    f.queue->setScheduler(SchedulerAlgorithm::Las);
+    EXPECT_TRUE(r->scheduling.tracks_attained);    // las tracks attained
+    EXPECT_FALSE(r->scheduling.tracks_vruntime);
+    f.queue->setScheduler(SchedulerAlgorithm::Fair);
+    EXPECT_TRUE(r->scheduling.tracks_attained);    // fair tracks both
+    EXPECT_TRUE(r->scheduling.tracks_vruntime);
+}

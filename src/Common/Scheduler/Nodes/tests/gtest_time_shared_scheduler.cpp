@@ -44,6 +44,9 @@ struct ResourceHolder
 {
     ResourceTest & t;
     SchedulerNodePtr root_node;
+    // Per-query scheduling context the classifier stamps onto links in production; the test owns one
+    // and stamps it onto the links it hands out so query-aware schedulers always have a context.
+    ResourceSchedulingContextPtr sched_context = std::make_shared<ResourceSchedulingContext>(0, 1.0, 1.0, 0.0, 0.0, 0.0, 0);
 
     explicit ResourceHolder(ResourceTest & t_)
         : t(t_)
@@ -63,7 +66,8 @@ struct ResourceHolder
     template <class... Args>
     ResourceLink addQueue(const String & path, Args... args)
     {
-        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<FifoQueue>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...))};
+        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<RequestQueue>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...)),
+                .scheduling_context = sched_context.get()};
     }
 
     void registerResource()

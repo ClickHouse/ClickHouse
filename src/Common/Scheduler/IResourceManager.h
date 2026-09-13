@@ -19,6 +19,17 @@ using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
 struct ClassifierSettings
 {
     bool throw_on_unknown_workload = false;
+
+    /// Per-query scheduling parameters (types match the corresponding query settings). The classifier
+    /// builds one `ResourceSchedulingContext` from these and stamps it onto every `ResourceLink` it
+    /// hands out, so the query-aware schedulers can weight and age this query. Defaults describe a
+    /// query that set nothing.
+    float weight = 1.0f;
+    float weight_lowering_factor = 1.0f;
+    float weight_lowering_age_seconds = 0.0f;
+    float weight_lowering_cpu_seconds = 0.0f;
+    float weight_lowering_io_bytes = 0.0f;
+    Int64 priority = 0;
 };
 
 /*

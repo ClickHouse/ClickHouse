@@ -759,6 +759,49 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
+    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
+    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
+    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
+    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
+    // stays forward-compatible and no stricter than the runtime parser in
+    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
+    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
+    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
+    // still rejected. Both the base group and each per-resource group are checked. Only new/changed
+    // entities are checked (like the cost-unit check above), so a pre-existing entity is not
+    // re-validated on every refresh.
+    for (const auto & change : changes)
+    {
+        if (!change.after)
+            continue;
+        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
+        {
+            WorkloadSettings validator;
+            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
+            std::unordered_set<String> validated_resources;
+            for (const auto & setting_change : workload->changes)
+            {
+                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
+                {
+                    // A `... FOR <resource>` clause must reference an existing resource (not a
+                    // workload, not a missing entity) — the same contract storeEntity enforces via
+                    // forEachReference.
+                    auto ref = merged_new_entities.find(setting_change.resource);
+                    if (ref == merged_new_entities.end())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
+                            workload->getWorkloadName(), setting_change.resource);
+                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload settings should reference resource in FOR clause, not '{}'.",
+                            setting_change.resource);
+                    WorkloadSettings resource_validator;
+                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
+                }
+            }
+        }
+    }
+
     // Update local entities
     local_entities = std::move(local_new_entities);
 

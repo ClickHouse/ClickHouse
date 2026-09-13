@@ -5,11 +5,13 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -70,6 +72,10 @@ public:
             // spuriously throw even though this (new) request was granted via `execute()`.
             exception = {};
             ResourceRequest::reset(cost_);
+            // Tag this request with the query's scheduling context + per-resource state, which the
+            // classifier stamped onto the link (reset() cleared any stale ones from a previous reuse).
+            scheduling.context = link_.scheduling_context;
+            scheduling.state = link_.scheduling_state;
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
@@ -103,6 +109,15 @@ public:
             state = Finished;
             if (estimated_cost != real_cost_)
                 link_.queue->adjustBudget(estimated_cost, real_cost_);
+            // Now that the real cost is known, correct the per-query service that was charged at the
+            // enqueue estimate. `attained_cost` (common to `fair`/`las`) and `fair`'s independent
+            // `vruntime_correction` receive the same delta but are applied separately by their owners;
+            // a leaf that accounts neither (`fifo`/`priority`) is tagged for neither.
+            const Int64 service_delta = static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost);
+            if (scheduling.tracks_attained)
+                scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
+            if (scheduling.tracks_vruntime)
+                scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);
