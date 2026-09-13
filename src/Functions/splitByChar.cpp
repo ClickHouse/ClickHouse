@@ -122,9 +122,9 @@ REGISTER_FUNCTION(SplitByChar)
 Splits a string separated by a specified constant string `separator` of exactly one character into an array of substrings.
 Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 Empty substrings may be selected when:
 - A separator occurs at the beginning or end of the string

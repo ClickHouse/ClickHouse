@@ -314,6 +314,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            ++query_node_depth;
+
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
 
@@ -322,7 +325,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            in_function_or_join_entry.subquery_depth = query_node_depth;
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -332,7 +335,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            in_function_or_join_entry.subquery_depth = query_node_depth;
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -343,6 +346,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            --query_node_depth;
+
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
     }
@@ -387,14 +393,27 @@ private:
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
+            /** A single `IN` function or `JOIN` is reached once per distributed table inside of it.
+              * For example, the right argument of an `IN` function can be a `UNION` of several
+              * distributed tables. Only the first of them rewrites the node, and the node has to be
+              * collected only once, otherwise the same subquery is prepared twice.
+              * A node on the stack is `GLOBAL` only if we made it `GLOBAL` ourselves, because
+              * `enterImpl` puts a node on the stack only while it is local.
+              */
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
             {
+                if (isNameOfGlobalInFunction(in_function_to_modify->getFunctionName()))
+                    return;
+
                 auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
                 auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
                 in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
             }
             else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
             {
+                if (join_node_to_modify->getLocality() == JoinLocality::Global)
+                    return;
+
                 join_node_to_modify->setLocality(JoinLocality::Global);
             }
 
@@ -413,6 +432,9 @@ private:
         }
     }
 
+    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
+    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
+    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
@@ -899,7 +921,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithHashIgnoreAliasesMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 

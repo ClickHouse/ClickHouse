@@ -2058,7 +2058,8 @@ def test_timeseries(started_cluster):
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
         CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
-        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
         METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
@@ -2069,7 +2070,7 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
-    # The outer table + 4 inner tables (samples, tags, metrics and the on-by-default recent samples).
+    # The outer table + 4 inner tables (samples, recent samples, tags and metrics).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """
@@ -2196,6 +2197,64 @@ def test_alias_with_dropped_target(started_cluster):
     )
 
     # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_remote_engine_over_table_function_with_dropped_target(started_cluster):
+    db_name = "test_remote_dropped_target"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        CREATE TABLE {db_name}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+        CREATE TABLE {db_name}.remote_over_merge (x UInt64)
+            ENGINE = Remote('127.0.0.1', merge('{db_name}', '^src$'));
+        DROP TABLE {db_name}.src;
+        """
+    )
+
+    errors_before = int(
+        dummy_node.count_in_log(f"Error on initialization of {db_name}")
+    )
+
+    # A second replica holds no local metadata, so it instantiates every table of the ZooKeeper
+    # snapshot, including the `Remote` one whose `merge('...', '^src$')` target now matches
+    # nothing. The stored definition carries its own columns and must be accepted as it is.
+    dummy_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' ORDER BY name",
+        "remote_over_merge\n",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert (
+        dummy_node.query(
+            f"SELECT name, type FROM system.columns "
+            f"WHERE database = '{db_name}' AND table = 'remote_over_merge'"
+        )
+        == "x\tUInt64\n"
+    )
+    errors_after = int(dummy_node.count_in_log(f"Error on initialization of {db_name}"))
+    assert errors_after == errors_before, (
+        f"replica recovery logged {errors_after - errors_before} initialization error(s) "
+        f"for {db_name}"
+    )
+
+    # DDL accepted and replicated from the recovered replica: its DDLWorker is running.
+    dummy_node.query(
+        f"CREATE TABLE {db_name}.after_recovery (y UInt64) ENGINE = MergeTree ORDER BY y"
+    )
+    main_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    assert main_node.query(f"EXISTS TABLE {db_name}.after_recovery") == "1\n"
+
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 

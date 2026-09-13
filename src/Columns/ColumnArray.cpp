@@ -229,6 +229,12 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     return result;
 }
 
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data.empty() || offsets_data.back() == 0;
+}
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /// Similarly - only for arrays of fixed length values.
@@ -313,15 +319,6 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
         getData().deserializeAndInsertFromArena(in, settings);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-}
-
-void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
-{
-    size_t array_size = 0;
-    readBinaryLittleEndian<size_t>(array_size, in);
-
-    for (size_t i = 0; i < array_size; ++i)
-        getData().skipSerializedInArena(in);
 }
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const

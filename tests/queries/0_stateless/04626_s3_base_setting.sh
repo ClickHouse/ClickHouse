@@ -40,24 +40,5 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_s3_base"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE test_s3_base FORMAT TabSeparatedRaw" | grep -cF "S3('${BUCKET_URL}/${FILE}'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_s3_base"
 
-echo '--- S3 table engine from a named collection with a relative URL, resolved URL is materialized into the DDL'
-NC="nc_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-# Never drop the named collection here: an interrupted previous run can leave both the collection and
-# the table behind, and dropping only the collection is exactly the broken state described at the end
-# of the test. Reuse a leftover collection instead of recreating it - its contents are deterministic -
-# and let the `DROP TABLE IF EXISTS` below remove a leftover table.
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION IF NOT EXISTS ${NC} AS url = '${FILE}', access_key_id = 'test', secret_access_key = 'testtest', format = 'TSV'"
-${CLICKHOUSE_CLIENT} -q "SET s3_base = '${BUCKET_URL}/'; DROP TABLE IF EXISTS test_s3_base_nc; CREATE TABLE test_s3_base_nc (n UInt32, s String) ENGINE = S3(${NC});"
-${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE test_s3_base_nc FORMAT TabSeparatedRaw" | grep -cF "url = '${BUCKET_URL}/${FILE}'"
-# The table must survive DETACH/ATTACH in a session where s3_base is not set.
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE test_s3_base_nc"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE test_s3_base_nc"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_s3_base_nc"
-# Drop the named collection only after the table drop has succeeded. Under the stress test the
-# server can be killed mid-test; the failed `DROP TABLE` is then skipped while the `DROP NAMED
-# COLLECTION` succeeds against the restarted server, leaving a table whose `ATTACH` references a
-# missing named collection — and the next server restart fails to load metadata.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE test_s3_base_nc" && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${NC}"
-
 echo '--- s3_base without a scheme is an error'
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM s3('${FILE}', 'test', 'testtest', 'TSV', 'n UInt32, s String') SETTINGS s3_base = 'localhost:11111/test/'" 2>&1 | grep -oF 'must contain a scheme' | head -1

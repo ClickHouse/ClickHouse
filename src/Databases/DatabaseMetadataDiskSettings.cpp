@@ -15,6 +15,7 @@ namespace DB
 #define LIST_OF_DATABASE_METADATA_DISK_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, disk, "", R"(Name of disk storing table metadata files in the database.)", 0) \
     DECLARE(Bool, lazy_load_tables, false, R"(If enabled, tables are not loaded during database startup. Instead, a lightweight proxy is created and the real table is loaded on first access.)", 0) \
+    DECLARE(UInt64, max_tables, 0, R"(Maximum number of tables the database may contain. 0 means unlimited. Every table-like object counts: tables, views and dictionaries. When the limit is reached, CREATE TABLE and ATTACH TABLE throw an exception.)", 0) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS, DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES)
 
