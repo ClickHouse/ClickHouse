@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_set>
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
@@ -15,6 +16,8 @@
 #include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
@@ -1052,114 +1055,348 @@ static bool isOneOf(TokenType token)
     return ((token == tokens) || ...);
 }
 
-bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+/// True if the text of a `Number` token is a plain decimal numeral: decimal digits, at most one
+/// decimal point, and an optional decimal exponent. Only for these is the text of the number
+/// interchangeable with the number itself, because the text parsers of the numeric types read
+/// nothing else. The forms they do not read are hexadecimal (`0xff`) and binary (`0b101`) numbers,
+/// including their base-2 exponent (`0x1p3`), and digit separators (`1_000_000`).
+static bool isPlainDecimalNumeral(std::string_view text)
+{
+    size_t pos = 0;
+    size_t digits = 0;
+
+    while (pos < text.size() && isNumericASCII(text[pos]))
+    {
+        ++pos;
+        ++digits;
+    }
+
+    if (pos < text.size() && text[pos] == '.')
+    {
+        ++pos;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+        {
+            ++pos;
+            ++digits;
+        }
+    }
+
+    if (digits == 0)
+        return false;
+
+    if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E'))
+    {
+        ++pos;
+        if (pos < text.size() && (text[pos] == '-' || text[pos] == '+'))
+            ++pos;
+
+        size_t exponent_digits = 0;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+        {
+            ++pos;
+            ++exponent_digits;
+        }
+
+        if (exponent_digits == 0)
+            return false;
+    }
+
+    return pos == text.size();
+}
+
+/// True if a plain decimal numeral is written without a fractional part and without an exponent.
+/// That is the only form an integer type reads: `1e3` stands for an integer, but `readIntText` stops
+/// at the `e`.
+static bool isIntegerNumeral(std::string_view text)
+{
+    return text.find_first_of(".eE") == std::string_view::npos;
+}
+
+static std::string_view tokenText(IParser::Pos pos)
+{
+    return std::string_view(pos->begin, pos->end - pos->begin);
+}
+
+/// The `NULL` keyword in any case, which the lexer leaves as a bare word.
+static bool isNullKeyword(std::string_view text)
+{
+    return text.size() == 4
+        && (text[0] == 'N' || text[0] == 'n')
+        && (text[1] == 'U' || text[1] == 'u')
+        && (text[2] == 'L' || text[2] == 'l')
+        && (text[3] == 'L' || text[3] == 'l');
+}
+
+/// Scans an array or a tuple of numbers, strings and `NULL`s, and of nested arrays and tuples of them,
+/// leaving `pos` right after it. Returns the end of its text, or nullptr if there is no such
+/// collection ahead, in which case `pos` is left somewhere inside what was scanned.
+static const char * scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
 {
     using enum TokenType;
 
-    /// Parse numbers (including decimals), strings, arrays and tuples of them.
+    const char * data_end = pos->end;
 
-    Pos begin = pos;
+    /// A round bracket holding a single number or string is a parenthesized expression rather than a
+    /// one-element tuple: `(1)` is the value `1`, and only a tuple type reads `(1)` as text. Whatever
+    /// else a round bracket can hold - a comma, nothing at all, a nested collection - is a tuple, so
+    /// its text is read as one.
+    const bool outer_is_round = pos->type == OpeningRoundBracket;
+    bool holds_own_comma = false;
+    bool holds_own_scalar = false;
+
+    TokenType last_token = OpeningSquareBracket;
+    std::vector<TokenType> stack;
+    while (pos.isValid())
+    {
+        /// Whether this token sits directly inside the outermost bracket.
+        const bool own = stack.size() == 1;
+
+        if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
+        {
+            stack.push_back(pos->type);
+            if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
+                return nullptr;
+        }
+        else if (pos->type == ClosingSquareBracket)
+        {
+            if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
+                return nullptr;
+            if (stack.empty() || stack.back() != OpeningSquareBracket)
+                return nullptr;
+            stack.pop_back();
+        }
+        else if (pos->type == ClosingRoundBracket)
+        {
+            if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
+                return nullptr;
+            if (stack.empty() || stack.back() != OpeningRoundBracket)
+                return nullptr;
+            stack.pop_back();
+        }
+        else if (pos->type == Comma)
+        {
+            if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
+                return nullptr;
+            if (stack.empty())
+                break;
+            holds_own_comma |= own;
+        }
+        else if (pos->type == Number)
+        {
+            if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
+                return nullptr;
+            if (!isPlainDecimalNumeral(tokenText(pos)))
+                return nullptr;
+            literal.all_integers &= isIntegerNumeral(tokenText(pos));
+            holds_own_scalar |= own;
+        }
+        else if (isOneOf<StringLiteral, Minus>(pos->type))
+        {
+            if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
+                return nullptr;
+            if (pos->type == StringLiteral)
+            {
+                literal.all_numbers = false;
+                holds_own_scalar |= own;
+            }
+            else
+            {
+                literal.all_non_negative = false;
+            }
+        }
+        else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
+        {
+            if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
+                return nullptr;
+            literal.has_null = true;
+            holds_own_scalar |= own;
+        }
+        else
+        {
+            break;
+        }
+
+        /// Update data_end on every iteration to avoid appearances of extra trailing
+        /// whitespaces into data. Whitespaces are skipped at operator '++' of Pos.
+        data_end = pos->end;
+        last_token = pos->type;
+        ++pos;
+    }
+
+    if (!stack.empty())
+        return nullptr;
+
+    if (outer_is_round && !holds_own_comma && holds_own_scalar)
+        return nullptr;
+
+    return data_end;
+}
+
+bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
+{
+    using enum TokenType;
+
+    /// Numbers (including decimals), and arrays and tuples of numbers and strings.
+
+    IParser::Pos begin = pos;
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
-    ASTPtr string_literal;
+
+    LiteralAsText result;
 
     if (pos->type == Minus)
     {
         ++pos;
-        if (pos->type != Number)
+        if (pos->type != Number || !isPlainDecimalNumeral(tokenText(pos)))
+        {
+            pos = begin;
             return false;
+        }
 
+        result.all_non_negative = false;
+        result.all_integers = isIntegerNumeral(tokenText(pos));
         data_end = pos->end;
         ++pos;
     }
     else if (pos->type == Number)
     {
-        ++pos;
-    }
-    else if (pos->type == StringLiteral)
-    {
-        if (!ParserStringLiteral().parse(begin, string_literal, expected))
+        if (!isPlainDecimalNumeral(tokenText(pos)))
             return false;
+
+        result.all_integers = isIntegerNumeral(tokenText(pos));
+        ++pos;
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        TokenType last_token = OpeningSquareBracket;
-        std::vector<TokenType> stack;
-        while (pos.isValid())
+        data_end = scanCollectionOfLiteralsAsText(pos, result);
+        if (!data_end)
         {
-            if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
-            {
-                stack.push_back(pos->type);
-                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                    return false;
-            }
-            else if (pos->type == ClosingSquareBracket)
-            {
-                if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
-                    return false;
-                if (stack.empty() || stack.back() != OpeningSquareBracket)
-                    return false;
-                stack.pop_back();
-            }
-            else if (pos->type == ClosingRoundBracket)
-            {
-                if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
-                    return false;
-                if (stack.empty() || stack.back() != OpeningRoundBracket)
-                    return false;
-                stack.pop_back();
-            }
-            else if (pos->type == Comma)
-            {
-                if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                    return false;
-                if (stack.empty())
-                    break;
-            }
-            else if (pos->type == Number)
-            {
-                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                    return false;
-            }
-            else if (isOneOf<StringLiteral, Minus>(pos->type))
-            {
-                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                    return false;
-            }
-            else
-            {
-                break;
-            }
-
-            /// Update data_end on every iteration to avoid appearances of extra trailing
-            /// whitespaces into data. Whitespaces are skipped at operator '++' of Pos.
-            data_end = pos->end;
-            last_token = pos->type;
-            ++pos;
-        }
-
-        if (!stack.empty())
+            pos = begin;
             return false;
+        }
     }
     else
         return false;
 
-    if (!ParserToken(DoubleColon).ignore(pos, expected))
+    result.text.assign(data_begin, data_end - data_begin);
+    literal = std::move(result);
+    return true;
+}
+
+/// How a target type reads a numeral written as text, for the types that read it more precisely than
+/// a numeric literal carries it. `Decimal` reads the text digit by digit instead of taking the
+/// nearest `Float64`, and the integers wider than 64 bits are only reachable through `Float64` for a
+/// literal of more than 19 digits. Everything narrower is already carried exactly, and the types
+/// whose text means something other than the number - `1` is one second for `DateTime` and one octet
+/// for `IPv4` - would read the text differently, not more precisely.
+enum class NumeralReader : uint8_t
+{
+    None,
+    /// Reads a numeral in any form `isPlainDecimalNumeral` accepts, sign and exponent included.
+    Decimal,
+    /// Reads only an integer numeral.
+    SignedInteger,
+    /// Reads only a non-negative integer numeral.
+    UnsignedInteger,
+};
+
+/// `nullable` is set when a `Nullable` is passed on the way, which is what reads a `NULL` back.
+static NumeralReader numeralReaderOf(const IAST & type, bool & nullable)
+{
+    const auto * data_type = type.as<ASTDataType>();
+    if (!data_type)
+        return NumeralReader::None;
+
+    const String name = Poco::toUpper(data_type->name);
+
+    /// These hand the text over to the type they wrap. `LowCardinality` belongs here because the
+    /// conversion of a field strips it before looking at the value - see `convertFieldToType` - so
+    /// a numeral would take the same lossy path as with the wrapped type alone.
+    if (name == "NULLABLE" || name == "ARRAY" || name == "LOWCARDINALITY")
+    {
+        const auto arguments = data_type->getArguments();
+        if (!arguments || arguments->children.size() != 1)
+            return NumeralReader::None;
+        nullable |= name == "NULLABLE";
+        return numeralReaderOf(*arguments->children[0], nullable);
+    }
+
+    static const std::unordered_set<std::string_view> decimal_names
+    {
+        "DECIMAL", "DECIMAL32", "DECIMAL64", "DECIMAL128", "DECIMAL256",
+        /// Aliases registered by `DataTypesDecimal`.
+        "DEC", "NUMERIC", "FIXED",
+    };
+
+    if (decimal_names.contains(name))
+        return NumeralReader::Decimal;
+    if (name == "INT128" || name == "INT256")
+        return NumeralReader::SignedInteger;
+    if (name == "UINT128" || name == "UINT256")
+        return NumeralReader::UnsignedInteger;
+
+    return NumeralReader::None;
+}
+
+bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & literal, const IParser::Pos & outer_pos)
+{
+    Tokens tokens(type_text.data(), type_text.data() + type_text.size());
+    IParser::Pos pos(tokens, outer_pos);
+
+    /// A local `Expected`: what is found here is not what the query is expected to hold, and the
+    /// positions point into `type_text` rather than into the query, so neither belongs in the error
+    /// message of the query being parsed. It also keeps the literals of the type - the `76` of
+    /// `Decimal256(76)` - out of the literal token map, which the type AST being thrown away right
+    /// after would otherwise leave holding freed addresses. See `parseDataTypeAsText`.
+    Expected expected;
+
+    ASTPtr type;
+    if (!ParserDataType().parse(pos, type, expected) || !pos->isEnd())
+        return false;
+
+    bool nullable = false;
+    const NumeralReader reader = numeralReaderOf(*type, nullable);
+
+    /// A `NULL` element is only read back by a `Nullable` target.
+    if (literal.has_null && !nullable)
+        return false;
+
+    switch (reader)
+    {
+        case NumeralReader::None:
+            return false;
+        case NumeralReader::Decimal:
+            return literal.all_numbers;
+        case NumeralReader::SignedInteger:
+            return literal.all_numbers && literal.all_integers;
+        case NumeralReader::UnsignedInteger:
+            return literal.all_numbers && literal.all_integers && literal.all_non_negative;
+    }
+}
+
+bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    LiteralAsText literal;
+    if (!parseLiteralAsText(pos, literal))
+        return false;
+
+    if (!ParserToken(TokenType::DoubleColon).ignore(pos, expected))
         return false;
 
     std::optional<String> type_text = parseDataTypeAsText(pos, expected);
     if (!type_text)
         return false;
 
-    if (string_literal)
-    {
-        node = createFunctionCast(string_literal, std::move(*type_text));
-        return true;
-    }
+    /// A literal holding a `NULL` goes as text only when the target type provably reads it back -
+    /// see `typeReadsLiteralExactly`. Everything else falls back to the ordinary expression path,
+    /// where a `NULL` converts, or fails to, the way it always did: the text parsers of some types
+    /// would silently turn it into a default value instead.
+    if (literal.has_null && !typeReadsLiteralExactly(*type_text, literal, pos))
+        return false;
 
-    size_t data_size = data_end - data_begin;
-    auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
-    node = createFunctionCast(literal, std::move(*type_text));
+    /// The text is a literal only together with the type that reads it, so it is not recorded in the
+    /// literal token map - it is not a literal of the query on its own.
+    node = createFunctionCast(make_intrusive<ASTLiteral>(std::move(literal.text)), std::move(*type_text));
     return true;
 }
 
