@@ -1,0 +1,6 @@
+-- a path with an embedded NUL is rejected
+1
+-- the same for icebergLocal
+1
+-- a path inside user_files is still accepted (and fails for its own reason)
+1
