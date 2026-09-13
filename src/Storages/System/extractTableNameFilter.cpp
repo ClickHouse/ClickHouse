@@ -13,7 +13,6 @@ namespace DB
 namespace
 {
 
-
 /// Try to read a constant string from `node` and return its single value.
 /// Unwraps aliases and reads the value via `ColumnConst::getField`, which works
 /// even for a `ColumnConst` of logical size 0 (a "pure" constant, as produced by
@@ -101,7 +100,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
         const auto * lhs = skipAliases(conjunct->children[0]);
         const auto * rhs = skipAliases(conjunct->children[1]);
 
-        /// The `name` column reads as an INPUT named "name" once aliases are
+        /// The table-name column reads as an INPUT named `name_column` once aliases are
         /// unwrapped. (A constant carries `column`; the column reference does not.)
         auto is_name_column = [name_column](const ActionsDAG::Node * n)
         {
@@ -120,7 +119,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
         }
         else if (fn_name == "like")
         {
-            /// Not symmetric: only `name LIKE 'pattern'` (name on lhs) constrains `name`.
+            /// Not symmetric: only `<column> LIKE 'pattern'` (column on lhs) constrains the column.
             /// Keep the first such pattern if no `equals` is found.
             if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
             {
@@ -130,7 +129,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
         }
         else if (fn_name == "startsWith")
         {
-            /// Analyzer rewrite of a perfect-prefix `name LIKE 'prefix%'`. The literal
+            /// Analyzer rewrite of a perfect-prefix `<column> LIKE 'prefix%'`. The literal
             /// is a plain prefix, so escape it and append `%` to recover the LIKE pattern.
             if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
             {
