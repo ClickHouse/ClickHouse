@@ -1,0 +1,22 @@
+column-granted user on both names: trivial queries and the granted column work
+3
+2
+150
+resolved
+column-granted user on both names: the other columns stay denied
+ACCESS_DENIED
+ACCESS_DENIED
+different columns granted on the two names: no column is readable through the facade
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+whole-facade grant without a source-side column: denied, the source is not named
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+after granting a source-side column, the facade grant is no longer the limit
+3
+2
+150
+ACCESS_DENIED
+resolved

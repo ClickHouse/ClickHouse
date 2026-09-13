@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -439,11 +440,22 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     /// the facade alone. The source is only probed, never named: the denial below is reported for
     /// the id as written, exactly as for a table the user cannot see at all.
     if (visible)
+    {
         if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(storage_id, table_node.getStorage()))
-            visible = has_visible_column(*source_id);
+        {
+            if (has_visible_column(*source_id))
+                return;
 
-    if (visible)
+            /// The facade side is visible (possibly through a whole-table grant that the check
+            /// below would accept), so the denial has to be raised explicitly. It names the
+            /// facade only.
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                context->getUserName(),
+                storage_id.getFullTableName());
+        }
         return;
+    }
 
     /// Not a single column of the table is visible to the user. Report the denial through the
     /// standard check, so the message and the query log get the table-level requirement without
