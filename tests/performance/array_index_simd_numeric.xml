@@ -1,4 +1,4 @@
-<test>
+<test run_all_queries="1">
     <!--
         Focused ceiling test for the exact-type unsigned-integer-array search path.
 
@@ -152,6 +152,11 @@
         FORMAT Null
     </query>
     <query>
+        SELECT sum(has(u8_64, toUInt8(32)) + indexOf(u8_64, toUInt8(32)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
         SELECT sum(has(u8_96, toUInt8(255)) + indexOf(u8_96, toUInt8(255)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
@@ -170,6 +175,11 @@
     </query>
     <query>
         SELECT sum(has(u16_32, toUInt16(31)) + indexOf(u16_32, toUInt16(31)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_32, toUInt16(16)) + indexOf(u16_32, toUInt16(16)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
@@ -196,6 +206,11 @@
         FORMAT Null
     </query>
     <query>
+        SELECT sum(has(u32_16, toUInt32(8)) + indexOf(u32_16, toUInt32(8)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
         SELECT sum(has(u32_24, toUInt32(4294967295)) + indexOf(u32_24, toUInt32(4294967295)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
@@ -214,6 +229,11 @@
     </query>
     <query>
         SELECT sum(has(u64_32, toUInt64(31)) + indexOf(u64_32, toUInt64(31)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64_32, toUInt64(16)) + indexOf(u64_32, toUInt64(16)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
