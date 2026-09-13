@@ -60,6 +60,11 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
 
 }
 
+bool planHasCorrelatedExpressions(const QueryPlan & plan)
+{
+    return hasCorrelatedExpressions(plan.getRootNode());
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
@@ -134,8 +139,10 @@ SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
-    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
+FutureSetFromStorage::FutureSetFromStorage(
+    Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_, bool is_mutable_during_query_)
+    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_))
+    , is_mutable_during_query(is_mutable_during_query_) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
@@ -415,7 +422,8 @@ bool FutureSetFromSubquery::hasExternalTable() const
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
+    const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache, bool recoverable_build)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
@@ -436,7 +444,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         plan->getCurrentHeader(),
         set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        prepared_sets_cache,
+        recoverable_build);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
@@ -478,7 +487,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         prepared_sets_cache = nullptr;
     }
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
+    auto plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
 
     if (!plan)
         return;
@@ -517,6 +526,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
+
+    /// Concurrent index analyses may share this set through cloned filter DAGs, and the build mutates
+    /// `set_and_key->set` and `source`. A mutex and not `callOnce` because this build may stop without
+    /// creating the set (e.g. a subquery timeout with `overflow_mode = 'break'`) and then be retried.
+    std::lock_guard lock(inplace_build_mutex);
 
     if (auto set = get())
     {
@@ -647,7 +661,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             plan_to_complete.getCurrentHeader(),
             tmp_set_and_key,
             network_transfer_limits,
-            cache);
+            cache,
+            /*recoverable_build_=*/true);
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
 
@@ -666,7 +681,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
-        plan = build(network_transfer_limits, prepared_sets_cache);
+        plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
         if (!plan)
             return nullptr;
 
@@ -793,7 +808,8 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, C
 
 FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(
+        key, std::move(ast), std::move(set_), std::move(storage_id), /*is_mutable_during_query_=*/ true);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)

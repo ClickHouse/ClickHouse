@@ -67,7 +67,7 @@ protected:
 public:
     static CompressionCodecFactory & instance();
 
-    /// Return default codec (currently LZ4)
+    /// Return default codec (currently ZSTD(3))
     CompressionCodecPtr getDefaultCodec() const;
 
     /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).

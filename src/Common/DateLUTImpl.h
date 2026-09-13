@@ -176,6 +176,12 @@ public:
     /// but they are different types in C++ and this affects function overload resolution).
     using Time = Int64;
 
+    /// `cctz` loads a whole family of names that no time zone can have. Such a name is not a time
+    /// zone, and constructing a `DateLUTImpl` for it throws. Validators that want to reject a time
+    /// zone name early call this in addition to `cctz::load_time_zone`, so that they cannot start
+    /// accepting names that the lookup itself rejects. See the definition for details.
+    static bool isSupportedTimeZoneName(std::string_view time_zone_name);
+
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
@@ -242,7 +248,21 @@ private:
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
+    /// The same over the whole LUT range rather than the epoch onward, for the callers that answer a
+    /// question about every value the LUT serves - a pre-1970 `DateTime64` included.
+    bool offset_is_whole_number_of_hours_in_lut_range;
+    bool offset_is_whole_number_of_minutes_in_lut_range;
     bool offset_is_fixed;
+
+    /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
+    /// stopped changing their offset before 1970. The minute variant is weaker - a whole number of minutes,
+    /// changing only by whole hours - which is what makes the minute independent of the offset.
+    bool offset_is_fixed_during_epoch;
+    bool offset_minute_of_hour_is_constant_during_epoch;
+    /// Added before the division in `toHour` / `toMinute`: one extra whole day (hour) shifts the quotient by
+    /// exactly one cycle, so the result modulo 24 (60) is unchanged, and the dividend stays non-negative.
+    Time hour_of_day_offset_addend;
+    Time minute_of_hour_offset_addend;
 
     /// Time zone name.
     std::string time_zone;
@@ -461,7 +481,10 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
+        /// The property is computed over the epoch onward, so a value before it may sit in a period whose
+        /// offset has a sub-hour component; rounding it by modular arithmetic would land on a UTC-aligned
+        /// boundary instead of the local one. `toMinute` guards its own fast path the same way.
+        if (static_cast<Time>(x) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(x, divisor);
 
         const Time date = find(x).date;
@@ -859,6 +882,9 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.hour);
 
+        if (t >= 0 && offset_is_fixed_during_epoch)
+            return static_cast<unsigned>(((t + hour_of_day_offset_addend) / 3600) % 24);
+
         const LUTIndex index = findIndexInRange(t);
 
         Time time = t - lut[index].date;
@@ -903,13 +929,10 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.second);
 
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
-        {
-            Time res = t % 60;
-            if (res >= 0) [[likely]]
-                return static_cast<unsigned>(res);
-            return static_cast<unsigned>(res) + 60;
-        }
+        /// Only from the epoch onward: before it the offset may have a sub-minute component (see the
+        /// flag), and `t % 60` would then answer the second of the UTC minute, not of the local one.
+        if (t >= 0 && offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+            return static_cast<unsigned>(t % 60);
 
         LUTIndex index = findIndexInRange(t);
         Time time = t - lut[index].date;
@@ -935,8 +958,12 @@ public:
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t / 60) % 60;
 
-        /// To consider the DST changing situation within this day
-        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
+        if (t >= 0 && offset_minute_of_hour_is_constant_during_epoch)
+            return static_cast<unsigned>(((t + minute_of_hour_offset_addend) / 60) % 60);
+
+        /// The zones reaching here are the ones whose minute-of-hour offset is not constant during the epoch,
+        /// such as `Australia/Lord_Howe` (a 30-minute DST step) and `Asia/Kathmandu` (a sub-hour offset that
+        /// moved in 1986), so the offset change within the day has to be applied explicitly.
 
         LUTIndex index = findIndexInRange(t);
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
@@ -1663,34 +1690,45 @@ public:
         return static_cast<Int64>(product);
     }
 
-    /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
-    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
-    /// needs the LUT. Must mirror the dispatch of the corresponding methods. The `offset_is_whole_number_of_*`
-    /// properties only hold during the epoch, so callers must keep out-of-range `t` on the generic path.
-    std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
+    /// `divisor` in seconds if the corresponding `toStartOf*Interval` method equals
+    /// `roundDownToMultiple(t, divisor)` from the epoch onward in this time zone. `valid_before_epoch` says
+    /// whether it also holds below the epoch: the historical offset of a zone such as `Europe/Amsterdam`
+    /// (+00:19:32 until 1937) or `Asia/Kolkata` (+05:21:10 until 1906) has a sub-minute component, and the
+    /// modular result would land on a UTC-aligned boundary there. A zone whose whole lookup table has whole
+    /// minutes (or hours) - UTC and most zones - answers `true` and keeps the fast path for every row.
+    struct ModularDivisor
+    {
+        Int64 divisor;
+        bool valid_before_epoch;
+    };
+
+    /// The divisor if the fast path applies in this time zone at all, nothing if the method needs the LUT for
+    /// every value. Must mirror the dispatch of the corresponding methods. Callers must keep `t` outside the
+    /// LUT range, and a negative `t` unless `valid_before_epoch`, on the generic path.
+    std::optional<ModularDivisor> minuteIntervalModularDivisor(UInt64 minutes) const
     {
         if (!offset_is_whole_number_of_minutes_during_epoch)
             return std::nullopt;
-        return minuteIntervalDivisor(minutes);
+        return ModularDivisor{minuteIntervalDivisor(minutes), offset_is_whole_number_of_minutes_in_lut_range};
     }
 
-    std::optional<Int64> secondIntervalModularDivisor(UInt64 seconds) const
+    std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const
     {
         if (seconds == 1)
-            return Int64(1);
+            return ModularDivisor{Int64(1), true};
         if (seconds % 60 == 0)
             return minuteIntervalModularDivisor(seconds / 60);
         if (offset_is_whole_number_of_hours_during_epoch)
-            return static_cast<Int64>(seconds);
+            return ModularDivisor{static_cast<Int64>(seconds), offset_is_whole_number_of_hours_in_lut_range};
         return std::nullopt;
     }
 
-    std::optional<Int64> hourIntervalModularDivisor(UInt64 hours) const
+    std::optional<ModularDivisor> hourIntervalModularDivisor(UInt64 hours) const
     {
         /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
         /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
         if (hours == 1 && offset_is_whole_number_of_hours_during_epoch)
-            return Int64(3600);
+            return ModularDivisor{Int64(3600), offset_is_whole_number_of_hours_in_lut_range};
         return std::nullopt;
     }
 
@@ -1708,7 +1746,8 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+        /// From the epoch onward only, for the same reason as in `roundDown` above.
+        if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
         const Time date = find(t).date;
@@ -2026,10 +2065,15 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    NO_SANITIZE_UNDEFINED Time addDays(Time t, Int64 delta) const
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
+    NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        if (unlikely(isOutOfLUTRange(t)))
-            return addDaysOutOfRange(t, delta);
+        /// A `DateTime` (`UInt32`) cannot denote a value outside the lookup table, so only the wide
+        /// timestamp types take the escape path.
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+            if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
+                return addDaysOutOfRange(t, delta);
 
         const LUTIndex index = findIndexInRange(t);
 

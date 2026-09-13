@@ -3279,7 +3279,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introduced in: v20.9.0
 
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; a value of the `Time` type wraps around instead of saturating.
 `DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
 When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
@@ -3388,7 +3388,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ┌───────────────────value─┬─toTypeName(value)─┐
-│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+│ 9999-12-31 23:59:59.999 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ```
 
@@ -6959,9 +6959,7 @@ Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
-<Info>
-**Legacy `toTime`**
-
+<Note title="Legacy `toTime`">
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
 time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -6969,7 +6967,7 @@ Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_t
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
-</Info>
+</Note>
     
 
 **Syntax**

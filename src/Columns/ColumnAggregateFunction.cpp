@@ -1,5 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -8,6 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -453,9 +455,11 @@ INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    WriteBufferFromOwnString wbuf;
+    char window[1024];
+    SipHashingWriteBuffer wbuf(hash, sizeof(window), window);
     func->serialize(data[n], wbuf, version);
-    hash.update(wbuf.str().c_str(), wbuf.str().size());
+    /// Mandatory: the destructor discards whatever is still in the window unhashed.
+    wbuf.finalize();
 }
 
 void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
@@ -639,6 +643,12 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
+bool ColumnAggregateFunction::acceptsStateTypeName(const String & state_type_name) const
+{
+    return type_string == state_type_name
+        || DataTypeAggregateFunction::nameMatchesState(state_type_name, func, version.value_or(func->getDefaultVersion()));
+}
+
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
@@ -647,8 +657,8 @@ void ColumnAggregateFunction::insert(const Field & x)
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
+    if (!acceptsStateTypeName(field_name))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert field with type {} into column with type {}",
                 field_name, type_string);
 
     ensureOwnership();
@@ -664,7 +674,7 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
         return false;
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
+    if (!acceptsStateTypeName(field_name))
         return false;
 
     ensureOwnership();

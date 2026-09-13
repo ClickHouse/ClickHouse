@@ -56,10 +56,10 @@ namespace ErrorCodes
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
             String name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            /// The string literal may contain 'database.table', split it
-            /// to match what parseDatabaseAndTableAsAST would produce.
+            /// A single dot preserves the established string-literal form for a
+            /// qualified dictionary name. Multiple dots are part of a bare dictionary name.
             auto dot_pos = name.find('.');
-            if (dot_pos != String::npos)
+            if (dot_pos != String::npos && name.find('.', dot_pos + 1) == String::npos)
             {
                 res->setDatabase(name.substr(0, dot_pos));
                 res->setTable(name.substr(dot_pos + 1));
@@ -98,7 +98,6 @@ namespace ErrorCodes
 
 enum class SystemQueryTargetType : uint8_t
 {
-    Model,
     Function,
     Disk,
 };
@@ -148,11 +147,6 @@ enum class SystemQueryTargetType : uint8_t
 
     switch (target_type)
     {
-        case SystemQueryTargetType::Model:
-        {
-            res->target_model = std::move(target);
-            break;
-        }
         case SystemQueryTargetType::Function:
         {
             res->target_function = std::move(target);
@@ -371,12 +365,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RELOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARY: {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ true))
-                return false;
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Model))
                 return false;
             break;
         }
@@ -1198,31 +1186,6 @@ The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` 
 
 ```sql
 SYSTEM UNLOAD DICTIONARIES
-```
-
-## SYSTEM RELOAD MODELS {#reload-models}
-
-<Note>
-This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
-loads a model upon first access if it is not loaded yet.
-</Note>
-
-Unloads all CatBoost models.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
-```
-
-## SYSTEM RELOAD MODEL {#reload-model}
-
-Unloads a CatBoost model at `model_path`.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 ```
 
 ## SYSTEM RELOAD FUNCTIONS {#reload-functions}
