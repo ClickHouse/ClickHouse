@@ -98,7 +98,12 @@ Aggregator::Params makeParams(
         /*min_count_to_compile_aggregate_expression=*/0,
         /*max_block_size=*/65536,
         /*enable_prefetch=*/false,
-        /*only_merge=*/false,
+        /// The merge-only flag, as the short merge-only `Params` constructor would set it: the
+        /// `AggregatingStepOnlyMergeVersionGates` tests below drive its version gates, and
+        /// `cloneWithKeys` produces the ordinary twin from it. The full constructor is used here
+        /// instead of the merge-only one because the spill-codec tests need the external-aggregation
+        /// parameters above, which the merge-only constructor leaves at their defaults.
+        /*only_merge=*/true,
         /*optimize_group_by_constant_keys=*/false,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         StatsCollectingParams{},
