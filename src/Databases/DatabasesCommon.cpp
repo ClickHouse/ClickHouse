@@ -691,6 +691,14 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     }
 }
 
+UInt64 DatabaseWithOwnTablesBase::getCurrentRowCountUnlocked() const
+{
+    UInt64 total = 0;
+    for (const auto & [table_name, table] : tables)
+        total += table->rowsForDatabaseLimit();
+    return total;
+}
+
 void DatabaseWithOwnTablesBase::shutdown()
 {
     /// You can not hold a lock during shutdown.

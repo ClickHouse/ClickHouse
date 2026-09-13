@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Common/SettingsChanges.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -29,6 +30,9 @@ struct DatabaseMetadataDiskSettings
     DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+
+    /// Apply and type-check a set of changes (used by `ALTER DATABASE ... MODIFY SETTING`).
+    void applyChanges(const SettingsChanges & changes);
 
 private:
     std::unique_ptr<DatabaseMetadataDiskSettingsImpl> impl;

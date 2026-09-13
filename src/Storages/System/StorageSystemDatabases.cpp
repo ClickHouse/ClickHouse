@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -36,6 +37,9 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
         {"comment", std::make_shared<DataTypeString>(), "Database comment."},
         {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
+        {"rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Current number of active rows counted toward the database's `max_rows` setting. "
+            "NULL for engines that do not track it (e.g. remote and data-lake catalogs)."},
     };
 
     description.setAliases({
@@ -162,7 +166,14 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(database->getDatabaseComment());
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->isExternal());
-   }
+        if (columns_mask[src_index++])
+        {
+            if (auto rows = database->getCurrentRowCount())
+                res_columns[res_index++]->insert(*rows);
+            else
+                res_columns[res_index++]->insertDefault();
+        }
+    }
 }
 
 }
