@@ -481,7 +481,9 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    /// Not a metadata replay: this database is registered fresh on every start, so a missing path
+    /// should still be refused here. Master reaches this through `DatabaseURL` and has no such call.
+    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context, /*is_internal_metadata_replay=*/false));
     return overlay;
 }
 
