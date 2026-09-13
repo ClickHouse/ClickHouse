@@ -821,7 +821,7 @@ void StorageMergeTree::alter(
             if (!cleanup_thread.isCleanupCancelled())
             {
                 clearEmptyParts();
-                clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+                clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP);
             }
         }
 
