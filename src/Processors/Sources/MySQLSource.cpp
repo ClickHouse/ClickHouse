@@ -333,16 +333,11 @@ namespace
                         throw Exception(ErrorCodes::INCORRECT_DATA,
                             "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
                             n, sizeof(UInt64));
-                    UInt64 val = 0UL;
-                    char * to = reinterpret_cast<char *>(&val);
-                    memcpy(to, const_cast<char *>(value.data()), n);
-
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        char * start = to;
-                        char * end = to + n;
-                        std::reverse(start, end);
-                    }
+                    /// The bytes come most significant first, so assemble the integer explicitly
+                    /// instead of copying them into `val` and depending on the host byte order.
+                    UInt64 val = 0;
+                    for (size_t i = 0; i < n; ++i)
+                        val = (val << 8) | static_cast<UInt8>(value.data()[i]);
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
