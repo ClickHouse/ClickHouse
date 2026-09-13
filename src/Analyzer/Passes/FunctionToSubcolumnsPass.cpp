@@ -568,10 +568,16 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 
     /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
     /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
-    /// once per Map element (or not at all for an empty Map). Column and constant nodes preserve
-    /// the original evaluation scope.
+    /// once per Map element (or not at all for an empty Map). Only physical columns and constants
+    /// preserve the original evaluation scope. An expression-backed ColumnNode, such as an ALIAS
+    /// column, has the same evaluation-scope problem as any other expression.
     const auto & pattern_node = function_arguments_nodes[1];
-    if (!pattern_node->as<ColumnNode>() && !pattern_node->as<ConstantNode>())
+    if (const auto * pattern_column_node = pattern_node->as<ColumnNode>())
+    {
+        if (pattern_column_node->hasExpression())
+            return;
+    }
+    else if (!pattern_node->as<ConstantNode>())
         return;
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
