@@ -91,7 +91,26 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     }
     case 5: /// prefix_partition_min_max_level or partition_min_max_level_mutation
     {
-        /// Still incorrect if partition can be parsed as number and will be < min
+        /// Prefer a known detached prefix over the ambiguous mutated part format.
+        for (std::string_view known_prefix : DetachedPartInfo::DETACH_REASONS)
+        {
+            if (data.starts_with(known_prefix)
+                && known_prefix.size() < right
+                && data[known_prefix.size()] == '_')
+            {
+                if (auto info = tryParseMergeTreePartInfo(data.substr(
+                        known_prefix.size() + 1, right - known_prefix.size() - 1)))
+                {
+                    unpacked.prefix = known_prefix;
+                    unpacked.part_info = std::move(info.value());
+                    break;
+                }
+            }
+        }
+
+        if (!unpacked.prefix.empty())
+            break;
+
         if (auto info = tryParseMergeTreePartInfo(data.substr(0, right)))
         {
             unpacked.prefix = "";
