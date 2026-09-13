@@ -34,12 +34,19 @@ static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree &
 /// The same set of parts that 'MergeTreePartsCollector::collectInitial' works with. Inside a transaction
 /// it is a superset of the visible parts: it keeps the outdated parts that a rollback can bring back,
 /// so that a merge is not assigned over a gap between them.
-static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
+/// Outside a transaction, no data versions are needed when there are no active patch parts.
+static MergeTreeDataPartsVector getPartsForPatchMerge(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
 
     if (!tx)
-        return storage.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
+    {
+        auto lock = storage.readLockParts();
+        if (!storage.hasActivePatchParts(lock))
+            return {};
+
+        return storage.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
+    }
 
     MergeTreeDataPartsVector active_parts;
     MergeTreeDataPartsVector outdated_parts;
@@ -89,7 +96,7 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
     /// merge becomes wrong as soon as that part is active again.
-    auto parts_visible_for_merge = getPartsVisibleForMerge(storage, tx_);
+    auto parts_visible_for_merge = getPartsForPatchMerge(storage, tx_);
 
     bool has_patches = std::ranges::any_of(parts_visible_for_merge, [](const auto & part) { return part->info.isPatch(); });
 

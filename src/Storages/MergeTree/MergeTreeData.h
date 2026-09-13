@@ -764,6 +764,7 @@ public:
     DataPartsVector getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Returns patch parts in Active state
     DataPartsVector getPatchPartsVectorForInternalUsage() const;
+    bool hasActivePatchParts(const DataPartsAnyLock & lock) const;
     /// Returns patch parts in Active state that relate to partition_id.
     DataPartsVector getPatchPartsVectorForPartition(const String & partition_id, const DataPartsAnyLock & lock) const;
     DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;

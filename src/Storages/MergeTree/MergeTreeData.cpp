@@ -10228,6 +10228,11 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage() const
     return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Patch}, lock);
 }
 
+bool MergeTreeData::hasActivePatchParts(const DataPartsAnyLock & /*lock*/) const
+{
+    return !getDataPartsStateRange(DataPartState::Active, DataPartKind::Patch).empty();
+}
+
 DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id, const DataPartsAnyLock & /*lock*/) const
 {
     DataPartsVector res;
