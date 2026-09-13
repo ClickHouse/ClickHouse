@@ -9,6 +9,13 @@ SELECT sum(isNull(e)), max(isNull(e)) FROM (SELECT if(number % 3, NULL, 'x') AS 
 -- inside a compiled expression; the argument needs a native type for the same reason.
 SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
 SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+-- The pair above only compares the two paths while the compiled one is really compiled. The control
+-- shape holds no `isNull`, so it reports whether the embedded compiler runs at all; requiring the two
+-- to agree keeps this red if `isNull` stops being compiled, and green where the compiler is absent.
+SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_isnull' FORMAT Null;
+SELECT sum((toInt64(number) + 1) * 2) FROM numbers(30) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_arith' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+WITH shapes AS (SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05212_shape_isnull', '05212_shape_arith') GROUP BY log_comment) SELECT (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_isnull') = (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_arith');
 -- A comparison against the result must not see a value other than 0 or 1.
 SELECT arraySort(groupUniqArray(isNull(e) = 1)), sum(isNull(e) = 1) FROM (SELECT if(number % 3, NULL, 'x') AS e FROM numbers(30));
 -- The `IS NULL` operator resolves to the same function.
@@ -42,7 +49,21 @@ INSERT INTO t_isnull_idx SELECT if(number % 3, NULL, 'x') FROM numbers(30);
 SELECT sum(isNull(e)), max(isNull(e)) FROM t_isnull_idx;
 SELECT count() FROM t_isnull_idx WHERE e.null != 0;
 SELECT count() FROM t_isnull_idx WHERE e.null = 1 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx';
+-- Index analysis reaches the subcolumn through both `not`s of the rewritten `isNull`; forcing the
+-- index would raise INDEX_NOT_USED otherwise.
+SELECT count() FROM t_isnull_idx WHERE isNull(e) SETTINGS optimize_functions_to_subcolumns = 1, use_skip_indexes = 1, force_data_skipping_indices = 'idx';
+-- `count()` over a sparse column is answered from the recorded per-column NULL count instead of a
+-- scan, and that recogniser matches the predicate's shape, so the rewrite must stay recognisable to
+-- it under either value of the setting. The count is a truthiness count, so it also has to agree
+-- with a scan on this map.
+CREATE TABLE t_isnull_sparse (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 512, ratio_of_defaults_for_sparse_serialization = 0.5, compute_exact_num_defaults_for_sparse_columns = 1, nullable_serialization_version = 'allow_sparse', serialization_info_version = 'with_types', min_bytes_for_wide_part = 0;
+INSERT INTO t_isnull_sparse SELECT if(number % 3, NULL, 'x') FROM numbers(5000) SETTINGS optimize_on_insert = 0;
+SELECT serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_isnull_sparse' AND active;
+SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1, optimize_functions_to_subcolumns = 0);
+SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1, optimize_functions_to_subcolumns = 1);
+SELECT countIf(e IS NULL), (SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1), (SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 0) FROM t_isnull_sparse;
 DROP TABLE t_isnull_compact;
 DROP TABLE t_isnull_wide;
 DROP TABLE t_isnull_canon;
 DROP TABLE t_isnull_idx;
+DROP TABLE t_isnull_sparse;

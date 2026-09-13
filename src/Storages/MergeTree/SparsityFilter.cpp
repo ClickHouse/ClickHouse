@@ -117,14 +117,15 @@ tryAsColumnRef(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_
     return ColumnRef{col->getColumnName(), storage_column->type};
 }
 
-/// `WHERE n IS NULL` is rewritten by the analyzer to `WHERE n.null`, a UInt8
-/// `ColumnNode` for the `.null` subcolumn of `n` (1 for NULL, 0 otherwise). The
-/// rewrite uses the simple `NameAndTypePair(name, type)` constructor and does not
-/// set `subcolumn_delimiter_position`, so `isSubcolumn()` is false here. Match by
-/// name suffix and type, confirm the base column is Nullable in storage, and bail
-/// out when a literal top level column named `<base>.null` exists (in that case
-/// the analyzer leaves `isNull` alone and any `WHERE n.null` we see refers to the
-/// literal column).
+/// Matches a bare `<base>.null` UInt8 `ColumnNode`, the subcolumn holding the stored
+/// null map of `<base>` (any non-zero byte means NULL). That is what a user writes
+/// directly, what `isNotNull` arrives wrapped in one `not`, and what `isNull` arrives
+/// wrapped in two. The rewrite uses the simple `NameAndTypePair(name, type)`
+/// constructor and does not set `subcolumn_delimiter_position`, so `isSubcolumn()` is
+/// false here. Match by name suffix and type, confirm the base column is Nullable in
+/// storage, and bail out when a literal top level column named `<base>.null` exists
+/// (in that case the analyzer leaves `isNull` alone and any `WHERE n.null` we see
+/// refers to the literal column).
 std::optional<String>
 tryAsNullSubcolumnOf(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_table_expression)
 {
@@ -202,9 +203,8 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     if (!predicate)
         return std::nullopt;
 
-    /// The analyzer rewrites `n IS NULL` to a bare `n.null` ColumnNode (not wrapped
-    /// in an `isNull` function), so recognise that form before requiring a function
-    /// node.
+    /// A directly written `WHERE n.null` stays a bare UInt8 ColumnNode with no enclosing
+    /// function, so recognise that form before requiring a function node.
     if (auto base = tryAsNullSubcolumnOf(predicate, table_expression_node))
         return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesDefault};
 
@@ -229,6 +229,14 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
                 return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesNonDefault};
             if (auto name_ref = tryAsTruthyIntegerColumn(args[0], table_expression_node))
                 return RecognisedSparsityPredicate{*name_ref, SparsityPredicateClass::MatchesDefault};
+            /// `not(not(<null map>))` is a truthiness test of the map, so it selects exactly the
+            /// NULL rows that `num_defaults` counts.
+            if (const auto * inner = args[0]->as<FunctionNode>();
+                inner && inner->getFunctionName() == "not" && inner->getArguments().getNodes().size() == 1)
+            {
+                if (auto base = tryAsNullSubcolumnOf(inner->getArguments().getNodes()[0], table_expression_node))
+                    return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesDefault};
+            }
             return std::nullopt;
         }
 

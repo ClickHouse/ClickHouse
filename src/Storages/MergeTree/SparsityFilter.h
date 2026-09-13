@@ -39,6 +39,7 @@ struct RecognisedSparsityPredicate
 ///   any T:           col = default(T)               -> MatchesDefault
 ///                    col != default(T)              -> MatchesNonDefault
 ///   Nullable(T):     isNull(col)                    -> MatchesDefault
+///                    not(not(col.null))             -> MatchesDefault
 ///                    isNotNull(col)                 -> MatchesNonDefault
 ///   String:          empty(col) / notEmpty(col)
 ///   Bool:            col = true / col != true       (value space is {false, true})
