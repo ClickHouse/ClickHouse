@@ -202,6 +202,39 @@ protected:
     void clearTerminal();
     void showClientVersion();
 
+    /// The questions about what this session effectively is, asked of the server rather than read
+    /// from the client context, and the guarantees derived from them. Not guarded by
+    /// `USE_CLIENT_AI`: `fetchInternalQueryResult` serves the `help` command as well as the AI
+    /// agent, and it needs the dialect question in every build.
+
+    /// The effective value of a setting of this session as the server reports it, or `nullopt`
+    /// when the server does not know the setting at all, could not be asked, or answered
+    /// something unexpected. Asked once per setting name and cached.
+    ///
+    /// The client context is not the answer: a user with `apply_settings_from_server = 0` asked
+    /// for the settings of the server not to reach the client, so it keeps its own defaults while
+    /// the server runs the session under the settings profile of the user. Every guarantee that
+    /// the client installs for the queries of the agent has to be decided on the effective value
+    /// rather than on the local one.
+    std::optional<String> serverEffectiveSettingValue(const String & name);
+
+    /// Whether the connected server knows a setting at all. The isolation the internal queries and
+    /// the unconfirmed read-only tool install is only real when the server enforces it: a setting
+    /// that is not `IMPORTANT` is silently ignored by a server that predates it, and one that is
+    /// fails the query with `UNKNOWN_SETTING` instead.
+    bool serverSupportsSetting(const String & name);
+
+    /// Whether a table definition rendered for this session may show the secrets of an
+    /// external-engine table (`format_display_secrets_in_show_and_select`). Fails closed: a
+    /// session whose effective value cannot be established is treated as one that displays them.
+    bool sessionMayDisplaySecrets();
+
+    /// Whether the internal queries (of the `help` command and of the AI agent) and the queries of
+    /// the agent need the `dialect = 'clickhouse'` pin: they are ClickHouse SQL, and the server
+    /// parses with the effective dialect of the session, which a settings profile may set to
+    /// another one without the client seeing it.
+    bool internalQueriesRequireDialectPin();
+
 #if USE_CLIENT_AI
     /// Create the AI agent on the first use of the `?` command: from a configured or
     /// environment-provided AI API provider, or, failing that, from the server-side
@@ -254,34 +287,6 @@ protected:
     /// Whether the agent may mark its queries in the query log (which takes a `log_comment`
     /// setting change the session has to accept).
     bool aiQueryLogMarkerAllowed();
-
-    /// The effective value of a setting of this session as the server reports it, or `nullopt`
-    /// when the server does not know the setting at all, could not be asked, or answered
-    /// something unexpected. Asked once per setting name and cached.
-    ///
-    /// The client context is not the answer: a user with `apply_settings_from_server = 0` asked
-    /// for the settings of the server not to reach the client, so it keeps its own defaults while
-    /// the server runs the session under the settings profile of the user. Every guarantee that
-    /// the client installs for the queries of the agent has to be decided on the effective value
-    /// rather than on the local one.
-    std::optional<String> serverEffectiveSettingValue(const String & name);
-
-    /// Whether the connected server knows a setting at all. The isolation the internal queries and
-    /// the unconfirmed read-only tool install is only real when the server enforces it: a setting
-    /// that is not `IMPORTANT` is silently ignored by a server that predates it, and one that is
-    /// fails the query with `UNKNOWN_SETTING` instead.
-    bool serverSupportsSetting(const String & name);
-
-    /// Whether a table definition rendered for this session may show the secrets of an
-    /// external-engine table (`format_display_secrets_in_show_and_select`). Fails closed: a
-    /// session whose effective value cannot be established is treated as one that displays them.
-    bool sessionMayDisplaySecrets();
-
-    /// Whether the internal queries (of the `help` command and of the AI agent) and the queries of
-    /// the agent need the `dialect = 'clickhouse'` pin: they are ClickHouse SQL, and the server
-    /// parses with the effective dialect of the session, which a settings profile may set to
-    /// another one without the client seeing it.
-    bool internalQueriesRequireDialectPin();
 
     /// The description of the restrictions of the session for the model (empty when there are
     /// none), so it does not attempt what the session rejects.

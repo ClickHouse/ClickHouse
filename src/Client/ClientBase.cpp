@@ -4804,90 +4804,6 @@ bool ClientBase::aiQueryLogMarkerAllowed()
     return true;
 }
 
-std::optional<String> ClientBase::serverEffectiveSettingValue(const String & name)
-{
-    if (const auto it = server_effective_setting_values.find(name); it != server_effective_setting_values.end())
-        return it->second;
-
-    /// Without a server there is nothing to ask, and the question must not be answered wrongly, so
-    /// it is left unanswered and asked again once connected. A question already in flight is not
-    /// asked again: the internal query that asks it is an internal query like any other, and those
-    /// ask this question before they are sent.
-    if (!connection || server_setting_probe_in_progress)
-        return {};
-
-    server_setting_probe_in_progress = true;
-    SCOPE_EXIT(server_setting_probe_in_progress = false);
-
-    try
-    {
-        /// `system.settings` reports the value that applies to this session, whatever produced it -
-        /// a settings profile of the user, a `SET profile`, or the client. A setting the server does
-        /// not know is simply not there.
-        const Block probe = materializeBlock(fetchInternalQueryResult(
-            "SELECT value FROM system.settings WHERE name = {name:String}", {{"name", name}}, /*from_ai_agent=*/ true));
-
-        std::optional<String> value;
-        if (probe.rows() == 1 && probe.columns() == 1)
-            value = String(probe.getByPosition(0).column->getDataAt(0));
-        server_effective_setting_values[name] = value;
-        return value;
-    }
-    catch (...)
-    {
-        /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
-        /// execution-time limit of the session, a cancelled query - so the failure is not cached as
-        /// an answer. The callers treat the missing answer as the unsafe one.
-        return {};
-    }
-}
-
-bool ClientBase::serverSupportsSetting(const String & name)
-{
-    return serverEffectiveSettingValue(name).has_value();
-}
-
-bool ClientBase::sessionMayDisplaySecrets()
-{
-    applySettingsFromServerIfNeeded();
-
-    /// What the client set itself is effective regardless of what the server reports.
-    if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-        return true;
-
-    /// A server that does not know the setting has no masking to speak of, and one that could not
-    /// be asked has not answered that it does - both count as "it may".
-    const std::optional<String> value = serverEffectiveSettingValue("format_display_secrets_in_show_and_select");
-    if (!value.has_value())
-        return true;
-
-    /// Otherwise the value of the client is the effective one when the settings of the server reach
-    /// the client at all; when they do not, the one the server reported is.
-    if (client_context->getSettingsRef()[Setting::apply_settings_from_server])
-        return false;
-
-    return *value != "0";
-}
-
-bool ClientBase::internalQueriesRequireDialectPin()
-{
-    applySettingsFromServerIfNeeded();
-
-    const Settings & settings = client_context->getSettingsRef();
-    if (dialect_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
-        return true;
-
-    /// The local value is the effective one only when the settings of the server reach the client.
-    /// With `apply_settings_from_server = 0` the client keeps its own default while the server
-    /// parses under the dialect of the settings profile of the user, so it has to be asked - and an
-    /// unanswered question means the pin is applied (or, where it cannot be, the query is refused).
-    if (settings[Setting::apply_settings_from_server])
-        return false;
-
-    const std::optional<String> value = serverEffectiveSettingValue("dialect");
-    return !value.has_value() || *value != "clickhouse";
-}
-
 String ClientBase::aiSessionRestrictions()
 {
     const UInt64 readonly = aiSessionReadonly();
@@ -5085,6 +5001,93 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
     ai_query_context->recordError(String(query), stripTerminalEscapeSequences(message), /*from_ai=*/ ai_running_query);
 }
 #endif
+
+/// The questions below are asked of the server rather than read from the client context, and
+/// are not guarded by `USE_CLIENT_AI`: `fetchInternalQueryResult` serves the `help` command as
+/// well as the AI agent, and it needs the dialect question in every build.
+std::optional<String> ClientBase::serverEffectiveSettingValue(const String & name)
+{
+    if (const auto it = server_effective_setting_values.find(name); it != server_effective_setting_values.end())
+        return it->second;
+
+    /// Without a server there is nothing to ask, and the question must not be answered wrongly, so
+    /// it is left unanswered and asked again once connected. A question already in flight is not
+    /// asked again: the internal query that asks it is an internal query like any other, and those
+    /// ask this question before they are sent.
+    if (!connection || server_setting_probe_in_progress)
+        return {};
+
+    server_setting_probe_in_progress = true;
+    SCOPE_EXIT(server_setting_probe_in_progress = false);
+
+    try
+    {
+        /// `system.settings` reports the value that applies to this session, whatever produced it -
+        /// a settings profile of the user, a `SET profile`, or the client. A setting the server does
+        /// not know is simply not there.
+        const Block probe = materializeBlock(fetchInternalQueryResult(
+            "SELECT value FROM system.settings WHERE name = {name:String}", {{"name", name}}, /*from_ai_agent=*/ true));
+
+        std::optional<String> value;
+        if (probe.rows() == 1 && probe.columns() == 1)
+            value = String(probe.getByPosition(0).column->getDataAt(0));
+        server_effective_setting_values[name] = value;
+        return value;
+    }
+    catch (...)
+    {
+        /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
+        /// execution-time limit of the session, a cancelled query - so the failure is not cached as
+        /// an answer. The callers treat the missing answer as the unsafe one.
+        return {};
+    }
+}
+
+bool ClientBase::serverSupportsSetting(const String & name)
+{
+    return serverEffectiveSettingValue(name).has_value();
+}
+
+bool ClientBase::sessionMayDisplaySecrets()
+{
+    applySettingsFromServerIfNeeded();
+
+    /// What the client set itself is effective regardless of what the server reports.
+    if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        return true;
+
+    /// A server that does not know the setting has no masking to speak of, and one that could not
+    /// be asked has not answered that it does - both count as "it may".
+    const std::optional<String> value = serverEffectiveSettingValue("format_display_secrets_in_show_and_select");
+    if (!value.has_value())
+        return true;
+
+    /// Otherwise the value of the client is the effective one when the settings of the server reach
+    /// the client at all; when they do not, the one the server reported is.
+    if (client_context->getSettingsRef()[Setting::apply_settings_from_server])
+        return false;
+
+    return *value != "0";
+}
+
+bool ClientBase::internalQueriesRequireDialectPin()
+{
+    applySettingsFromServerIfNeeded();
+
+    const Settings & settings = client_context->getSettingsRef();
+    if (dialect_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
+        return true;
+
+    /// The local value is the effective one only when the settings of the server reach the client.
+    /// With `apply_settings_from_server = 0` the client keeps its own default while the server
+    /// parses under the dialect of the settings profile of the user, so it has to be asked - and an
+    /// unanswered question means the pin is applied (or, where it cannot be, the query is refused).
+    if (settings[Setting::apply_settings_from_server])
+        return false;
+
+    const std::optional<String> value = serverEffectiveSettingValue("dialect");
+    return !value.has_value() || *value != "clickhouse";
+}
 
 Block ClientBase::fetchInternalQueryResult(
     const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent, [[maybe_unused]] bool needs_secret_masking)
