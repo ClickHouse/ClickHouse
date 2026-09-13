@@ -519,10 +519,11 @@ std::optional<String> optimizeUseNormalProjections(
         if (!optimization_settings.read_in_order)
             return false;
 
-        return wouldReadInOrderBeUseful(
-            *outer_sorting_step,
-            projection->metadata->getSortingKey(),
-            *iter->node->children[iter->next_child - 1]);
+        return getInputOrderIfReadInOrderIsUseful(
+                   *outer_sorting_step,
+                   projection->metadata->getSortingKey(),
+                   *iter->node->children[iter->next_child - 1])
+            != nullptr;
     };
 
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
