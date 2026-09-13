@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -39,7 +40,13 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
-    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+    /// The `MergeTree` table a "simple" view reads, for `parallel_replicas_allow_view_over_mergetree`,
+    /// or `nullptr` when the view is not suitable for that shortcut. `alias` is the alias the outer
+    /// query gives the view (empty when it has none): a security barrier view declines the shortcut
+    /// when an `additional_table_filters` entry of the caller applies to it by name or by that alias,
+    /// exactly as `QueryAnalyzer::inlineViewSubqueryIfNeeded` declines to inline it then. A caller
+    /// that does not know the alias passes `std::nullopt` and the view fails closed on any entry.
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context, const std::optional<String> & alias) const;
 
     /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
     /// Returns nullptr otherwise.
@@ -89,6 +96,9 @@ public:
     /// predicate is evaluated in the view's output namespace and can hide rows just like a row
     /// policy attached to the view.
     static bool hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context);
+    /// Whether an entry of `additional_table_filters` is keyed to an internal `__table<N>` alias, the
+    /// name the analyzer gives every table expression in the query text it ships to other replicas.
+    static bool additionalTableFiltersApplyToInternalAlias(const Field & additional_table_filters);
 
     /// Whether a `SETTINGS` clause written in the view's query can hide rows (a `limit`, an extra
     /// filter, `final`, an identifier-resolution switch, ...). Only settings that provably tune

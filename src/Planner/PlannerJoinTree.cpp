@@ -1585,7 +1585,10 @@ void pushOrderByIntoView(
 /// Storage-level eligibility check: is this storage on its own a candidate for
 /// reading via parallel replicas?  Strips View / MaterializedView wrappers down
 /// to the underlying MergeTree and applies the MergeTree / replication gates.
-bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const ContextPtr & context, const Settings & query_settings)
+/// `table_expression` is the node that reads `current_storage`; a view needs the alias the query
+/// gives it for the `parallel_replicas_allow_view_over_mergetree` decision.
+bool parallelReplicasEnabledForStorage(
+    const StoragePtr & current_storage, const ContextPtr & context, const Settings & query_settings, const IQueryTreeNode & table_expression)
 {
     const auto * table_ptr = current_storage.get();
 
@@ -1594,7 +1597,7 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
         const auto * view = typeid_cast<const StorageView *>(current_storage.get());
         if (view)
         {
-            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context, table_expression.getOriginalAlias());
             if (!underlying_storage)
                 return false;
 
@@ -1653,11 +1656,11 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     {
         // check that left table expression can be used for parallel replicas
         if (left_table)
-            return parallelReplicasEnabledForStorage(left_table->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table->getStorage(), context, query_settings, *left_table);
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings, *left_table_function);
 
         // check if left one is not subquery
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1681,11 +1684,11 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
             return false;
 
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
-        if (parallelReplicasEnabledForStorage(right_storage, context, query_settings))
+        if (parallelReplicasEnabledForStorage(right_storage, context, query_settings, *right_table_expr))
         {
             const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
             const auto left_storage = (left_table ? left_table->getStorage() : left_table_function->getStorage());
-            if (!parallelReplicasEnabledForStorage(left_storage, context, query_settings))
+            if (!parallelReplicasEnabledForStorage(left_storage, context, query_settings, *left_table_expr))
                 // TODO: support parallel replicas for (non_mt_table RIGHT JOIN mt_table) later
                 return false;
 
@@ -2642,7 +2645,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// parallel replicas are applied later as a plan transformation (see QueryPlanOptimizations::applyParallelReplicas),
                 /// so skip the parallel-replicas construction here.
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && parallelReplicasEnabledForStorage(storage, query_context, settings))
+                    && parallelReplicasEnabledForStorage(storage, query_context, settings, *table_expression))
                 {
                     /// The custom-key read below replaces the plan with a remote read at the fixed stage
                     /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested

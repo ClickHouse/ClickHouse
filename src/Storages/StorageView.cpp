@@ -483,7 +483,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
   * resolves positional arguments inside the view even on remote/secondary nodes
   * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextMutablePtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextMutablePtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const std::optional<String> & view_alias)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
@@ -492,7 +492,7 @@ ContextMutablePtr getViewContext(ContextPtr context, const StorageSnapshotPtr & 
     if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
         && !view_settings[Setting::parallel_replicas_plan_based])
     {
-        if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
+        if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context, view_alias))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
     }
 
@@ -557,7 +557,7 @@ StorageView::StorageView(
 /// Build and resolve the view's inner query tree
 /// Then find the leftmost underlying MT storage eligible for parallel replicas.
 /// Returns nullptr if the view is too complex or resolution fails.
-StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const
+StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context, const std::optional<String> & alias) const
 {
     if (isParameterizedView())
         return nullptr;
@@ -600,11 +600,24 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         /// `readImpl` - which switches parallel replicas off for the inner query, because a
         /// shipped fragment would run under the connection's identity. Every replica then reads
         /// the whole view with no coordination and the result is the union of all of them, so the
-        /// rows are returned once per replica. The alias the outer query gives the view is not
-        /// known here, so fail closed on any additional table filter rather than try to match the
-        /// entry to this view.
-        if (!context->getSettingsRef()[Setting::additional_table_filters].value.empty())
-            return nullptr;
+        /// rows are returned once per replica. So decline the shortcut exactly when the replica
+        /// will decline to inline the view: when an entry applies to the view by its name or by the
+        /// alias the outer query gives it (`hasAdditionalTableFilter`, the same rule as in
+        /// `QueryAnalyzer::inlineViewSubqueryIfNeeded`). An entry keyed to an unrelated table
+        /// cannot make the replica take that path, so it keeps the shortcut. An entry keyed to an
+        /// internal `__table` alias counts as applying: the query text a replica receives names the
+        /// view by such an alias, so the replica would match the entry even though the outer query
+        /// never wrote it. A caller that does not know the alias fails closed on any entry.
+        const auto & additional_table_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
+        if (!additional_table_filters.empty())
+        {
+            if (!alias)
+                return nullptr;
+            if (hasAdditionalTableFilter(view_id, *alias, context))
+                return nullptr;
+            if (additionalTableFiltersApplyToInternalAlias(additional_table_filters))
+                return nullptr;
+        }
     }
 
     QueryTreeNodePtr inner_query_tree;
@@ -695,7 +708,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// If the table is itself a view, recursively check its inner query.
                     const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
                     if (nested_view)
-                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context, table_node.getOriginalAlias());
 
                     if (!isTableNodeEligibleForParallelReplicas(table_node, storage, context))
                         return nullptr;
@@ -737,7 +750,7 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
         auto row_policy_filter = context->getRowPolicyFilter(
             storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
         const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
-        if (has_row_policy || canHideRows(inner_query, getViewContext(context, snapshot, this), /*remote_source_is_read_identically=*/ true))
+        if (has_row_policy || canHideRows(inner_query, getViewContext(context, snapshot, this, /*view_alias=*/ std::nullopt), /*remote_source_is_read_identically=*/ true))
             return nullptr;
     }
 
@@ -788,6 +801,34 @@ bool StorageView::hasAdditionalTableFilter(const StorageID & storage_id, const S
         context->getSettingsRef()[Setting::additional_table_filters].value, {storage_id}, alias, context->getCurrentDatabase());
 }
 
+bool StorageView::additionalTableFiltersApplyToInternalAlias(const Field & additional_table_filters)
+{
+    Map filters;
+    try
+    {
+        filters = SettingFieldMap(additional_table_filters).value;
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    for (const auto & additional_filter : filters)
+    {
+        if (additional_filter.getType() != Field::Types::Tuple)
+            return true;
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        if (tuple.size() != 2 || tuple[0].getType() != Field::Types::String)
+            return true;
+
+        /// The analyzer names every table expression `__table<N>` in the query text it ships.
+        if (tuple[0].safeGet<String>().starts_with("__table"))
+            return true;
+    }
+
+    return false;
+}
+
 void StorageView::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -825,7 +866,12 @@ void StorageView::readImpl(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
     const bool has_additional_filter = query_info.additional_filter_ast != nullptr;
-    auto view_context = getViewContext(context, storage_snapshot, this);
+    /// The alias the outer query gives this view, for the parallel-replicas shortcut decision
+    /// inside `getViewContext`; the legacy planner does not hand the table expression over.
+    std::optional<String> view_alias;
+    if (query_info.table_expression)
+        view_alias = query_info.table_expression->getOriginalAlias();
+    auto view_context = getViewContext(context, storage_snapshot, this, view_alias);
     const bool hides_rows = security_barrier
         && (has_row_policy || has_additional_filter || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
     const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
