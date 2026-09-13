@@ -47,7 +47,7 @@ size_t countNonNull(const IColumn::Filter & filter, const std::vector<UInt8> & n
 TEST(ColumnsCommon, CountBytesInFilter)
 {
     constexpr std::array sizes{0uz, 1uz, 15uz, 16uz, 17uz, 31uz, 32uz, 33uz, 63uz, 64uz, 65uz, 127uz, 128uz, 129uz, 193uz};
-    constexpr std::array lengths{0uz, 1uz, 15uz, 16uz, 31uz, 32uz, 63uz, 64uz, 65uz};
+    constexpr std::array lengths{0uz, 1uz, 15uz, 16uz, 31uz, 32uz, 63uz, 64uz, 65uz, 127uz, 128uz, 129uz};
 
     for (size_t size : sizes)
     {
