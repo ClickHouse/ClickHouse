@@ -96,6 +96,16 @@ void applyPage(ASTPtr & query, const ASTExplainTextAction & action)
 
 void applyModifyFormat(ASTPtr & query, const ASTExplainTextAction & action)
 {
+    /// a direct `ASTSelectQuery` from JSON needs the SQL parser's wrapper to carry output options.
+    if (query->as<ASTSelectQuery>())
+    {
+        auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        select_with_union->list_of_selects->children.push_back(query);
+        select_with_union->children.push_back(select_with_union->list_of_selects);
+        query = std::move(select_with_union);
+    }
+
     auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
     if (!query_with_output)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MODIFY FORMAT requires a query that supports output options");
