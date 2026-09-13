@@ -107,6 +107,9 @@ CREATE TABLE t_04401 (a UInt8, b UInt8) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04401 (COLUMNS('.*') APPLY (x -> *, 'p_')) VALUES (1, 2); -- { serverError BAD_ARGUMENTS }
 INSERT INTO t_04401 (COLUMNS('.*') APPLY (x -> compound_value.*, 'p_')) VALUES (1, 2); -- { serverError BAD_ARGUMENTS }
 INSERT INTO t_04401 (COLUMNS('.*') REPLACE (* AS a)) VALUES (1, 2); -- { serverError BAD_ARGUMENTS }
+-- A prefixed APPLY leaves each column aliased, so a REPLACE keyed on that generated alias takes the
+-- aliased-column branch of the expansion, where a bare matcher again has no name to carry.
+INSERT INTO t_04401 (COLUMNS('.*') APPLY (toString, 'p_') REPLACE (* AS p_a)) VALUES (1, 2); -- { serverError BAD_ARGUMENTS }
 INSERT INTO t_04401 (COLUMNS('.*') EXCEPT (b)) VALUES (1);
 SELECT * FROM t_04401 ORDER BY a FORMAT TSVWithNames;
 DROP TABLE t_04401;
