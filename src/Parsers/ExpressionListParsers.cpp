@@ -1091,7 +1091,7 @@ public:
         /// after such a separator (i.e. the previous token is a comma); otherwise
         /// this is simply the first element of the whole list, where a leading
         /// `from` is just an ordinary identifier (e.g. `WITH 1 AS from SELECT from`).
-        if (allow_trailing_commas && isCurrentElementEmpty() && elements.empty())
+        if (allow_trailing_commas && isCurrentElementEmpty() && elements.empty() && !pos.atBegin())
         {
             auto prev_pos = pos;
             --prev_pos;

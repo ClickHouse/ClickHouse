@@ -24,3 +24,10 @@ WITH 1 AS from SELECT from, from + from, from IN [0], FROM numbers(1);
 
 -- Double trailing comma should fail
 SELECT 1 AS a,, FROM system.one; -- { clientError SYNTAX_ERROR }
+
+-- Implicit-SELECT queries (no `SELECT` keyword at all): the very first list
+-- element is parsed starting at the first token of the whole query, i.e.
+-- there is no previous token at all. This must not crash/hang.
+SET implicit_select = 1;
+1 AS from;
+1 AS from, FROM numbers(1);
