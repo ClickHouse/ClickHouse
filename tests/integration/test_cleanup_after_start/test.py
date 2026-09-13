@@ -4,7 +4,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_logs_contain_with_retry
+from helpers.test_tools import assert_logs_contain_with_retry, wait_condition
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
@@ -64,3 +64,41 @@ def test_old_dirs_cleanup(start_cluster):
     assert node1.query("SELECT count() FROM test_table") == "0\n"
 
     node1.query("DROP TABLE test_table SYNC")
+
+
+def test_readonly_toggle_preserves_stopped_cleanup(start_cluster):
+    node1.query(
+        """
+        CREATE TABLE readonly_toggle_cleanup (n UInt64) ENGINE = MergeTree ORDER BY n
+        SETTINGS disk = 'default', temporary_directories_lifetime = 0,
+            merge_tree_clear_old_temporary_directories_interval_seconds = 1,
+            cleanup_delay_period = 1, max_cleanup_delay_period = 1,
+            cleanup_delay_period_random_add = 0
+        """
+    )
+    try:
+        node1.query("SYSTEM STOP CLEANUP readonly_toggle_cleanup")
+        table_path = node1.query(
+            "SELECT data_paths[1] FROM system.tables "
+            "WHERE database = currentDatabase() AND name = 'readonly_toggle_cleanup'"
+        ).strip()
+        cleanup_dir = f"{table_path}/tmp_readonly_toggle_cleanup"
+        node1.exec_in_container(["mkdir", cleanup_dir])
+
+        node1.query(
+            """
+            ALTER TABLE readonly_toggle_cleanup MODIFY SETTING table_readonly = 1;
+            ALTER TABLE readonly_toggle_cleanup MODIFY SETTING table_readonly = 0;
+            """
+        )
+        assert node1.path_exists(cleanup_dir), "Cleanup must remain stopped"
+
+        node1.query("SYSTEM START CLEANUP readonly_toggle_cleanup")
+        wait_condition(
+            lambda: node1.path_exists(cleanup_dir),
+            lambda exists: not exists,
+            max_attempts=60,
+            delay=1,
+        )
+    finally:
+        node1.query("DROP TABLE readonly_toggle_cleanup SYNC")
