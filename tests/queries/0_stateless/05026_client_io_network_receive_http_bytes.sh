@@ -4,12 +4,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The upload and HTTP legs of the IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565:
-# `NetworkReceiveBytes` (an INSERT fed from the client), `WriteBufferFromHTTPBytes` (a write through
-# `url()`) and `ReadWriteBufferFromHTTPBytes` (a read through `url()`) must land in the query's
-# ProfileEvents and reach the client in the streamed packets that ClientBase::onProfileEvents sums
-# into the live `<rate>/s IO`. The disk, S3, Azure and download legs are covered by the other
-# 05026_client_io_* tests.
+# NetworkReceiveBytes (client-fed INSERT), WriteBufferFromHTTPBytes and ReadWriteBufferFromHTTPBytes (url() write/read)
+# must reach the client's ProfileEvents stream, which ClientBase::onProfileEvents sums into the live IO rate.
 
 # Prints the thread-group total of one counter as the client received it in the ProfileEvents stream.
 function client_total()
