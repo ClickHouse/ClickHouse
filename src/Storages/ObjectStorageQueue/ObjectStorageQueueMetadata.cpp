@@ -88,6 +88,38 @@ namespace
     /// tells it apart from any other node at a `keeper_path` a query happens to name.
     constexpr std::string_view drop_marker = "ObjectStorageQueue: dropped";
 
+    enum class RootRemoval
+    {
+        Gone,
+        Removed,
+        NotOurs,
+    };
+
+    /// Removes `zookeeper_path` while it still carries the marker, at the version it was read at, so
+    /// a node recreated at that path since is left alone rather than removed with it.
+    RootRemoval tryRemoveMarkedRoot(ZooKeeperWithFaultInjection & zk_client, const std::string & zookeeper_path)
+    {
+        std::string root_data;
+        Coordination::Stat root_stat;
+        if (!zk_client.tryGet(zookeeper_path, root_data, &root_stat))
+            return RootRemoval::Gone;
+
+        if (root_data != drop_marker)
+            return RootRemoval::NotOurs;
+
+        /// Hardware errors throw, so the only failures left are `ZNOTEMPTY`, something lives under
+        /// the path again, and `ZBADVERSION`, it changed between the read and the removal.
+        switch (zk_client.tryRemove(zookeeper_path, root_stat.version))
+        {
+            case Coordination::Error::ZOK:
+                return RootRemoval::Removed;
+            case Coordination::Error::ZNONODE:
+                return RootRemoval::Gone;
+            default:
+                return RootRemoval::NotOurs;
+        }
+    }
+
     UInt64 getCurrentTime()
     {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -639,29 +671,16 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 }
             }
 
-            /// No `metadata` means no table lives here, but the path itself can, and `keeper_path`
-            /// is whatever the query named, so only the marker says this path is ours to finish. Its
-            /// version binds the read to the removal; `ZNOTEMPTY` means something lives under it.
-            std::string root_data;
-            Coordination::Stat root_stat;
-            if (zk_client->tryGet(zookeeper_path, root_data, &root_stat))
+            /// No `metadata` means no table lives here, but the path itself can, and a path this
+            /// table may not take over is not a path it may create at either.
+            const auto root_removal = tryRemoveMarkedRoot(*zk_client, zookeeper_path);
+            if (root_removal == RootRemoval::NotOurs)
             {
-                if (root_data != drop_marker)
-                {
-                    occupied = true;
-                    return;
-                }
-
-                const auto code_remove_root = zk_client->tryRemove(zookeeper_path, root_stat.version);
-                if (code_remove_root == Coordination::Error::ZNOTEMPTY
-                    || code_remove_root == Coordination::Error::ZBADVERSION)
-                {
-                    occupied = true;
-                    return;
-                }
-                if (code_remove_root == Coordination::Error::ZOK)
-                    LOG_INFO(log, "Removed path {} left by an interrupted metadata removal", zookeeper_path.string());
+                occupied = true;
+                return;
             }
+            if (root_removal == RootRemoval::Removed)
+                LOG_INFO(log, "Removed path {} left by an interrupted metadata removal", zookeeper_path.string());
 
             requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
             requests.emplace_back(zkutil::makeCreateRequest(
@@ -1038,14 +1057,8 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     LOG_WARNING(log, "Cannot unregister {}: registry {} does not exist", self.table_id, registry_path.string());
                 }
 
-                if (removal_started)
-                {
-                    /// The children are gone but the root is not, so finish the removal here.
-                    /// `ZNOTEMPTY` means the path is alive again and belongs to someone else.
-                    const auto code_remove_root = zk_client->tryRemove(zookeeper_path);
-                    if (code_remove_root != Coordination::Error::ZOK && code_remove_root != Coordination::Error::ZNONODE)
-                        LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), code_remove_root);
-                }
+                if (removal_started && tryRemoveMarkedRoot(*zk_client, zookeeper_path) == RootRemoval::NotOurs)
+                    LOG_WARNING(log, "Did not remove {}: it has children, or it is not the node this removal marked", zookeeper_path.string());
                 return;
             }
 
@@ -1158,10 +1171,8 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     else if (drop_code == Coordination::Error::ZNONODE)
                     {
                         /// The lock is already gone, so the multi could not remove the root with it.
-                        /// `ZNOTEMPTY` means the path is alive again and belongs to someone else.
-                        const auto code_remove_root = zk_client->tryRemove(zookeeper_path);
-                        if (code_remove_root != Coordination::Error::ZOK && code_remove_root != Coordination::Error::ZNONODE)
-                            LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), code_remove_root);
+                        if (tryRemoveMarkedRoot(*zk_client, zookeeper_path) == RootRemoval::NotOurs)
+                            LOG_WARNING(log, "Did not remove {}: it has children, or it is not the node this removal marked", zookeeper_path.string());
                     }
                     else
                         zkutil::KeeperMultiException::check(drop_code, drop_requests, drop_responses);
