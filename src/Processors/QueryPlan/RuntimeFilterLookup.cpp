@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -174,6 +175,18 @@ static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
 namespace
 {
+/// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
+/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
+/// float can appear on a path discovered while reading, which is not among the type's static children.
+bool equalsCanDisagreeWithHashTable(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 bool typeSupportsMinMaxRange(const DataTypePtr & type)
 {
     if (!type)
@@ -347,7 +360,9 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
 
     /// If only one element is in the set then use `equals` instead of set lookup.
     /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
-    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls)
+    /// If `equals` can disagree with the hash table, use `Set`: this filter must not reject a row the join matches.
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls
+        && !equalsCanDisagreeWithHashTable(*filter_column_target_type))
     {
         lookup_state = Single{set.getSetElements().front()};
         return;
