@@ -1,4 +1,4 @@
-#include <Common/LazyPreformattedMessage/api.h>
+#include <Common/LazyPreformattedMessage/fwd.h>
 #include <Common/LoggingFormatStringHelpers.h>
 
 #include <gtest/gtest.h>
@@ -17,8 +17,8 @@ TEST(LazyPreformattedMessage, SameTextAsPreformatted)
     auto lazy = createLazyMessage("Part {} has level {}", refArg(name), copyArg(level));
     auto eager = PreformattedMessage::create("Part {} has level {}", name, level);
 
-    EXPECT_EQ(lazy.format(), eager.text);
-    EXPECT_EQ(lazy.format(), eager.text);
+    EXPECT_EQ(lazy.format().text, eager.text);
+    EXPECT_EQ(lazy.format().text, eager.text);
 }
 
 TEST(LazyPreformattedMessage, RefSeesChangesCopyDoesNot)
@@ -30,7 +30,7 @@ TEST(LazyPreformattedMessage, RefSeesChangesCopyDoesNot)
     ref = "x";
     copy = "y";
 
-    EXPECT_EQ(message.format(), "x b");
+    EXPECT_EQ(message.format().text, "x b");
 }
 
 TEST(LazyPreformattedMessage, Move)
@@ -39,7 +39,7 @@ TEST(LazyPreformattedMessage, Move)
     auto source = createLazyMessage("{}", copyArg(value));
     auto moved = std::move(source);
 
-    EXPECT_EQ(moved.format(), "42");
+    EXPECT_EQ(moved.format().text, "42");
 }
 
 TEST(LazyPreformattedMessage, Lanes)
@@ -49,8 +49,8 @@ TEST(LazyPreformattedMessage, Lanes)
         alive.push_back(createLazyMessage("{}", copyArg(i)));
 
     for (size_t i = 0; i < 16; ++i)
-        EXPECT_EQ(alive[i].format(), std::to_string(i));
+        EXPECT_EQ(alive[i].format().text, std::to_string(i));
 
     alive.clear();
-    EXPECT_EQ(createLazyMessage("{}", copyArg(0)).format(), "0");
+    EXPECT_EQ(createLazyMessage("{}", copyArg(0)).format().text, "0");
 }

@@ -48,9 +48,9 @@ Message::~Message()
     destroy();
 }
 
-std::string Message::format() const
+PreformattedMessage Message::format() const
 {
-    return format_fn(fmt_str, args);
+    return PreformattedMessage{.text = format_fn(fmt_str, args), .format_string = {fmt_str.data(), fmt_str.size()}, .format_string_args = {}};
 }
 
 void Message::destroy() noexcept

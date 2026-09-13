@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/LoggingFormatStringHelpers.h>
+
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
@@ -22,7 +24,7 @@ public:
     Message & operator=(Message && other) noexcept;
     ~Message();
 
-    std::string format() const;
+    PreformattedMessage format() const;
 
 private:
     fmt::string_view fmt_str;
