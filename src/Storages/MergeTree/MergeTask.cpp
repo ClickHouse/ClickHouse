@@ -3586,63 +3586,24 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
 
-        /// `TTL ... GROUP BY ... SET` can leave columns stale in the written part. Two independent
-        /// repairs, each gated so they are a no-op for every other merge:
-        ///  (1) A MATERIALIZED column whose source the `SET` rewrote (e.g. `d MATERIALIZED toDate(ts)`,
-        ///      `... SET ts = ...`) keeps its pre-`SET` `any(col)` value. Recompute EVERY affected
-        ///      MATERIALIZED column (not only the sort-key ones), so the stored column and any rebuilt
-        ///      skip index / projection reading it are correct. Runs whenever a `GROUP BY` TTL `SET`
-        ///      affects a MATERIALIZED column, independent of the sorting key.
-        ///  (2) If the `SET` assigns a column the sorting key depends on, the aggregation emits groups
-        ///      in input order, so the stream is no longer ordered by the sorting key. Recompute the
-        ///      sort-key expression from the updated columns and re-sort, so the written part is
-        ///      consistent with its primary index.
-        const auto & merge_context = global_ctx->data->getContext();
-
-        /// All three repairs below matter only for the columns that a `GROUP BY ... SET` TTL ACTUALLY
-        /// rewrites in THIS merge: only a firing TTL runs its `SET`. Deciding this from the metadata
-        /// alone (the clause exists) would, for a part that merely has some firing TTL plus a
-        /// not-yet-expired `GROUP BY ... SET` that is the only clause touching the sort key / a
-        /// MATERIALIZED column, run a whole-part `O(n log n)` sort-key re-sort (and the materialized
-        /// recompute / warning) for a `SET` that never ran. Gate each repair on the `SET` targets of
-        /// only the FIRING `GROUP BY` TTLs. Missing or uninitialized part-level info takes the
-        /// conservative repair path; forcing TTL evaluation alone does not prove that a future TTL
-        /// rewrote a row.
+        /// A `TTL ... GROUP BY ... SET` that assigns a column the sorting key depends on leaves the
+        /// written part inconsistent with its primary index: the aggregation emits groups in input
+        /// order, so the stream is no longer ordered by the sorting key, and a sort-key expression
+        /// column materialized before the TTL step still holds its pre-`SET` value. Recompute the
+        /// sort-key expression from the updated columns and re-sort.
+        ///
+        /// The repair matters only for the columns a `GROUP BY ... SET` ACTUALLY rewrites in THIS
+        /// merge: only a firing TTL runs its `SET`. Deciding it from the metadata alone (the clause
+        /// exists) would, for a part that merely has some firing TTL plus a not-yet-expired
+        /// `GROUP BY ... SET` that is the only clause touching the sort key, pay a whole-part
+        /// `O(n log n)` re-sort for a `SET` that never ran. Missing or uninitialized part-level info
+        /// takes the conservative repair path; forcing TTL evaluation alone does not prove that a
+        /// future TTL rewrote a row. A part with several `GROUP BY` TTLs is left unrepaired, see
+        /// `getFiringGroupByTTLSetTargets`.
         const auto firing_set_targets = getFiringGroupByTTLSetTargets(
             global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
-        /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
-        /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and
-        /// there is no way to refresh it. Warn (mirroring `MutationsInterpreter::prepare` for UPDATE)
-        /// instead of silently writing a stale value.
-        for (const auto & stale_column :
-             getStaleEphemeralMaterializedColumnsAffectedBySet(global_ctx->metadata_snapshot, merge_context, firing_set_targets))
-            LOG_WARNING(ctx->log,
-                "MATERIALIZED column '{}' depends on both an EPHEMERAL column and a column rewritten by a "
-                "GROUP BY TTL SET. It cannot be recomputed during merge (ephemeral columns are not stored), "
-                "so its on-disk value may become stale. To fix this, re-INSERT the affected rows.",
-                stale_column);
-
-        /// (1) Recompute affected MATERIALIZED columns. Must precede the sort-key recompute below so
-        /// a MATERIALIZED sort-key column feeds the recomputation with its post-`SET` value.
-        auto affected_materialized_columns
-            = getGroupByTTLSetAffectedMaterializedColumns(global_ctx->metadata_snapshot, merge_context, firing_set_targets);
-        if (!affected_materialized_columns.empty())
-        {
-            auto recompute_materialized_step = std::make_unique<ExpressionStep>(
-                merge_parts_query_plan.getCurrentHeader(),
-                buildRecomputeMaterializedColumnsDAG(
-                    *merge_parts_query_plan.getCurrentHeader(),
-                    affected_materialized_columns,
-                    global_ctx->metadata_snapshot->getColumns(),
-                    merge_context));
-            recompute_materialized_step->setStepDescription("Recompute materialized columns after TTL GROUP BY SET");
-            merge_parts_query_plan.addStep(std::move(recompute_materialized_step));
-        }
-
-        /// (2) Sort-key recompute + re-sort, only when a `GROUP BY ... SET` that touches the sort key
-        /// actually fires in this merge.
-        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, merge_context, firing_set_targets))
+        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, firing_set_targets))
         {
             /// Recompute the sorting-key expression columns from the post-SET values, overwriting
             /// the now-stale ones already present in the stream.

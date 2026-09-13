@@ -1,25 +1,15 @@
 #include <Storages/MergeTree/TTLResortUtils.h>
 
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
-#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -46,28 +36,6 @@ namespace MergeTreeSetting
 namespace
 {
 
-/// Stored default and MATERIALIZED expressions must remain executable during a background merge
-/// even when a feature used at table-creation time is disabled in the current context. Keep this
-/// in sync with `IMergeTreeReader::createContextForDefaultExpressions`; chained materialized
-/// subcolumns additionally require the analyzer for the expression DAG assembled here.
-ContextPtr createContextForTTLDefaultExpressions(const ContextPtr & context)
-{
-    auto expressions_context = Context::createCopy(context);
-    enableAllExperimentalSettings(expressions_context);
-    expressions_context->setSetting("enable_analyzer", true);
-    return expressions_context;
-}
-
-/// The physical storage columns the `GROUP BY` TTLs `SET` (assignment targets are always physical).
-NameSet getGroupByTTLSetTargets(const StorageMetadataPtr & metadata_snapshot)
-{
-    NameSet set_targets;
-    for (const auto & ttl : metadata_snapshot->getGroupByTTLs())
-        for (const auto & set_part : ttl.set_parts)
-            set_targets.insert(set_part.column_name);
-    return set_targets;
-}
-
 /// Map each sorting-key dependency to its physical storage column (a dependency may be a
 /// subcolumn, e.g. `t.a` for `ORDER BY t.a`, whose storage column is `t`), so it can be compared
 /// with a `SET` target, which always names a physical column.
@@ -88,344 +56,9 @@ NameSet getSortKeyStorageDependencies(const StorageMetadataPtr & metadata_snapsh
     return sort_key_dependencies;
 }
 
-/// An ALIAS is computed on read and never stored, so its name cannot be resolved against the on-disk
-/// columns a merge sees: it has to be replaced by the expression it stands for, cast to the alias
-/// type, before the default expression is analyzed or evaluated here.
-ASTPtr cloneDefaultWithAliasesReplaced(
-    const ColumnDescription & column_desc, const ColumnsDescription & columns_desc, const ContextPtr & context)
-{
-    auto query = column_desc.default_desc.expression->clone();
-    replaceAliasColumnsInQuery(query, columns_desc, {}, context);
-    return query;
 }
 
-/// The source columns a MATERIALIZED column's default expression reads from, mapped to their
-/// physical storage columns (the expression may reference a subcolumn). Analyzed the same way the
-/// UPDATE mutation path does in `MutationsInterpreter::prepare`. Returns nullopt when the column is
-/// NOT recomputed by the post-TTL repair, in which case its stored value is what the merge writes
-/// and it does not depend on the `SET` targets its default reads:
-///  - the default expression reads an EPHEMERAL column: it cannot be recomputed here (ephemeral
-///    columns are only available during INSERT, never read from disk during a merge/mutation);
-///  - the default expression is non-deterministic (such as `now()`): a `GROUP BY` TTL aggregates
-///    some rows and passes others through, and the whole-stream repair cannot recompute only the
-///    rewritten rows, so the stored value is preserved (see
-///    `getGroupByTTLSetAffectedMaterializedColumns`).
-std::optional<NameSet> getMaterializedColumnSourceColumns(
-    const ColumnDescription & column_desc,
-    const ColumnsDescription & columns_desc,
-    const NamesAndTypesList & all_columns,
-    const NameSet & storage_columns,
-    const NameSet & ephemeral_columns,
-    const ContextPtr & context)
-{
-    auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, context);
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-    auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-
-    if (ExpressionAnalyzer{query, syntax_result, context}.getActions(true)->getActionsDAG().hasNonDeterministic())
-        return std::nullopt;
-
-    NameSet sources;
-    for (const auto & source : syntax_result->requiredSourceColumns())
-    {
-        if (ephemeral_columns.contains(source))
-            return std::nullopt;
-        if (storage_columns.contains(source))
-            sources.insert(source);
-        else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_columns))
-            sources.insert(*source_in_storage);
-    }
-    return sources;
-}
-
-/// The physical storage columns of every MATERIALIZED column that the post-TTL repair recomputes,
-/// mapped to the physical storage columns their default expression reads from. Used to walk
-/// materialized-dependency chains.
-///
-/// MATERIALIZED columns the repair does NOT recompute -- those reading an EPHEMERAL column and those
-/// with a non-deterministic default -- are omitted, so the closure stops at that hop. A column the
-/// merge writes from its stored value does not observably depend on a `SET` target its default
-/// reads, and neither does anything computed from it: a deterministic default recomputed from a
-/// preserved parent yields the parent's stored value. Every user of this map (the recompute list,
-/// the sort-key gates, the `GROUP BY`-key gates) therefore inherits the same boundary, instead of
-/// paying a whole-part re-sort or an unsorted aggregation for a dependency that cannot change a
-/// stored value.
-///
-/// An omitted ephemeral-reading column may still read regular columns a `SET` rewrites, in which
-/// case its stored value goes stale, matching the behaviour the ordinary mutation path already has
-/// for a mixed ephemeral dependency (`04044_mutation_ephemeral_materialized`);
-/// `getStaleEphemeralMaterializedColumnsAffectedBySet` builds its own full graph to warn about
-/// exactly those. The part stays ordered by the stored value, so the primary index remains
-/// consistent with the data.
-std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
-{
-    const auto expressions_context = createContextForTTLDefaultExpressions(context);
-    const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
-
-    /// Include ephemeral columns in the analysis set so `TreeRewriter` can resolve MATERIALIZED
-    /// expressions that reference them, mirroring `MutationsInterpreter::prepare`. Without this the
-    /// analysis throws UNKNOWN_IDENTIFIER for a table such as `eph String EPHEMERAL, sk String
-    /// MATERIALIZED reverse(eph)`.
-    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
-    NameSet ephemeral_columns;
-    for (const auto & column : columns_desc.getEphemeral())
-    {
-        ephemeral_columns.insert(column.name);
-        all_columns_with_ephemeral.push_back(column);
-    }
-
-    std::unordered_map<String, NameSet> sources_map;
-    for (const auto & column : columns_desc.getAllPhysical())
-    {
-        if (!columns_desc.has(column.name))
-            continue;
-        const auto & column_desc = columns_desc.get(column.name);
-        if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
-            continue;
-        auto sources = getMaterializedColumnSourceColumns(
-            column_desc, columns_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, expressions_context);
-        if (sources)
-            sources_map.emplace(column.name, std::move(*sources));
-    }
-    return sources_map;
-}
-
-/// Every MATERIALIZED column whose default expression (transitively) reads a column rewritten by
-/// the `GROUP BY` TTL `SET`. A `SET` on a base column can invalidate a materialized column several
-/// hops away (e.g. `x` fed to `y MATERIALIZED toDate(x)` fed to `z MATERIALIZED toYYYYMM(y)`), so
-/// this is a fixpoint over the materialized-dependency graph, not a one-hop check.
-NameSet getMaterializedColumnsAffectedBySet(
-    const std::unordered_map<String, NameSet> & materialized_sources, const NameSet & set_targets)
-{
-    NameSet affected = set_targets;
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        for (const auto & [name, sources] : materialized_sources)
-        {
-            if (affected.contains(name))
-                continue;
-            for (const auto & source : sources)
-            {
-                if (affected.contains(source))
-                {
-                    affected.insert(name);
-                    changed = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Keep only the materialized columns; the seed `SET` targets are physical assigned columns.
-    for (const auto & target : set_targets)
-        affected.erase(target);
-    return affected;
-}
-
-}
-
-Names getStaleEphemeralMaterializedColumnsAffectedBySet(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
-{
-    return getStaleEphemeralMaterializedColumnsAffectedBySet(
-        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-Names getStaleEphemeralMaterializedColumnsAffectedBySet(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
-{
-    const auto expressions_context = createContextForTTLDefaultExpressions(context);
-    Names stale;
-
-    if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
-        return stale;
-
-    const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
-
-    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
-    NameSet ephemeral_columns;
-    for (const auto & column : columns_desc.getEphemeral())
-    {
-        ephemeral_columns.insert(column.name);
-        all_columns_with_ephemeral.push_back(column);
-    }
-
-    /// A MATERIALIZED column whose default expression (transitively) reads an EPHEMERAL column cannot be
-    /// recomputed here (ephemeral columns exist only during INSERT, never on disk). If such a column is
-    /// ALSO (transitively) affected by a column rewritten by the `GROUP BY` TTL `SET`, its stored value
-    /// goes stale and there is no way to refresh it -- mirror `MutationsInterpreter::prepare`'s handling
-    /// for `UPDATE` and warn (fail loud) instead of silently treating it as unaffected.
-    ///
-    /// The dependency is transitive on BOTH axes, so a one-hop check misses real cases. For
-    /// `m1 MATERIALIZED concat(toString(x), eph)`, `m2 MATERIALIZED lower(m1)`, `SET x = ...`:
-    ///  - `m1` reads the ephemeral `eph` and the `SET` target `x` directly.
-    ///  - `m2` reads neither directly, but it depends on `m1`, which is both unrecomputable (ephemeral)
-    ///    and affected by the `SET` -- so `m2`'s stored value is stale AND unrecomputable too.
-    /// Build the FULL materialized-dependency graph (unlike `getMaterializedColumnSourcesMap`, KEEP the
-    /// ephemeral-reading columns as nodes so the chain is not cut at the first ephemeral hop), then take
-    /// the two transitive closures and report their intersection.
-    std::unordered_map<String, NameSet> full_sources;  /// materialized col -> its physical/materialized source columns
-    NameSet reads_ephemeral_directly;                  /// materialized cols whose own expression reads an ephemeral column
-    for (const auto & column : columns_desc.getAllPhysical())
-    {
-        if (!columns_desc.has(column.name))
-            continue;
-        const auto & column_desc = columns_desc.get(column.name);
-        if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
-            continue;
-
-        auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, expressions_context);
-        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
-        auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
-
-        NameSet sources;
-        for (const auto & source : syntax_result->requiredSourceColumns())
-        {
-            if (ephemeral_columns.contains(source))
-                reads_ephemeral_directly.insert(column.name);
-            else if (storage_columns.contains(source))
-                sources.insert(source);
-            else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_columns))
-                sources.insert(*source_in_storage);
-        }
-        full_sources.emplace(column.name, std::move(sources));
-    }
-
-    /// A materialized column is "unrecomputable" if it or any of its (transitive) materialized sources
-    /// reads an ephemeral column.
-    NameSet unrecomputable = reads_ephemeral_directly;
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        for (const auto & [name, sources] : full_sources)
-        {
-            if (unrecomputable.contains(name))
-                continue;
-            for (const auto & source : sources)
-                if (unrecomputable.contains(source))
-                {
-                    unrecomputable.insert(name);
-                    changed = true;
-                    break;
-                }
-        }
-    }
-
-    /// Materialized columns (transitively) reading a `SET` target hold a stale stored value. Reuse the
-    /// same fixpoint the recompute path uses, but over the FULL graph so it also propagates through the
-    /// ephemeral-reading nodes.
-    const auto affected = getMaterializedColumnsAffectedBySet(full_sources, set_targets);
-
-    for (const auto & column : columns_desc.getAllPhysical())
-        if (affected.contains(column.name) && unrecomputable.contains(column.name))
-            stale.push_back(column.name);
-    return stale;
-}
-
-NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
-{
-    return getGroupByTTLSetAffectedMaterializedColumns(
-        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
-{
-    NamesAndTypesList affected;
-
-    if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
-        return affected;
-
-    const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
-
-    /// Every MATERIALIZED column (transitively) reading a `SET` target holds a stale stored value:
-    /// the aggregation rewrites the source but nothing recomputes the materialized column.
-    const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, set_targets);
-
-    /// Return in physical column order so recomputation is deterministic (chained defaults such as
-    /// `y MATERIALIZED toDate(x)`, `z MATERIALIZED toYYYYMM(y)` are all present, and
-    /// `evaluateMissingDefaults` resolves the dependency order between them).
-    for (const auto & column : columns_desc.getAllPhysical())
-        if (affected_materialized.contains(column.name))
-            affected.emplace_back(column.name, column.type);
-
-    return affected;
-}
-
-NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
-{
-    return getGroupByTTLSetAffectedMaterializedSortKeyColumns(
-        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
-{
-    NamesAndTypesList affected;
-
-    if (!metadata_snapshot->hasSortingKey() || metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
-        return affected;
-
-    const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
-
-    /// Every MATERIALIZED column (transitively) reading a `SET` target holds a stale stored value:
-    /// the aggregation rewrites the source but nothing recomputes the materialized column.
-    const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, set_targets);
-    if (affected_materialized.empty())
-        return affected;
-
-    /// We only need to repair the ones the sorting key depends on, plus any affected MATERIALIZED
-    /// columns those transitively read from (intermediate hops such as `y` in
-    /// `y MATERIALIZED toDate(x)`, `z MATERIALIZED toYYYYMM(y)`, `ORDER BY z`). The intermediates
-    /// must be recomputed too, otherwise recomputing the sort-key column would read their stale
-    /// value. MATERIALIZED columns unrelated to the sorting key are left untouched (out of scope).
-    NameSet to_recompute;
-    NameSet frontier;
-    for (const auto & dependency : getSortKeyStorageDependencies(metadata_snapshot))
-        if (affected_materialized.contains(dependency))
-            frontier.insert(dependency);
-
-    while (!frontier.empty())
-    {
-        NameSet next;
-        for (const auto & name : frontier)
-        {
-            if (!to_recompute.insert(name).second)
-                continue;
-            if (auto it = materialized_sources.find(name); it != materialized_sources.end())
-                for (const auto & source : it->second)
-                    if (affected_materialized.contains(source) && !to_recompute.contains(source))
-                        next.insert(source);
-        }
-        frontier = std::move(next);
-    }
-
-    /// Return in physical column order so recomputation is deterministic.
-    for (const auto & column : columns_desc.getAllPhysical())
-        if (to_recompute.contains(column.name))
-            affected.emplace_back(column.name, column.type);
-
-    return affected;
-}
-
-bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
-{
-    return groupByTTLAssignsSortKeyColumn(
-        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-bool groupByTTLAssignsSortKeyColumn(
-    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
+bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const NameSet & set_targets)
 {
     if (!metadata_snapshot->hasSortingKey())
         return false;
@@ -433,13 +66,10 @@ bool groupByTTLAssignsSortKeyColumn(
     if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
         return false;
 
-    /// Direct case: a `SET` target is itself a sort-key dependency storage column.
     for (const auto & dependency : getSortKeyStorageDependencies(metadata_snapshot))
         if (set_targets.contains(dependency))
             return true;
-
-    /// Materialized case: a `SET` target is a source of a MATERIALIZED sort-key column.
-    return !getGroupByTTLSetAffectedMaterializedSortKeyColumns(metadata_snapshot, context, set_targets).empty();
+    return false;
 }
 
 NameSet getFiringGroupByTTLSetTargets(
@@ -463,129 +93,6 @@ NameSet getFiringGroupByTTLSetTargets(
                 targets.insert(set_part.column_name);
     }
     return targets;
-}
-
-ActionsDAG buildRecomputeMaterializedColumnsDAG(
-    const Block & header,
-    const NamesAndTypesList & columns_to_recompute,
-    const ColumnsDescription & columns_desc,
-    const ContextPtr & context)
-{
-    const auto expressions_context = createContextForTTLDefaultExpressions(context);
-    NameSet recompute_names;
-    for (const auto & column : columns_to_recompute)
-        recompute_names.insert(column.name);
-
-    /// A MATERIALIZED default expression may read a subcolumn (e.g. `d MATERIALIZED toDate(tup.ts)`
-    /// requires `tup.ts`). That subcolumn can already be materialized in the stream: for
-    /// `ORDER BY tup.ts`, `add_primary_key_expression` extracts `tup.ts` before the TTL step. After
-    /// an earlier `SET tup = ...` that pre-extracted `tup.ts` is STALE -- the physical parent `tup`
-    /// was rewritten but the derived subcolumn still holds its pre-`SET` value.
-    /// `createSubcolumnsExtractionActions` returns early when the required subcolumn is already in the
-    /// stream, so it would reuse the stale copy and recompute the MATERIALIZED column from the
-    /// pre-`SET` subcolumn. Such a stale subcolumn must be dropped so it is rebuilt fresh from the
-    /// post-`SET` physical column below.
-    ///
-    /// Drop ONLY the subcolumns that feed the recompute -- not every re-extractable subcolumn in the
-    /// stream. An unrelated pass-through subcolumn (e.g. a sort-key column `t.a` with
-    /// `ORDER BY (d, t.a)` while only `d` is recomputed) is preserved by `save_unneeded_columns`, but
-    /// this DAG never restores it, so dropping it would make the later `TTLAggregationAlgorithm` throw
-    /// NOT_FOUND_COLUMN_IN_BLOCK.
-    ///
-    /// A re-extractable subcolumn is stale (and must be re-extracted from the post-`SET` physical
-    /// parent) only when the recompute actually READS that specific subcolumn from a rewritten
-    /// physical parent: e.g. `d MATERIALIZED toDate(tup.ts)` reads `tup.ts`, whose parent `tup` was
-    /// rewritten, so the pre-extracted `tup.ts` is stale. A DIFFERENT subcolumn of the same parent
-    /// that the recompute does NOT read (e.g. a pass-through sort-key column `t.a` with
-    /// `ORDER BY (d, t.a)`, `d MATERIALIZED toDate(t.b)`) is unrelated and must be kept -- dropping it
-    /// by physical-parent name would make the later `TTLAggregationAlgorithm` throw
-    /// NOT_FOUND_COLUMN_IN_BLOCK, since this DAG never restores it. Track the SPECIFIC stale
-    /// subcolumns the recompute needs (subcolumn-granular), not the physical parent.
-    const auto storage_names = columns_desc.getAllPhysical().getNameSet();
-
-    /// The exact subcolumns each recomputed MATERIALIZED column's default expression reads (analyzed
-    /// the same way the mutation path does). Only such a subcolumn -- present in the stream and
-    /// re-extractable from its post-`SET` physical parent -- can be a stale input to re-extract.
-    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
-    NameSet ephemeral_columns;
-    for (const auto & column : columns_desc.getEphemeral())
-    {
-        ephemeral_columns.insert(column.name);
-        all_columns_with_ephemeral.push_back(column);
-    }
-    NameSet recompute_read_subcolumns;
-    for (const auto & name : recompute_names)
-    {
-        if (!columns_desc.has(name))
-            continue;
-        const auto & column_desc = columns_desc.get(name);
-        if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
-            continue;
-
-        /// Analyze the default expression as written (do NOT rewrite subcolumn reads to
-        /// `getSubcolumn(parent, ...)` first): a rewritten `tup.ts` collapses to its physical parent
-        /// `tup` in `requiredSourceColumns()`, hiding the subcolumn we must drop. Analyzed as-is, a
-        /// subcolumn read such as `tup.ts` in `d MATERIALIZED toDate(tup.ts)` is reported by its
-        /// subcolumn name, so it is recognised and dropped below.
-        auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, expressions_context);
-        auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
-        for (const auto & source : syntax_result->requiredSourceColumns())
-            /// A subcolumn source is one that is not itself a physical column but maps to one.
-            if (!storage_names.contains(source))
-                if (Nested::tryGetColumnNameInStorage(source, storage_names))
-                    recompute_read_subcolumns.insert(source);
-    }
-
-    NameSet drop_names = recompute_names;
-    for (const auto & column : header)
-        if (recompute_read_subcolumns.contains(column.name))
-            if (auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names); parent && header.has(*parent))
-                drop_names.insert(column.name);
-
-    /// Drop the stale values from the stream so `evaluateMissingDefaults` treats the columns as
-    /// missing and recomputes them from their default expression (reading the post-`SET` sources
-    /// that remain in the stream). Otherwise it would keep the stale value already present.
-    ActionsDAG drop_stale_dag(header.getColumnsWithTypeAndName());
-    ActionsDAG::NodeRawConstPtrs kept_outputs;
-    kept_outputs.reserve(drop_stale_dag.getOutputs().size());
-    for (const auto * output : drop_stale_dag.getOutputs())
-        if (!drop_names.contains(output->result_name))
-            kept_outputs.push_back(output);
-    drop_stale_dag.getOutputs() = std::move(kept_outputs);
-
-    Block header_after_drop(drop_stale_dag.getResultColumns());
-
-    /// Ask for every remaining stream column plus the recomputed ones, so the pass-through columns
-    /// are preserved (`save_unneeded_columns`) and the materialized columns are re-evaluated.
-    NamesAndTypesList required_columns;
-    for (const auto & column : header_after_drop)
-        required_columns.emplace_back(column.name, column.type);
-    required_columns.insert(required_columns.end(), columns_to_recompute.begin(), columns_to_recompute.end());
-
-    /// A recomputed default may read a subcolumn of another recomputed column (`z MATERIALIZED
-    /// toYYYYMM(y.d)` over MATERIALIZED `y`): both are dropped above, so `y.d` is resolvable only
-    /// against the sibling `y` built in the same expression list, which the old analyzer cannot do.
-    auto recompute_dag = evaluateMissingDefaults(
-        header_after_drop, required_columns, columns_desc, expressions_context, /*save_unneeded_columns=*/true);
-    if (!recompute_dag)
-        return drop_stale_dag;
-
-    /// Prepend a subcolumn extraction DAG so a required subcolumn (`tup.ts`) is available, exactly as
-    /// `AddingDefaultsTransform` does before executing `evaluateMissingDefaults`; otherwise
-    /// recomputation fails with NOT_FOUND_COLUMN_IN_BLOCK. The stale copies were dropped above, so a
-    /// re-extractable subcolumn is now missing from `header_after_drop` and is rebuilt fresh from its
-    /// post-`SET` physical parent.
-    auto extracting_subcolumns_dag
-        = createSubcolumnsExtractionActions(header_after_drop, recompute_dag->getRequiredColumnsNames(), expressions_context);
-
-    auto result = ActionsDAG::merge(
-        std::move(drop_stale_dag),
-        ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*recompute_dag)));
-
-    /// A constant-folded default expression yields a ColumnConst, which the part writer cannot
-    /// serialize.
-    result.addMaterializingOutputActions(/*materialize_sparse=*/false);
-    return result;
 }
 
 SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, const MergeTreeSettings & storage_settings)
@@ -660,40 +167,6 @@ static ActionsDAG buildRecomputeSortKeyExpressionDAG(
         ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
 }
 
-bool recomputeAffectedMaterializedColumns(
-    QueryPipelineBuilder & builder,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context)
-{
-    return recomputeAffectedMaterializedColumns(
-        builder, metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-bool recomputeAffectedMaterializedColumns(
-    QueryPipelineBuilder & builder,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context,
-    const NameSet & set_targets)
-{
-    /// If a MATERIALIZED column's source was rewritten by the `SET` (e.g. `d MATERIALIZED toDate(ts)`,
-    /// `... SET ts = ...`), the stored `d` in the stream is stale. Recompute EVERY affected
-    /// MATERIALIZED column so the written part (and any rebuilt skip index / projection reading them)
-    /// is not stale. Independent of the sort-key re-sort: it must run even when no sort-key column is
-    /// assigned. Returns true when a recompute step was added.
-    auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context, set_targets);
-    if (affected_materialized_columns.empty())
-        return false;
-
-    auto recompute_dag = buildRecomputeMaterializedColumnsDAG(
-        builder.getHeader(), affected_materialized_columns, metadata_snapshot->getColumns(), context);
-    builder.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(
-            header, std::make_shared<ExpressionActions>(recompute_dag.clone()));
-    });
-    return true;
-}
-
 void resortPipelineAfterTTLGroupBySet(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
@@ -701,25 +174,6 @@ void resortPipelineAfterTTLGroupBySet(
     const ContextPtr & context,
     const MergeTreeSettings & storage_settings)
 {
-    resortPipelineAfterTTLGroupBySet(
-        builder, metadata_snapshot, storage_columns, context, storage_settings, getGroupByTTLSetTargets(metadata_snapshot));
-}
-
-void resortPipelineAfterTTLGroupBySet(
-    QueryPipelineBuilder & builder,
-    const StorageMetadataPtr & metadata_snapshot,
-    const NamesAndTypesList & storage_columns,
-    const ContextPtr & context,
-    const MergeTreeSettings & storage_settings,
-    const NameSet & set_targets)
-{
-    /// A MATERIALIZED sort-key column whose source the `SET` rewrote (e.g. `d MATERIALIZED toDate(ts)`,
-    /// `ORDER BY d`, `... SET ts = ...`) is stale in the stream; recompute the affected MATERIALIZED
-    /// columns before recomputing the sorting-key expression and re-sorting, otherwise the re-sort
-    /// would key on the stale value. `recomputeAffectedMaterializedColumns` covers every affected
-    /// MATERIALIZED column (including the sort-key subset), so nothing else is needed here.
-    recomputeAffectedMaterializedColumns(builder, metadata_snapshot, context, set_targets);
-
     auto recalculate_sorting_key_dag
         = buildRecomputeSortKeyExpressionDAG(builder.getHeader(), metadata_snapshot, storage_columns, context);
 
