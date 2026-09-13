@@ -17,6 +17,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -71,6 +72,13 @@ namespace Setting
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_unregister_without_remove_recursive[];
+    extern const char object_storage_queue_unregister_after_drop_lock[];
+    extern const char object_storage_queue_unregister_before_final_multi[];
 }
 
 namespace
@@ -862,10 +870,10 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     registry_path,
                     self.serialize(),
                     zkutil::CreateMode::Persistent));
-
-                if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-                    zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
             }
+
+            /// A drop holds `drop` until the whole subtree is gone, so a registration added in that window would be removed with it.
+            zkutil::addCheckNotExistsRequest(requests, *zk_client, drop_lock_path);
 
             code = zk_client->tryMulti(requests, responses);
         });
@@ -962,6 +970,9 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
         {
             zk_client = getZooKeeper();
             supports_remove_recursive = allow_remove_recursive && zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+            fiu_do_on(FailPoints::object_storage_queue_unregister_without_remove_recursive, {
+                supports_remove_recursive = false;
+            });
 
             Coordination::Stat stat;
             std::string registry_str;
@@ -974,8 +985,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
-                    LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                    chassert(false);
+                    LOG_WARNING(log, "Cannot unregister {}: registry {} does not exist", self.table_id, registry_path.string());
                 }
                 return;
             }
@@ -1067,7 +1077,25 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client->getKeeper());
                 try
                 {
-                    zk_client->removeRecursive(zookeeper_path);
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_unregister_after_drop_lock);
+
+                    /// `drop` must outlive the subtree it guards, so it is kept here and removed together with the root below.
+                    zk_client->tryRemoveChildrenRecursive(
+                        zookeeper_path, /* probably_flat */false, zkutil::RemoveException{drop_lock_path.filename().native()});
+
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_unregister_before_final_multi);
+
+                    Coordination::Requests drop_requests{
+                        zkutil::makeRemoveRequest(drop_lock_path, -1),
+                        zkutil::makeRemoveRequest(zookeeper_path, -1)};
+                    Coordination::Responses drop_responses;
+                    const auto drop_code = zk_client->tryMulti(drop_requests, drop_responses, /* check_session_valid */true);
+                    if (drop_code == Coordination::Error::ZOK)
+                        drop_lock->setAlreadyRemoved();
+                    else if (drop_code == Coordination::Error::ZNONODE || drop_code == Coordination::Error::ZNOTEMPTY)
+                        LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), drop_code);
+                    else
+                        zkutil::KeeperMultiException::check(drop_code, drop_requests, drop_responses);
                 }
                 catch (const zkutil::KeeperMultiException & e)
                 {
