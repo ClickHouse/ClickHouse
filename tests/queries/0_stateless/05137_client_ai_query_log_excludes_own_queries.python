@@ -23,6 +23,7 @@ import re
 import select
 import shlex
 import shutil
+import termios
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -307,6 +308,29 @@ def read_until(master, debug_log_fd, predicate, timeout):
     return output
 
 
+def wait_for_line_editor(master, timeout=TIMEOUT_SECONDS):
+    """Wait until the client is reading a line, which is the only state in which a control
+    character typed into its terminal reaches it.
+
+    While a query runs, the terminal is in the raw mode of `TerminalKeystrokeInterceptor`, whose
+    thread reads and swallows what is typed; the interceptor then leaves that mode with
+    `tcsetattr(TCSAFLUSH)`, which discards whatever is still unread; and in the canonical mode
+    that follows, the line discipline of the terminal handles the backspace below itself - it is
+    the `ERASE` character, the line it would erase from is empty, so it is dropped there as well.
+    Only a backspace typed while `replxx` reads a line is both kept and delivered. The three
+    states are told apart by `VMIN` and `VTIME`: the interceptor sets them to 0 and 1, `replxx` to
+    1 and 0, and the canonical mode keeps `ICANON` on."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        attributes = termios.tcgetattr(master)
+        reading = not attributes[3] & termios.ICANON
+        reading = reading and attributes[6][termios.VMIN] == 1 and attributes[6][termios.VTIME] == 0
+        if reading:
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def run_statement(master, debug_log_fd, statement):
     """Type a statement, wait for it to run, and return the output it produced.
 
@@ -320,11 +344,15 @@ def run_statement(master, debug_log_fd, statement):
     So a backspace goes in front of every statement - on an empty SQL line it does nothing, so it
     costs nothing when the client is already in SQL mode - and the answer of the mock provider is
     used as the signal that a line went to the model anyway: the statement is then typed again.
+    The backspace waits for the client to be reading a line, because a terminal that is in any
+    other state drops it (see `wait_for_line_editor`), which is what made the retry necessary in
+    the first place.
 
     The wait always runs to the end of what the statement printed, whether that is the timing line
     of a query that ran or the error of one that failed. Returning earlier would leave the rest in
     the terminal for the next statement to match instead of its own output."""
     for attempt in range(3):
+        wait_for_line_editor(master)
         os.write(master, b"\x7f")
         os.write(master, statement.encode() + b"\n")
         output = read_until(
