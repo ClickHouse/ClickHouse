@@ -83,4 +83,55 @@ WHERE notHas(m, 'debug')
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
+-- LowCardinality Map keys must not be rewritten. Map comparison strips LowCardinality before
+-- comparing, so a wider FixedString needle has different semantics from the keys subcolumn.
+DROP TABLE IF EXISTS t_map_has_subcolumn_lc;
+
+CREATE TABLE t_map_has_subcolumn_lc
+(
+    id UInt64,
+    m Map(LowCardinality(String), UInt8)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_has_subcolumn_lc VALUES
+    (0, {'K1': 1}),
+    (1, {'K1\0': 2}),
+    (2, {'X': 3}),
+    (3, {});
+
+SELECT count() = 0
+FROM (EXPLAIN actions = 1 SELECT id FROM t_map_has_subcolumn_lc WHERE has(m, toFixedString('K1', 3)))
+WHERE explain LIKE '%m.keys%';
+
+SELECT count() = 0
+FROM (EXPLAIN actions = 1 SELECT id FROM t_map_has_subcolumn_lc WHERE notHas(m, toFixedString('K1', 3)))
+WHERE explain LIKE '%m.keys%';
+
+SELECT id
+FROM t_map_has_subcolumn_lc
+WHERE has(m, toFixedString('K1', 3))
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id
+FROM t_map_has_subcolumn_lc
+WHERE notHas(m, toFixedString('K1', 3))
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id
+FROM t_map_has_subcolumn_lc
+WHERE has(m, toFixedString('K1', 3))
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id
+FROM t_map_has_subcolumn_lc
+WHERE notHas(m, toFixedString('K1', 3))
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 DROP TABLE t_map_has_subcolumn;
+DROP TABLE t_map_has_subcolumn_lc;
