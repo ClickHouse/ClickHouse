@@ -88,6 +88,12 @@ for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ 
 # ClickHouse-owned images with ${VAR:-latest} pattern are excluded since the variable is set in CI.
 find "${ROOT_PATH}/tests/integration/compose" -name '*.yml' -print0 | xargs -0 grep -P 'image:\s*\S+:latest\s*$' | grep -v '\${\|clickhouse/' && echo "Docker compose files should use pinned versions instead of :latest for third-party images"
 
+# A leaf test file cannot share a fixture with another file, so a session-scoped fixture there only
+# defers its teardown to the end of the pytest session, keeping the cluster's containers and their
+# memory for the rest of the job. tests/integration/conftest.py is where session scope belongs.
+grep -rlE --include='test*.py' "scope[[:space:]]*=[[:space:]]*['\"]session['\"]" "${ROOT_PATH}"/tests/integration/test_*/ \
+    && echo "Integration test fixtures should be module-scoped, not session-scoped"
+
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
     awk '$1 != "120000" && $1 != "100644" { print $4 }' | grep -E '\.(cpp|h|sql|j2|xml|reference|txt|md)$' && echo "These files should not be executable."
@@ -125,6 +131,10 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
     -e /aiSimilarity.cpp
+    # `KQLPlanBuilder` is an analysis-time helper, not a function: it is created inside
+    # `buildImpl`, uses the context only to look up the delegates it composes, and is
+    # destroyed before the resulting `FunctionKQLPlan` (which holds no context) executes.
+    -e /Kusto/KQLPlan.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -140,8 +150,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # Used only in getReturnTypeImpl()
     -e /array/arrayReduce.cpp
     -e /array/arrayReduceInRanges.cpp
-    # Global context
-    -e /catboostEvaluate.cpp
     # Always constant
     -e /connectionId.cpp
     # Do not leak HTTP headers to MergeTree
@@ -152,6 +160,9 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /getSetting.cpp
     -e /hasColumnInTable.cpp
     -e /initializeAggregation.cpp
+    # Overload resolvers for the KQL dialect: they only need the context to look up the
+    # function they delegate to, and that happens during analysis, not execution.
+    -e /Kusto/
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
@@ -254,8 +265,6 @@ LARGE_FILE_WHITELIST=(
     # Legitimate test data that is hard to generate at runtime
     -e multi_column_bf.gz.parquet
     -e ghdata_sample.json
-    -e libcatboostmodel.so_aarch64
-    -e libcatboostmodel.so_x86_64
     -e test_01946.zstd
     -e e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz
     -e npy_big.npy

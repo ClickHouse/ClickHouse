@@ -21,6 +21,7 @@ release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="CreateRelease",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
@@ -39,13 +40,6 @@ workflow = Workflow.Config(
             description="Git reference (branch or commit SHA) from which to create the release",
             is_required=True,
             default_value="",
-        ),
-        Workflow.Config.InputConfig(
-            name="type",
-            description="Release type - new for a new release branch, patch for a patch release",
-            is_required=True,
-            default_value="patch",
-            options=["patch", "new"],
         ),
         Workflow.Config.InputConfig(
             name="skip-repo",

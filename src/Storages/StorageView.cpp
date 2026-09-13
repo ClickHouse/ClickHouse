@@ -234,6 +234,9 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     /// limit per shard under the pushdown instead of once globally on the normal path, changing the
     /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
     /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
+    /// A `LIMIT [n] AFTER/UNTIL` range is applied once on the initiator on the normal path
+    /// (StorageDistributed::getOptimizedQueryProcessingStage keeps the default stage for it), whereas
+    /// the pushdown would apply it on every shard to that shard's rows, so it is rejected as well.
     ///
     /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
     /// addition to setting order_by_all, so the orderBy() check above already rejects it (ORDER BY ALL
@@ -248,6 +251,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->having() || select->qualify()
         || select->orderBy() || select->order_by_all
         || select->limitLength() || select->limitOffset()
+        || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
         || select->distinct || select->arrayJoinExpressionList().first
@@ -455,6 +459,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
+                        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
@@ -623,7 +628,6 @@ void StorageView::alter(
     auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
@@ -631,11 +635,10 @@ void StorageView::alter(
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = DefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
-
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.addDependency(*new_metadata.definer, table_id);
+    else
+        instance.removeDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
 }

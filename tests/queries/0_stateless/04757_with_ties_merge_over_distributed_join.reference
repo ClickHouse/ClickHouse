@@ -1,0 +1,78 @@
+-- 1 witness: Merge over Distributed + JOIN + WITH TIES
+19
+19
+18
+18
+17
+17
+-- 2 witness, old analyzer
+19
+19
+18
+18
+17
+17
+-- 3 witness via the merge() table function
+19
+19
+18
+18
+17
+17
+-- 4 witness with GLOBAL INNER JOIN
+19
+19
+18
+18
+17
+17
+-- 5 control: plain Distributed + JOIN already worked
+19
+19
+18
+18
+17
+17
+-- 6 control: Merge over Distributed without a JOIN already worked
+19
+19
+18
+18
+17
+17
+-- 7 ties are still honored: plain LIMIT 5 returns five rows
+19
+19
+18
+18
+17
+-- 8 a child without a JOIN keeps its own LIMIT
+999
+998
+997
+996
+995
+999
+998
+997
+996
+995
+-- 9 the child must not pre-limit an unordered read
+999
+999
+998
+998
+997
+999
+999
+998
+998
+997
+997
+-- 10 witness: the initiator side, no remote shard needed
+19
+19
+18
+18
+17
+17

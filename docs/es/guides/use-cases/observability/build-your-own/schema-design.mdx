@@ -913,9 +913,9 @@ Los países y coordenadas anteriores ofrecen posibilidades de visualización que
   ### Uso de diccionarios de expresiones regulares (análisis de user agent)
 </div>
 
-El análisis de [cadenas user agent](https://en.wikipedia.org/wiki/User_agent) es un problema clásico de expresiones regulares y un requisito habitual en conjuntos de datos basados en logs y traces. ClickHouse proporciona un análisis eficiente de user agents mediante diccionarios de árbol de expresiones regulares.
+El análisis de [cadenas user agent](https://en.wikipedia.org/wiki/User_agent) es un problema clásico de expresiones regulares y un requisito habitual en conjuntos de datos basados en logs y trazas. ClickHouse proporciona un análisis eficiente de user agents mediante diccionarios de árbol de expresiones regulares.
 
-Los diccionarios de árbol de expresiones regulares se definen en la versión open-source de ClickHouse mediante el tipo de dictionary source YAMLRegExpTree, que proporciona la path a un archivo YAML que contiene el árbol de expresiones regulares. Si desea proporcionar su propio diccionario de expresiones regulares, puede consultar [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source) los detalles de la structure requerida. A continuación, nos centramos en el análisis de user agent con [uap-core](https://github.com/ua-parser/uap-core) y cargamos nuestro diccionario en el formato CSV admitido. Este enfoque es compatible con OSS y ClickHouse Cloud.
+Los diccionarios de árbol de expresiones regulares se definen en la versión open-source de ClickHouse mediante el tipo de dictionary source YAMLRegExpTree, que proporciona la path a un archivo YAML que contiene el árbol de expresiones regulares. Si desea proporcionar su propio diccionario de expresiones regulares, puede consultar [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source) los detalles de la estructura requerida. A continuación, nos centramos en el análisis de user agent con [uap-core](https://github.com/ua-parser/uap-core) y cargamos nuestro diccionario en el formato CSV admitido. Este enfoque es compatible con OSS y ClickHouse Cloud.
 
 <Note>
   En los ejemplos siguientes, usamos snapshots de las expresiones regulares más recientes de uap-core para el análisis de user agent de junio de 2024. El archivo más reciente, que se actualiza ocasionalmente, puede encontrarse [aquí](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). Puede seguir los pasos [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) para cargarlo en el archivo CSV utilizado a continuación.
@@ -955,11 +955,11 @@ CREATE TABLE regexp_device
 Estas tablas pueden poblarse con los siguientes archivos CSV alojados públicamente mediante la función de tabla url:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 Con nuestras tablas Memory ya pobladas, podemos cargar nuestros diccionarios de expresiones regulares. Ten en cuenta que debemos especificar como columnas los valores de clave; estos serán los atributos que podremos extraer del user agent.

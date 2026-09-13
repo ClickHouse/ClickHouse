@@ -46,14 +46,6 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageID target_id(target_database, target_table);
-    if (table_id_ == target_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -558,6 +550,23 @@ void registerStorageAlias(StorageFactory & factory)
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
             local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
 
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table. They run after the access check
+        /// so that a caller without access to the target cannot learn its engine from the message.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (fresh_user_definition)
+        {
+            StorageID target_id(target_database, target_table);
+            if (args.table_id == target_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
+            if (target_storage && target_storage->getName() == "Alias")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
+        }
+
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
@@ -587,18 +596,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-:::note
+<Note>
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
+</Note>
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-:::note
+<Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
+</Note>
 
 ## Supported Operations {#supported-operations}
 
