@@ -1500,22 +1500,22 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
-    const auto has_lambda = [](const ExpressionActionsPtr & expression)
+    const auto can_reuse_actions = [](const ExpressionActionsPtr & expression)
     {
-        return std::ranges::any_of(expression->getActionsDAG().getNodes(), [](const auto & node)
+        return std::ranges::all_of(expression->getActionsDAG().getNodes(), [](const auto & node)
         {
-            return node.result_type && WhichDataType(node.result_type).isFunction();
+            return node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::ALIAS;
         });
     };
 
-    if (has_lambda(key.expression)
+    if (!can_reuse_actions(key.expression)
         || std::ranges::any_of(indices, [&](const auto & index)
         {
-            return has_lambda(index->index.expression);
+            return !can_reuse_actions(index->index.expression);
         }))
     {
-        /// Captured lambda bodies retain their analysis-time execution settings. Rebuild them
-        /// with the storage context, just as we rebuild the outer `ExpressionActions` below.
+        /// Functions and folded constants can depend on analysis settings from the metadata rebuild.
+        /// Reanalyze computed expressions with the storage context, including captured lambda bodies.
         auto combined_expr_list = key.expression_list_ast->clone();
         for (const auto & index : indices)
             for (const auto & expression : index->index.expression_list_ast->children)
