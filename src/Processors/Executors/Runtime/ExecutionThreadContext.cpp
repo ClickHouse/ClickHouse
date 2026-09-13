@@ -53,10 +53,19 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 {
     try
     {
-        if (processor.isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
+        MemorySpillSchedulerPtr spill_scheduler;
+        if (processor.isSpillable())
+        {
+            if (auto group = CurrentThread::getGroup())
+                spill_scheduler = group->memory_spill_scheduler;
+        }
+        if (spill_scheduler)
+            spill_scheduler->checkAndSpill(&processor);
 
         processor.work();
+
+        if (spill_scheduler)
+            spill_scheduler->finishSpill(&processor);
 
         /// Update read progress only for source nodes.
         bool is_source = processor.getInputs().empty();
