@@ -410,10 +410,10 @@ class PriorityAlgorithm final : public ISchedulingAlgorithm
 public:
     void push(ResourceRequest * request) override
     {
-        // Order by the query's `workload_priority` (Int64): lower value = higher precedence, so a
-        // negative value sorts ahead of the default `0` and a positive value behind it. Ties break
-        // FIFO by arrival sequence.
-        request->scheduling.priority = Priority{request->scheduling.context->priority};
+        // Order by the query's `workload_priority`: lower value = higher precedence, so a negative
+        // value sorts ahead of the default `0` and a positive value behind it. Ties break FIFO by
+        // arrival sequence.
+        request->scheduling.priority = request->scheduling.context->priority;
         request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);
     }

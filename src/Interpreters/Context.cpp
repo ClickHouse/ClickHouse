@@ -2617,7 +2617,7 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_age_seconds = query_settings[Setting::weight_lowering_age_seconds],
         .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
-        .priority = query_settings[Setting::workload_priority],
+        .priority = Priority{query_settings[Setting::workload_priority]},
     };
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set

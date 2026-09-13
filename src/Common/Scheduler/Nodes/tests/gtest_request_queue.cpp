@@ -50,7 +50,7 @@ struct Fixture
     {
         if (start_ns == 0)
             start_ns = clock_gettime_ns();
-        contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b, priority));
+        contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b, Priority{priority}));
         // Single leaf in this fixture → one per-resource slot, pre-sized like the classifier does.
         contexts.back()->initResourceStates(1);
         return contexts.back().get();
@@ -543,7 +543,7 @@ TEST(RequestQueue, Purge)
 /// reset() clears the per-request scheduling state so a reused request carries nothing stale.
 TEST(RequestQueue, ResetClearsSchedulingState)
 {
-    auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, 0);
+    auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{});
     TestRequest r(1, 5);
     r.scheduling.context = ctx.get();
     r.scheduling.key = {42.0, 7};
@@ -580,15 +580,15 @@ TEST(RequestQueue, NodeTypeAndSchedulerSetting)
 /// factor is floored at 0.0. A non-positive base weight falls back to 1.0.
 TEST(RequestQueue, WeightLoweringFactorClamped)
 {
-    ResourceSchedulingContext raised(clock_gettime_ns(), 1.0, 10.0, 0, 0, 0, 0);
+    ResourceSchedulingContext raised(clock_gettime_ns(), 1.0, 10.0, 0, 0, 0, Priority{});
     EXPECT_EQ(raised.weight_lowering_factor, 1.0);
-    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, -5.0, 0, 0, 0, 0);
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, -5.0, 0, 0, 0, Priority{});
     EXPECT_EQ(negative.weight_lowering_factor, 0.0);
-    ResourceSchedulingContext normal(clock_gettime_ns(), 1.0, 0.25, 0, 0, 0, 0);
+    ResourceSchedulingContext normal(clock_gettime_ns(), 1.0, 0.25, 0, 0, 0, Priority{});
     EXPECT_EQ(normal.weight_lowering_factor, 0.25);
-    ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, 0);
+    ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, Priority{});
     EXPECT_EQ(zero_weight.weight, 1.0);
-    ResourceSchedulingContext negative_weight(clock_gettime_ns(), -3.0, 1.0, 0, 0, 0, 0);
+    ResourceSchedulingContext negative_weight(clock_gettime_ns(), -3.0, 1.0, 0, 0, 0, Priority{});
     EXPECT_EQ(negative_weight.weight, 1.0);
 }
 
@@ -596,12 +596,12 @@ TEST(RequestQueue, WeightLoweringThresholdsClampNegativeToDisabled)
 {
     // A negative lowering threshold is meaningless and is clamped to 0 (disabled), rather than
     // stored as-is and only read as disabled by the `> 0` checks in the weight-lowering logic.
-    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 0.5, -1.0, -2.0, -3.0, 0);
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 0.5, -1.0, -2.0, -3.0, Priority{});
     EXPECT_EQ(negative.weight_lowering_age_seconds, 0.0);
     EXPECT_EQ(negative.weight_lowering_cpu_seconds, 0.0);
     EXPECT_EQ(negative.weight_lowering_io_bytes, 0.0);
     // Positive thresholds are preserved verbatim.
-    ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 0.5, 3.0, 4.0, 5.0, 0);
+    ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 0.5, 3.0, 4.0, 5.0, Priority{});
     EXPECT_EQ(positive.weight_lowering_age_seconds, 3.0);
     EXPECT_EQ(positive.weight_lowering_cpu_seconds, 4.0);
     EXPECT_EQ(positive.weight_lowering_io_bytes, 5.0);

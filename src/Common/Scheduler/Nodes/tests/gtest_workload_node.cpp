@@ -464,7 +464,7 @@ TEST(SchedulerTimeSharedWorkloadNode, ResourceGuardException)
 
     std::atomic<bool> request_enqueued{false};
     // Production links carry the query's scheduling context (stamped by the classifier); mirror that.
-    auto sched_context = std::make_shared<ResourceSchedulingContext>(0, 1.0, 1.0, 0.0, 0.0, 0.0, 0);
+    auto sched_context = std::make_shared<ResourceSchedulingContext>(0, 1.0, 1.0, 0.0, 0.0, 0.0, Priority{});
     ResourceLink guard_link = all->getLink();
     guard_link.scheduling_context = sched_context.get();
     std::thread consumer([link = guard_link, &request_enqueued]

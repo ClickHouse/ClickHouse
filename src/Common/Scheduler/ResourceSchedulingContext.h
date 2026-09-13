@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Priority.h>
 #include <Common/Scheduler/CostUnit.h>
 
 #include <atomic>
@@ -67,7 +68,7 @@ public:
         Float64 weight_lowering_age_seconds_,
         Float64 weight_lowering_cpu_seconds_,
         Float64 weight_lowering_io_bytes_,
-        Int64 priority_)
+        Priority priority_)
         : start_ns(start_ns_)
         // weight <= 0 is meaningless for SFQ (vruntime divides by it) → default 1.0.
         , weight(weight_ > 0 ? weight_ : 1.0)
@@ -88,7 +89,7 @@ public:
     const Float64 weight_lowering_age_seconds; /// Age threshold, seconds (0 = disabled)
     const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 = disabled)
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
-    const Int64 priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
+    const Priority priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
 
     /// Allocate the per-resource slots (one per attached leaf). Called once by the classifier after
     /// attaching to all resources, before any request is enqueued; never resized, so a `resourceState()`
