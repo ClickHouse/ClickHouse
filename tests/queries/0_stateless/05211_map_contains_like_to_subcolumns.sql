@@ -126,6 +126,16 @@ FROM t_map_contains_like_subcolumns
 WHERE id >= 10
 SETTINGS optimize_functions_to_subcolumns = 1;
 
+SELECT countIf(mapContainsKeyLike(m, if(rand() % 2 = 0, 'a%', 'b%'))) = count()
+FROM t_map_contains_like_subcolumns
+WHERE id >= 10
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT countIf(mapContainsValueLike(m, if(rand() % 2 = 0, '1%', '2%'))) = count()
+FROM t_map_contains_like_subcolumns
+WHERE id >= 10
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 -- LowCardinality Map elements and patterns stay on the original Map LIKE implementation.
 SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
 FROM t_map_contains_like_subcolumns
