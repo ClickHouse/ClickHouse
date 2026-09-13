@@ -725,6 +725,19 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         ? countZeroTailsFromSparse(*filter.getSparseIndices(), zero_tails, can_read_incomplete_granules_)
         : countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules_);
 
+    if (total_zero_rows_in_tails == filter.size())
+    {
+        LOG_TEST(log, "ReadResult::optimize() combined filter is const False");
+        clear();
+        return;
+    }
+    if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
+    {
+        LOG_TEST(log, "ReadResult::optimize() combined filter is const True");
+        setFilterConstTrue();
+        return;
+    }
+
     /// Shrinking a tail ends the current delayed read and forces a fresh seek
     /// for the next granule, so it only pays off when enough rows are dropped
     /// to outweigh the extra seek and misaligned filesystem-cache segment.
