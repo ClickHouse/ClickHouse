@@ -492,9 +492,10 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_lease_mid_clear_empty_parts[];
     extern const char merge_tree_grab_old_parts_skip[];
 
-    /// Deterministically fails `createEmptyPart`, i.e. the window between writing a `DETACH`ed
-    /// part's clone to shared `detached/` and committing the covering empty part: the rollback
-    /// of the already-durable detached clones must run for the whole post-clone path.
+    /// Deterministically fails `createEmptyPart`, i.e. after a `DROP` / `DETACH` has started
+    /// building the empty parts that will cover the dropped ones and before any of them is
+    /// published: the command must be rejected with nothing of it left on the shared storage,
+    /// neither an empty part nor a copy in `detached/`.
     extern const char merge_tree_create_empty_part_inject_failure[];
 
     /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence

@@ -3603,17 +3603,15 @@ SHARED_UUID_DETACH_CLONE_ROLLBACK = "12345678-abcd-abcd-abcd-12345678ab36"
 
 def test_detach_clone_removed_when_covering_part_creation_fails(started_cluster):
     """
-    Regression for the rollback scope of a rejected `DETACH PART` / `DETACH PARTITION`: the
-    detached clone is written to shared `detached/` BEFORE the covering empty part is created and
-    committed, and the rollback used to cover only the commit (`renameAndCommitEmptyParts`). A
-    failure inside `createEmptyDataParts` (or `initCoverageWithNewEmptyParts`) therefore returned
-    an error while leaving a durable, attachable `detached/<part>` copy behind — once the live
-    part was later retired for real, a normal `ATTACH PARTITION` could re-import data from a
-    `DETACH` that never committed.
+    Regression for a `DETACH PART` / `DETACH PARTITION` that fails while the covering empty
+    parts are being built: nothing of it may reach the shared storage, because a durable,
+    attachable `detached/<part>` copy of a `DETACH` that never committed means that once the live
+    part is retired for real, a normal `ATTACH PARTITION` re-imports its rows.
 
-    The `merge_tree_create_empty_part_inject_failure` failpoint fails exactly that window: after
-    the clone is durable and before the covering empty part exists. The rollback must remove the
-    clone in both entrypoints.
+    The `merge_tree_create_empty_part_inject_failure` failpoint fails exactly that window: the
+    empty parts are under construction and none of them is published yet. Asserted for both
+    entrypoints, and then at the behavior level — the partition is dropped for real and attached
+    back, which is where a leftover copy would resurrect the rows.
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_create_empty_part_inject_failure"
