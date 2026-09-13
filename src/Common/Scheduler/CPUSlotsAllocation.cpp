@@ -78,12 +78,8 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     while (allocated < total_slots)
     {
         const ResourceLink & link = getCurrentLink(lock);
-        if (ISchedulerQueue * queue = link.queue) // competing slot - use scheduler
+        if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
         {
-            // Stamp from the leaf this request targets (master/worker have distinct per-query state).
-            current_request->scheduling.context = link.scheduling_context;
-            current_request->scheduling.state = link.scheduling_state;
-            queue->enqueueRequest(current_request);
             scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
             wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
             break;
@@ -204,13 +200,8 @@ void CPUSlotsAllocation::grant()
     {
         // TODO(serxa): we should not request more slots if we already have at least 2 granted and not acquired slots to avoid holding unnecessary slots
         const ResourceLink & link = getCurrentLink(lock);
-        if (ISchedulerQueue * queue = link.queue) // competing slot - use scheduler
-        {
-            current_request->scheduling.context = link.scheduling_context;
-            current_request->scheduling.state = link.scheduling_state;
-            queue->enqueueRequest(current_request);
+        if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
             return;
-        }
         // NOTE: if the next slot is noncompeting - postpone granting it to avoid it being acquired too early
     }
 

@@ -150,19 +150,15 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
     head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
 
-    // Requests are reused across renewals and `reset()` clears the scheduling pointers, so re-stamp
-    // from the leaf this request enqueues to — master and worker are distinct resources, each with
-    // its own per-query scheduling state.
+    // Master and worker are distinct resources, each with its own per-query scheduling state, so
+    // enqueue to the leaf this request actually targets. `ResourceLink::enqueue` stamps the scheduling
+    // pointers (cleared by `reset()` on renewal) and uses `enqueueRequest` — not the budget-aware
+    // variant, which would redistribute resource between requests from different queries; we budget
+    // per query independently for better fairness.
     const ResourceLink & link = head->is_master_slot ? master_link : worker_link;
-    head->scheduling.context = link.scheduling_context;
-    head->scheduling.state = link.scheduling_state;
-
-    if (auto * queue = link.queue)
+    if (link.enqueue(&*head))
     {
         head->is_noncompeting = false;
-        // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
-        // Instead we do budgeting for every query independently for better fairness
-        queue->enqueueRequest(&*head);
         enqueued = true;
         return true; // Request is enqueued to the scheduler queue, we will wait for it to be granted
     }

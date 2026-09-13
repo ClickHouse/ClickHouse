@@ -9,6 +9,7 @@ class ISchedulerQueue;
 class IAllocationQueue;
 class ResourceSchedulingContext;
 struct ResourceQueryState;
+class ResourceRequest;
 using ResourceCost = Int64;
 
 /*
@@ -28,6 +29,13 @@ struct ResourceLink
     /// (internal/test `getLink()`), which never tag query requests.
     ResourceSchedulingContext * scheduling_context = nullptr;
     ResourceQueryState * scheduling_state = nullptr;
+
+    /// Enqueue `request` into this link's time-shared `queue`, first stamping the query's scheduling
+    /// pointers onto it (so the query-aware schedulers reach this query's state with one dereference).
+    /// Returns false and does nothing when the link has no `queue` (unclassified/unlimited access) —
+    /// the caller treats that as "granted for free". Uses `enqueueRequest`, not the budget-aware
+    /// variant. Defined out-of-line to keep this widely-included header free of scheduler deps.
+    bool enqueue(ResourceRequest * request) const;
 
     /// Identity is the resource target only; the context is derived from the same classifier as the
     /// queue, so it does not participate in comparison.
