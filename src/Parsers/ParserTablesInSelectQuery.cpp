@@ -127,6 +127,60 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
+    /// UNPIVOT [INCLUDE NULLS | EXCLUDE NULLS] (value FOR name IN (col [AS alias], ...))
+    if (ParserKeyword(Keyword::UNPIVOT).ignore(pos, expected))
+    {
+        if (ParserKeyword(Keyword::INCLUDE_NULLS).ignore(pos, expected))
+            res->unpivot_include_nulls = true;
+        else
+            ParserKeyword(Keyword::EXCLUDE_NULLS).ignore(pos, expected);
+
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+
+        ParserIdentifier name_parser;
+        if (!name_parser.parse(pos, res->unpivot_value_name, expected))
+            return false;
+
+        if (!ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            return false;
+
+        if (!name_parser.parse(pos, res->unpivot_name_name, expected))
+            return false;
+
+        if (!ParserKeyword(Keyword::IN).ignore(pos, expected))
+            return false;
+
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+
+        /// Identifiers, each of which may be renamed with `AS`. The alias, when present,
+        /// is what ends up in the name column instead of the column's own name.
+        ParserList columns_parser(
+            std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserIdentifier>(), /*allow_alias_without_as_keyword_=*/false),
+            std::make_unique<ParserToken>(TokenType::Comma),
+            /*allow_empty_=*/false);
+        if (!columns_parser.parse(pos, res->unpivot_columns, expected))
+            return false;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+
+        /// The alias of the result, as in `t UNPIVOT (v FOR k IN (a, b)) AS u`. It is kept on the
+        /// table expression itself, because the source node already carries its own alias, if any.
+        ParserAlias alias_parser(allow_alias_without_as_keyword);
+        ASTPtr alias_node;
+        if (alias_parser.parse(pos, alias_node, expected))
+            res->unpivot_alias = getIdentifierName(alias_node);
+    }
+
     if (res->database_and_table_name)
         res->children.emplace_back(res->database_and_table_name);
     if (res->table_function)
@@ -141,6 +195,12 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
+    if (res->unpivot_value_name)
+        res->children.emplace_back(res->unpivot_value_name);
+    if (res->unpivot_name_name)
+        res->children.emplace_back(res->unpivot_name_name);
+    if (res->unpivot_columns)
+        res->children.emplace_back(res->unpivot_columns);
 
     chassert(res->database_and_table_name || res->table_function || res->subquery);
 

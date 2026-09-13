@@ -63,6 +63,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_unpivot;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
@@ -83,6 +84,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -883,6 +885,133 @@ std::shared_ptr<TableFunctionNode> QueryTreeBuilder::buildTableFunction(const AS
     return node;
 }
 
+namespace
+{
+
+/// UNPIVOT is rewritten into the query it is shorthand for, before anything is resolved:
+///
+///     FROM t UNPIVOT (value FOR name IN (c1, c2 AS c2_alias))
+///
+/// becomes
+///
+///     FROM (SELECT * EXCEPT (c1, c2),
+///                  __unpivot_name AS name,
+///                  __unpivot_value AS value
+///           FROM t
+///           ARRAY JOIN ['c1', 'c2_alias'] AS __unpivot_name, [c1, c2] AS __unpivot_value
+///           WHERE __unpivot_value IS NOT NULL)
+///
+/// The two arrays are zipped by a single ARRAY JOIN, so the value column takes the common type of
+/// the listed columns directly, rather than the common type of (name, value) tuples.
+///
+/// Which columns are carried through is left to `* EXCEPT`, so the rewrite does not need to know
+/// what the table's columns are - it only knows the ones the query named.
+ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression)
+{
+    /// Two parallel arrays that ARRAY JOIN zips into one row per listed column.
+    static constexpr auto name_column_name = "__unpivot_name";
+    static constexpr auto value_column_name = "__unpivot_value";
+
+    const auto & columns = table_expression.unpivot_columns->as<const ASTExpressionList &>();
+    if (columns.children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNPIVOT requires at least one column");
+
+    auto names = make_intrusive<ASTExpressionList>();
+    auto values = make_intrusive<ASTExpressionList>();
+    auto excepted = make_intrusive<ASTExpressionList>();
+    for (const auto & column : columns.children)
+    {
+        const auto * identifier = column->as<ASTIdentifier>();
+        if (!identifier)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNPIVOT columns must be identifiers");
+
+        /// `c AS alias` puts the alias in the name column; a bare `c` puts the column's own name.
+        const auto alias = identifier->tryGetAlias();
+        names->children.push_back(make_intrusive<ASTLiteral>(alias.empty() ? identifier->name() : alias));
+        values->children.push_back(make_intrusive<ASTIdentifier>(identifier->name()));
+        excepted->children.push_back(make_intrusive<ASTIdentifier>(identifier->name()));
+    }
+
+    const auto make_array = [](ASTPtr elements, const String & alias)
+    {
+        auto array = makeASTFunction("array");
+        array->arguments = elements;
+        array->children[0] = elements;
+        array->setAlias(alias);
+        return array;
+    };
+
+    /// SELECT * EXCEPT (the unpivoted columns), the name, the value
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
+    except_transformer->children = excepted->children;
+    transformers->children.push_back(except_transformer);
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+
+    auto name_column = make_intrusive<ASTIdentifier>(name_column_name);
+    name_column->setAlias(table_expression.unpivot_name_name->as<ASTIdentifier &>().name());
+    auto value_column = make_intrusive<ASTIdentifier>(value_column_name);
+    value_column->setAlias(table_expression.unpivot_value_name->as<ASTIdentifier &>().name());
+
+    auto projection = make_intrusive<ASTExpressionList>();
+    projection->children.push_back(std::move(asterisk));
+    projection->children.push_back(std::move(name_column));
+    projection->children.push_back(std::move(value_column));
+
+    /// The source, with the UNPIVOT taken off it so the rewrite does not apply again.
+    auto source = table_expression.clone();
+    auto & source_typed = source->as<ASTTableExpression &>();
+    source_typed.unpivot_value_name.reset();
+    source_typed.unpivot_name_name.reset();
+    source_typed.unpivot_columns.reset();
+    source_typed.unpivot_include_nulls = false;
+    source_typed.children.erase(
+        std::remove_if(source_typed.children.begin(), source_typed.children.end(), [](const ASTPtr & child) { return !child; }),
+        source_typed.children.end());
+
+    auto source_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    source_element->table_expression = source;
+    source_element->children.push_back(source);
+
+    auto array_join = make_intrusive<ASTArrayJoin>();
+    array_join->kind = ASTArrayJoin::Kind::Left;
+    auto array_join_expressions = make_intrusive<ASTExpressionList>();
+    array_join_expressions->children.push_back(make_array(std::move(names), name_column_name));
+    array_join_expressions->children.push_back(make_array(std::move(values), value_column_name));
+    array_join->expression_list = array_join_expressions;
+    array_join->children.push_back(array_join_expressions);
+
+    auto array_join_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    array_join_element->array_join = array_join;
+    array_join_element->children.push_back(array_join);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(source_element));
+    tables->children.push_back(std::move(array_join_element));
+
+    auto select = make_intrusive<ASTSelectQuery>();
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection));
+    select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    /// A row whose value is NULL is not a row of the unpivoted table unless asked for.
+    if (!table_expression.unpivot_include_nulls)
+        select->setExpression(
+            ASTSelectQuery::Expression::WHERE,
+            makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>(value_column_name)));
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(std::move(select));
+
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union->list_of_selects = select_list;
+    select_with_union->children.push_back(select_list);
+    return select_with_union;
+}
+
+}
+
 QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const
 {
     const auto & tables_in_select_query = select_query.tables();
@@ -926,6 +1055,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
         if (table_element.table_expression)
         {
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
+
+            if (table_expression.unpivot_columns)
+            {
+                if (!context->getSettingsRef()[Setting::allow_experimental_unpivot])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "UNPIVOT is experimental. Set 'allow_experimental_unpivot = 1' to enable it");
+
+                auto unpivot_subquery = buildUnpivotSubquery(table_expression);
+                auto node = buildSelectWithUnionExpression(
+                    unpivot_subquery, true /*is_subquery*/, {} /*cte*/, select_query.aliases(), context);
+                node->setAlias(table_expression.unpivot_alias);
+                node->setOriginalAST(unpivot_subquery);
+                table_expressions.push_back(std::move(node));
+                continue;
+            }
+
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
             if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)

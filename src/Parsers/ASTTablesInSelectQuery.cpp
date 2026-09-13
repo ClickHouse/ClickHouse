@@ -34,6 +34,9 @@ while (false)
 void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(final);
+    hash_state.update(unpivot_include_nulls);
+    if (!ignore_aliases)
+        hash_state.update(unpivot_alias);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -50,6 +53,9 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(sample_offset);
     CLONE(column_aliases);
     CLONE(stream_settings);
+    CLONE(unpivot_value_name);
+    CLONE(unpivot_name_name);
+    CLONE(unpivot_columns);
 
     return res;
 }
@@ -182,6 +188,30 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         {
             ostr << ' ';
             stream_settings->format(ostr, settings, state, frame);
+        }
+    }
+
+    /// UNPIVOT comes last, after FINAL/SAMPLE/STREAM, the same order the parser accepts.
+    if (unpivot_columns)
+    {
+        ostr << " UNPIVOT ";
+        if (unpivot_include_nulls)
+            ostr << "INCLUDE NULLS ";
+        ostr << "(";
+        unpivot_value_name->format(ostr, settings, state, frame);
+        ostr << " FOR ";
+        unpivot_name_name->format(ostr, settings, state, frame);
+        ostr << " IN (";
+        auto unpivot_frame = frame;
+        unpivot_frame.expression_list_prepend_whitespace = false;
+        unpivot_columns->format(ostr, settings, state, unpivot_frame);
+        ostr << "))";
+
+        /// The alias of the whole UNPIVOT, as in `t UNPIVOT (v FOR k IN (a, b)) AS u`.
+        if (!unpivot_alias.empty())
+        {
+            ostr << " AS ";
+            settings.writeIdentifier(ostr, unpivot_alias, /*ambiguous=*/false);
         }
     }
 }
@@ -364,6 +394,16 @@ void ASTTableExpression::writeJSON(WriteBuffer & out) const
     w.writeChild("sample_offset", sample_offset);
     w.writeChild("column_aliases", column_aliases);
     w.writeChild("stream_settings", stream_settings);
+    if (unpivot_columns)
+    {
+        if (unpivot_include_nulls)
+            w.writeBool("unpivot_include_nulls", true);
+        w.writeChild("unpivot_value_name", unpivot_value_name);
+        w.writeChild("unpivot_name_name", unpivot_name_name);
+        w.writeChild("unpivot_columns", unpivot_columns);
+        if (!unpivot_alias.empty())
+            w.writeString("unpivot_alias", unpivot_alias);
+    }
 }
 
 void ASTTableJoin::writeJSON(WriteBuffer & out) const
@@ -546,6 +586,60 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         stream_settings = child;
         children.push_back(stream_settings);
     }
+
+    /// `unpivot_value_name`/`unpivot_name_name` are parser-produced `ASTIdentifier` nodes and
+    /// `buildUnpivotSubquery` downcasts both with `as<ASTIdentifier &>()`, so reject any other type here.
+    child = r.readChildOfType<ASTIdentifier>("unpivot_value_name");
+    if (child)
+    {
+        unpivot_value_name = child;
+        children.push_back(unpivot_value_name);
+    }
+
+    child = r.readChildOfType<ASTIdentifier>("unpivot_name_name");
+    if (child)
+    {
+        unpivot_name_name = child;
+        children.push_back(unpivot_name_name);
+    }
+
+    /// `unpivot_columns` is parser-produced as a non-empty `ASTExpressionList` of `ASTIdentifier`;
+    /// `buildUnpivotSubquery` reads the name and the alias of every element.
+    child = r.readChildOfType<ASTExpressionList>("unpivot_columns");
+    if (child)
+    {
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'unpivot_columns' must not be empty during AST JSON deserialization");
+        for (const auto & unpivot_column : child->children)
+            if (!unpivot_column || !unpivot_column->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNPIVOT columns in 'unpivot_columns' must be identifiers during AST JSON deserialization");
+        unpivot_columns = child;
+        children.push_back(unpivot_columns);
+    }
+
+    unpivot_include_nulls = r.getBool("unpivot_include_nulls");
+    unpivot_alias = r.getString("unpivot_alias");
+
+    /// The three UNPIVOT nodes are produced together by the parser, and `formatImpl` emits the clause
+    /// (`unpivot_include_nulls` included) only when `unpivot_columns` is set, so a partial clause would
+    /// either be silently dropped on formatting or dereferenced as null by the analyzer.
+    size_t num_unpivot_nodes = static_cast<size_t>(unpivot_value_name != nullptr)
+        + static_cast<size_t>(unpivot_name_name != nullptr)
+        + static_cast<size_t>(unpivot_columns != nullptr);
+    if (num_unpivot_nodes != 0 && num_unpivot_nodes != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableExpression must have either all or none of 'unpivot_value_name', 'unpivot_name_name' and "
+            "'unpivot_columns', but has {} of them during AST JSON deserialization", num_unpivot_nodes);
+
+    if (unpivot_include_nulls && !unpivot_columns)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'unpivot_include_nulls' requires 'unpivot_columns' during AST JSON deserialization");
+
+    if (!unpivot_alias.empty() && !unpivot_columns)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'unpivot_alias' requires 'unpivot_columns' during AST JSON deserialization");
 
     /// The formatter chooses exactly one source: `database_and_table_name`, else `table_function`, else `subquery`.
     /// A table expression with no source (carrying only FINAL/SAMPLE/stream_settings) is invalid, as are multiple sources.

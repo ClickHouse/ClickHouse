@@ -59,6 +59,18 @@ struct ASTTableExpression : public IAST
     /// Column aliases for the table expression (AS t(a, b))
     ASTPtr column_aliases;
 
+    /// UNPIVOT (value FOR name IN (col [AS alias], ...)), which turns the listed columns into rows.
+    /// `unpivot_columns` is an ASTExpressionList of identifiers, each optionally aliased: the alias,
+    /// or the column name when there is none, is what lands in the name column.
+    ASTPtr unpivot_value_name;
+    ASTPtr unpivot_name_name;
+    ASTPtr unpivot_columns;
+    bool unpivot_include_nulls = false;
+    /// The alias of the result of the UNPIVOT, as in `t UNPIVOT (v FOR k IN (a, b)) AS u`. It cannot
+    /// live on the source node, which carries its own alias, nor on the table expression, which is
+    /// not an `ASTWithAlias`.
+    String unpivot_alias;
+
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;

@@ -1804,6 +1804,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SETTINGS",
     "STREAM",
     "UNION",
+    "UNPIVOT",
     "USING",
     "WHERE",
     "WINDOW",
