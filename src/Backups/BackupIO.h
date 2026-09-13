@@ -42,7 +42,10 @@ public:
     /// passes it to every one of those reads, so that the whole session reads one generation of the
     /// archive or fails, instead of taking whatever generation each reopen is answered with. Empty
     /// where a file cannot change identity under an open backup, which is also the case of an S3
-    /// URI that names a version: such a read is pinned by the version itself.
+    /// URI that names a version: such a read is pinned by the version itself. A reader of a storage
+    /// where a file can be replaced in place never returns an empty token: when the endpoint does
+    /// not name the generation (no `ETag`), it throws instead, because the session could then not be
+    /// kept on one generation at all.
     virtual String getFileGeneration(const String & /*file_name*/) { return {}; }
 
     /// Reads `file_name` pinned to the generation named by `generation` (a token of

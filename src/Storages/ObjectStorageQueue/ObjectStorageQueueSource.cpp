@@ -97,8 +97,19 @@ namespace ErrorCodes
 
 bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
 {
-    return storage_type == ObjectStorageType::Azure
-        && (after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE);
+    switch (storage_type)
+    {
+        /// The copy of a `MOVE` and the `DELETE` are both pinned to the ingested generation.
+        case ObjectStorageType::Azure:
+            return after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE;
+        /// The copy of a `MOVE` is pinned to the ingested generation (`x-amz-copy-source-if-match`).
+        /// A `DELETE` addresses the object by key: S3 has no conditional `DeleteObject` on general
+        /// purpose buckets, so it acts on no particular generation and needs none.
+        case ObjectStorageType::S3:
+            return after_processing == ObjectStorageQueueAction::MOVE;
+        default:
+            return false;
+    }
 }
 
 bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info)
@@ -1348,7 +1359,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             {
                 const auto message = fmt::format(
                     "The generation (`ETag`) of the object {} is not reported by the listing of the endpoint, "
-                    "while `after_processing = '{}'` on Azure has to act on exactly the generation that was ingested. "
+                    "while `after_processing = '{}'` has to act on exactly the generation that was ingested. "
                     "The file is not read",
                     file_metadata->getPath(), ObjectStorageQueueTableMetadata::actionToString(after_processing));
                 LOG_ERROR(log, "{}. Will set the file as failed", message);
@@ -1759,7 +1770,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// A read pinned to the generation that the listing reported fails when that
                 /// generation is not in the bucket any more - `FILE_CHANGED_DURING_READ` from the
                 /// Azure buffer, `S3_OBJECT_CHANGED_DURING_READ` from the S3 one, which pins the
-                /// read whenever `s3_validate_etag_on_read` is on (see `ReadBufferFromS3::sendRequest`):
+                /// read whenever `s3_validate_etag_on_read` is on or the post-processing acts on the
+                /// ingested generation (see `ReadBufferFromS3::sendRequest`, `afterProcessingNeedsIngestedGeneration`):
                 /// the object was rewritten between the listing and the read. That is a race over
                 /// which generation this table is looking at, not a file that cannot be read, and
                 /// the newer generation at the same key has never been ingested. Charging it to the

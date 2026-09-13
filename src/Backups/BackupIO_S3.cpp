@@ -447,7 +447,23 @@ String BackupReaderS3::getFileGeneration(const String & file_name)
     if (!s3_uri.version_id.empty())
         return {};
 
-    return S3::getObjectInfo(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id).etag;
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    String generation = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id).etag;
+
+    /// The caller reads this file through more than one buffer (an archive, reopened for every
+    /// handle) and needs every one of them to land on the same generation. An empty token would
+    /// pin none of them, and `s3_validate_etag_on_read` cannot make up for it: it only opts a plain
+    /// read out of the pinning, and an archive whose generation cannot be named would be read as
+    /// two archives by two handles if it were replaced in place between them. So the file is
+    /// refused up front, before the first handle is opened.
+    if (generation.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the reads "
+            "of the backup cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return generation;
 }
 
 BackupReaderS3::CheckedBackupFile BackupReaderS3::checkBackupFile(

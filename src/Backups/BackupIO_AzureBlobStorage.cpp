@@ -192,7 +192,20 @@ UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
 String BackupReaderAzureBlobStorage::getFileGeneration(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    return headBackupBlob(*object_storage, key).etag;
+    String generation = headBackupBlob(*object_storage, key).etag;
+
+    /// The caller reads this blob through more than one buffer (an archive, reopened for every
+    /// handle) and needs every one of them to land on the same generation. An empty token would
+    /// pin none of them, and a blob replaced in place between two handles would be read as two
+    /// archives, so the blob is refused up front, before the first handle is opened.
+    if (generation.empty())
+        throw Exception(
+            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            "Blob {} of the backup cannot be read: the endpoint reports no `ETag` for it, so the reads of the "
+            "backup cannot be pinned to one generation of the blob",
+            key);
+
+    return generation;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name, std::optional<size_t> expected_file_size)

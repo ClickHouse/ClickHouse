@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int S3_ERROR;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
@@ -478,11 +479,22 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         /// has no conditional `DeleteObject` on general purpose buckets, so an object
                         /// replaced between the pinned copy and the delete is the one case this move
                         /// cannot refuse. Azure closes it with an `If-Match` on the delete.
+                        ///
+                        /// The source never hands over an untagged object for a move (it fails such a
+                        /// file instead of reading it), and its read was pinned to this very
+                        /// generation (`afterProcessingNeedsIngestedGeneration`), so an untagged
+                        /// object here would be moved as whatever generation exists now.
+                        if (object_from.etag.empty())
+                            throw Exception(
+                                ErrorCodes::S3_ERROR,
+                                "Cannot move S3 object {}: the generation that was ingested is not known",
+                                object_from.remote_path);
+
                         const auto object_info = S3::getObjectInfo(
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
-                        if (!object_from.etag.empty() && object_info.etag != object_from.etag)
+                        if (object_info.etag != object_from.etag)
                             throw Exception(
                                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                                 "S3 object {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",

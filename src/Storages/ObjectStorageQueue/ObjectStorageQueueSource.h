@@ -21,11 +21,17 @@ class IStreamingStorage;
 struct ObjectMetadata;
 
 /// Whether the `after_processing` step of the table acts on the generation of every object it
-/// ingested. An Azure `MOVE` copies and deletes exactly the generation that was read, and an Azure
-/// `DELETE` deletes exactly that generation, so both have to know that generation - the `ETag` of
-/// the object - for every file before the file is committed as processed. Otherwise an object
-/// overwritten after it was read would be moved or deleted by path, and the newer generation
-/// would be gone without ever having been ingested.
+/// ingested. An Azure `MOVE` copies and deletes exactly the generation that was read, an Azure
+/// `DELETE` deletes exactly that generation, and the copy of an S3 `MOVE` is pinned to it as well,
+/// so all of them have to know that generation - the `ETag` of the object - for every file before
+/// the file is committed as processed. Otherwise an object overwritten after it was read would be
+/// moved or deleted by path, and the newer generation would be gone without ever having been
+/// ingested. The read of such a file is pinned to that generation independently of
+/// `s3_validate_etag_on_read`: were it not, a read that served a newer generation `B` would still be
+/// recorded as an ingestion of the listed generation `A`, the post-processing pinned to `A` would
+/// refuse the object, and `B` would be ingested a second time on the next pass. An S3 `DELETE`
+/// addresses the object by key (S3 has no conditional `DeleteObject` on general purpose buckets),
+/// so it acts on no particular generation.
 bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
 
 /// Makes `object_info` carry the generation (`etag`) that the read of the object is then pinned

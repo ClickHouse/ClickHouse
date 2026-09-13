@@ -2553,6 +2553,28 @@ TEST(AzureBackupReader, EndpointWithoutETagIsRefused)
     ASSERT_EQ(transport->headRequests(), 1u);
 }
 
+/// The same for the generation an archive session is pinned to (`BackupImpl::openArchive` names it
+/// once and passes it to every reopen of the archive): an endpoint that reports no `ETag` cannot
+/// name it, and an empty token would pin none of the reopens, so a same-size replacement of the
+/// archive between two handles would be read as two archives. The session is refused before its
+/// first handle is opened.
+TEST(AzureBackupReader, ArchiveGenerationCannotBeNamedWithoutETag)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(100, 100, 100, /* send_etag */ false);
+    auto reader = backupReaderOver(transport);
+
+    try
+    {
+        reader->getFileGeneration("archive.tar");
+        FAIL() << "Expected an exception on an archive whose generation the endpoint does not report";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR);
+    }
+    ASSERT_EQ(transport->headRequests(), 1u);
+}
+
 /// The same for a copy inside the backup: without a generation to pin the copy to, a same-size
 /// overwrite between the `HEAD` and the copy would be copied under the name of the blob the backup
 /// wrote, so no copy is made.
@@ -2604,16 +2626,22 @@ static DB::RelativePathWithMetadata listingEntry(const std::string & etag)
 }
 
 /// An Azure `MOVE` copies and deletes the generation that was ingested, and an Azure `DELETE`
-/// deletes it: both act on that generation, so for both it must be known up front. A `TAG` or a
-/// `KEEP` leaves the object as it is, and the S3 post-processing is not pinned to a generation.
+/// deletes it: both act on that generation, so for both it must be known up front. The copy of an
+/// S3 `MOVE` is pinned to the ingested generation too, so the read that ingests the file has to be
+/// pinned to that generation whatever `s3_validate_etag_on_read` says - otherwise the generation
+/// the move refuses could be the one that was actually read, and it would be ingested twice. A
+/// `TAG` or a `KEEP` leaves the object as it is, and an S3 `DELETE` addresses it by key.
 TEST(AzureIngestedGeneration, AzureMoveAndDeleteNeedIt)
 {
     ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::MOVE));
     ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::DELETE));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::KEEP));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::TAG));
-    ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::MOVE));
+    ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::MOVE));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::DELETE));
+    ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::KEEP));
+    ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::TAG));
+    ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Local, DB::ObjectStorageQueueAction::MOVE));
 }
 
 /// The listing reported the generation: it is used as is, and the endpoint is not asked again.
