@@ -2580,6 +2580,71 @@ class TestCase:
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
+    # A fail point armed with `SYSTEM ENABLE FAILPOINT` is server-wide: it is scoped
+    # neither to the session nor to the database that armed it. A test that never reaches
+    # its own `SYSTEM DISABLE FAILPOINT` therefore leaves it armed for every test that runs
+    # after it against the same server - a `.sql` test stops at its first unexpected error,
+    # and a `.sh` test can exit early or be killed on timeout. Whichever test next walks
+    # that code path then fails for a reason that is not its own, which is the hardest kind
+    # of CI failure to attribute: in #118831 / #118832 a racy `.sql` test aborted before its
+    # own `DISABLE`, and the test that ran eight minutes later took the blame - the two
+    # failed together, fleet-wide, for three days.
+    #
+    # So disable what the test names, once it is over, whatever its outcome. `SYSTEM DISABLE
+    # FAILPOINT` is idempotent for a registered name, so disabling one that was never armed is
+    # a no-op. Only literal names are matched: a test that builds the name at runtime (`$FP`)
+    # still has to disable it itself, for which a `trap` is the usual way.
+    #
+    # This scrapes names out of the test file, so it also picks up a name that only occurs in
+    # prose or inside an `EXPLAIN`, which the server rejects as unregistered. That is expected
+    # here and stays quiet. Once `SYSTEM DISABLE ALL FAILPOINTS` (#118877) is in, this whole
+    # function becomes that one statement and the scraping goes away.
+    FAILPOINT_ENABLE_RE = re.compile(
+        r"SYSTEM\s+ENABLE\s+FAILPOINT\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE
+    )
+
+    def disable_failpoints(self):
+        # `testcase_args` is set only once the test starts running, so a skipped test
+        # sends nothing.
+        if self.testcase_args is None:
+            return
+
+        try:
+            with open(self.case_file, "r", encoding="utf-8", errors="replace") as f:
+                names = sorted(set(self.FAILPOINT_ENABLE_RE.findall(f.read())))
+        except OSError:
+            return
+
+        for name in names:
+            try:
+                clickhouse_execute(
+                    self.testcase_args,
+                    f"SYSTEM DISABLE FAILPOINT {name}",
+                    timeout=30,
+                    # Best-effort teardown: do not spend the HTTP retry budget here, the
+                    # test result already reports a server that stopped answering.
+                    max_http_retries=1,
+                    settings={
+                        "log_comment": f"{self.testcase_args.testcase_basename}-{self.testcase_args.testcase_database}",
+                    },
+                )
+            except Exception as e:
+                # A build without FIU rejects the statement itself, and there is nothing
+                # armed there to begin with.
+                if "compiled without FIU" in str(e):
+                    return
+                # A name that is not a registered fail point came from prose or from an
+                # `EXPLAIN`, not from a statement that armed anything.
+                if "Cannot find fail point" in str(e):
+                    continue
+                # Otherwise best-effort: a server that stopped answering is reported by the
+                # test result and by the hung check, not from here.
+                print(
+                    f"WARNING: could not disable fail point {name} after {self.name}: "
+                    f"{type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+
     def add_info_about_settings(self, description):
         if self.effective_settings:
             description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
@@ -4231,6 +4296,7 @@ class TestCase:
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
+            self.disable_failpoints()
             self.remove_settings_from_env()
 
     def _cleanup(self, passed):
