@@ -37,6 +37,11 @@ the ranking functions do not look at the frame, so an exclusion leaves them alon
 0	1	1	1
 0	1	1	2
 1	3	2	3
+percent_rank and cume_dist require the default frame, and an exclusion is not a change to it
+0	0	0.5	0	0.5
+0	0	0.5	0	0.5
+1	0.6666666666666666	0.75	0.6666666666666666	0.75
+2	1	1	1	1
 it holds across block boundaries
 1
 the clause survives formatting

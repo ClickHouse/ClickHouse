@@ -183,8 +183,17 @@ QueryPlanStepPtr WindowStep::clone() const
     return std::make_unique<WindowStep>(*this);
 }
 
-static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
+static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, UInt64 version)
 {
+    /// A frame exclusion changes the result, so a peer that would read the frame as having none is
+    /// refused here rather than quietly given the pre-feature answer.
+    if (frame.exclusion != WindowFrame::Exclusion::NoOthers
+        && version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_EXCLUSION)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing a window frame exclusion requires query plan "
+            "serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_EXCLUSION);
+
     UInt8 flags = 0;
     if (frame.is_default)
         flags |= 1;
@@ -200,9 +209,12 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
 
     writeFieldBinary(frame.begin_offset, out);
     writeFieldBinary(frame.end_offset, out);
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_EXCLUSION)
+        writeIntBinary(static_cast<UInt8>(frame.exclusion), out);
 }
 
-static WindowFrame deserializeWindowFrame(ReadBuffer & in)
+static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 version)
 {
     WindowFrame frame;
 
@@ -235,6 +247,15 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 
     frame.begin_offset = readFieldBinary(in);
     frame.end_offset = readFieldBinary(in);
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_EXCLUSION)
+    {
+        UInt8 exclusion = 0;
+        readIntBinary(exclusion, in);
+        if (exclusion > static_cast<UInt8>(WindowFrame::Exclusion::Ties))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame exclusion {}", static_cast<UInt16>(exclusion));
+        frame.exclusion = static_cast<WindowFrame::Exclusion>(exclusion);
+    }
 
     return frame;
 }
@@ -342,7 +363,7 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeSortDescription(window_description.partition_by, ctx.out);
     serializeSortDescription(window_description.order_by, ctx.out);
 
-    serializeWindowFrame(window_description.frame, ctx.out);
+    serializeWindowFrame(window_description.frame, ctx.out, ctx.version);
 
     serializeWindowFunctions(window_functions, ctx.out);
 }
@@ -369,7 +390,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     deserializeSortDescription(window_description.partition_by, ctx.in);
     deserializeSortDescription(window_description.order_by, ctx.in);
 
-    window_description.frame = deserializeWindowFrame(ctx.in);
+    window_description.frame = deserializeWindowFrame(ctx.in, ctx.version);
 
     /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
     /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).

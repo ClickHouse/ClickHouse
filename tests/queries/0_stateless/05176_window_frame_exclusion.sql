@@ -48,6 +48,14 @@ SELECT v,
     row_number() OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS rn
 FROM (SELECT toUInt8(number % 2) AS v FROM numbers(3)) ORDER BY v, rn;
 
+SELECT 'percent_rank and cume_dist require the default frame, and an exclusion is not a change to it';
+SELECT v,
+    percent_rank() OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS pr,
+    cume_dist() OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) AS cd,
+    percent_rank() OVER (ORDER BY v) AS pr_plain,
+    cume_dist() OVER (ORDER BY v) AS cd_plain
+FROM (SELECT toUInt8(number % 3) AS v FROM numbers(4)) ORDER BY v, pr;
+
 SELECT 'it holds across block boundaries';
 WITH t AS (SELECT number AS i, toInt64(number % 101) AS v FROM numbers(300000))
 SELECT countIf(s = (SELECT sum(v) FROM t) - v) = count()

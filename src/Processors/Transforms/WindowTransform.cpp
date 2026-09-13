@@ -2578,7 +2578,11 @@ public:
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
+        /// This function does not read the rows of the frame, so an exclusion leaves it alone and
+        /// must not make the frame count as a different one.
+        WindowFrame frame = transform->window_description.frame;
+        frame.exclusion = WindowFrame::Exclusion::NoOthers;
+        if (frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionPercentRank"),
@@ -2692,7 +2696,10 @@ public:
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
+        /// See the note in percent_rank: an exclusion does not reach this function either.
+        WindowFrame frame = transform->window_description.frame;
+        frame.exclusion = WindowFrame::Exclusion::NoOthers;
+        if (frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionCumeDist"),
