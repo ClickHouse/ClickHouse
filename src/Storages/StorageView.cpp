@@ -1103,10 +1103,38 @@ bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, co
 /// provably name none of the tables the query reads hides nothing. The caller that has resolved
 /// the source table decides that through `additional_table_filters_apply`; without it the setting
 /// fails closed.
-bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast, const std::function<bool(const Field &)> & additional_table_filters_apply)
+bool StorageView::settingsClauseCanHideRows(
+    const ASTPtr & settings_ast,
+    bool has_sort,
+    bool has_grouping,
+    bool has_distinct,
+    const std::function<bool(const Field &)> & additional_table_filters_apply)
 {
     if (!settings_ast)
         return false;
+
+    /// The counterpart of `shapeDependentOverflowCanHideRows` for a clause: each of these limits
+    /// stops one operator early and returns what it has produced so far, but a query without that
+    /// operator cannot lose a row to it, so the setting is as harmless as `max_threads` there. The
+    /// value is not inspected: a query that does contain the operator fails closed on the mere
+    /// presence of the setting (a reset to the default included), like on any other row-hiding one.
+    static const std::unordered_set<std::string_view> sort_overflow_settings
+    {
+        "max_rows_to_sort",
+        "max_bytes_to_sort",
+        "sort_overflow_mode",
+    };
+    static const std::unordered_set<std::string_view> group_by_overflow_settings
+    {
+        "max_rows_to_group_by",
+        "group_by_overflow_mode",
+    };
+    static const std::unordered_set<std::string_view> distinct_overflow_settings
+    {
+        "max_rows_in_distinct",
+        "max_bytes_in_distinct",
+        "distinct_overflow_mode",
+    };
 
     static const std::unordered_set<std::string_view> execution_only_settings
     {
@@ -1147,6 +1175,14 @@ bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast, const s
         "log_processors_profiles",
     };
 
+    const auto is_execution_only = [&](std::string_view name)
+    {
+        return execution_only_settings.contains(name)
+            || (!has_sort && sort_overflow_settings.contains(name))
+            || (!has_grouping && group_by_overflow_settings.contains(name))
+            || (!has_distinct && distinct_overflow_settings.contains(name));
+    };
+
     const auto * set_query = settings_ast->as<ASTSetQuery>();
     if (!set_query || !set_query->query_parameters.empty())
         return true;
@@ -1160,12 +1196,12 @@ bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast, const s
             continue;
         }
 
-        if (!execution_only_settings.contains(change.name))
+        if (!is_execution_only(change.name))
             return true;
     }
 
     for (const auto & name : set_query->default_settings)
-        if (!execution_only_settings.contains(name))
+        if (!is_execution_only(name))
             return true;
 
     return false;
@@ -1301,11 +1337,16 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// table it names, so it is matched against the source table below; a query whose source is
     /// not a single plainly named table (no `FROM`, a subquery) has no such table to match it
     /// against and fails closed on it.
+    /// The shape-dependent overflow settings of the clause are gated by the same shape flags as
+    /// the ones of the effective context above.
     const auto & settings_clause = select->settings();
+    const bool has_sort = select->orderBy() != nullptr || select->order_by_all;
+    const bool has_grouping = select->groupBy() != nullptr || select->group_by_all || select->having() != nullptr;
+    const bool has_distinct = select->distinct;
 
     const auto & tables = select->tables();
     if (!tables || tables->children.empty())
-        return settingsClauseCanHideRows(settings_clause);   /// A `SELECT` without `FROM` reads nothing it could hide.
+        return settingsClauseCanHideRows(settings_clause, has_sort, has_grouping, has_distinct);   /// A `SELECT` without `FROM` reads nothing it could hide.
 
     /// Any `JOIN` changes which rows are observable below the view.
     if (tables->children.size() != 1)
@@ -1325,8 +1366,9 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
 
     if (table_expression->subquery)
     {
-        /// The clause applies to the nested query as well, whose source this level does not see.
-        if (settingsClauseCanHideRows(settings_clause))
+        /// The clause applies to the nested query as well, whose source and shape this level does
+        /// not see, so every shape-dependent setting fails closed here.
+        if (settingsClauseCanHideRows(settings_clause, /*has_sort=*/ true, /*has_grouping=*/ true, /*has_distinct=*/ true))
             return true;
 
         const auto & subquery_children = table_expression->subquery->children;
@@ -1383,7 +1425,7 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     {
         return additionalTableFiltersApplyTo(additional_table_filters, source_table_ids, source_alias, context->getCurrentDatabase());
     };
-    if (settingsClauseCanHideRows(settings_clause, additional_table_filters_apply)
+    if (settingsClauseCanHideRows(settings_clause, has_sort, has_grouping, has_distinct, additional_table_filters_apply)
         || additional_table_filters_apply(context->getSettingsRef()[Setting::additional_table_filters].value))
         return true;
 

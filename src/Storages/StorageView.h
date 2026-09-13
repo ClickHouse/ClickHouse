@@ -93,13 +93,22 @@ public:
     /// Whether a `SETTINGS` clause written in the view's query can hide rows (a `limit`, an extra
     /// filter, `final`, an identifier-resolution switch, ...). Only settings that provably tune
     /// execution alone are accepted; anything else, including a reset to a default, fails closed.
-    /// It is the AST-side counterpart of `effectiveContextCanHideRows`.
+    /// It is the AST-side counterpart of `effectiveContextCanHideRows` and
+    /// `shapeDependentOverflowCanHideRows` together: the limits of `GROUP BY`, sorting and
+    /// `DISTINCT` with a non-throwing overflow mode hide rows only of a query that contains the
+    /// corresponding operator, so `has_sort` / `has_grouping` / `has_distinct` describe the shape
+    /// of the query the clause applies to (including any operator the caller injects itself), and
+    /// such a setting is accepted only when the query provably lacks the operator.
     /// `additional_table_filters` is the one setting whose effect depends on what the query reads:
     /// a caller that knows the source table of the query passes `additional_table_filters_apply`,
     /// which decides whether the value of the clause matches that source (see
     /// `additionalTableFiltersApplyTo`); without it the setting fails closed like any other.
     static bool settingsClauseCanHideRows(
-        const ASTPtr & settings_ast, const std::function<bool(const Field &)> & additional_table_filters_apply = {});
+        const ASTPtr & settings_ast,
+        bool has_sort,
+        bool has_grouping,
+        bool has_distinct,
+        const std::function<bool(const Field &)> & additional_table_filters_apply = {});
 
     /// Whether the effective security context of the view hides rows by itself, through settings
     /// inherited from a `SQL SECURITY DEFINER` view's definer profile (a `limit`, an extra result

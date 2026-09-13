@@ -1461,8 +1461,15 @@ void pushOrderByIntoView(
     /// re-introduces the alias-vs-source-column ambiguity that the outer-context guard above
     /// already excludes. Rather than enumerate them here, reuse the same allowlist proof that
     /// `StorageView::canHideRows` applies to the clause, so that the two guards cannot drift
-    /// apart: anything but pure execution tuning skips the pushdown.
-    if (StorageView::settingsClauseCanHideRows(sel->settings()))
+    /// apart: anything but pure execution tuning skips the pushdown. The pushdown injects a sort
+    /// into the inner query, so a sort limit written in the clause counts even though the view's
+    /// own query has no `ORDER BY`; the aggregation and `DISTINCT` limits follow the view's own
+    /// shape, exactly as for the effective context below.
+    if (StorageView::settingsClauseCanHideRows(
+            sel->settings(),
+            /*has_sort=*/ true,
+            /*has_grouping=*/ sel->groupBy() != nullptr || sel->group_by_all || sel->having() != nullptr,
+            /*has_distinct=*/ sel->distinct))
         return;
 
     /// The pushed `ORDER BY`/`LIMIT` is evaluated by the view's inner query,
