@@ -1,5 +1,6 @@
 SELECT plus(__table1.`s.size`, byteSize(__table1.`s.size`)) AS `byteSize(s)`
 FROM default.t_byte_size_string_subcolumn AS __table1
+0
 1	8
 2	9
 3	13

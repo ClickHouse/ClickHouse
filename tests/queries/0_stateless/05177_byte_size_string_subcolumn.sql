@@ -24,6 +24,14 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
 SELECT byteSize(s)
 FROM t_byte_size_string_subcolumn;
 
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT byteSize(s)
+    FROM file('nonexistent_05177.orc', ORC, '`S.SIZE` UInt64, s String')
+)
+WHERE explain LIKE '%s.size%';
+
 SELECT id, byteSize(s)
 FROM t_byte_size_string_subcolumn
 ORDER BY id;
