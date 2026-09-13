@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- The failpoint applies to settings changes across all tables.
+
 CREATE TABLE readonly_settings_rollback (x UInt64) ENGINE = MergeTree ORDER BY x
 SETTINGS table_readonly = 0;
 
