@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 사용할 수 있으며, ClickHouse 소스 코드에서 자동으로 생성됩니다.
 
-<div id="object_shared_data_buckets_for_compact_part">
-  ## object_shared_data_buckets_for_compact_part
-</div>
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 Compact 파트의 JSON 공유 데이터 직렬화에서 사용하는 버킷 수입니다. `map_with_buckets` 및 `advanced` 공유 데이터 직렬화와 함께 작동합니다.
 허용되는 최대값은 256입니다.
 
-<div id="object_shared_data_buckets_for_wide_part">
-  ## object_shared_data_buckets_for_wide_part
-</div>
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,9 +31,7 @@ Compact 파트의 JSON 공유 데이터 직렬화에서 사용하는 버킷 수�
 wide 파트의 JSON 공유 데이터 직렬화에 사용되는 버킷 수입니다. `map_with_buckets` 및 `advanced` 공유 데이터 직렬화와 함께 사용됩니다.
 허용되는 최대값은 256입니다.
 
-<div id="object_shared_data_serialization_version">
-  ## object_shared_data_serialization_version
-</div>
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -55,9 +49,7 @@ Possible values:
 `map_with_buckets` 및 `advanced` serialization의 버킷 수는 다음 설정에 따라 결정됩니다.
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-<div id="object_shared_data_serialization_version_for_zero_level_parts">
-  ## object_shared_data_serialization_version_for_zero_level_parts
-</div>
+## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 

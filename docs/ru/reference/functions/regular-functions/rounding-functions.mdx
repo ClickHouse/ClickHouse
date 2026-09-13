@@ -125,7 +125,7 @@ SELECT floor(123.45, -1)
 
 Добавленный в: v1.1.0
 
-Округляет значение до указанного числа десятичных знаков `N`.
+Округляет значение до указанного числа знаков после запятой `N`.
 
 * Если `N > 0`, функция округляет вправо от десятичной точки.
 * Если `N < 0`, функция округляет влево от десятичной точки.
@@ -145,7 +145,7 @@ round(x[, N])
 **Аргументы**
 
 * `x` — Число для округления. [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`(U)Int*`](/ru/reference/data-types/int-uint)
-* `N` — Необязательный параметр. Количество десятичных знаков, до которых выполняется округление. По умолчанию — `0`. [`(U)Int*`](/ru/reference/data-types/int-uint)
+* `N` — Необязательный параметр. Количество знаков после запятой, до которых выполняется округление. По умолчанию — `0`. [`(U)Int*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -170,7 +170,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 **Десятичные значения на входе**
 
 ```sql title=Query
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ```response title=Response

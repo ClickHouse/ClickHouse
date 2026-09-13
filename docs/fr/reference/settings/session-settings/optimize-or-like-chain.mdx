@@ -13,23 +13,19 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_or_like_chain">
-  ## optimize_or_like_chain
-</div>
+## optimize_or_like_chain {#optimize_or_like_chain}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Activé par défaut : optimise les chaînes OR de LIKE\/ILIKE\/match en multiSearchAny (motifs de sous-chaîne pure) ou multiMatchAny (autres motifs, lorsque Hyperscan\/Vectorscan est autorisé) ; si aucun chemin rapide ne s’applique, la chaîne OR d’origine est conservée telle quelle."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Activé par défaut : optimise les chaînes OR de LIKE\/ILIKE\/match en multiSearchAny (motifs de sous-chaîne pure) ou multiMatchAny (autres motifs, lorsque Hyperscan\/Vectorscan est autorisé) ; si aucun chemin rapide ne s’applique, la chaîne OR d’origine est conservée telle quelle."}]}]} />
 
-Optimise plusieurs prédicats `OR LIKE/ILIKE/match` sur une même expression en un seul `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (pour les motifs `%needle%` de sous-chaîne pure) ou `multiMatchAny` (pour les autres motifs, lorsque Hyperscan/Vectorscan est autorisé). Lorsqu’aucun chemin rapide n’est applicable — par exemple si Hyperscan est désactivé ou indisponible, si les motifs sont des expressions régulières `match` brutes, ne sont pas en UTF-8 valide, contiennent un NUL intégré, ou si la chaîne recherchée est de type `FixedString`/`Enum` — la chaîne `OR` d’origine est conservée telle quelle, car une alternance `match` combinée sur RE2 est systématiquement plus lente que le `OR` d’origine à court-circuit.
+Optimise plusieurs prédicats `OR LIKE/ILIKE/match` sur une même expression en un seul `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (pour les motifs `%needle%` de sous-chaîne pure) ou `multiMatchAny` (pour les autres motifs, lorsque Hyperscan/Vectorscan est autorisé). Lorsqu’aucun chemin rapide n’est applicable — par exemple si Hyperscan est désactivé ou indisponible, si les motifs sont des expressions régulières `match` brutes, ne sont pas en UTF-8 valide, contiennent un NUL intégré, sont ancrés en fin (ne se terminent pas par un `%` non échappé ; Vectorscan fait correspondre `$` avant un saut de ligne final, de sorte que la réécriture élargirait le filtre), ou si la chaîne recherchée est de type `FixedString`/`Enum` — la chaîne `OR` d’origine est conservée telle quelle, car une alternance `match` combinée sur RE2 est systématiquement plus lente que le `OR` d’origine à court-circuit.
 
-L’optimisation n’est appliquée qu’avec l’analyseur (`enable_analyzer = 1`, valeur par défaut) ; avec l’ancien analyseur (`enable_analyzer = 0`), la chaîne `OR` reste inchangée. Pour les chaînes `OR` pures de `LIKE`/`ILIKE`/`match`, les expressions d’origine sont conservées dans `indexHint()` afin de permettre l’analyse d’index ; les chaînes `OR` mixtes qui incluent des branches non-`LIKE` n’utilisent volontairement pas l’encapsulation `indexHint()` afin que les plages correspondant uniquement à la branche non-`LIKE` ne soient pas élaguées. La réécriture `multiMatchAny` respecte `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` et `reject_expensive_hyperscan_regexps`.
+L’optimisation n’est appliquée qu’avec l’analyseur (`enable_analyzer = 1`, valeur par défaut) ; avec l’ancien analyseur (`enable_analyzer = 0`), la chaîne `OR` reste inchangée. Pour les chaînes `OR` pures de `LIKE`/`ILIKE`/`match`, les expressions d’origine sont conservées dans `indexHint()` afin de permettre l’analyse d’index ; les chaînes `OR` mixtes qui incluent des branches non-`LIKE` n’utilisent volontairement pas l’encapsulation `indexHint()` afin que les plages correspondant uniquement à la branche non-`LIKE` ne soient pas élaguées. La réécriture `multiMatchAny` respecte `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` et `reject_expensive_hyperscan_regexps`.
 
-Une chaîne n’est réécrite que lorsqu’elle comporte suffisamment de branches partageant la même expression de gauche pour que la réécriture soit de façon fiable plus rapide qu’une évaluation `OR` à court-circuit : au moins `optimize_or_like_chain_min_substrings` branches pour le chemin `multiSearchAny`, et au moins `optimize_or_like_chain_min_patterns` branches pour le chemin `multiMatchAny`.
+Une chaîne n’est réécrite que lorsqu’elle comporte suffisamment de branches partageant la même expression de gauche pour que la réécriture soit de façon fiable plus rapide qu’une évaluation `OR` à court-circuit : au moins `optimize_or_like_chain_min_substrings` branches pour le chemin `multiSearchAny`, et au moins `optimize_or_like_chain_min_patterns` branches pour le chemin `multiMatchAny`.
 
-<div id="optimize_or_like_chain_min_patterns">
-  ## optimize_or_like_chain_min_patterns
-</div>
+## optimize_or_like_chain_min_patterns {#optimize_or_like_chain_min_patterns}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -37,9 +33,7 @@ Une chaîne n’est réécrite que lorsqu’elle comporte suffisamment de branch
 
 Nombre minimal de branches `LIKE`/`ILIKE`/`match` non de type sous-chaîne pure (motifs de préfixe/suffixe/regexp), partageant la même expression de gauche, requis pour que `optimize_or_like_chain` réécrive une chaîne en `multiMatchAny`. Calibré sur le jeu de données `hits` (voir `tests/performance/optimize_or_like_chain_hits.xml`) : la réécriture en `multiMatchAny` (Hyperscan) de chaînes `LIKE` de préfixe/regexp ne devient plus rapide que l&#39;évaluation `OR` en court-circuit qu&#39;à partir d&#39;environ neuf branches ; les chaînes plus courtes sont donc conservées telles quelles afin d&#39;éviter toute régression. Une valeur de 0 ou 1 désactive ce seuil. N&#39;a aucun effet lorsque `optimize_or_like_chain` est désactivé. Voir aussi `optimize_or_like_chain_min_substrings` pour le cas sous-chaîne pure (`multiSearchAny`).
 
-<div id="optimize_or_like_chain_min_substrings">
-  ## optimize_or_like_chain_min_substrings
-</div>
+## optimize_or_like_chain_min_substrings {#optimize_or_like_chain_min_substrings}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 

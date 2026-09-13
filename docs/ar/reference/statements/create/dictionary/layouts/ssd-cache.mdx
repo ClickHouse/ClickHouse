@@ -12,7 +12,7 @@ doc_type: 'مرجع'
 
 مشابه لـ `cache`، لكنه يخزّن البيانات على SSD والفهرس في RAM. كما يمكن أيضًا تطبيق جميع إعدادات قاموس `cache` المتعلقة بقائمة انتظار التحديث على قواميس `SSD cache`.
 
-مثل `cache`، لا يحتفظ هذا التخطيط بسجل بالمفاتيح الموجودة، لذا فإن قراءته كجدول باستخدام `SELECT ... FROM <dictionary>` لا تعرض سوى الخلايا المخزنة حاليًا ولا تستعلم المصدر. راجع [cache](/ar/reference/statements/create/dictionary/layouts/cache).
+مثل `cache`، لا يحتفظ هذا التخطيط بسجل بالمفاتيح الموجودة، لذا فإن قراءته كجدول باستخدام `SELECT ... FROM <dictionary>` لا تعرض سوى الخلايا المخزنة حاليًا والتي تحتوي على قيمة: فهي لا تستطيع اكتشاف المفاتيح غير الموجودة في cache، وتتخطى الخلايا الافتراضية التي تسجّل المفاتيح التي جرى البحث عنها ولم يُعثر عليها في المصدر. أما الخلايا المقيمة التي انتهت صلاحيتها فيُعاد طلبها من المصدر. راجع [cache](/ar/reference/statements/create/dictionary/layouts/cache).
 
 يكون مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint).
 
@@ -36,7 +36,7 @@ doc_type: 'مرجع'
             <read_buffer_size>131072</read_buffer_size>
             <!-- حجم المخزن المؤقت في RAM بالبايت لتجميع العناصر قبل تفريغها إلى SSD. -->
             <write_buffer_size>1048576</write_buffer_size>
-            <!-- المسار الذي سيُخزَّن فيه ملف cache. -->
+            <!-- المسار الذي سيُخزَّن فيه ملف cache. -->
             <path>/var/lib/clickhouse/user_files/test_dict</path>
         </ssd_cache>
     </layout>

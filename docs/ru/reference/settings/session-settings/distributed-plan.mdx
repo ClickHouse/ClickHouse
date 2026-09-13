@@ -47,6 +47,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Выполнять локально все задачи распределённого плана запроса. Полезно для тестирования и отладки.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для отката к локальному выполнению, когда план не может быть распределён (действует только при `make_distributed_plan`)."}]}]} />
+
+Если план запроса содержит шаг, не поддерживающий распределённое выполнение, причина записывается в лог, а запрос выполняется на initiator вместо генерации исключения. Отключите, чтобы вместо этого получать исключение.
+
+Действует только при включённой настройке `make_distributed_plan` (закрытая предварительная версия).
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "новая экспериментальная настройка"}]}]} />
 
 Используйте стратегию агрегации Shuffle вместо PartialAggregation + Merge в распределённом плане запроса.
+Игнорируется в случаях, когда стратегия Shuffle не может дать корректный результат, например для `GROUPING SETS` или когда агрегация должна выдавать результаты в порядке бакетов.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

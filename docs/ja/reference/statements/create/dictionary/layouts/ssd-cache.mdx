@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 `cache` と似ていますが、データは SSD に保存され、索引は RAM に格納されます。更新キューに関連する cache Dictionary の設定は、すべて SSD cache Dictionary にも適用できます。
 
-`cache` と同様に、このレイアウトはどのキーが存在するかを記録しないため、`SELECT ... FROM <dictionary>` でテーブルとして読み取ると、現在保持されている cell のみが返され、ソースへのクエリは行われません。[cache](/ja/reference/statements/create/dictionary/layouts/cache) を参照してください。
+`cache` と同様に、このレイアウトはどのキーが存在するかを記録しないため、`SELECT ... FROM <dictionary>` でテーブルとして読み取ると、現在保持されている cell のうち値を持つもののみが返されます。つまり、cache に存在しないキーを discover することはできず、検索は行われたもののソースに存在しなかったキーを記録するデフォルト cell もスキップされます。保持されている cell のうち expired となったものについては、引き続きソースへ再リクエストが行われます。[cache](/ja/reference/statements/create/dictionary/layouts/cache) を参照してください。
 
 Dictionaryキーの型は [UInt64](/ja/reference/data-types/int-uint) です。
 

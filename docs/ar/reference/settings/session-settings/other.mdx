@@ -1839,6 +1839,29 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 اسم عبء العمل المُستخدَم للوصول إلى الموارد
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="مللي ثانية" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يحدّ المدة التي ينتظرها الاستعلام حتى تقبله جدولة أعباء العمل (بالحصول على خانة الاستعلام الخاصة به وعلى حجز الذاكرة) قبل أن يفشل؛ والقيمة 0 (الافتراضية) تُبقي على الانتظار غير المحدود السابق."}]}]} />
+
+الحد الأقصى للمدة التي ينتظرها الاستعلام حتى تقبله جدولة أعباء العمل قبل أن يفشل دون أن يبدأ.
+وهو يحدّ الانتظار المجمّع للحصول على خانة استعلام (من مورد `CREATE RESOURCE ... (QUERY)`، المقيّد بقيمة
+`max_concurrent_queries` الخاصة بعبء العمل) وعلى حجز ذاكرة (من مورد
+`CREATE RESOURCE ... (MEMORY RESERVATION)` مع الإعداد `reserve_memory`). ويجري الحصول على كليهما
+قبل بدء تنفيذ الاستعلام، لذا فهذه هي الطريقة الوحيدة لتحديد فترة الانتظار السابقة للتنفيذ،
+إذ لا ينطبق `max_execution_time` بعد لأن الاستعلام لم يبدأ.
+
+وعند انقضاء المهلة يفشل الاستعلام بأحد خطأين مختلفين، بحسب المورد الذي كان ينتظره:
+`QUERY_SLOT_ACQUISITION_TIMEOUT` لخانة الاستعلام، أو
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` لحجز الذاكرة.
+
+القيم الممكنة:
+
+* عدد صحيح موجب — المهلة بالمللي ثانية.
+* 0 — مهلة لا نهائية: ينتظر الاستعلام القبول إلى أجل غير مسمّى (الافتراضي). ومع ذلك قد يُرفض
+  فورًا عند بلوغ حد `max_waiting_queries` الخاص بعبء العمل.
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

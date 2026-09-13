@@ -127,8 +127,8 @@ SELECT floor(123.45, -1)
 
 値を、指定した小数点以下桁数 `N` に丸めます。
 
-* `N > 0` の場合、関数は小数点の右側で丸めます。
-* `N < 0` の場合、関数は小数点の左側で丸めます。
+* `N > 0` の場合、関数は小数点以下を丸めます。
+* `N < 0` の場合、関数は小数点より左側を丸めます。
 * `N = 0` の場合、関数は最も近い整数に丸めます。
 
 この関数は、指定した桁で最も近い値を返します。
@@ -170,7 +170,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 **10進数入力**
 
 ```sql title=Query
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ```response title=Response

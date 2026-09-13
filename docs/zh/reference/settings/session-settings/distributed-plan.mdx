@@ -47,6 +47,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在本地运行分布式查询计划的所有任务。适用于测试和调试。
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：当计划无法分布式执行时回退到本地执行（仅在 `make_distributed_plan` 下生效）。"}]}]} />
+
+当查询计划中包含不支持分布式执行的步骤时，记录原因并在 initiator 上执行该查询，而不是抛出异常。禁用后则会抛出异常。
+
+仅在启用 `make_distributed_plan` (私有预览) 时生效。
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新的 Experimental 设置"}]}]} />
 
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
+在 Shuffle 策略无法产生正确结果的场景下会被忽略，例如 `GROUPING SETS`，或者聚合必须按桶顺序产生结果时。
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

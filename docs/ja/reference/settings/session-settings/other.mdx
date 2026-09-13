@@ -1825,6 +1825,21 @@ N 番目のデータパケットでは、データの代わりに不明なパケ
 
 リソースへのアクセスに使用するワークロード名
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "クエリが ワークロード scheduling によって受け入れられる（query slot と memory reservation を取得する）まで待機できる時間を制限し、超過した場合は失敗させる新しい設定。0（デフォルト）は従来どおり無制限に待機します。"}]}]} />
+
+クエリが ワークロード scheduling によって受け入れられるまで待機する最大時間で、これを超えるとクエリは開始されずに失敗します。この設定は、query slot (`CREATE RESOURCE ... (QUERY)` リソースから取得され、ワークロード の `max_concurrent_queries` によって制限されます) と memory reservation (`CREATE RESOURCE ... (MEMORY RESERVATION)` リソースおよび `reserve_memory` 設定によるもの) の待機時間の合計を制限します。いずれもクエリの実行開始前に取得されるため、この実行前の待機時間を制限できるのはこの設定だけです。クエリがまだ開始されていないため、`max_execution_time` はこの段階では適用されません。
+
+timeout に達すると、待機していたリソースに応じて、クエリは 2 種類の error のいずれかで失敗します。query slot の場合は `QUERY_SLOT_ACQUISITION_TIMEOUT`、memory reservation の場合は `MEMORY_RESERVATION_ACQUISITION_TIMEOUT` です。
+
+設定可能な値:
+
+* 正の整数 — timeout (ミリ秒単位) 。
+* 0 — infinite timeout: クエリは受け入れられるまで無期限に待機します (デフォルト) 。ただし、ワークロード の `max_waiting_queries` の上限に達している場合は、即座に拒否されることがあります。
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

@@ -136,7 +136,7 @@ SELECT floor(123.45, -1)
 
 إذا أدى التقريب إلى تجاوز السعة (على سبيل المثال، `round(255, -1)`)، فالنتيجة غير معرّفة.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 round(x[, N])
@@ -149,7 +149,7 @@ round(x[, N])
 
 **القيمة المُعادة**
 
-يعيد رقمًا مُقرَّبًا من النوع نفسه مثل `x`. [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`(U)Int*`](/ar/reference/data-types/int-uint)
+يعيد رقمًا مُقرَّبًا من النوع نفسه مثل `x`. [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`(U)Int*`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -170,7 +170,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 **قيم الإدخال من نوع Decimal**
 
 ```sql title=Query
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ```response title=Response

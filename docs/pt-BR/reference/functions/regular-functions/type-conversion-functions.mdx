@@ -3222,7 +3222,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introduzido em: v20.9.0
 
 Converte um valor de entrada para o tipo `DateTime`.
-Oferece suporte à conversão de `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Não há suporte para valores `Decimal` e `Time64`, que resultam em uma exceção; o tipo `Time` e tipos inteiros largos, como `(U)Int128`/`(U)Int256`, sofrem wraparound em vez de saturação.
+Oferece suporte à conversão de `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Não há suporte para valores `Decimal` e `Time64`, que resultam em uma exceção; um valor do tipo `Time` sofre wraparound em vez de saturação.
 `DateTime32` é um alias de `DateTime` e oferece suporte a datas de `1970-01-01 00:00:00` a `2106-02-07 06:28:15`.
 Ao converter uma string ou um dos tipos numéricos saturáveis listados acima, valores fora desse intervalo são saturados nos limites do intervalo. Valores de ponto flutuante não finitos (`NaN`, `inf`, `-inf`) não podem ser convertidos e resultam em uma exceção.
 Conversões de outros tipos de data e hora, como `Date32` ou `DateTime64`, seguem a configuração `date_time_overflow_behavior`: o modo padrão `ignore` pode gerar valores com wraparound, `saturate` os limita aos limites do intervalo e `throw` lança uma exceção.

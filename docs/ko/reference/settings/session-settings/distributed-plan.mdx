@@ -47,6 +47,16 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 분산 쿼리 계획의 모든 작업을 로컬에서 실행합니다. 테스트와 디버깅에 유용합니다.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "계획을 분산할 수 없을 때 로컬 실행으로 폴백하는 새로운 설정입니다(`make_distributed_plan`이 활성화된 경우에만 적용됨)."}]}]} />
+
+쿼리 계획에 분산 실행을 지원하지 않는 단계가 포함되어 있으면 예외를 발생시키는 대신 그 이유를 로그에 기록하고 initiator에서 쿼리를 실행합니다. 예외를 발생시키려면 이 설정을 비활성화하십시오.
+
+`make_distributed_plan`(비공개 프리뷰)이 활성화된 경우에만 적용됩니다.
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "새 실험적 설정"}]}]} />
 
 분산 쿼리 계획에서 PartialAggregation + Merge 대신 Shuffle 집계 전략을 사용합니다.
+Shuffle 전략이 올바른 결과를 생성할 수 없는 경우, 예를 들어 `GROUPING SETS`를 사용하거나 집계가 버킷 순서대로 결과를 생성해야 하는 경우에는 무시됩니다.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Esta configuración está disponible en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="object_shared_data_buckets_for_compact_part">
-  ## object_shared_data_buckets_for_compact_part
-</div>
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -24,9 +22,7 @@ Esta configuración está disponible en [system.merge&#95;tree&#95;settings](/es
 El número de buckets para la serialización JSON de datos compartidos en partes compactas. Funciona con las serializaciones de datos compartidos `map_with_buckets` y `advanced`.
 El valor máximo permitido es 256.
 
-<div id="object_shared_data_buckets_for_wide_part">
-  ## object_shared_data_buckets_for_wide_part
-</div>
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,9 +31,7 @@ El valor máximo permitido es 256.
 Número de buckets para la serialización de datos compartidos en JSON en wide partes. Funciona con las serializaciones de datos compartidos `map_with_buckets` y `advanced`.
 El valor máximo permitido es 256.
 
-<div id="object_shared_data_serialization_version">
-  ## object_shared_data_serialization_version
-</div>
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -55,9 +49,7 @@ Valores posibles:
 El número de buckets para las serializaciones `map_with_buckets` y `advanced` se determina mediante las configuraciones
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-<div id="object_shared_data_serialization_version_for_zero_level_parts">
-  ## object_shared_data_serialization_version_for_zero_level_parts
-</div>
+## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="s3_base">
-  ## s3_base
-</div>
+## s3_base {#s3_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Новая настройка для указания базового URL, используемого для разрешения относительных URL в табличной функции s3 и движке таблицы S3."}]}]} />
 
@@ -27,17 +25,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Базовый URL может быть задан в любом формате, поддерживаемом табличной функцией `s3`, например `s3://bucket/`, `https://bucket.s3.amazonaws.com/` или `https://endpoint/bucket/`.
 
-<div id="s3_check_objects_after_upload">
-  ## s3_check_objects_after_upload
-</div>
+## s3_check_objects_after_upload {#s3_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Проверять каждый объект, загруженный в S3, с помощью запроса head, чтобы убедиться, что загрузка выполнена успешно
 
-<div id="s3_connect_timeout_ms">
-  ## s3_connect_timeout_ms
-</div>
+## s3_connect_timeout_ms {#s3_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Тайм-аут подключения к хосту, используемому S3-дисками.
 
-<div id="s3_create_new_file_on_insert">
-  ## s3_create_new_file_on_insert
-</div>
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,17 +54,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Подробнее см. [здесь](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_disable_checksum">
-  ## s3_disable_checksum
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Не вычислять контрольную сумму при отправке файла в S3. Это ускоряет операции записи, так как позволяет избежать лишних проходов по файлу при его обработке. В большинстве случаев это безопасно, поскольку данные таблиц семейства MergeTree в любом случае защищены контрольными суммами в ClickHouse, а при доступе к S3 по HTTPS уровень TLS уже обеспечивает целостность данных при передаче по сети. При этом дополнительные контрольные суммы в S3 обеспечивают эшелонированную защиту.
-
-<div id="s3_ignore_file_doesnt_exist">
-  ## s3_ignore_file_doesnt_exist
-</div>
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -85,25 +67,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 1 — `SELECT` возвращает пустой результат.
 * 0 — `SELECT` генерирует исключение.
 
-<div id="s3_list_object_keys_size">
-  ## s3_list_object_keys_size
-</div>
+## s3_list_object_keys_size {#s3_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Максимальное количество файлов, которое запрос ListObject может вернуть в одном батче
 
-<div id="s3_min_upload_part_size">
-  ## s3_min_upload_part_size
-</div>
+## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 Минимальный размер части, загружаемой при multipart-загрузке в S3.
 
-<div id="s3_path_filter_limit">
-  ## s3_path_filter_limit
-</div>
+## s3_path_filter_limit {#s3_path_filter_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -112,17 +88,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Максимальное количество значений `_path`, которые можно извлечь из фильтров запроса, чтобы использовать их при переборе файлов
 вместо перечисления через glob. 0 означает, что параметр отключён.
 
-<div id="s3_request_timeout_ms">
-  ## s3_request_timeout_ms
-</div>
+## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 Тайм-аут простоя при отправке и получении данных в/из S3. Операция завершается с ошибкой, если один вызов TCP на чтение или запись блокируется на это время.
 
-<div id="s3_skip_empty_files">
-  ## s3_skip_empty_files
-</div>
+## s3_skip_empty_files {#s3_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,9 +107,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — `SELECT` генерирует исключение, если пустой файл несовместим с запрошенным форматом.
 * 1 — `SELECT` возвращает пустой результат для пустого файла.
 
-<div id="s3_slow_all_threads_after_network_error">
-  ## s3_slow_all_threads_after_network_error
-</div>
+## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,25 +117,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 после того, как в любом отдельном S3-запросе возникает сетевая ошибка, допускающая повторную попытку, например тайм-аут сокета.
 Если установлено значение `false`, каждый поток обрабатывает задержку S3-запросов независимо от остальных.
 
-<div id="s3_strict_upload_part_size">
-  ## s3_strict_upload_part_size
-</div>
+## s3_strict_upload_part_size {#s3_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Точный размер части, загружаемой при multipart-загрузке в S3 (некоторые реализации не поддерживают части переменного размера).
 
-<div id="s3_throw_on_zero_files_match">
-  ## s3_throw_on_zero_files_match
-</div>
+## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Сгенерировать исключение, если запрос ListObjects не находит ни одного подходящего файла
 
-<div id="s3_truncate_on_insert">
-  ## s3_truncate_on_insert
-</div>
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -178,9 +142,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Подробнее см. [здесь](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_uri_style">
-  ## s3_uri_style
-</div>
+## s3_uri_style {#s3_uri_style}
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -188,9 +150,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Принудительно задаёт стиль адресации для конечной точки S3. Возможные значения: auto, virtual&#95;hosted, path.
 
-<div id="s3_use_adaptive_timeouts">
-  ## s3_use_adaptive_timeouts
-</div>
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -47,6 +47,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 شغّل جميع مهام خطة الاستعلام الموزعة محليًا. هذا مفيد للاختبار وتصحيح الأخطاء.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد للرجوع إلى التنفيذ المحلي عند تعذّر توزيع الخطة (لا يسري مفعوله إلا مع `make_distributed_plan`)."}]}]} />
+
+عندما تحتوي خطة الاستعلام على خطوة لا تدعم التنفيذ الموزَّع، يُسجَّل السبب ويُنفَّذ الاستعلام على العقدة البادئة بدلاً من إطلاق استثناء. عطّل هذا الإعداد للحصول على استثناء بدلاً من ذلك.
+
+لا يسري مفعوله إلا عند تفعيل `make_distributed_plan` (معاينة خاصة).
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "إعداد تجريبي جديد"}]}]} />
 
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
+يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

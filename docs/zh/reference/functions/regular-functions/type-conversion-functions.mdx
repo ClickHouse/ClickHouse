@@ -3218,10 +3218,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 
 ## toDateTime32 {#toDateTime32}
 
-引入于：v20.9.0
+引入版本：v20.9.0
 
 将输入值转换为 `DateTime` 类型。
-支持从 `String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64` 或数值类型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`BFloat16`、`Float32`、`Float64`) 转换。`Decimal` 和 `Time64` 值不受支持，会引发异常；`Time` 类型以及 `(U)Int128`/`(U)Int256` 等宽整数类型会发生回绕，而不会饱和。
+支持从 `String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64` 或数值类型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) 转换。`Decimal` 和 `Time64` 值不受支持，会引发异常；`Time` 类型的值会发生回绕，而不会饱和。
 `DateTime32` 是 `DateTime` 的别名，支持 `1970-01-01 00:00:00` 至 `2106-02-07 06:28:15` 范围内的日期时间。
 从字符串或上述可饱和的数值类型转换时，超出此范围的值会被饱和到范围边界。非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，会引发异常。
 从 `Date32` 或 `DateTime64` 等其他日期时间类型转换时，遵循 `date_time_overflow_behavior` 设置：默认的 `ignore` 模式可能产生回绕值，`saturate` 会将值限制在范围边界内，而 `throw` 会引发异常。

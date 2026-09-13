@@ -3219,13 +3219,13 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 
 ## toDateTime32 {#toDateTime32}
 
-Introduit dans : v20.9.0
+Introduit dans : v20.9.0
 
 Convertit une valeur d’entrée en type `DateTime`.
-Prend en charge la conversion depuis `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou des types numériques (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Les valeurs `Decimal` et `Time64` ne sont pas prises en charge et lèvent une exception ; le type `Time` et les types d’entiers de grande taille tels que `(U)Int128`/`(U)Int256` effectuent un bouclage au lieu de saturer.
+Prend en charge la conversion depuis `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou des types numériques (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Les valeurs `Decimal` et `Time64` ne sont pas prises en charge et lèvent une exception ; une valeur du type `Time` effectue un bouclage au lieu de saturer.
 `DateTime32` est un alias de `DateTime` et prend en charge les dates comprises entre `1970-01-01 00:00:00` et `2106-02-07 06:28:15`.
 Lors d’une conversion depuis une chaîne ou l’un des types numériques saturants répertoriés ci-dessus, les valeurs hors de cette plage sont ramenées à ses bornes. Les valeurs à virgule flottante non finies (`NaN`, `inf`, `-inf`) ne peuvent pas être converties et lèvent une exception.
-Les conversions depuis d’autres types de date et d’heure, tels que `Date32` ou `DateTime64`, suivent le paramètre `date_time_overflow_behavior` : le mode `ignore` par défaut peut produire des valeurs ayant subi un bouclage, `saturate` les ramène aux bornes de la plage et `throw` lève une exception.
+Les conversions depuis d’autres types de date et d’heure, tels que `Date32` ou `DateTime64`, suivent le paramètre `date_time_overflow_behavior` : le mode `ignore` par défaut peut produire des valeurs ayant subi un bouclage, `saturate` les ramène aux bornes de la plage et `throw` lève une exception.
 
 **Syntaxe**
 

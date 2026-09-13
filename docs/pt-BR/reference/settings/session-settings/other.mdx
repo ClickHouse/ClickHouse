@@ -1839,6 +1839,29 @@ Aguarda que as alterações confirmadas se tornem efetivamente visíveis no snap
 
 Nome da workload usada para acessar recursos
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração que limita por quanto tempo uma consulta aguarda ser admitida pelo agendamento de workload (adquirindo seu query slot e sua reserva de memória) antes de falhar; 0 (padrão) mantém a espera ilimitada anterior."}]}]} />
+
+O tempo máximo que uma consulta aguarda para ser admitida pelo agendamento de workload antes de falhar sem iniciar.
+Ele limita a espera combinada por um query slot (de um recurso `CREATE RESOURCE ... (QUERY)`, limitado pelo
+`max_concurrent_queries` do workload) e por uma reserva de memória (de um recurso
+`CREATE RESOURCE ... (MEMORY RESERVATION)` em conjunto com a configuração `reserve_memory`). Ambos são
+adquiridos antes de a consulta começar a ser executada, portanto esta é a única forma de limitar essa espera prévia à execução:
+`max_execution_time` ainda não se aplica, pois a consulta não foi iniciada.
+
+Quando o timeout expira, a consulta falha com um de dois erros distintos, conforme o recurso pelo qual ela
+estava aguardando: `QUERY_SLOT_ACQUISITION_TIMEOUT` para um query slot ou
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` para uma reserva de memória.
+
+Valores possíveis:
+
+* Inteiro positivo — timeout em milissegundos.
+* 0 — Timeout infinito: a consulta aguarda indefinidamente pela admissão (padrão). Ainda assim, ela pode ser rejeitada
+  imediatamente quando o limite `max_waiting_queries` do workload é atingido.
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

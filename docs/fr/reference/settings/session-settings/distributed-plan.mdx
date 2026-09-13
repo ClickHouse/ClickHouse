@@ -47,6 +47,16 @@ Utilisé par le planificateur distribué basé sur des règles. L’optimiseur b
 
 Exécute toutes les tâches d’un plan de requête distribuée localement. Utile pour les tests et le débogage.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant de basculer vers une exécution locale lorsqu'un plan ne peut pas être distribué (ne prend effet qu'avec `make_distributed_plan`)."}]}]} />
+
+Lorsqu&#39;un plan de requête contient une étape qui ne prend pas en charge l&#39;exécution distribuée, la raison est consignée et la requête est exécutée sur l&#39;initiateur au lieu de lever une exception. Désactivez ce paramètre pour obtenir une exception à la place.
+
+Ne prend effet que lorsque `make_distributed_plan` (private preview) est activé.
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ Valeurs possibles :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nouveau paramètre expérimental"}]}]} />
 
 Utiliser la stratégie d’agrégation Shuffle au lieu de PartialAggregation + Merge dans le plan de requête distribuée.
+Ignoré lorsque la stratégie Shuffle ne peut pas produire un résultat correct, par exemple pour `GROUPING SETS` ou lorsque l’agrégation doit produire les résultats dans l’ordre des buckets.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

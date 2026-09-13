@@ -1818,6 +1818,22 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 访问资源时使用的 workload 名称
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于限制查询在失败前等待 workload 调度准入（获取 query slot 和 memory reservation）的时长；0（默认值）表示沿用此前的无限等待行为。"}]}]} />
+
+查询等待 workload 调度准入的最长时间，超过该时间查询将直接失败而不会开始执行。
+该时间涵盖获取 query slot (来自 `CREATE RESOURCE ... (QUERY)` resource，受该 workload 的 `max_concurrent_queries` 限制) 与获取 memory reservation (来自 `CREATE RESOURCE ... (MEMORY RESERVATION)` resource，并配合 `reserve_memory` 设置) 两部分的合计等待时长。二者均在查询开始运行前完成获取，因此这是限制该执行前等待时间的唯一方式：此时 `max_execution_time` 尚未生效，因为查询还未开始。
+
+超时后，查询会根据其所等待的资源返回两种不同错误之一：等待 query slot 时为 `QUERY_SLOT_ACQUISITION_TIMEOUT`，等待 memory reservation 时为 `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`。
+
+可能的值：
+
+* 正整数 — 超时时间，单位为毫秒。
+* 0 — 无限超时：查询将无限期等待准入 (默认值) 。但当达到该 workload 的 `max_waiting_queries` 限制时，查询仍会被立即拒绝。
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

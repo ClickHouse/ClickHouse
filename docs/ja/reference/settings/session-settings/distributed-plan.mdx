@@ -47,6 +47,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 分散クエリプランのすべてのタスクをローカルで実行します。テストやデバッグに有用です。
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "プランを分散化できない場合にローカル実行へフォールバックするための新しい設定（`make_distributed_plan` が有効な場合にのみ有効になります）。"}]}]} />
+
+クエリプランに分散実行に対応していないステップが含まれている場合、例外をスローするのではなく、その理由をログに記録してイニシエーター上でクエリを実行します。無効にすると、代わりに例外がスローされます。
+
+`make_distributed_plan` (プライベートプレビュー) が有効な場合にのみ有効になります。
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
 
 分散クエリプランでは、PartialAggregation + Merge の代わりに Shuffle 集約戦略を使用します。
+Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROUPING SETS` の場合や、集約が bucket 順で結果を生成しなければならない場合には無視されます。
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

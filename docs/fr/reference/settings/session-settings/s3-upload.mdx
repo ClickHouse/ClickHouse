@@ -21,7 +21,7 @@ Algorithme de somme de contrôle utilisé lorsque ClickHouse téléverse des don
 
 Par défaut, la valeur est vide et ClickHouse laisse le SDK AWS calculer `Content-MD5`. En mode FIPS, `MD5` n&#39;est pas disponible ; le SDK l&#39;omet donc silencieusement et le téléversement ne comporte alors aucune somme de contrôle. Définissez plutôt `CRC32` ou `SHA256` pour ajouter une somme de contrôle flexible. Lorsque ce paramètre s&#39;applique, un `MD5` explicite est alors rejeté.
 
-Pour les buckets autres que `S3Express`, `s3_disable_checksum` désactive ce paramètre. Il prend effet lors de la création du client `S3` et s&#39;applique donc aux utilisations limitées à une requête, telles que la table function `s3` et `BACKUP ... TO S3` ; un `SET` ultérieur par requête ne reconfigure pas un client à longue durée de vie déjà créé, tel qu&#39;un disk `S3`.
+Il prend effet lors de la création du client `S3` et s&#39;applique donc aux utilisations limitées à une requête, telles que la table function `s3` et `BACKUP ... TO S3` ; un `SET` ultérieur par requête ne reconfigure pas un client à longue durée de vie déjà créé, tel qu&#39;un disk `S3`.
 
 Les buckets `S3Express` exigent une somme de contrôle flexible et n&#39;acceptent pas `Content-MD5` : un `CRC32` ou `SHA256` explicite est pris en compte, une valeur vide utilise `CRC32` et un `MD5` explicite est rejeté.
 

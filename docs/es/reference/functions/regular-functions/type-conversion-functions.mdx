@@ -3221,7 +3221,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introducido en: v20.9.0
 
 Convierte un valor de entrada al tipo `DateTime`.
-Admite conversiones desde `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` o tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Los valores `Decimal` y `Time64` no son compatibles y generan una excepción; el tipo `Time` y los tipos de enteros de gran tamaño, como `(U)Int128`/`(U)Int256`, se desbordan en lugar de saturarse.
+Admite conversiones desde `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` o tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Los valores `Decimal` y `Time64` no son compatibles y generan una excepción; un valor del tipo `Time` se desborda en lugar de saturarse.
 `DateTime32` es un alias de `DateTime` y admite fechas desde `1970-01-01 00:00:00` hasta `2106-02-07 06:28:15`.
 Al convertir desde una cadena o desde uno de los tipos numéricos saturables enumerados anteriormente, los valores fuera de este intervalo se saturan en sus límites. Los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
 Las conversiones desde otros tipos de fecha y hora, como `Date32` o `DateTime64`, siguen la configuración `date_time_overflow_behavior`: el modo predeterminado `ignore` puede producir valores con desbordamiento, `saturate` los limita a los límites del intervalo y `throw` genera una excepción.

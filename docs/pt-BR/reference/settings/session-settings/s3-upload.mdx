@@ -21,7 +21,7 @@ O algoritmo de checksum usado quando o ClickHouse envia dados para o `S3`. `CRC3
 
 Por padrão, o valor é vazio e o ClickHouse deixa que o AWS SDK calcule o `Content-MD5`. No modo FIPS, o `MD5` não está disponível, de modo que o SDK simplesmente o omite e o upload acaba sem nenhum checksum: nesse caso, defina `CRC32` ou `SHA256` para anexar um checksum flexível. Onde essa configuração se aplica, um `MD5` explícito passa a ser rejeitado.
 
-Para buckets que não sejam `S3Express`, `s3_disable_checksum` suprime essa configuração. Ela entra em vigor no momento em que o cliente `S3` é criado, portanto vale para usos com escopo de consulta, como a table function `s3` e `BACKUP ... TO S3`; um `SET` posterior por consulta não reconfigura um cliente de longa duração já criado, como um disco `S3`.
+Ela entra em vigor no momento em que o cliente `S3` é criado, portanto vale para usos com escopo de consulta, como a table function `s3` e `BACKUP ... TO S3`; um `SET` posterior por consulta não reconfigura um cliente de longa duração já criado, como um disco `S3`.
 
 Buckets `S3Express` exigem um checksum flexível e não aceitam `Content-MD5`: um `CRC32` ou `SHA256` explícito é respeitado, um valor vazio usa `CRC32` e um `MD5` explícito é rejeitado.
 

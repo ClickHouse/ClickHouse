@@ -1827,6 +1827,28 @@ N번째 데이터 패킷에서 데이터를 보내는 대신 알 수 없는 패�
 
 리소스 접근에 사용할 워크로드의 이름
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="밀리초" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "쿼리가 실패하기 전까지 워크로드 scheduling의 admission(쿼리 슬롯 및 memory reservation 획득)을 기다리는 시간을 제한하는 새로운 설정. 0(기본값)은 기존의 무제한 대기 동작을 유지합니다."}]}]} />
+
+쿼리가 시작되지 못한 채 실패하기 전까지 워크로드 scheduling의 admission을 기다리는 최대 시간입니다.
+이 값은 쿼리 슬롯 대기(`CREATE RESOURCE ... (QUERY)` resource에서 획득하며 워크로드의 `max_concurrent_queries`로 제한됨)와
+memory reservation 대기(`CREATE RESOURCE ... (MEMORY RESERVATION)` resource와 `reserve_memory` 설정을 함께 사용)를
+합한 시간을 제한합니다. 두 가지 모두 쿼리 실행이 시작되기 전에 획득되므로, 실행 전 대기 시간을 제한할 수 있는 유일한 방법입니다.
+쿼리가 아직 시작되지 않았으므로 `max_execution_time`은 아직 적용되지 않습니다.
+
+타임아웃이 만료되면 쿼리는 대기 중이던 resource에 따라 서로 다른 두 가지 오류 중 하나로 실패합니다.
+쿼리 슬롯을 기다린 경우 `QUERY_SLOT_ACQUISITION_TIMEOUT`, memory reservation을 기다린 경우
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT`입니다.
+
+가능한 값:
+
+* 양의 정수 — 밀리초 단위의 타임아웃입니다.
+* 0 — 무한 타임아웃: 쿼리가 admission을 무기한 기다립니다(기본값). 다만 워크로드의
+  `max_waiting_queries` 한도에 도달하면 즉시 거부될 수 있습니다.
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

@@ -1840,6 +1840,29 @@ Attendre que les modifications validées deviennent réellement visibles dans le
 
 Nom de la charge de travail à utiliser pour accéder aux ressources
 
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="milliseconde" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre limitant la durée pendant laquelle une requête attend son admission par le workload scheduling (acquisition de son query slot et de sa memory reservation) avant d'échouer ; 0 (valeur par défaut) conserve l'attente illimitée précédente."}]}]} />
+
+Durée maximale pendant laquelle une requête attend son admission par le workload scheduling avant d&#39;échouer sans avoir démarré.
+Ce paramètre limite l&#39;attente combinée d&#39;un query slot (issu d&#39;une ressource `CREATE RESOURCE ... (QUERY)`, bornée par
+le `max_concurrent_queries` de la charge de travail) et d&#39;une memory reservation (issue d&#39;une ressource
+`CREATE RESOURCE ... (MEMORY RESERVATION)` associée au paramètre `reserve_memory`). Ces deux éléments sont
+acquis avant le démarrage de la requête : c&#39;est donc le seul moyen de borner cette attente préalable à l&#39;exécution,
+`max_execution_time` ne s&#39;appliquant pas encore puisque la requête n&#39;a pas démarré.
+
+À l&#39;expiration du timeout, la requête échoue avec l&#39;une des deux erreurs distinctes, selon la ressource attendue :
+`QUERY_SLOT_ACQUISITION_TIMEOUT` pour un query slot, ou
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` pour une memory reservation.
+
+Valeurs possibles :
+
+* Entier positif — timeout en millisecondes.
+* 0 — Timeout infini : la requête attend indéfiniment son admission (valeur par défaut). Elle peut toutefois être rejetée
+  immédiatement lorsque la limite `max_waiting_queries` de la charge de travail est atteinte.
+
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />

@@ -47,6 +47,16 @@ Lo utiliza el planificador distribuido basado en reglas. El optimizador basado e
 
 Ejecuta localmente todas las tareas de un plan de consulta distribuida. Útil para pruebas y depuración.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para recurrir a la ejecución local cuando un plan no se puede distribuir (solo surte efecto con `make_distributed_plan`)."}]}]} />
+
+Cuando un plan de consulta contiene un paso que no admite la ejecución distribuida, se registra el motivo y la consulta se ejecuta en el iniciador en lugar de lanzarse una excepción. Desactívela si prefiere que se lance una excepción.
+
+Solo surte efecto cuando `make_distributed_plan` (private preview) está habilitado.
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
@@ -70,6 +80,7 @@ Valores posibles:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nueva configuración experimental"}]}]} />
 
 Usa la estrategia de agregación Shuffle en lugar de PartialAggregation + Merge en el plan de consulta distribuida.
+Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, por ejemplo para `GROUPING SETS` o cuando la agregación debe producir los resultados en orden de bucket.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

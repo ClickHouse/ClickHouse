@@ -3217,7 +3217,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 도입 버전: v20.9.0
 
 입력 값을 `DateTime` 유형으로 변환합니다.
-`String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` 또는 숫자 유형(`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`)에서 변환을 지원합니다. `Decimal` 및 `Time64` 값은 지원되지 않으며 예외가 발생합니다. `Time` 유형과 `(U)Int128`/`(U)Int256` 같은 와이드 정수 유형은 포화 처리되는 대신 값이 래핑됩니다.
+`String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` 또는 숫자 유형(`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`)에서 변환을 지원합니다. `Decimal` 및 `Time64` 값은 지원되지 않으며 예외가 발생합니다. `Time` 유형의 값은 포화 처리되는 대신 값이 래핑됩니다.
 `DateTime32`는 `DateTime`의 별칭이며, `1970-01-01 00:00:00`부터 `2106-02-07 06:28:15`까지의 날짜를 지원합니다.
 문자열 또는 위에 나열된 포화 처리되는 숫자 유형에서 변환할 때 이 범위를 벗어나는 값은 범위 경계값으로 포화 처리됩니다. 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없으며 예외가 발생합니다.
 `Date32` 또는 `DateTime64` 같은 다른 날짜 및 시간 유형에서 변환할 때는 `date_time_overflow_behavior` 설정을 따릅니다. 기본 `ignore` 모드에서는 값이 래핑될 수 있으며, `saturate`는 값을 범위 경계값으로 제한하고, `throw`는 예외를 발생시킵니다.

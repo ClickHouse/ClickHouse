@@ -123,7 +123,7 @@ SELECT floor(123.45, -1)
 
 ## round {#round}
 
-Introduced in: v1.1.0
+引入版本: v1.1.0
 
 将一个值舍入到指定的小数位数 `N`。
 
@@ -136,7 +136,7 @@ Introduced in: v1.1.0
 
 如果舍入导致溢出 (例如 `round(255, -1)`) ，则结果未定义。
 
-**Syntax**
+**语法**
 
 ```sql
 round(x[, N])
@@ -170,7 +170,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 **Decimal 类型输入**
 
 ```sql title=Query
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ```response title=Response

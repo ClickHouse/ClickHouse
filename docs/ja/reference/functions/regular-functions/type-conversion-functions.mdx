@@ -3222,7 +3222,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 導入バージョン: v20.9.0
 
 入力値を `DateTime` 型に変換します。
-`String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` および `Time64` の値はサポートされておらず、例外が発生します。`Time` 型および `(U)Int128`/`(U)Int256` などのワイド整数型では、飽和ではなくラップアラウンドが発生します。
+`String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` および `Time64` の値はサポートされておらず、例外が発生します。`Time` 型の値では、飽和ではなくラップアラウンドが発生します。
 `DateTime32` は `DateTime` の alias であり、`1970-01-01 00:00:00` から `2106-02-07 06:28:15` までの日付をサポートします。
 文字列、または上記の飽和する数値型から変換する場合、この範囲外の値は範囲の境界値に飽和されます。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
 `Date32` や `DateTime64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。
@@ -3236,7 +3236,7 @@ toDateTime32(x[, timezone])
 **引数**
 
 * `x` — 変換する入力値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`BFloat16`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`Time`](/ja/reference/data-types/time)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可能。返される `DateTime` 値のタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。返される `DateTime` 値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
