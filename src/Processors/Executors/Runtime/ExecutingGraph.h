@@ -2,7 +2,7 @@
 
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Common/ShardedSharedMutex.h>
+#include <Common/ReadMostlySharedMutex.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <atomic>
 #include <list>
@@ -195,7 +195,7 @@ private:
     /// the pipeline expands or processors are removed. A plain shared mutex
     /// serialises the readers on one cache line and dominates wide pipelines
     /// that pass small blocks, so the reader side is sharded per thread.
-    ShardedSharedMutex nodes_mutex;
+    ReadMostlySharedMutex nodes_mutex;
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;

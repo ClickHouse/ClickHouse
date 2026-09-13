@@ -8,7 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SharedMutex.h>
-#include <Common/ShardedSharedMutex.h>
+#include <Common/ReadMostlySharedMutex.h>
 #include <Common/Stopwatch.h>
 
 #include <base/demangle.h>
@@ -286,47 +286,47 @@ void PerfTestSharedMutexRW()
 #ifdef OS_LINUX
 TEST(Threading, SharedMutexSmokeSelf) { TestSharedMutex<DB::SelfSharedMutex>(); }
 #endif
-TEST(Threading, SharedMutexSmokeSharded) { TestSharedMutex<DB::ShardedSharedMutex>(); }
+TEST(Threading, SharedMutexSmokeReadMostly) { TestSharedMutex<DB::ReadMostlySharedMutex>(); }
 TEST(Threading, SharedMutexSmokeAbsl) { TestSharedMutex<DB::AbslSharedMutex>(); }
 TEST(Threading, SharedMutexSmokeStd) { TestSharedMutex<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexReadersOnlySelf) { PerfTestSharedMutexReadersOnly<DB::SelfSharedMutex>(); }
 #endif
-TEST(Threading, PerfTestSharedMutexReadersOnlySharded) { PerfTestSharedMutexReadersOnly<DB::ShardedSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexReadersOnlyReadMostly) { PerfTestSharedMutexReadersOnly<DB::ReadMostlySharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyAbsl) { PerfTestSharedMutexReadersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyStd) { PerfTestSharedMutexReadersOnly<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexWritersOnlySelf) { PerfTestSharedMutexWritersOnly<DB::SelfSharedMutex>(); }
 #endif
-TEST(Threading, PerfTestSharedMutexWritersOnlySharded) { PerfTestSharedMutexWritersOnly<DB::ShardedSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexWritersOnlyReadMostly) { PerfTestSharedMutexWritersOnly<DB::ReadMostlySharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyAbsl) { PerfTestSharedMutexWritersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyStd) { PerfTestSharedMutexWritersOnly<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexRWSelf) { PerfTestSharedMutexRW<DB::SelfSharedMutex>(); }
 #endif
-TEST(Threading, PerfTestSharedMutexRWSharded) { PerfTestSharedMutexRW<DB::ShardedSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexRWReadMostly) { PerfTestSharedMutexRW<DB::ReadMostlySharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWAbsl) { PerfTestSharedMutexRW<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWStd) { PerfTestSharedMutexRW<std::shared_mutex>(); }
 
 
-/// The point of ShardedSharedMutex is that the reader count is spread over many
-/// cache lines, so a writer has to drain every shard rather than watch one
-/// counter. A shard missed by the writer, or a reader that releases on a
-/// different shard than it acquired on, would let a writer run beside a reader
-/// without any single operation looking wrong. Readers and writers hammering
-/// the same state together is what catches that:
+/// ReadMostlySharedMutex publishes a reader with an unconditional fetch_add and
+/// only then checks for a writer, while a writer publishes itself and only then
+/// waits for readers to drain. Getting the order or the memory ordering of
+/// those four operations wrong lets a writer run beside a reader without any
+/// single operation looking wrong, so it has to be caught by readers and
+/// writers hammering the same state together:
 ///
 ///   * `counter` is deliberately a plain size_t. If two writers ever overlap,
 ///     the increments are lost and the final total does not match.
 ///   * writers assert no reader is inside while they hold the lock.
 ///   * readers assert `counter` does not move underneath them, which is the
 ///     same violation seen from the other side.
-TEST(Threading, ShardedSharedMutexStressReadersAndWriters)
+TEST(Threading, ReadMostlySharedMutexStressReadersAndWriters)
 {
-    DB::ShardedSharedMutex sm;
+    DB::ReadMostlySharedMutex sm;
 
     size_t counter = 0; /// guarded by sm; not atomic on purpose
     std::atomic<size_t> writes_done{0};
