@@ -78,53 +78,51 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
-Block makeTimeSeriesBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
-    size_t num_metadata_rows,
-    const StorageInMemoryMetadata & metadata)
+class TimeSeriesBlockBuilder
 {
-    const size_t num_rows = time_series.size() + num_metadata_rows;
-
-    const auto metric_name_type = metadata.columns.get(TimeSeriesColumnNames::MetricName).type;
-    auto metric_name_column = metric_name_type->createColumn();
-    metric_name_column->reserve(num_rows);
-
-    const auto tags_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(metadata.columns.get(TimeSeriesColumnNames::Tags).type);
-    if (!tags_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
-    auto tags_names = tags_type->getKeyType()->createColumn();
-    auto tags_values = tags_type->getValueType()->createColumn();
-    auto tags_offsets = ColumnArray::ColumnOffsets::create();
-    tags_offsets->reserve(num_rows);
-
-    const auto time_series_type
-        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::TimeSeries).type);
-    if (!time_series_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::TimeSeries);
-    auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
-    auto timestamps = timestamp_type->createColumn();
-    auto values = value_type->createColumn();
-    auto time_series_offsets = ColumnArray::ColumnOffsets::create();
-    time_series_offsets->reserve(num_rows);
-    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
-
-    for (const auto & element : time_series)
+public:
+    TimeSeriesBlockBuilder(size_t num_rows, const StorageInMemoryMetadata & metadata)
+        : metric_name_type(metadata.columns.get(TimeSeriesColumnNames::MetricName).type)
+        , metric_name_column(metric_name_type->createColumn())
+        , tags_type(typeid_cast<std::shared_ptr<const DataTypeMap>>(metadata.columns.get(TimeSeriesColumnNames::Tags).type))
+        , time_series_type(typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::TimeSeries).type))
     {
-        std::string_view metric_name;
-        bool has_metric_name = false;
-        for (const auto & label : element.labels())
+        if (!tags_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
+        if (!time_series_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::TimeSeries);
+
+        metric_name_column->reserve(num_rows);
+        tags_names = tags_type->getKeyType()->createColumn();
+        tags_values = tags_type->getValueType()->createColumn();
+        tags_offsets->reserve(num_rows);
+
+        auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
+        timestamps = timestamp_type->createColumn();
+        values = value_type->createColumn();
+        time_series_offsets->reserve(num_rows);
+        timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+    }
+
+    void addLabel(std::string_view name, std::string_view value)
+    {
+        if (metric_name.empty() && name == TimeSeriesTagNames::MetricName && !value.empty())
+            metric_name = value;
+        else
         {
-            if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
-            {
-                metric_name = label.value();
-                has_metric_name = true;
-            }
-            else
-            {
-                tags_names->insertData(label.name().data(), label.name().size());
-                tags_values->insertData(label.value().data(), label.value().size());
-            }
+            tags_names->insertData(name.data(), name.size());
+            tags_values->insertData(value.data(), value.size());
         }
+    }
+
+    void addSample(Int64 timestamp, double value)
+    {
+        insertTimestamp(timestamp, timestamp_scale, *timestamps);
+        values->insert(value);
+    }
+
+    void finishTimeSeries()
+    {
         if (metric_name.empty())
             throw Exception(
                 ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
@@ -132,39 +130,68 @@ Block makeTimeSeriesBlock(
                 TimeSeriesTagNames::MetricName);
         metric_name_column->insertData(metric_name.data(), metric_name.size());
         tags_offsets->insert(tags_names->size());
-
-        for (const auto & sample : element.samples())
-        {
-            insertTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
-            values->insert(sample.value());
-        }
         time_series_offsets->insert(timestamps->size());
+        metric_name = {};
     }
 
-    metric_name_column->insertManyDefaults(num_metadata_rows);
-    for (size_t i = 0; i != num_metadata_rows; ++i)
+    Block finish(size_t num_metadata_rows)
     {
-        tags_offsets->insert(tags_names->size());
-        time_series_offsets->insert(timestamps->size());
+        metric_name_column->insertManyDefaults(num_metadata_rows);
+        for (size_t i = 0; i != num_metadata_rows; ++i)
+        {
+            tags_offsets->insert(tags_names->size());
+            time_series_offsets->insert(timestamps->size());
+        }
+
+        Columns tags_tuple_columns;
+        tags_tuple_columns.push_back(std::move(tags_names));
+        tags_tuple_columns.push_back(std::move(tags_values));
+        auto tags_column = ColumnMap::create(
+            ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_columns)), std::move(tags_offsets)));
+
+        Columns time_series_tuple_columns;
+        time_series_tuple_columns.push_back(std::move(timestamps));
+        time_series_tuple_columns.push_back(std::move(values));
+        auto time_series_column = ColumnArray::create(
+            ColumnTuple::create(std::move(time_series_tuple_columns)), std::move(time_series_offsets));
+
+        Block block;
+        block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
+        block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
+        block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
+        return block;
     }
 
-    Columns tags_tuple_columns;
-    tags_tuple_columns.push_back(std::move(tags_names));
-    tags_tuple_columns.push_back(std::move(tags_values));
-    auto tags_column = ColumnMap::create(
-        ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_columns)), std::move(tags_offsets)));
+private:
+    DataTypePtr metric_name_type;
+    MutableColumnPtr metric_name_column;
+    std::shared_ptr<const DataTypeMap> tags_type;
+    MutableColumnPtr tags_names;
+    MutableColumnPtr tags_values;
+    MutableColumnPtr tags_offsets = ColumnArray::ColumnOffsets::create();
+    std::shared_ptr<const DataTypeArray> time_series_type;
+    MutableColumnPtr timestamps;
+    MutableColumnPtr values;
+    MutableColumnPtr time_series_offsets = ColumnArray::ColumnOffsets::create();
+    UInt32 timestamp_scale = 0;
+    std::string_view metric_name;
+};
 
-    Columns time_series_tuple_columns;
-    time_series_tuple_columns.push_back(std::move(timestamps));
-    time_series_tuple_columns.push_back(std::move(values));
-    auto time_series_column = ColumnArray::create(
-        ColumnTuple::create(std::move(time_series_tuple_columns)), std::move(time_series_offsets));
-
-    Block block;
-    block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
-    block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
-    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
-    return block;
+Block makeTimeSeriesBlock(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    size_t num_metadata_rows,
+    const StorageInMemoryMetadata & metadata)
+{
+    TimeSeriesBlockBuilder builder(time_series.size() + num_metadata_rows, metadata);
+    for (const auto & element : time_series)
+    {
+        for (const auto & label : element.labels())
+            builder.addLabel(label.name(), label.value());
+        for (const auto & sample : element.samples())
+            builder.addSample(sample.timestamp(), sample.value());
+        builder.finishTimeSeries();
+    }
+    return builder.finish(num_metadata_rows);
 }
 
 Block makeMetricsMetadataBlock(
