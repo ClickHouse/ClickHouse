@@ -247,7 +247,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+    bool attach_short_syntax,
+    const StorageInMemoryMetadata * parent_metadata)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -280,6 +281,27 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
     result.settings_changes = merge_tree_settings->changes();
+
+    /// A projection is written with the implicit min-max indices of its own metadata, so a table that
+    /// opted out of them (`add_minmax_index_for_numeric_columns = 0`, possibly through `compatibility`
+    /// or the server configuration) would get them back through its projections if the projection
+    /// started from the settings' defaults. Inherit the table's policy for every setting the projection
+    /// does not set itself. The inherited values are not recorded in `settings_changes`: the projection
+    /// definition stays as written, and the policy is taken from the table again whenever the projection
+    /// metadata is rebuilt from it (on load, with `compatibility` or server configuration applied).
+    if (parent_metadata)
+    {
+        const auto inherit = [&](const auto & setting, bool parent_value)
+        {
+            if (!(*merge_tree_settings)[setting].changed)
+                (*merge_tree_settings)[setting] = parent_value;
+        };
+        inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, parent_metadata->add_minmax_index_for_numeric_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_string_columns, parent_metadata->add_minmax_index_for_string_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, parent_metadata->add_minmax_index_for_temporal_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_block_number_column, parent_metadata->add_minmax_index_for_block_number_column);
+        inherit(MergeTreeSetting::add_minmax_index_for_block_offset_column, parent_metadata->add_minmax_index_for_block_offset_column);
+    }
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
     /// (from either the projection index's getDefaultSettings() or the user's explicit SETTINGS clause),
@@ -831,7 +853,8 @@ ProjectionsDescription ProjectionsDescription::parse(
     const String & str,
     const ColumnsDescription & columns,
     const KeyDescription * parent_partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const StorageInMemoryMetadata * parent_metadata)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -842,7 +865,8 @@ ProjectionsDescription ProjectionsDescription::parse(
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(
+            projection_ast, columns, parent_partition_key, query_context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, parent_metadata);
         result.add(std::move(projection));
     }
 

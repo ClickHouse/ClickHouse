@@ -569,7 +569,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
         if (projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context);
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context, &new_metadata);
 
         if (ttl_table_changed)
         {
@@ -697,7 +697,8 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         ProjectionsDescription recalculated_projections;
         for (const auto & projection : new_metadata.projections)
-            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context));
+            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &new_metadata));
         new_metadata.projections = std::move(recalculated_projections);
     }
 

@@ -1165,7 +1165,7 @@ void AlterCommand::apply(
     else if (type == ADD_PROJECTION)
     {
         auto projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == MODIFY_PROJECTION)
@@ -1185,7 +1185,7 @@ void AlterCommand::apply(
 
         /// create a new projection with the modified settings
         auto new_projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
 
         /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
         auto definition_without_settings = [](const IAST & definition_ast)
@@ -1927,7 +1927,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         try
         {
             /// Check if we can still build projection from new metadata.
-            auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
+            auto new_projection = ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &metadata_copy);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
