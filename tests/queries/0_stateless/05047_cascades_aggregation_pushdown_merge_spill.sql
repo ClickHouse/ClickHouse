@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- End-to-end external-aggregation (spill) coverage for the merge-only `Aggregating` above the
 -- pushed variant-A join. The full-`Params` copy in the rule and the settings round trip of the
 -- serialized fragment must deliver `max_bytes_before_external_group_by` (and the two-level

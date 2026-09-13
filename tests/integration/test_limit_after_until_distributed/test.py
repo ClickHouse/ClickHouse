@@ -86,32 +86,3 @@ def test_no_count_range_is_applied_on_initiator(boundary, log_comment):
     assert (
         result_rows == "10"
     ), f"{boundary}: shard with non-passing rows returned {result_rows!r} rows instead of 10 (range applied per shard?)"
-
-
-def test_legacy_union_settings_limit_is_not_sent_to_range_shards():
-    for node in (node1, node2):
-        node.query(
-            "CREATE TABLE local (number UInt64) ENGINE = MergeTree() ORDER BY number"
-        )
-    node1.query(
-        "CREATE TABLE dist (number UInt64) "
-        "ENGINE = Distributed('test_cluster', currentDatabase(), local, number)"
-    )
-
-    # The boundary is deliberately far from the beginning of node1's range. If query-level
-    # `limit`/`offset` leaks to the shards, node1 returns only its first row(s) to the initiator and
-    # the `LIMIT AFTER number >= 17` range becomes empty (the result would then be empty instead of 18).
-    node1.query("INSERT INTO local SELECT number + 10 FROM numbers(10)")  # 10..19
-    node2.query("INSERT INTO local SELECT number FROM numbers(10)")  # 0..9
-
-    # A single ordered range branch keeps the result independent of UNION ALL branch scheduling while
-    # still proving the cap is applied once on the initiator (not pushed to shards): the merged range is
-    # 17, 18, 19; offset = 1 drops 17 and limit = 1 keeps a single row, so the expected result is 18.
-    result = node1.query(
-        """
-        SELECT number FROM dist ORDER BY number LIMIT AFTER number >= 17
-        SETTINGS enable_analyzer = 0, limit = 1, offset = 1, distributed_push_down_limit = 0
-        """
-    ).strip()
-
-    assert result == "18"

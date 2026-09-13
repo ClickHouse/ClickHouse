@@ -1,5 +1,4 @@
--- Tags: no-old-analyzer, no-parallel-replicas
--- no-old-analyzer: make_distributed_plan requires the analyzer.
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: the assertion is about the analysis the coordinator does for a distributed plan.
 
 -- Test to snure that distributed query planning does not repeat index analysis twice or more

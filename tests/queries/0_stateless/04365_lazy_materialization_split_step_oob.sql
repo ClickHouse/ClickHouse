@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: lazy materialization is gated on the analyzer, so the EXPLAIN assertion
 -- below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old analyzer; that
 -- CI variant also forbids changing enable_analyzer inside a subquery.
 --

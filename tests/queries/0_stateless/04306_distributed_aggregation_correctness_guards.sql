@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: make_distributed_plan rejects an aggregation it cannot distribute correctly,
 -- rather than silently running it single-node. A global GROUP BY limit (max_rows_to_group_by) is
 -- such a case: each bucket aggregates only its own share of the data, so no worker can tell when

@@ -2,7 +2,7 @@
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 -- A column exploded by ARRAY JOIN can carry the name of the column the table partition key reads
--- (`ARRAY JOIN arr` keeps the name `arr`; under the old analyzer any alias keeps its user-facing name).
+-- (`ARRAY JOIN arr` keeps the name `arr`).
 -- The per-partition optimizations must not treat such a key as the partition key's source column: the
 -- same exploded value appears in arrays of different lengths, i.e. in many partitions, so per-partition
 -- streams are not disjoint by it and skipping the merge or the scatter would produce wrong results.
@@ -23,18 +23,6 @@ DROP TABLE IF EXISTS t_shadow;
 CREATE TABLE t_shadow (arr Array(UInt32), v UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY length(arr);
 -- Element 0 appears in arrays of every length, so it lives in all four partitions.
 INSERT INTO t_shadow SELECT range(1 + number % 4), number FROM numbers(1000);
-
-SET enable_analyzer = 0;
-
-SELECT '-- old analyzer, window partitioned by the exploded column: must not engage even when forced';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) FROM t_shadow ARRAY JOIN arr SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter%' OR explain LIKE '%separate port%';
-SELECT (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1);
-
-SELECT '-- old analyzer, DISTINCT on the exploded column: must not engage even when forced';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr SETTINGS allow_distinct_partitions_independently = 1, force_distinct_partitions_independently = 1) WHERE explain LIKE '%separate port%' OR explain LIKE '%Skip stream merging%';
-SELECT (SELECT count() FROM (SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr) SETTINGS allow_distinct_partitions_independently = 1, force_distinct_partitions_independently = 1);
-
-SET enable_analyzer = 1;
 
 SELECT '-- the analyzer: the exploded column gets a synthetic name and never matches; results stay equal';
 SELECT (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1);
@@ -63,12 +51,6 @@ SELECT '-- mixed keys (k, x) with an exploded x: still engages';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) FROM t_prec ARRAY JOIN arr AS x SETTINGS allow_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter%' OR explain LIKE '%separate port%';
 SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 1);
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%separate port%';
-SELECT (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 1);
-
-SET enable_analyzer = 0;
-
-SELECT '-- mixed keys, old analyzer: results stay equal';
-SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 1);
 SELECT (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 1);
 
 DROP TABLE t_shadow;

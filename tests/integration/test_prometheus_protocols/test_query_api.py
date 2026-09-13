@@ -365,8 +365,8 @@ def test_table_query_param():
 
 def test_generated_sql_always_runs_with_analyzer():
     # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
-    # analyzer honors, so the handler forces the analyzer and enable_materialized_cte
-    # regardless of the caller's enable_analyzer. The materialization itself is covered by
+    # analyzer honors, so the handler runs it with the analyzer and with
+    # enable_materialized_cte. The materialization itself is covered by
     # 04816_promql_shared_subqueries_materialized; here it is enough to check the settings
     # the generated query ran with.
     for path, time_params in (
@@ -376,7 +376,7 @@ def test_generated_sql_always_runs_with_analyzer():
         query_id = f"promql-analyzer-{uuid.uuid4()}"
         url = (
             f"http://{node.ip_address}:9093{path}"
-            f"?query=post_body_metric&{time_params}&enable_analyzer=0"
+            f"?query=post_body_metric&{time_params}"
         )
         response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
         extract_data_from_http_api_response(response)  # raises unless a success envelope

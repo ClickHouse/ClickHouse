@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Test WindowStep serialization of a frame whose END boundary is PRECEDING (frame.end_preceding=true)
 -- under make_distributed_plan. Result must match the non-distributed plan.
 

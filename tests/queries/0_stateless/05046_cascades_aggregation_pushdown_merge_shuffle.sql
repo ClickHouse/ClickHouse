@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- Unlike the `MergingAggregatedStep` it replaced, the merge-only `Aggregating` above the pushed
 -- variant-A join participates in the Cascades distribution strategies, so a Shuffle merge is now
 -- expressible: repartition the state rows by the `GROUP BY` keys, merge per node, gather the

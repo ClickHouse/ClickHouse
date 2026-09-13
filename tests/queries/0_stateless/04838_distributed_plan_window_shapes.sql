@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- PARTITION BY window shapes under make_distributed_plan: pin the full distributed EXPLAIN of each
 -- case, then run the same query distributed and local. The two result lines per case must show the
 -- same value in the reference. Before partitioned sorts became serializable, every one of these

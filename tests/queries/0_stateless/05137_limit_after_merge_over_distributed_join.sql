@@ -16,10 +16,5 @@ SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l 
 SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n LIMIT 1 AFTER r.number IN (1, 3) ALL SETTINGS enable_analyzer = 1;
 SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n DESC LIMIT 2 AFTER l.n <= 3 SETTINGS enable_analyzer = 1;
 
-SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n LIMIT 2 AFTER r.number >= 2 SETTINGS enable_analyzer = 0;
-SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n LIMIT UNTIL r.number >= 2 SETTINGS enable_analyzer = 0;
-SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n LIMIT 1 AFTER r.number IN (1, 3) ALL SETTINGS enable_analyzer = 0;
-SELECT l.n, r.number FROM merge(currentDatabase(), '^t_range_merge_dist$') AS l INNER JOIN numbers(6) AS r ON l.n = r.number ORDER BY l.n DESC LIMIT 2 AFTER l.n <= 3 SETTINGS enable_analyzer = 0;
-
 DROP TABLE t_range_merge_dist;
 DROP TABLE t_range_merge_local;

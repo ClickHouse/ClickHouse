@@ -2808,10 +2808,14 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
     query_kind = state->query_context->getClientInfo().query_kind;
 
-    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// FIXME: Remove together with the old query analysis itself.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
-    /// different servers.
+    /// different servers. `enable_analyzer` is an obsolete setting a user cannot disable anymore,
+    /// but an initiator this old has no analyzer at all, so a query it sends has to keep being
+    /// analyzed the old way. The value survives `clampToSettingsConstraints` below because a
+    /// change disabling the analyzer is only refused on the throwing paths (see
+    /// `SettingsConstraints`), which a secondary query does not take.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
             < VersionNumber(23, 3, 0)

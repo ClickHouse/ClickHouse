@@ -2514,10 +2514,8 @@ deltaLake(
         )
     )
 
-@pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
-)
-def test_cluster_function(started_cluster, new_analyzer, storage_type):
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_cluster_function(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2550,11 +2548,11 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
         instance.query(
-            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function}"
         )
         assert 5 == int(
             instance.query(
-                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+                f"SELECT count() FROM {table_function}"
             )
         )
         assert "1\taa\n"
@@ -2562,7 +2560,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         "3\tcc\n"
         "4\taa\n"
         "5\tbb\n" == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} ORDER BY a"
         )
 
 
@@ -5653,8 +5651,7 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
 
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
-def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_insert_select_cluster_pruning")
 
@@ -5719,7 +5716,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
         """,
         query_id=query_id,
-        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0},
     )
 
     # The cluster INSERT path runs the SELECT on a remote replica, which writes
@@ -5783,7 +5780,6 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         settings={
             "allow_experimental_delta_kernel_rs": 1,
             "delta_lake_enable_engine_predicate": 0,
-            "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
 

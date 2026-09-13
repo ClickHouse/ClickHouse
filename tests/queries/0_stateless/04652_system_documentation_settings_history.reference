@@ -10,7 +10,7 @@
 25.10
 24.10
 Maximum size in bytes of unparsed data collected per query before being inserted\n\nCloud default value: `104857600` (100 MiB).\n\n**Type:** `UInt64`\n\n**Default:** `10485760`\n\n**History**\n\n- **24.2** — the default value changed from `1000000` to `10485760`. The previous value appeared to be too small.
-Alias of `allow_experimental_analyzer`.\n\n**Introduced in:** v24.8\n\n**History**\n\n- **24.8** — introduced with the default value `1`. Added an alias to a setting `allow_experimental_analyzer`.
+Alias of `allow_experimental_database_iceberg`.\n\n**Introduced in:** v25.8\n\n**History**\n\n- **25.8** — introduced with the default value `0`. Added an alias for setting `allow_experimental_database_iceberg`
 Alias of `max_insert_block_size`.\n\n**Introduced in:** v26.1\n\n**History**\n\n- **26.1** — introduced with the default value `1048449`. An alias for max_insert_block_size.
 1	1
 1

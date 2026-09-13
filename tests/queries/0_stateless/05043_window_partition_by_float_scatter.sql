@@ -75,18 +75,6 @@ INSERT INTO t_window_scatter_json SELECT toJSONString(map('a', if(number % 2 = 0
 SELECT count() FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY j) FROM t_window_scatter_json SETTINGS max_threads = 8)
 WHERE explain ILIKE '%ScatterByPartition%';
 
--- The old interpreter must apply the same guard.
-SET enable_analyzer = 0;
-
-SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_window_scatter_float) ORDER BY c
-SETTINGS max_threads = 8;
-
-SELECT count() FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY k) FROM t_window_scatter_float SETTINGS max_threads = 8)
-WHERE explain ILIKE '%ScatterByPartition%';
-
-SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY u) FROM t_window_scatter_float SETTINGS max_threads = 8)
-WHERE explain ILIKE '%ScatterByPartition%';
-
 DROP TABLE t_window_scatter_float;
 DROP TABLE t_window_scatter_dynamic;
 DROP TABLE t_window_scatter_json;

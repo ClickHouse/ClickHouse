@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed planning requires the analyzer.
 
 -- A shuffle exchange with a single bucket produces a one-task child fragment whose
 -- receive step reads `bucket_id` from the task parameters. Combining it with a

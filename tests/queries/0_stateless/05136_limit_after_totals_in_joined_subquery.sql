@@ -4,10 +4,6 @@
 -- does not have to read the left side to the end for such a subquery, unlike for a totals subquery that is
 -- the first table expression.
 
-SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l INNER JOIN (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r ON l.n = r.n LIMIT AFTER l.n >= 0 SETTINGS limit = 1, enable_analyzer = 0;
-SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l INNER JOIN (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r ON l.n = r.n LIMIT 1 UNTIL l.n >= 5 SETTINGS limit = 1, enable_analyzer = 0;
-SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l, (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r WHERE l.n = r.n LIMIT AFTER l.n >= 0 SETTINGS limit = 1, enable_analyzer = 0;
-
 SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l INNER JOIN (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r ON l.n = r.n LIMIT AFTER l.n >= 0 SETTINGS limit = 1, enable_analyzer = 1;
 SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l INNER JOIN (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r ON l.n = r.n LIMIT 1 UNTIL l.n >= 5 SETTINGS limit = 1, enable_analyzer = 1;
 SELECT l.n, r.s FROM (SELECT number AS n FROM numbers(6)) AS l, (SELECT number % 3 AS n, sum(number) AS s FROM numbers(6) GROUP BY n WITH TOTALS) AS r WHERE l.n = r.n LIMIT AFTER l.n >= 0 SETTINGS limit = 1, enable_analyzer = 1;

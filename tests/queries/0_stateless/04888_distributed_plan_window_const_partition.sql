@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A window `PARTITION BY <constant>` under make_distributed_plan=1 builds a `GatherSend` fragment whose
 -- sort description is entirely constant. Such a description orders nothing, so the fragment's
 -- order-preserving merge must not be used: it waits for every input stream to have data, which never

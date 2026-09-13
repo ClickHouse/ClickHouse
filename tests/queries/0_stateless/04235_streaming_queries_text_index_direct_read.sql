@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-old-analyzer
+-- Tags: no-parallel-replicas
 
 SET enable_streaming_queries = 1;
 SET allow_experimental_full_text_index = 1;

@@ -182,7 +182,7 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 
 -- An alias is introduced in a particular version and has a history of its own, distinct from the history of the
 -- setting it resolves to.
-SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'allow_database_iceberg';
 
 -- A record that only registers an alias does not become the history of the setting it aliases, and in particular
 -- does not claim to introduce it: `max_insert_block_size` is older than the change history and has no recorded

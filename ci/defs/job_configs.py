@@ -5,8 +5,8 @@ from ci.defs.defs import (
     ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -894,28 +894,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_parallel_{batch}"
+                    + f"_ft_s3_db_repl_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_sequential_{batch}"
+                    + f"_ft_s3_db_repl_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -1292,23 +1292,11 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # Despite the name, only release_branches.py uses these.
-    # `ASAN_IT_NUM_BATCHES` explains the batch count; keep it in step with the flavor below.
-    integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
+    integration_test_jobs_required = common_integration_test_job_config.parametrize(
+        # `ASAN_IT_NUM_BATCHES` in ci/defs/defs.py explains the batch count.
         *[
             Job.ParamSet(
                 parameter=f"amd_asan_ubsan, db disk, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            )
-            for total_batches in (ASAN_IT_NUM_BATCHES,)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
-    integration_test_jobs_required = common_integration_test_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_asan_ubsan, db disk, old analyzer, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )

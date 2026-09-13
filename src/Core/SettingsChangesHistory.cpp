@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"allow_experimental_analyzer", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. Disabling it is refused instead of being ignored, and `compatibility` with a version below 24.3 no longer reverts it."},
             {"enable_join_runtime_filters", true, true, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "The JOIN runtime filters became a Production tier feature."},
