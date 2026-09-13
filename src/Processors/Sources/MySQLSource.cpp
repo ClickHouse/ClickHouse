@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
@@ -225,8 +226,8 @@ UInt64 parseMySQLBitValue(std::string_view value)
     /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
     const size_t n = value.size();
     if (n > sizeof(UInt64))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Value of a BIT field is {} bytes long, while at most {} bytes are expected",
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
             n, sizeof(UInt64));
 
     /// The value is transferred in the big-endian order, most significant byte first. Assembling it
