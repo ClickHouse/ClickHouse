@@ -83,10 +83,22 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     time_t current_time_,
     bool force_,
     const Block & header_,
-    const MergeTreeData & storage_)
+    const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_)
     : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
 {
+    const auto & sorting_key = metadata_snapshot_->getSortingKey();
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        /// The header of a mutation may lack the sorting key expressions that are not in the primary key.
+        if (!header.has(sorting_key.column_names[i]))
+            break;
+
+        bool reverse = !sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i];
+        sort_description.emplace_back(sorting_key.column_names[i], reverse ? -1 : 1, 1);
+    }
+
     current_key_value.resize(description.group_by_keys.size());
 
     const auto & keys = description.group_by_keys;
@@ -236,6 +248,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
     }
 
     block = header.cloneWithColumns(std::move(result_columns));
+    restoreSortOrder(block);
 
     /// If some rows were aggregated we have to recalculate ttl info's
     if (some_rows_were_aggregated)
@@ -328,6 +341,72 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
     }
 
     aggregation_result.invalidate();
+}
+
+void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
+{
+    size_t num_rows = block.rows();
+    if (num_rows == 0 || sort_description.empty())
+        return;
+
+    Columns sort_key;
+    for (const auto & elem : sort_description)
+        sort_key.push_back(block.getByName(elem.column_name).column->convertToFullColumnIfSparse());
+
+    /// The row whose sorting key the previous row effectively has. A row with a replaced key never becomes
+    /// the reference, because its key is equal to the key of the current reference row.
+    const Columns * prev_columns = last_row_sort_key.empty() ? nullptr : &last_row_sort_key;
+    size_t prev_row = 0;
+    /// Copies of the sorting key columns with the replaced keys, created on the first violation.
+    MutableColumns fixed_columns;
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        bool violated = false;
+        for (size_t j = 0; prev_columns && j < sort_key.size(); ++j)
+        {
+            int res = sort_description[j].direction
+                * (*prev_columns)[j]->compareAt(prev_row, i, *sort_key[j], sort_description[j].nulls_direction);
+            if (res != 0)
+            {
+                violated = res > 0;
+                break;
+            }
+        }
+
+        if (violated && fixed_columns.empty())
+        {
+            for (const auto & column : sort_key)
+            {
+                fixed_columns.push_back(column->cloneEmpty());
+                fixed_columns.back()->insertRangeFrom(*column, 0, i);
+            }
+        }
+
+        if (violated)
+        {
+            for (size_t j = 0; j < sort_key.size(); ++j)
+                fixed_columns[j]->insertFrom(*(*prev_columns)[j], prev_row);
+        }
+        else
+        {
+            for (size_t j = 0; j < fixed_columns.size(); ++j)
+                fixed_columns[j]->insertFrom(*sort_key[j], i);
+
+            prev_columns = &sort_key;
+            prev_row = i;
+        }
+    }
+
+    for (size_t j = 0; j < fixed_columns.size(); ++j)
+    {
+        sort_key[j] = std::move(fixed_columns[j]);
+        block.getByName(sort_description[j].column_name).column = sort_key[j];
+    }
+
+    last_row_sort_key.clear();
+    for (const auto & column : sort_key)
+        last_row_sort_key.push_back(column->cut(num_rows - 1, 1));
 }
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
