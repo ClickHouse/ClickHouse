@@ -651,7 +651,7 @@ TEST(ExperimentalSpillCodecPlanSetting, OneOperatorIsSerializedConcurrently)
     for (size_t round = 0; round < num_rounds; ++round)
     {
         TestJoinOperator keyed_inner(JoinKind::Inner);
-        std::barrier sync(num_threads);
+        std::barrier<> sync(num_threads);
         std::vector<size_t> carried(num_threads, 0);
 
         std::vector<std::thread> threads;
