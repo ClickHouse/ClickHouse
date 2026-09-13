@@ -844,6 +844,31 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        /// A pending metadata mutation can change which on-disk column a queried name refers to,
+        /// while the part's statistics stay stored under the names the columns have on disk:
+        /// - a `RENAME COLUMN` is applied to reads on the fly, so an estimate looked up by the
+        ///   queried name describes a different column's data;
+        /// - a `DROP COLUMN` followed by adding a column with the same name makes reads treat the
+        ///   on-disk data as missing and fill the default instead, while the estimate still
+        ///   describes the dropped column's data.
+        /// Either way the estimates of such a part do not describe the values the query sees, so the
+        /// part is not prunable. Both are metadata mutations and appear in neither `hasDataMutations`
+        /// nor `getAllUpdatedColumns`, so the gate above does not see them.
+        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            if (!alter_conversions->getRenameMap().empty() || !alter_conversions->getDroppedColumns().empty())
+            {
+                res_parts.push_back(part);
+                continue;
+            }
+        }
+
         auto estimates = part.data_part->getEstimates();
         try
         {
