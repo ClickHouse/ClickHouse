@@ -192,17 +192,17 @@ Plan getPlan(
                 /// referenced from multiple snapshots' manifest lists.
                 const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
+                if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
+                    plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[manifest_file.manifest_file_path];
+                    data_file_ptr = plan.path_to_data_file[data_file_path];
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
