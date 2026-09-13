@@ -33,7 +33,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
@@ -212,8 +211,6 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
-    checkMetadataDoesNotExceedMaxQuerySize(getStorageID(), new_metadata, context);
-
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)
@@ -251,7 +248,7 @@ void StorageObjectStorageCluster::drop()
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        catalog->dropTable(namespace_name, table_name);
     }
     configuration->drop(drop_context);
 }
