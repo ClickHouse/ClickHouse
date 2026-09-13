@@ -1454,7 +1454,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 /// All arguments should be regular input columns.
                 if (child->type == ActionsDAG::ActionType::INPUT)
                 {
-                    curve.arguments.push_back(child->result_name);
+                    curve.arguments.push_back({child->result_name, child->result_type});
                 }
                 else
                 {
@@ -1609,20 +1609,9 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    /// `arg_type` and the type `func` was resolved against can disagree over LowCardinality in
-    /// either direction, which `FunctionCast` turns into a bad cast. Equality-once-stripped keeps
-    /// this to aligning LowCardinality-ness, never substituting a different value type.
-    auto exec_type = arg_type;
-    if (!func->getArgumentTypes().empty())
-    {
-        const auto declared_arg_type = getArgumentTypeOfMonotonicFunction(*func);
-        if (declared_arg_type->lowCardinality() != arg_type->lowCardinality()
-            && recursiveRemoveLowCardinality(declared_arg_type)->equals(*recursiveRemoveLowCardinality(arg_type)))
-            exec_type = declared_arg_type;
-    }
     ColumnsWithTypeAndName columns
     {
-            { exec_type->createColumnConst(1, arg_value), exec_type, "x" },
+            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
@@ -1658,27 +1647,13 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// The chain is built against the recursively-stripped key type (`extractAtomFromTree`), while the
-        /// index column can still carry LowCardinality, so strip column and type in lockstep. Recursive is
-        /// required: a top-level `->lowCardinality()` check misses a nested `Array(LowCardinality(T))`,
-        /// which the sibling `applyFunctionChainToColumn` also does not handle.
-        args[0].column = recursiveRemoveLowCardinality(args[0].column->convertToFullIfWrapped());
-        args[0].type = recursiveRemoveLowCardinality(args[0].type);
-        /// The link may itself have been resolved against a LowCardinality argument type, so restore that
-        /// representation for the call as `applyFunctionChainToColumn` does; otherwise the wrapper casts a
-        /// plain column to `ColumnLowCardinality` and throws.
-        if (!func->getArgumentTypes().empty())
+        /// Normalize the chain's input only: the incoming index column may still be `LowCardinality`
+        /// while the chain was built against a stripped key type. Interior links need nothing, because
+        /// each is built against the previous function's result type, which the cache below preserves.
+        if (args[0].column && args[0].column->lowCardinality() && !getArgumentTypeOfMonotonicFunction(*func)->lowCardinality())
         {
-            const auto declared_arg_type = getArgumentTypeOfMonotonicFunction(*func);
-            if (declared_arg_type->lowCardinality()
-                && recursiveRemoveLowCardinality(declared_arg_type)->equals(*args[0].type))
-            {
-                auto lc_column = declared_arg_type->createColumn();
-                assert_cast<ColumnLowCardinality &>(*lc_column)
-                    .insertRangeFromFullColumn(*args[0].column, 0, args[0].column->size());
-                args[0].column = std::move(lc_column);
-                args[0].type = declared_arg_type;
-            }
+            args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
+            args[0].type = removeLowCardinality(args[0].type);
         }
         /// Invariant: every function receives the argument type it was built for, so the cached result
         /// keeps this function's own result type and representation.
@@ -3487,11 +3462,11 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         {
             for (size_t i = 0, size = curve.arguments.size(); i < size; ++i)
             {
-                if (curve.arguments[i] == name)
+                if (curve.arguments[i].name == name)
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
-                    out_key_column_type = sample_block.getByName(name).type;
+                    out_key_column_type = curve.arguments[i].type;
                     return true;
                 }
             }
@@ -5618,6 +5593,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    if (functions.empty())
+        return key_range;
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -6660,56 +6638,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
+                /// the helper returns the range unchanged.
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    sparse_hyperrectangle[sparse_pos],
+                    element.monotonic_functions_chain,
+                    sparse_data_types[sparse_pos],
+                    single_point);
 
-                /// The case when the column is wrapped in a chain of possibly monotonic functions.
-                if (!element.monotonic_functions_chain.empty())
+                if (!new_range)
                 {
-                    /// `sparse_data_types` keeps the raw key type, which can be `LowCardinality`, while the
-                    /// chain was built against the stripped type. The dense caller above strips the same
-                    /// way, and `getMonotonicityForRange` implementations differ in whether they unwrap
-                    /// `LowCardinality` themselves.
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        recursiveRemoveLowCardinality(sparse_data_types[sparse_pos]),
-                        single_point);
-
-                    if (!new_range)
-                    {
-                        /// Cannot determine monotonicity on this range – unknown.
-                        rpn_stack.emplace_back(true, true);
-                    }
-                    else
-                    {
-                        key_range = *new_range;
-
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
-
-                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                        /// analysis may incorrectly include NaN values.
-                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                        ///   so no comparison condition can be true.
-                        /// - If only right bound is NaN: the range extends into NaN territory,
-                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
-                        {
-                            intersects = false;
-                            contains = false;
-                        }
-                        else if (unlikely(key_range.right.isNaN()))
-                        {
-                            contains = false;
-                        }
-
-                        rpn_stack.emplace_back(intersects, !contains);
-                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
-                    }
+                    /// Cannot determine monotonicity on this range – unknown.
+                    rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
+                    const Range & key_range = *new_range;
+
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
@@ -6731,7 +6676,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
-
                 }
             }
 

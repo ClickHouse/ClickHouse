@@ -104,7 +104,7 @@ void GatherSendStep::serialize(Serialization & ctx) const
 
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)
@@ -120,7 +120,7 @@ std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ct
         if (has_maintain_sort_description)
         {
             maintain_sort_description.emplace();
-            deserializeSortDescription(*maintain_sort_description, ctx.in);
+            deserializeSortDescription(*maintain_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
         }
     }
 
