@@ -70,8 +70,8 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
-    M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
+    M(MemoryTracking, "Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.") \
+    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) tracked by the server with no corrections from a measurement applied: a plain counter to which allocations are added and from which deallocations are subtracted. The difference `MemoryTrackingUncorrected - MemoryTracking` is the accounting drift accumulated so far.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \

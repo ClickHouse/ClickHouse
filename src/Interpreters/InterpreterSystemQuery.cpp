@@ -1173,7 +1173,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->alloc(query.untracked_memory_size);
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_MEMORY:
@@ -1183,7 +1183,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->free();
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
