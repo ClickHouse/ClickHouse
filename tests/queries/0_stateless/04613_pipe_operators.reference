@@ -149,6 +149,9 @@ alice
 bob
 charlie
 charlie	300
+alice	2
+bob	2
+charlie	1
 -- A pipe operator can end with a SETTINGS clause, attached to the generated wrapper query
 alice	250	0
 charlie	300	0

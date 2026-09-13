@@ -254,6 +254,21 @@ TEST(ParserQuery, ColumnNamedAfterClauseKeywordFollowedByAnotherClause)
     }
 }
 
+/// A trailing comma before a clause keyword is now also accepted in the pipe-operator `AGGREGATE`
+/// clause, exactly as in an ordinary `SELECT` clause list (see 04613_pipe_operators.sql); a double
+/// comma must still be rejected regardless of what follows.
+TEST(ParserQuery, PipeOperatorAggregateAcceptsTrailingCommaBeforeGroupBy)
+{
+    const String good_query = "FROM orders |> AGGREGATE count() AS c, GROUP BY customer";
+    ParserQuery good_parser(good_query.data() + good_query.size());
+    ASTPtr ast = parseQuery(good_parser, good_query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast);
+
+    const String bad_query = "FROM orders |> AGGREGATE count() AS c,, GROUP BY customer";
+    ParserQuery bad_parser(bad_query.data() + bad_query.size());
+    EXPECT_THROW(parseQuery(bad_parser, bad_query, "", 0, 0, 0), DB::Exception);
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
