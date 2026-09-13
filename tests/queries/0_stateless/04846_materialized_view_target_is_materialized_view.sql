@@ -9,9 +9,10 @@ INSERT INTO v_view_target VALUES (1); -- { serverError NOT_IMPLEMENTED }
 INSERT INTO v_view_target SELECT 1; -- { serverError NOT_IMPLEMENTED }
 
 -- On master this reaches the same hop through the population insert and is refused there, but this
--- branch still rejects `TO` together with `POPULATE` in the parser, so the hop is never reached.
+-- branch still rejects `TO` together with `POPULATE` while parsing, so the client fails before the
+-- query is ever sent and the hop is never reached. Parse errors are always client errors.
 INSERT INTO src VALUES (2);
-CREATE MATERIALIZED VIEW v_populate TO v_table_target POPULATE AS SELECT a FROM src; -- { serverError SYNTAX_ERROR }
+CREATE MATERIALIZED VIEW v_populate TO v_table_target POPULATE AS SELECT a FROM src; -- { clientError SYNTAX_ERROR }
 
 -- A refreshable view is a materialized view too, so it is refused as a target on the same edge.
 -- It refreshes into a table of its own, so its initial refresh cannot disturb the counts below.
