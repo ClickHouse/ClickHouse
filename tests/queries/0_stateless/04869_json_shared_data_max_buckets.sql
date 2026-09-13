@@ -49,19 +49,29 @@ INSERT INTO t_array_json_max_buckets
 SELECT number, arrayMap(k -> CAST(concat('{', arrayStringConcat(arrayMap(j -> concat('"p', toString(j), '":', toString(number * 100 + j + k)), arrayPushBack(range(24), 247)), ','), '}'), 'JSON(max_dynamic_paths = 0)'), range(3))
 FROM numbers(50);
 
-SELECT sum(json.p0.:Int64), sum(json.p1.:Int64), sum(json.p3.:Int64), sum(json.p4.:Int64), sum(json.p6.:Int64),
-       sum(json.p8.:Int64), sum(json.p12.:Int64), sum(json.p20.:Int64), sum(json.p22.:Int64), sum(json.p247.:Int64),
-       sum(json.p2.:Int64), sum(json.p7.:Int64), sum(json.p11.:Int64)
+SELECT sum(json.p0.:Int64), sum(json.p1.:Int64), sum(json.p2.:Int64), sum(json.p3.:Int64), sum(json.p4.:Int64),
+       sum(json.p5.:Int64), sum(json.p6.:Int64), sum(json.p7.:Int64), sum(json.p8.:Int64), sum(json.p9.:Int64),
+       sum(json.p10.:Int64), sum(json.p11.:Int64), sum(json.p12.:Int64), sum(json.p13.:Int64), sum(json.p14.:Int64),
+       sum(json.p15.:Int64), sum(json.p16.:Int64), sum(json.p17.:Int64), sum(json.p18.:Int64), sum(json.p19.:Int64),
+       sum(json.p20.:Int64), sum(json.p21.:Int64), sum(json.p22.:Int64), sum(json.p23.:Int64), sum(json.p247.:Int64)
 FROM t_json_max_buckets_wide;
 
-SELECT sum(json.p0.:Int64), sum(json.p1.:Int64), sum(json.p3.:Int64), sum(json.p4.:Int64), sum(json.p6.:Int64),
-       sum(json.p8.:Int64), sum(json.p12.:Int64), sum(json.p20.:Int64), sum(json.p22.:Int64), sum(json.p247.:Int64),
-       sum(json.p2.:Int64), sum(json.p7.:Int64), sum(json.p11.:Int64)
+SELECT sum(json.p0.:Int64), sum(json.p1.:Int64), sum(json.p2.:Int64), sum(json.p3.:Int64), sum(json.p4.:Int64),
+       sum(json.p5.:Int64), sum(json.p6.:Int64), sum(json.p7.:Int64), sum(json.p8.:Int64), sum(json.p9.:Int64),
+       sum(json.p10.:Int64), sum(json.p11.:Int64), sum(json.p12.:Int64), sum(json.p13.:Int64), sum(json.p14.:Int64),
+       sum(json.p15.:Int64), sum(json.p16.:Int64), sum(json.p17.:Int64), sum(json.p18.:Int64), sum(json.p19.:Int64),
+       sum(json.p20.:Int64), sum(json.p21.:Int64), sum(json.p22.:Int64), sum(json.p23.:Int64), sum(json.p247.:Int64)
 FROM t_json_max_buckets_compact;
 
-SELECT sum(arraySum(x -> assumeNotNull(x), arr.p0.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p1.:Int64)),
-       sum(arraySum(x -> assumeNotNull(x), arr.p22.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p247.:Int64)),
-       sum(arraySum(x -> assumeNotNull(x), arr.p7.:Int64))
+SELECT sum(arraySum(x -> assumeNotNull(x), arr.p0.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p1.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p2.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p3.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p4.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p5.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p6.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p7.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p8.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p9.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p10.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p11.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p12.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p13.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p14.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p15.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p16.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p17.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p18.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p19.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p20.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p21.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p22.:Int64)), sum(arraySum(x -> assumeNotNull(x), arr.p23.:Int64)),
+       sum(arraySum(x -> assumeNotNull(x), arr.p247.:Int64))
 FROM t_array_json_max_buckets;
 
 SELECT json FROM t_json_max_buckets_wide ORDER BY id LIMIT 1;
