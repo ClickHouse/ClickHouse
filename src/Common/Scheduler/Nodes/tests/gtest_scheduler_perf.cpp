@@ -107,7 +107,7 @@ private:
 
 struct PerfEnv
 {
-    bool stress = std::getenv("SCHED_PERF_STRESS") != nullptr;
+    bool stress = false;
     size_t threads = 0;
     uint64_t duration_ms = 0;
     size_t rounds = 0;
@@ -116,15 +116,28 @@ struct PerfEnv
 
     PerfEnv()
     {
+        stress = std::getenv("SCHED_PERF_STRESS") != nullptr; // NOLINT(concurrency-mt-unsafe)
         const size_t cores = std::max<size_t>(1, std::thread::hardware_concurrency());
-        threads = std::getenv("SCHED_PERF_THREADS") ? std::stoul(std::getenv("SCHED_PERF_THREADS"))
-                                                     : (stress ? 2 * cores : 2);
-        duration_ms = std::getenv("SCHED_PERF_MS") ? std::stoull(std::getenv("SCHED_PERF_MS"))
-                                                   : (stress ? 2000 : 50);
-        rounds = std::getenv("SCHED_PERF_ROUNDS") ? std::stoul(std::getenv("SCHED_PERF_ROUNDS"))
-                                                  : (stress ? 5 : 1);
-        if (const char * s = std::getenv("SCHED_PERF_SCHED")) only_sched = s;
-        if (const char * l = std::getenv("SCHED_PERF_LOAD")) only_load = l;
+
+        if (const char * t = std::getenv("SCHED_PERF_THREADS")) // NOLINT(concurrency-mt-unsafe)
+            threads = std::stoul(t);
+        else
+            threads = stress ? 2 * cores : 2;
+
+        if (const char * m = std::getenv("SCHED_PERF_MS")) // NOLINT(concurrency-mt-unsafe)
+            duration_ms = std::stoull(m);
+        else
+            duration_ms = stress ? 2000 : 50;
+
+        if (const char * r = std::getenv("SCHED_PERF_ROUNDS")) // NOLINT(concurrency-mt-unsafe)
+            rounds = std::stoul(r);
+        else
+            rounds = stress ? 5 : 1;
+
+        if (const char * s = std::getenv("SCHED_PERF_SCHED")) // NOLINT(concurrency-mt-unsafe)
+            only_sched = s;
+        if (const char * l = std::getenv("SCHED_PERF_LOAD")) // NOLINT(concurrency-mt-unsafe)
+            only_load = l;
     }
 };
 
