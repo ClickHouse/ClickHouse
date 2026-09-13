@@ -1510,6 +1510,18 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size, 0, R"(
+Target record batch size in rows for the `Arrow` and `ArrowStream` output formats. Consecutive blocks that are individually smaller than the target are combined into one record batch. This is useful for a selective query, which delivers one small block per scanned block of data, because every record batch costs a fixed amount of metadata and buffer padding. A block that already reaches the target is written as its own record batch, so the value is a size to accumulate to and not a maximum. It does still bound the batch: what is accumulated stays below the target, as does every block combined with it, so a combined record batch holds fewer than twice the target rows.
+
+`0` (the default) disables the row criterion. With both criteria disabled every block is written as its own record batch. A useful value is `65409`, which is one block of rows.
+)", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size_bytes, 0, R"(
+Target record batch size for the `Arrow` and `ArrowStream` output formats, in bytes of accumulated data, on the same terms as [min_insert_block_size_bytes](/reference/settings/settings#min_insert_block_size_bytes). Used together with [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size): whichever target is reached first ends the record batch.
+
+The bytes counted are the ones the accumulated block holds, not the ones the record batch will occupy. In particular a `LowCardinality` column counts its deduplicated dictionary once, while the record batch written for it holds one value per row unless [output_format_arrow_low_cardinality_as_dictionary](#output_format_arrow_low_cardinality_as_dictionary) is enabled, so a batch of repeated values encodes to more than the target. Set [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) as well to bound such a batch in rows.
+
+`0` (the default) disables the byte criterion. A useful value is `1048576`.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns

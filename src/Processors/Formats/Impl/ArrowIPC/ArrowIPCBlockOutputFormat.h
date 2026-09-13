@@ -43,6 +43,9 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    void writeChunk(Chunk chunk);
+
     void writeSchemaIfNeeded();
     /// Writes one encapsulated message for an encoded batch (a record batch, or a dictionary batch
     /// when `dictionary_id` is set), returning its location for recording an Arrow file `Block`.
@@ -94,6 +97,11 @@ private:
     };
     ArrowIPC::DictPlans column_dict_plans;
     VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
+
+    /// Rows of consecutive chunks that are individually smaller than the configured record batch target,
+    /// to be written as one record batch. Copied in on arrival, so this holds its own rows and not the
+    /// allocations of the blocks they were filtered out of.
+    Chunk staged;
 };
 
 }
