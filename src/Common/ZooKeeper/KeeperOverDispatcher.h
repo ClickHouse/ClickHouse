@@ -39,6 +39,11 @@ public:
 
     using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
 
+    /// Build the callback multi() installs: it promotes a failed multi's aggregate error
+    /// (the in-process path would otherwise leave it ZOK) before forwarding to the user
+    /// callback.
+    static ResponseCallback promotingMultiCallback(MultiCallback callback);
+
     void create(
         const String & path,
         const String & data,

@@ -3,14 +3,13 @@ import atexit
 import json
 import logging
 import os
-import shlex
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.docker_server.docker_library import test_docker_library
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -20,7 +19,6 @@ ARCH = ("amd64", "arm64")
 
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 with tempfile.NamedTemporaryFile("w", delete=False) as f:
     GIT_KNOWN_HOSTS_FILE = f.name
     GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
@@ -46,62 +44,6 @@ class DockerImageData:
         self.name = name
         assert not path.startswith("/")
         self.path = path
-
-
-def is_distroless_image(docker_image: str) -> bool:
-    _, tag = docker_image.rsplit(":", 1)
-    return "distroless" in tag.split("-")
-
-
-def get_official_images_variant(docker_image: str) -> str:
-    # The official-images test runner derives its lookup variant from the final
-    # tag suffix. For example, head-distroless-amd64 is looked up as repo:amd64.
-    _, tag = docker_image.rsplit(":", 1)
-    return tag.rsplit("-", 1)[-1]
-
-
-def write_distroless_docker_library_config(docker_image: str, config_dir: Path) -> Path:
-    """Map arch-suffixed distroless tags to the distroless-safe config tests."""
-    # Generate a short config fragment for local arch-suffixed distroless CI tags.
-    # The runner derives tags like head-distroless-amd64 as repo:amd64; map that
-    # derived key to the distroless-safe tests because this helper is only used
-    # for images already identified as distroless.
-    repo, _ = docker_image.rsplit(":", 1)
-    variant = get_official_images_variant(docker_image)
-    image_variant = shlex.quote(f"{repo}:{variant}")
-    tests_var = (
-        "keeperDistrolessSafeTests"
-        if "clickhouse-keeper" in repo
-        else "clickhouseDistrolessSafeTests"
-    )
-
-    generated_config = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            prefix="docker-library-distroless-",
-            suffix=".sh",
-            dir=config_dir,
-            delete=False,
-            encoding="utf-8",
-        ) as f:
-            generated_config = Path(f.name)
-            f.write(
-                "#!/usr/bin/env bash\n"
-                "\n"
-                "explicitTests+=(\n"
-                f"\t[{image_variant}]=1\n"
-                ")\n"
-                "\n"
-                "imageTests+=(\n"
-                f"\t[{image_variant}]=\"${{{tests_var}}}\"\n"
-                ")\n"
-            )
-            return generated_config
-    except Exception:
-        if generated_config:
-            generated_config.unlink(missing_ok=True)
-        raise
 
 
 class DelOS(argparse.Action):
@@ -244,8 +186,9 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # registry/network/mirror *failure* signatures. None of these strings appear in
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
-# fast on the first attempt. The count is bounded by the job budget below.
-BUILDX_RETRIES = 2
+# fast on the first attempt. `BUILDX_RETRY_DEADLINE` below, not this count, is what
+# decides how long further attempts remain eligible to start.
+BUILDX_RETRIES = 4
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -461,14 +404,22 @@ BUILDX_JOB_RESERVE = 3600
 # `timeout 0` runs unbounded (measured: rc 0 after the full command), so a deadline that
 # has passed must never reach `timeout` as 0. Clamp to a floor that still expires.
 BUILDX_TIMEOUT_FLOOR = 60
+# Only attempts that run to their bound price the job envelope; a registry error fails in
+# about a second. So this, not `BUILDX_RETRIES`, is what `buildx_timeout` divides by.
+BUILDX_EXPENSIVE_ATTEMPTS = 2
+# Seconds after the first retryable failure past which no further attempt is started; an
+# attempt already running still gets its whole bound. Expiries stay bounded by
+# `BUILDX_EXPENSIVE_ATTEMPTS` while this is <= `BUILDX_TIMEOUT_FLOOR` + 6.
+BUILDX_RETRY_DEADLINE = 30
 
 
 def buildx_timeout(elapsed: float = 0.0, job_timeout: int = 0) -> int:
     """Per-invocation bound, shrunk so the whole job stays inside its own cap."""
     if not job_timeout:
         return BUILDX_TIMEOUT
-    # One invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
-    attempts = max(BUILDX_RETRIES, 2)
+    # One invocation may expire more than once, costing up to that many times
+    # (bound + kill-after).
+    attempts = max(BUILDX_EXPENSIVE_ATTEMPTS, 2)
     budget = (job_timeout - BUILDX_JOB_RESERVE - elapsed) / attempts
     return max(BUILDX_TIMEOUT_FLOOR, min(BUILDX_TIMEOUT, int(budget)))
 
@@ -643,6 +594,7 @@ def build_and_push_image(
                 command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
+                retry_deadline=BUILDX_RETRY_DEADLINE,
             )
             if build_result.is_ok() or not should_try_next_mirror(build_result.info):
                 if not build_result.is_ok() and not terminal_build_failure(
@@ -689,6 +641,7 @@ def build_and_push_image(
                 command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
+                retry_deadline=BUILDX_RETRY_DEADLINE,
             )
         )
         if not result[-1].is_ok():
@@ -699,63 +652,6 @@ def build_and_push_image(
             f"{image.name}:{tag}-$arch",
         )
     return result
-
-
-def test_docker_library(test_results) -> None:
-    """we test our images vs the official docker library repository to track integrity"""
-    arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
-    if not check_images:
-        return
-    test_name = "docker library image test"
-    try:
-        repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
-        repo_path = temp_path / repo
-        config_override = (
-            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
-        ).absolute()
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
-        run_sh = (repo_path / "test/run.sh").absolute()
-        for image in check_images:
-            generated_config = None
-            try:
-                configs = [repo_path / "test/config.sh", config_override]
-                if is_distroless_image(image):
-                    generated_config = write_distroless_docker_library_config(
-                        image, config_override.parent
-                    )
-                    configs.append(generated_config)
-                config_args = " ".join(
-                    f"-c {shlex.quote(config.as_posix())}" for config in configs
-                )
-                cmd = (
-                    f"{shlex.quote(run_sh.as_posix())} "
-                    f"{shlex.quote(image)} {config_args}"
-                )
-                test_results.append(
-                    Result.from_commands_run(
-                        name=f"{test_name} ({image})", command=cmd
-                    )
-                )
-            finally:
-                if generated_config:
-                    generated_config.unlink(missing_ok=True)
-
-    except Exception as e:
-        logging.error("Failed while testing the docker library image: %s", e)
-        test_results.append(
-            Result(
-                name=test_name,
-                status=Result.Status.FAIL,
-                info=f"Exception while testing docker library: {traceback.format_exc()}",
-            )
-        )
 
 
 def check_server_readme(image_path: str) -> Result:
