@@ -1,0 +1,282 @@
+"""A query prepopulated into the next input line (the `??` AI SQL generation flow) is displayed
+programmatically, so - like a recalled or pasted line - it must not pop the as-you-type hints:
+with hints visible, the next Up/Down press would navigate the hints instead of the history.
+
+The AI provider is a local HTTP server speaking just enough of the OpenAI chat completion protocol
+to answer with a canned query, so the test needs no network and no API key.
+"""
+
+import http.server
+import json
+import multiprocessing
+import os
+import pty
+import select
+import shlex
+import sys
+import threading
+import time
+
+TIMEOUT_SECONDS = 60
+
+# How long to keep reading after the last keystroke while waiting for the expected output.
+FINAL_WAIT_SECONDS = 30
+
+# `clickhouse-test` dumps this file into the failure report, but only under the name it derives
+# from the testcase (the `.sh` wrapper), so take the path from there.
+DEBUG_LOG = os.environ["CLICKHOUSE_TEST_DEBUG_LOG"]
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
+HINT_COLOR = "\x1b[0;90m"
+
+# The query the fake provider "generates". Its last word is a prefix of `concatAssumeInjective`,
+# so an unsuppressed hint would render the gray ghost suffix "ive" right after it.
+GENERATED_QUERY = "SELECT concatAssumeInject"
+
+# The prepopulated line is syntax-highlighted, so only its last word survives as a plain substring
+# of the terminal output.
+GENERATED_QUERY_LAST_WORD = "concatAssumeInject"
+
+
+class CompletionHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        self.rfile.read(length)
+        body = json.dumps(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": f"<sql>{GENERATED_QUERY}</sql>",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
+def write_config(port):
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse>\n"
+            "    <ai>\n"
+            "        <provider>openai</provider>\n"
+            "        <api_key>test</api_key>\n"
+            f"        <base_url>http://127.0.0.1:{port}</base_url>\n"
+            "        <model>test-model</model>\n"
+            "        <enable_schema_access>false</enable_schema_access>\n"
+            "    </ai>\n"
+            "</clickhouse>\n"
+        )
+    return path
+
+
+def make_history_file():
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".history",
+    )
+    with open(path, "w") as f:
+        pass
+    return path
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def report_failure(name, shell_pid, output, debug_log_fd):
+    """A PTY case that fails prints just `FAIL`, which says nothing about why. Record what the
+    terminal actually showed and whether the client is still alive - the client dying (the read
+    loop hitting EOF) looks exactly like the expected text never being printed."""
+    try:
+        reaped_pid, wait_status = os.waitpid(shell_pid, os.WNOHANG)
+    except ChildProcessError:
+        reaped_pid, wait_status = shell_pid, -1
+    running = reaped_pid == 0
+    banner = (
+        f"=== {name}: FAIL ===\n"
+        f"client still running: {running}, wait status: {wait_status}\n"
+        f"terminal output: {output[-8000:]!r}\n"
+    )
+    debug_log_fd.write(banner)
+    debug_log_fd.flush()
+    sys.stderr.write(banner)
+    sys.stderr.flush()
+
+
+def run_case(program, argv, name, keystrokes, check, state=None, check_from=0):
+    """Each keystroke is a pair of the bytes to send and an optional predicate to wait for before
+    sending the next one (in place of a fixed idle drain). Only the output produced from the
+    keystroke with index `check_from` on is passed to `check`, so the earlier keystrokes may
+    legitimately pop hints without failing a "no hints" check."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for index, (keys, wait_for) in enumerate(keystrokes):
+            os.write(master, keys)
+            if wait_for is not None:
+                segment = read_until(master, debug_log_fd, wait_for, TIMEOUT_SECONDS)
+            else:
+                segment = drain(master, debug_log_fd, 0.4)
+            if index >= check_from:
+                output += segment
+
+        # The prepopulated line only appears after the (faked) generation round trip, which can
+        # outlast the inter-keystroke drain on slow builds.
+        if not check(output):
+            output += read_until(
+                master,
+                debug_log_fd,
+                lambda extra: check(output + extra),
+                FINAL_WAIT_SECONDS,
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        if not ok:
+            report_failure(name, shell_pid, output, debug_log_fd)
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check, check_from=0):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state, "check_from": check_from},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS * (1 + len(keystrokes)) + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+    sys.stderr.write(f"=== {name}: FAIL === the case timed out on every attempt\n")
+
+
+def main():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), CompletionHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    config = write_config(server.server_address[1])
+    history = make_history_file()
+
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + [
+        "--wait_for_suggestions_to_load",
+        "--hints",
+        "1",
+        f"--config-file={config}",
+        f"--history_file={history}",
+    ]
+
+    no_hints = lambda o: GENERATED_QUERY_LAST_WORD in o and (HINT_COLOR + "ive") not in o
+
+    try:
+        run_with_timeout(
+            base[0],
+            args,
+            "prepopulated_query_no_hints",
+            [(b"?? show me a query\r", None)],
+            no_hints,
+        )
+        # Same-text regression: replxx keeps the hint cache across prompts, so when the generated
+        # query is byte-for-byte equal to the previously displayed line, the hint callback may not
+        # even be called - the stale cached hint must not be reused either. Type the query manually
+        # first (and wait for the hint ghost, which poisons the cache), execute it, then have the
+        # AI "generate" the very same text. The `??` request is kept as short as possible so that
+        # replxx's rapid-refresh throttling (1 ms) can swallow its keystrokes without regenerating
+        # the hint seed - only then does the preloaded line hit the stale cache. Only the output
+        # after the `??` keystroke is checked, as the manually typed line legitimately shows the
+        # hint.
+        run_with_timeout(
+            base[0],
+            args,
+            "same_text_prepopulated_query_no_hints",
+            [
+                (GENERATED_QUERY.encode(), lambda o: (HINT_COLOR + "ive") in o),
+                (b"\r", lambda o: ":)" in o),
+                (b"??q\r", None),
+            ],
+            no_hints,
+            check_from=2,
+        )
+    finally:
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
+    # which became the default on newer Python).
+    multiprocessing.set_start_method("fork")
+    main()

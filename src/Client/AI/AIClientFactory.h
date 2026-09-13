@@ -15,6 +15,10 @@ struct AIClientResult
     bool inferred_from_env = false;
     std::string provider;
     bool no_configuration_found = false;
+    /// When the provider was inferred from the environment and the API key of another
+    /// provider is also set, the name of that other environment variable. Used to tell
+    /// the user how to switch when the automatic choice is not the one they meant.
+    std::string unused_environment_key;
 };
 
 /// Factory for creating AI provider clients

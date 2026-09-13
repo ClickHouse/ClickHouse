@@ -16,7 +16,9 @@
 #include <Interpreters/Context.h>
 
 #if USE_CLIENT_AI
-#include <Client/AI/AISQLGenerator.h>
+#include <Client/AI/AIAgent.h>
+#include <Client/AI/AIQueryValidation.h>
+#include <Client/AI/QueryContextBuffer.h>
 #endif
 
 #include <boost/program_options.hpp>
@@ -157,12 +159,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+    /// The receiving side re-parses the outbound text with the settings sent along with the query, so the
+    /// transport `dialect` has to match the form of `outbound_query` actually being sent. Pin it to the
+    /// dialect the client parsed the query with, and in `clickhouse_json` to the form of the text — the
+    /// JSON body itself vs. SQL produced by a client-side AST rewrite — together with the experimental
+    /// gate. The change is temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialect(const String & outbound_query);
 
     /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
     /// values kept but marked unchanged. They still select the client-side network codec, but they are not
@@ -200,12 +202,111 @@ protected:
     void clearTerminal();
     void showClientVersion();
 
+    /// The questions about what this session effectively is, asked of the server rather than read
+    /// from the client context, and the guarantees derived from them. Not guarded by
+    /// `USE_CLIENT_AI`: `fetchInternalQueryResult` serves the `help` command as well as the AI
+    /// agent, and it needs the dialect question in every build.
+
+    /// The effective value of a setting of this session as the server reports it, or `nullopt`
+    /// when the server does not know the setting at all, could not be asked, or answered
+    /// something unexpected. Asked once per setting name and cached.
+    ///
+    /// The client context is not the answer: a user with `apply_settings_from_server = 0` asked
+    /// for the settings of the server not to reach the client, so it keeps its own defaults while
+    /// the server runs the session under the settings profile of the user. Every guarantee that
+    /// the client installs for the queries of the agent has to be decided on the effective value
+    /// rather than on the local one.
+    std::optional<String> serverEffectiveSettingValue(const String & name);
+
+    /// Whether the connected server knows a setting at all. The isolation the internal queries and
+    /// the unconfirmed read-only tool install is only real when the server enforces it: a setting
+    /// that is not `IMPORTANT` is silently ignored by a server that predates it, and one that is
+    /// fails the query with `UNKNOWN_SETTING` instead.
+    bool serverSupportsSetting(const String & name);
+
+    /// Whether a table definition rendered for this session may show the secrets of an
+    /// external-engine table (`format_display_secrets_in_show_and_select`). Fails closed: a
+    /// session whose effective value cannot be established is treated as one that displays them.
+    bool sessionMayDisplaySecrets();
+
+    /// Whether the internal queries (of the `help` command and of the AI agent) and the queries of
+    /// the agent need the `dialect = 'clickhouse'` pin: they are ClickHouse SQL, and the server
+    /// parses with the effective dialect of the session, which a settings profile may set to
+    /// another one without the client seeing it.
+    bool internalQueriesRequireDialectPin();
+
 #if USE_CLIENT_AI
-    void initAIProvider();
+    /// Create the AI agent on the first use of the `?` command: from a configured or
+    /// environment-provided AI API provider, or, failing that, from the server-side
+    /// `aiGenerate` function when the connected server has credentials for it.
+    void initAIAgent();
+
+    /// Handle one turn of the interactive AI chat (the `?`/`??` command).
+    bool processAIChat(const String & text);
 
     /// Check if AI provider usage needs acknowledgment from user
     /// Returns false if user declined, true otherwise
     bool checkAIProviderAcknowledgment();
+
+    /// Execute a query internally for the AI agent (not displayed to the user) and return
+    /// the result as tab-separated text with a header line. Throws on error.
+    String executeInternalQueryForAI(const String & query, const NameToNameMap & params);
+
+    /// The same, for a query whose result can render the credentials of an external-engine table
+    /// (`SHOW CREATE`): the display of secrets is turned off for it, which the other internal
+    /// queries must not pay for - it is a setting change, and a session that rejects it would
+    /// then fail a harmless schema or documentation lookup as well.
+    String executeInternalQueryForAIMaskingSecrets(const String & query, const NameToNameMap & params);
+
+    /// Execute a query internally for the AI agent and return the first cell of the result as
+    /// unescaped text (empty when no rows). For free-form values with their own newlines.
+    String executeScalarQueryForAI(const String & query, const NameToNameMap & params);
+
+    /// Run a query for the AI agent through the normal query processing path: the query is
+    /// echoed and executed, and its output is displayed exactly as if the user typed it.
+    /// When `readonly` is set, the query is validated to be a single read-only statement
+    /// and executed with `readonly = 1`, 30 seconds and 10 GiB limits - unless the session
+    /// forbids changing settings, which already restricts the query to reading.
+    /// Returns a text summary of the outcome for the model.
+    String runQueryForAI(const String & query, bool readonly, bool allow_schema_access = true);
+
+    /// Decide whether a query the AI agent wants to run through the confirmed tool can run in this
+    /// session at all, and whether the user has to confirm it. Also syntax-checks the query.
+    AIQueryRunDecision checkAIQuery(const String & query);
+
+    /// Parse the statements of a query of the AI agent as ClickHouse SQL (the dialect its queries
+    /// are executed under, whatever the session dialect is), passing each of them to
+    /// `on_statement`. Returns the parse error message when the query is malformed.
+    std::optional<String> parseAIQueryStatements(const String & query, const std::function<void(const IAST &)> & on_statement);
+
+    /// The effective value of the `readonly` setting for the queries of this session: 1 forbids
+    /// everything but read-only queries, including every setting change; 2 forbids the writes but
+    /// allows changing settings.
+    UInt64 aiSessionReadonly();
+
+    /// Whether the agent may mark its queries in the query log (which takes a `log_comment`
+    /// setting change the session has to accept).
+    bool aiQueryLogMarkerAllowed();
+
+    /// The description of the restrictions of the session for the model (empty when there are
+    /// none), so it does not attempt what the session rejects.
+    String aiSessionRestrictions();
+
+    /// Resolve the tables named in a query of the unconfirmed read-only tool against
+    /// `system.tables` and refuse the query unless every one of them is a plain table of this
+    /// server - see `isAllowedTableEngineForAIAgent`. A name is only a name; what reading it does
+    /// is decided by the engine it resolves to, and that takes a query to the server, which the
+    /// static validation cannot make. Throws Exception(BAD_ARGUMENTS) with a message for the
+    /// model when a table does not qualify.
+    void checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables);
+
+    /// Record an error of the current or just-failed query into the AI context buffer.
+    void recordErrorForAIContext(std::string_view query_or_input);
+
+    /// The same, for a query that failed to parse. In interactive mode the parse error is only
+    /// printed - no exception is set and no query is ever started - so there is nothing for
+    /// `recordErrorForAIContext` to pick up, and the agent would not see the failed query at all.
+    void recordParseErrorForAIContext(std::string_view query, const String & message);
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -273,10 +374,14 @@ protected:
 
     static std::filesystem::path getHistoryFilePath();
 private:
-    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
-    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
-    /// output path, so it neither prints anything nor disturbs the visible query state.
-    Block fetchDocumentation(const String & query, const String & word);
+    /// Runs a small service query with the given query parameters and returns the concatenated
+    /// result (used by `processHelpCommand` and by the tools of the AI agent). The query bypasses
+    /// the normal output path, so it neither prints anything nor disturbs the visible query state.
+    /// `from_ai_agent` marks the query in the query log as one the AI agent ran on its own.
+    /// `needs_secret_masking` turns off the display of secrets for the query, for the queries
+    /// whose result can render them.
+    Block fetchInternalQueryResult(
+        const String & query, const NameToNameMap & params, bool from_ai_agent = false, bool needs_secret_masking = false);
 
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -321,9 +426,12 @@ private:
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
 
-    /// Execute a query and collect all results as a single string (rows separated by newlines)
-    /// Returns empty string on exception
-    std::string executeQueryForSingleString(const std::string & query);
+#if USE_CLIENT_AI
+    /// Print a query the AI agent is about to run, highlighted after the prompt,
+    /// so it looks the same as a query typed by the user.
+    void echoQueryForAI(const String & query);
+#endif
+
     virtual bool supportsLocalMetaCommands() const { return false; }
 
     /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
@@ -543,15 +651,59 @@ protected:
     bool buzz_house = false;
     int error_code = 0;
 
+    /// A settings profile is applied on the server without its constituent settings being sent
+    /// back to the client. Once one is used, always pin internal queries (of the `help` command
+    /// and of the AI agent) to the ClickHouse dialect instead of trusting the stale local
+    /// dialect value. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
+    bool dialect_may_be_changed_by_profile = false;
+
+    /// The effective values of the settings of this session as the server reports them, asked one
+    /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
+    /// does not know that setting. Not guarded by `USE_CLIENT_AI`: `help` needs the dialect
+    /// question in every build.
+    std::map<String, std::optional<String>> server_effective_setting_values;
+    /// Set while such a question is in flight. It is an internal query itself, and those ask the
+    /// question before they are sent, so it must not be asked again while being answered.
+    bool server_setting_probe_in_progress = false;
+
 #if USE_CLIENT_AI
-    /// Cached AI SQL generator
-    std::unique_ptr<AISQLGenerator> ai_generator;
+    /// The AI agent behind the interactive `?` command
+    std::unique_ptr<AIAgent> ai_agent;
+    /// Set when an agent query may have been logged without its marker. It is deliberately
+    /// sticky for the session, because those old rows cannot be separated from user history.
+    /// A `SET profile` sets it too: the server applies a profile without reporting it to the
+    /// client, unlike the settings of the handshake, so the value of `readonly` - and with it the
+    /// promise that the marker was accepted - cannot be proven any more.
+    bool ai_query_log_access_permanently_disabled = false;
+    /// Whether the server accepts a `log_comment` change in this session, asked once. A settings
+    /// profile can make that one setting `const` while leaving the session otherwise writable,
+    /// which the `readonly` setting does not show.
+    std::optional<bool> ai_query_log_marker_writable;
+    /// Set while the question above is in flight. Asking it is an internal query of the agent like
+    /// any other, and every one of those asks whether the marker may be attached before attaching
+    /// it - this one must not, both because there is no answer yet and because a session that
+    /// rejects the marker would then fail the question instead of answering it.
+    bool ai_query_log_marker_probe_in_progress = false;
+    /// The line reader of the interactive loop while it is running, so the queries the agent runs
+    /// can be added to its history like typed ones. Not owned; cleared when the loop returns.
+    LineReader * ai_line_reader = nullptr;
+    /// Recent queries with truncated results and errors: the context of the AI agent
+    std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage
     bool ai_provider_acknowledged = false;
     /// Whether the AI API key was inferred from environment
     bool ai_inferred_from_env = false;
     /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
+    /// The environment variable of another provider whose API key is also set but not used
+    /// (e.g. "ANTHROPIC_API_KEY" when both it and OPENAI_API_KEY are present)
+    std::string ai_unused_environment_key;
+    /// Set while the AI agent runs a query through the normal query path, so the
+    /// query context buffer can attribute the entry to the agent
+    bool ai_running_query = false;
+    /// Set when a confirmed agent query successfully changes `dialect`, so cleanup does not undo
+    /// a real session setting change while removing the temporary ClickHouse-dialect pin.
+    bool ai_running_query_changed_dialect = false;
 #endif
 
     struct
@@ -594,10 +746,16 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
-    /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
+    /// The `dialect` the current query text was parsed with, and whether that was the `clickhouse_json`
+    /// JSON path. Captured before any in-query `SET` is applied, so `pinOutboundDialect` can keep the
+    /// outbound transport dialect consistent with the outbound text even if the query changed it.
+    Field current_query_parse_dialect;
     bool current_query_parsed_as_json_dialect = false;
+    /// Whether the `SETTINGS` clause of the current query is what changed the `dialect`. Only that
+    /// change is undone for the transport: the `dialect` of the session, which the server sends to
+    /// the client for it to know (`apply_settings_from_server`), is the one the server parses with
+    /// and must not be overridden - see `pinOutboundDialect`.
+    bool current_query_settings_changed_dialect = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
