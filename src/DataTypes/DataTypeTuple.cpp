@@ -470,6 +470,32 @@ Tuples are used for temporary column grouping. Columns can be grouped when an IN
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
+## Compression codecs for stored Tuple elements {#tuple-element-codecs}
+
+Stored `Tuple` columns can assign a different [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) to each element. This feature is experimental and requires [`enable_tuple_element_codecs`](/reference/settings/session-settings/enable#enable_tuple_element_codecs) = 1 when adding or changing an element codec.
+
+```sql
+SET enable_tuple_element_codecs = 1;
+
+CREATE TABLE events
+(
+    id UInt64,
+    payload Tuple(
+        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
+        value Float64 CODEC(Gorilla, ZSTD),
+        source String
+    ) CODEC(LZ4)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+An element declaration overrides the codec on the whole column. An element without a declaration inherits the nearest enclosing declaration or the part default.
+
+[`Nullable`](/reference/data-types/nullable) is transparent for matching Tuple element codec declarations. For a `Nullable(Tuple(...))` column, the outer null-mask stream is governed by the whole-column codec or part default, while the Tuple value streams use their element codecs. Only generic codec stages apply to the structural null mask. For a nullable value declared directly as a Tuple element, the element declaration governs both streams, but again only its generic stages apply to the null mask. For example, `sample Nullable(UInt64) CODEC(Delta, ZSTD)` uses `Delta, ZSTD` for values and `ZSTD` for the null mask. Adding or removing a supported Nullable wrapper in an otherwise valid typed `MODIFY COLUMN` does not rename stored element declarations. The normal `enable_nullable_tuple_type` requirement still applies to `Nullable(Tuple(...))`.
+
+See [Tuple element codecs](/reference/statements/create/table/codec#tuple-element-codecs) for `ALTER TABLE` syntax, all supported wrappers, and current limitations.
+
 ## Creating Tuples {#creating-tuples}
 
 You can use a function to create a tuple:

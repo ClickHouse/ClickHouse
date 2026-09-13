@@ -2058,8 +2058,8 @@ def test_timeseries(started_cluster):
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
         CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
-        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
-        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
+        RECENT SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
         METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,

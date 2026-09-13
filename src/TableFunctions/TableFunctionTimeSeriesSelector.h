@@ -11,6 +11,8 @@ namespace DB
 /// TimeSeries table corresponding to a specified instant selector and with timestamps in a specified interval [min_time, max_time].
 /// Here instant_selector should be written in PromQL syntax, for example 'http_requests{job="prometheus"}',
 /// and table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
+/// The function returns two columns: `id` and `time_series` (an array of tuples (timestamp, value) sorted by timestamp);
+/// a time series can be returned in multiple rows.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

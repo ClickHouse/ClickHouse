@@ -8824,6 +8824,11 @@ Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference
 This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 )", BETA, enable_nullable_tuple_type) \
+    DECLARE(Bool, enable_tuple_element_codecs, false, R"(
+Allows [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) declarations on stored [`Tuple`](/reference/data-types/tuple) elements in `CREATE TABLE` and `ALTER TABLE`.
+Existing Tuple element codec metadata can still be attached, restored, read, preserved, or have declarations removed when this setting is disabled.
+Such declarations are also allowed when [`enable_time_series_table`](/reference/settings/session-settings/enable#enable_time_series_table) is enabled, because the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine uses them in the samples tables it generates.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(

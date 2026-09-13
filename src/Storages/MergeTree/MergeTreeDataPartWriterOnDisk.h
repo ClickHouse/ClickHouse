@@ -104,7 +104,7 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy) = 0;
 
     /// Codec for one substream of a column whose codec is `effective_codec_desc`.
     CompressionCodecPtr getSubstreamCodec(
