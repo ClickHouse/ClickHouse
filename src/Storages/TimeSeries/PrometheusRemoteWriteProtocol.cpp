@@ -31,6 +31,7 @@
 #include <prompb/io/prometheus/write/v2/types.pb.h>
 
 #include <chrono>
+#include <vector>
 
 
 namespace DB
@@ -70,6 +71,11 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
         default: break;
     }
     return "";
+}
+
+std::string_view metricTypeToString(io::prometheus::write::v2::Metadata::MetricType metric_type)
+{
+    return metricTypeToString(static_cast<prometheus::MetricMetadata::MetricType>(metric_type));
 }
 
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
@@ -196,8 +202,16 @@ Block makeTimeSeriesBlock(
     return builder.finish(num_metadata_rows);
 }
 
+struct MetricsMetadata
+{
+    std::string_view metric_family_name;
+    std::string_view type;
+    std::string_view unit;
+    std::string_view help;
+};
+
 Block makeMetricsMetadataBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
+    const std::vector<MetricsMetadata> & metrics_metadata,
     size_t num_time_series_rows,
     const StorageInMemoryMetadata & metadata)
 {
@@ -223,11 +237,10 @@ Block makeMetricsMetadataBlock(
 
     for (const auto & element : metrics_metadata)
     {
-        const auto metric_type = metricTypeToString(element.type());
-        metric_family_column->insertData(element.metric_family_name().data(), element.metric_family_name().size());
-        type_column->insertData(metric_type.data(), metric_type.size());
-        unit_column->insertData(element.unit().data(), element.unit().size());
-        help_column->insertData(element.help().data(), element.help().size());
+        metric_family_column->insertData(element.metric_family_name.data(), element.metric_family_name.size());
+        type_column->insertData(element.type.data(), element.type.size());
+        unit_column->insertData(element.unit.data(), element.unit.size());
+        help_column->insertData(element.help.data(), element.help.size());
     }
 
     Block block;
@@ -258,9 +271,14 @@ Block makeBlock(
     }
     if (!metrics_metadata.empty())
     {
+        std::vector<MetricsMetadata> converted_metadata;
+        converted_metadata.reserve(metrics_metadata.size());
+        for (const auto & element : metrics_metadata)
+            converted_metadata.emplace_back(
+                element.metric_family_name(), metricTypeToString(element.type()), element.unit(), element.help());
         appendBlock(
             block,
-            makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
+            makeMetricsMetadataBlock(converted_metadata, time_series.size(), metadata));
     }
     return block;
 }
@@ -276,9 +294,6 @@ size_t countFloatTimeSeries(const io::prometheus::write::v2::Request & request)
 Block makeBlock(const io::prometheus::write::v2::Request & request, const StorageInMemoryMetadata & metadata)
 {
     const auto num_time_series = countFloatTimeSeries(request);
-    if (!num_time_series)
-        return {};
-
     const auto & symbols = request.symbols();
     const auto lookup = [&](UInt32 ref) -> const std::string &
     {
@@ -287,21 +302,55 @@ Block makeBlock(const io::prometheus::write::v2::Request & request, const Storag
         return symbols[static_cast<int>(ref)];
     };
 
-    TimeSeriesBlockBuilder builder(num_time_series, metadata);
+    std::vector<MetricsMetadata> metrics_metadata;
     for (const auto & element : request.timeseries())
     {
-        if (element.samples().empty())
+        if (!element.has_metadata())
             continue;
         if (element.labels_refs_size() % 2 != 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
 
+        std::string_view metric_name;
         for (int i = 0; i < element.labels_refs_size(); i += 2)
-            builder.addLabel(lookup(element.labels_refs(i)), lookup(element.labels_refs(i + 1)));
-        for (const auto & sample : element.samples())
-            builder.addSample(sample.timestamp(), sample.value());
-        builder.finishTimeSeries(ErrorCodes::BAD_ARGUMENTS);
+        {
+            const auto & name = lookup(element.labels_refs(i));
+            const auto & value = lookup(element.labels_refs(i + 1));
+            if (name == TimeSeriesTagNames::MetricName)
+                metric_name = value;
+        }
+
+        const auto & element_metadata = element.metadata();
+        metrics_metadata.emplace_back(
+            metric_name,
+            metricTypeToString(element_metadata.type()),
+            lookup(element_metadata.unit_ref()),
+            lookup(element_metadata.help_ref()));
     }
-    return builder.finish(0);
+    if (!num_time_series && metrics_metadata.empty())
+        return {};
+
+    Block block;
+    if (num_time_series)
+    {
+        TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata);
+        for (const auto & element : request.timeseries())
+        {
+            if (element.samples().empty())
+                continue;
+            if (element.labels_refs_size() % 2 != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
+
+            for (int i = 0; i < element.labels_refs_size(); i += 2)
+                builder.addLabel(lookup(element.labels_refs(i)), lookup(element.labels_refs(i + 1)));
+            for (const auto & sample : element.samples())
+                builder.addSample(sample.timestamp(), sample.value());
+            builder.finishTimeSeries(ErrorCodes::BAD_ARGUMENTS);
+        }
+        appendBlock(block, builder.finish(metrics_metadata.size()));
+    }
+    if (!metrics_metadata.empty())
+        appendBlock(block, makeMetricsMetadataBlock(metrics_metadata, num_time_series, metadata));
+    return block;
 }
 
 void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)

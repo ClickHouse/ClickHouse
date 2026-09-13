@@ -211,8 +211,16 @@ def test_remote_write_unsupported_content_type():
     assert "Content-Type" in response.text
 
 
-def _send_write_v2(time_series, content_encoding="snappy"):
+def _send_write_v2(time_series, content_encoding="snappy", metadata=None):
     protobuf = convert_time_series_to_write_v2_protobuf(time_series)
+    if metadata:
+        metric_type, help_text, unit = metadata
+        series_metadata = protobuf.timeseries[0].metadata
+        series_metadata.type = series_metadata.MetricType.Value(metric_type)
+        series_metadata.help_ref = len(protobuf.symbols)
+        protobuf.symbols.append(help_text)
+        series_metadata.unit_ref = len(protobuf.symbols)
+        protobuf.symbols.append(unit)
     send_protobuf_to_remote_write(
         node.ip_address,
         9093,
@@ -285,6 +293,24 @@ def test_remote_write_v2_multiple_samples():
     assert len(series) == 1
     assert len(series[0].samples) == count
     assert [sample.value for sample in series[0].samples] == [float(i) for i in range(count)]
+
+
+def test_remote_write_v2_metadata():
+    start_time = 1724118250
+    time_series = [({"__name__": "rw2_metadata"}, {start_time: 1.0})]
+    _send_write_v2(
+        time_series,
+        metadata=(
+            "METRIC_TYPE_COUNTER",
+            "Total number of remote write v2 requests",
+            "requests",
+        ),
+    )
+    assert node.query(
+        "SELECT metric_family_name, type, unit, help "
+        "FROM timeSeriesMetrics(prometheus) "
+        "WHERE metric_family_name = 'rw2_metadata'"
+    ) == "rw2_metadata\tcounter\trequests\tTotal number of remote write v2 requests\n"
 
 
 def test_remote_write_v2_zstd():
