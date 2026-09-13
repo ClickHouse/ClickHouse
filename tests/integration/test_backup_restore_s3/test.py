@@ -344,6 +344,43 @@ def test_backup_to_disk(cluster, storage_policy, to_disk):
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
+def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
+    # disk_s3 keeps its metadata in local files (metadata_type = local, the default for an s3 disk),
+    # and a backup on it is reached only through them: after a power loss the uploaded objects can
+    # survive while the metadata pointing at them is gone. fsync_backup_files must therefore fsync
+    # the metadata file of every written backup file plus the .backup manifest, and their directories.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    # At least one data file and the manifest: a manifest-only sync would read 1.
+    assert backup_events["FileSync"] >= 2, backup_events
+    assert backup_events["DirectorySync"] >= 1, backup_events
+
+    # The opt-out issues no sync of either kind, so the counts above are attributable to the setting.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 0},
+    )
+    assert backup_events.get("FileSync", 0) == 0, backup_events
+    assert backup_events.get("DirectorySync", 0) == 0, backup_events
+
+    # A plain-rewritable disk keeps its metadata in the object storage too, so there is no local file
+    # to sync and the setting is a no-op there.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_plain_rewritable', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert backup_events.get("FileSync", 0) == 0, backup_events
+    assert backup_events.get("DirectorySync", 0) == 0, backup_events
+
+
 @pytest.mark.parametrize(
     "storage_policy, to_disk",
     [

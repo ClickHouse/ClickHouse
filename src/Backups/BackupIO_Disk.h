@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <set>
 
 
@@ -59,6 +60,7 @@ public:
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
+    std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
 
     const DiskPtr disk;
     const std::filesystem::path root_path;
@@ -67,6 +69,10 @@ private:
     /// Whether this disk keeps the backup as plain files in the local filesystem, so that fsyncing
     /// those files and their directories makes the backup durable. See `syncFileToDisk`.
     const bool destination_is_plain_local_files;
+
+    /// For an object-storage disk keeping its metadata in local files, the directory those files
+    /// live in: the backup is reached through them, so they are what has to be fsynced there.
+    const std::optional<std::filesystem::path> local_metadata_root;
 
     /// Directories that received a file synced via `syncFileToDisk`, collected so they can be
     /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent backup

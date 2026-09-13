@@ -2,6 +2,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 
@@ -64,6 +65,39 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
+/// For an object-storage disk that keeps its metadata in local files (`metadata_type = local`), the
+/// absolute directory under which the metadata file of a disk-relative path lives; nullopt for every
+/// other disk. Those metadata files are written like any other local file, without a sync, and a
+/// backup on such a disk is reached only through them: after a power loss the uploaded objects can
+/// survive while the metadata pointing at them is gone.
+static std::optional<fs::path> getLocalMetadataRoot(const DiskPtr & disk)
+{
+    const auto & description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage || description.metadata_type != MetadataStorageType::Local)
+        return std::nullopt;
+
+    /// An encrypting wrapper keeps its files under a prefix inside the delegate disk, and its own
+    /// metadata storage view reports a path that is not a location in the filesystem. Resolve the
+    /// metadata root through the delegate and re-apply the prefix, which by construction is the
+    /// wrapper's absolute path minus the delegate's.
+    DiskPtr inner = disk;
+    fs::path prefix;
+    while (auto delegate = inner->getDelegateDiskIfExists())
+    {
+        const String & inner_path = inner->getPath();
+        const String & delegate_path = delegate->getPath();
+        if (!inner_path.starts_with(delegate_path))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Disk {} at {} is not located inside its delegate disk {} at {}",
+                inner->getName(), inner_path, delegate->getName(), delegate_path);
+        prefix = fs::path(inner_path.substr(delegate_path.size())) / prefix;
+        inner = delegate;
+    }
+
+    return fs::path(inner->getMetadataStorage()->getPath()) / prefix;
+}
+
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterDisk"))
     , disk(disk_)
@@ -74,11 +108,12 @@ BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_pa
     /// Not `isRemote`: DiskObjectStorage reports true even over LocalObjectStorage, and
     /// DiskBackup reports false yet throws from `getBlobPath`.
     , destination_is_plain_local_files(data_source_description.type == DataSourceType::Local)
+    , local_metadata_root(getLocalMetadataRoot(disk))
 {
     if (data_source_description.object_storage_type == ObjectStorageType::Local)
     {
-        /// The blobs are local files, but the backup is reached through the disk's own metadata,
-        /// whose durability belongs to the metadata storage rather than to the backup.
+        /// The blobs are local files written without a sync, and `getBlobPath` does not map a path
+        /// to them, so even with its metadata synced a backup on this disk is not durable.
         LOG_WARNING(
             log,
             "Disk {} ({}) stores data locally but not as plain files, so fsync_backup_files cannot make a backup on it durable",
@@ -196,16 +231,26 @@ static String getLocalBlobPath(const IDisk & disk, const fs::path & path)
     return blob_path[0];
 }
 
+/// The absolute path of the local file that has to be fsynced for `path` on this disk to be durable:
+/// the file itself on a plain-local disk, its metadata file on an object-storage disk with local
+/// metadata (the uploaded object is already durable), and nothing anywhere else.
+std::optional<fs::path> BackupWriterDisk::getLocalPathToSync(const fs::path & path) const
+{
+    if (destination_is_plain_local_files)
+        return getLocalBlobPath(*disk, path);
+    if (local_metadata_root)
+        return *local_metadata_root / path;
+    return std::nullopt;
+}
+
 void BackupWriterDisk::syncFileToDisk(const String & file_name)
 {
-    /// A completed upload to object storage is already durable, and only a plain-local destination
-    /// can be made durable by fsyncing files: there `getBlobPath` resolves a disk-relative path to
-    /// the absolute filesystem path of the file holding it.
-    if (!destination_is_plain_local_files)
+    auto file_path = root_path / file_name;
+    auto local_path = getLocalPathToSync(file_path);
+    if (!local_path)
         return;
 
-    auto file_path = root_path / file_name;
-    fsyncBackupFileContents(getLocalBlobPath(*disk, file_path));
+    fsyncBackupFileContents(*local_path);
 
     /// Remember the disk-relative ancestor directories of this file (down to the disk root ""),
     /// so `syncDirectoriesToDisk` can persist their entries.
@@ -221,9 +266,6 @@ void BackupWriterDisk::syncFileToDisk(const String & file_name)
 
 void BackupWriterDisk::syncDirectoriesToDisk()
 {
-    if (!destination_is_plain_local_files)
-        return;
-
     std::set<fs::path> dirs;
     {
         std::lock_guard lock{dirs_to_sync_mutex};
@@ -233,10 +275,15 @@ void BackupWriterDisk::syncDirectoriesToDisk()
         return;
 
     /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
-    /// `getBlobPath` resolves the disk-relative path (including the disk root "") to the
-    /// absolute filesystem path for a local disk.
+    /// The disk-relative path (including the disk root "") resolves to the directory holding the
+    /// files on a plain-local disk, or the one holding their metadata files.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
-        fsyncBackupDirectory(getLocalBlobPath(*disk, *it));
+    {
+        auto local_path = getLocalPathToSync(*it);
+        if (!local_path)
+            return;
+        fsyncBackupDirectory(*local_path);
+    }
 }
 
 }

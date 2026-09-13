@@ -49,8 +49,9 @@ struct BackupSettings
     /// Whether to fsync the backup's files, the `.backup` manifest and the containing
     /// directories to local storage before the backup is reported as created, so that an
     /// acknowledged backup survives power loss. Applies to `File` destinations and to `Disk`
-    /// destinations whose disk stores plain local files; object-storage destinations are already
-    /// durable once uploaded.
+    /// destinations whose disk stores plain local files. On an object-storage disk the uploaded
+    /// objects are already durable, and the local metadata files a `metadata_type = local` disk
+    /// reaches them through are fsynced the same way.
     /// For `BACKUP ON CLUSTER` the guarantee only holds for a cluster whose hosts all know this
     /// setting: a value left at the default is not forwarded to the other hosts, so a host running
     /// a version that predates the setting writes its share on the pre-fsync path. Naming the
