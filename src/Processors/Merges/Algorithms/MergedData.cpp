@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Columns/ColumnNothing.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Columns/ColumnReplicated.h>
@@ -68,6 +69,44 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         if (columns[i]->hasStatistics())
             columns[i]->takeOrCalculateStatisticsFrom(source_columns[i]);
     }
+
+    if (defer_materialization)
+    {
+        current_materialization_sources.resize(inputs.size());
+        current_materialization_source_is_set.assign(inputs.size(), false);
+        materialization_source_handles.resize(inputs.size());
+
+        for (size_t source_num = 0; source_num < inputs.size(); ++source_num)
+        {
+            if (inputs[source_num].chunk)
+                setSource(source_num, inputs[source_num].chunk.getColumns(), inputs[source_num].chunk.getNumRows());
+        }
+    }
+}
+
+void MergedData::initializeFromColumns(const Columns & prototype_columns)
+{
+    columns.clear();
+    columns.reserve(prototype_columns.size());
+    for (const auto & column : prototype_columns)
+        columns.emplace_back(column->cloneEmpty());
+}
+
+void MergedData::setSource(size_t source_num, const Columns & source_columns, size_t num_rows)
+{
+    if (!defer_materialization)
+        return;
+
+    if (source_num >= current_materialization_sources.size())
+    {
+        current_materialization_sources.resize(source_num + 1);
+        current_materialization_source_is_set.resize(source_num + 1, false);
+        materialization_source_handles.resize(source_num + 1);
+    }
+
+    current_materialization_sources[source_num] = {source_columns, num_rows};
+    current_materialization_source_is_set[source_num] = true;
+    materialization_source_handles[source_num].reset();
 }
 
 void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t block_size)
@@ -115,6 +154,89 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
     total_merged_rows += length;
     merged_rows += length;
     sum_blocks_granularity += (block_size * length);
+}
+
+size_t MergedData::getOrAddMaterializationSource(size_t source_num, bool release_source)
+{
+    if (source_num >= current_materialization_sources.size() || !current_materialization_source_is_set[source_num])
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} is not registered for deferred materialization", source_num);
+
+    if (materialization_source_handles[source_num])
+        return *materialization_source_handles[source_num];
+
+    const size_t handle = materialization_sources.size();
+    if (release_source)
+    {
+        materialization_sources.emplace_back(std::move(current_materialization_sources[source_num]));
+        current_materialization_source_is_set[source_num] = false;
+    }
+    else
+    {
+        materialization_sources.emplace_back(current_materialization_sources[source_num]);
+    }
+
+    materialization_source_handles[source_num] = handle;
+    return handle;
+}
+
+void MergedData::appendMaterializationRun(size_t source, size_t start, size_t length)
+{
+    if (!length)
+        return;
+
+    if (!materialization_runs.empty())
+    {
+        auto & previous = materialization_runs.back();
+        if (previous.source == source && previous.start + previous.length == start)
+        {
+            previous.length += length;
+            return;
+        }
+    }
+
+    materialization_runs.push_back({source, start, length});
+}
+
+void MergedData::insertRowFromSource(
+    size_t source_num,
+    const ColumnRawPtrs & raw_columns,
+    size_t row,
+    size_t block_size)
+{
+    insertRowsFromSource(source_num, raw_columns, row, 1, block_size);
+}
+
+void MergedData::insertRowsFromSource(
+    size_t source_num,
+    const ColumnRawPtrs & raw_columns,
+    size_t start_index,
+    size_t length,
+    size_t block_size)
+{
+    if (!defer_materialization)
+    {
+        insertRows(raw_columns, start_index, length, block_size);
+        return;
+    }
+
+    if (source_num >= current_materialization_sources.size() || !current_materialization_source_is_set[source_num])
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} is not registered for deferred materialization", source_num);
+
+    const auto & source = current_materialization_sources[source_num];
+    if (start_index > source.num_rows || length > source.num_rows - start_index)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Invalid deferred materialization range [{}, {}) for a source with {} rows",
+            start_index,
+            start_index + length,
+            source.num_rows);
+
+    const size_t source_handle = getOrAddMaterializationSource(source_num, false);
+    appendMaterializationRun(source_handle, start_index, length);
+
+    total_merged_rows += length;
+    merged_rows += length;
+    sum_blocks_granularity += block_size * length;
 }
 
 void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
@@ -192,8 +314,71 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
     merged_rows = rows_size;
 }
 
+void MergedData::insertChunkFromSource(size_t source_num, Chunk && chunk, size_t rows_size)
+{
+    if (!defer_materialization)
+    {
+        insertChunk(std::move(chunk), rows_size);
+        return;
+    }
+
+    if (merged_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert a full Chunk into non-empty deferred MergedData");
+
+    const size_t num_rows = chunk.getNumRows();
+    if (rows_size > num_rows)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot materialize {} rows from a Chunk with {} rows",
+            rows_size,
+            num_rows);
+
+    setSource(source_num, chunk.getColumns(), num_rows);
+    const size_t source_handle = getOrAddMaterializationSource(source_num, true);
+    appendMaterializationRun(source_handle, 0, rows_size);
+    chunk.clear();
+
+    need_flush = true;
+    total_merged_rows += rows_size;
+    merged_rows = rows_size;
+}
+
 Chunk MergedData::pull()
 {
+    if (defer_materialization)
+    {
+        Chunk chunk;
+        if (merged_rows)
+        {
+            auto info = std::make_shared<MergedDataMaterializationInfo>();
+            info->output_columns.reserve(columns.size());
+            for (const auto & column : columns)
+                info->output_columns.emplace_back(column->getPtr());
+            info->sources = std::move(materialization_sources);
+            info->runs = std::move(materialization_runs);
+
+            /// Ports require matching column counts, but the payload is read only by the
+            /// materializer from `info`. Avoid inserting defaults into payload columns:
+            /// `ColumnFunction`, for example, does not support `insertDefault`.
+            chunk = Chunk(Columns(columns.size(), ColumnNothing::create(merged_rows)), merged_rows);
+            chunk.getChunkInfos().add(std::move(info));
+        }
+
+        materialization_sources.clear();
+        materialization_runs.clear();
+        for (auto & source_handle : materialization_source_handles)
+            source_handle.reset();
+
+        merged_rows = 0;
+        sum_blocks_granularity = 0;
+        ++total_chunks;
+        /// The actual byte size is known only after replaying the plan. Each
+        /// `MaterializeMergedDataTransform` accumulates it and the shared
+        /// `MergingSortedTransformStats` reports it after all workers finish.
+        need_flush = false;
+        return chunk;
+    }
+
     MutableColumns empty_columns;
     empty_columns.reserve(columns.size());
 

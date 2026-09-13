@@ -27,7 +27,8 @@ public:
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions_ = true,
-        size_t virtual_row_prefetch_window_ = 0);
+        size_t virtual_row_prefetch_window_ = 0,
+        bool defer_materialization_ = false);
 
     void addInput();
 

@@ -53,6 +53,7 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
+        size_t max_parallel_ordered_merge_materialization_threads = 0;
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
@@ -61,7 +62,7 @@ public:
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };

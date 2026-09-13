@@ -16,6 +16,7 @@ namespace Setting
     extern const SettingsUInt64 min_outstreams_per_resize_after_split;
     extern const SettingsUInt64 max_streams_for_union_step;
     extern const SettingsFloat max_streams_for_union_step_to_max_threads_ratio;
+    extern const SettingsUInt64 max_parallel_ordered_merge_materialization_threads;
 }
 
 BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
@@ -34,6 +35,8 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
     max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);
     allow_preliminary_distinct_abandoning = settings[Setting::allow_preliminary_distinct_abandoning];
+    max_parallel_ordered_merge_materialization_threads
+        = from->getSettingsRef()[Setting::max_parallel_ordered_merge_materialization_threads];
 
     /// Setting query_plan_merge_filters is enabled by default.
     /// But it can brake short-circuit without splitting filter step into smaller steps.

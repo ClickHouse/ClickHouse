@@ -42,6 +42,7 @@ private:
     std::vector<Int64> chunk_snums;
     std::vector<Chunk> chunks;
     std::vector<bool> is_input_finished;
+    Int64 next_chunk_snum = 1;
 };
 
 }

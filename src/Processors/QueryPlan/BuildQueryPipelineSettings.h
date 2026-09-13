@@ -42,6 +42,7 @@ struct BuildQueryPipelineSettings
     size_t min_outstreams_per_resize_after_split;
     size_t max_streams_for_union_step;
     double max_streams_for_union_step_to_max_threads_ratio;
+    size_t max_parallel_ordered_merge_materialization_threads;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };

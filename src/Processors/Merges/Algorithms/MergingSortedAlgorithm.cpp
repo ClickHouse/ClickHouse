@@ -95,9 +95,10 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions_,
-    size_t virtual_row_prefetch_window_)
+    size_t virtual_row_prefetch_window_,
+    bool defer_materialization_)
     : header(std::move(header_))
-    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
+    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_, defer_materialization_)
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
@@ -114,6 +115,12 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         if (!WhichDataType(filter_type).isUInt8())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
     }
+
+    if (defer_materialization_
+        && (filter_column_position != -1 || out_row_sources_buf || use_average_block_sizes || max_block_size_bytes_))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Deferred merge materialization does not support filters, row sources, average block sizes, or byte-sized blocks");
 
     DataTypes sort_description_types;
     sort_description_types.reserve(description.size());
@@ -303,6 +310,10 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
+    merged_data.setSource(
+        source_num,
+        current_inputs[source_num].chunk.getColumns(),
+        current_inputs[source_num].chunk.getNumRows());
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
     if (!is_virtual_row)
@@ -407,13 +418,13 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
         const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
 
         if (filter_data[current_row])
-            merged_data.insertRow(current.all_columns, current_row, current.rows);
+            merged_data.insertRowFromSource(current.order, current.all_columns, current_row, current.rows);
 
         write_row_source(!filter_data[current_row]);
     }
     else
     {
-        merged_data.insertRow(current.all_columns, current_row, current.rows);
+        merged_data.insertRowFromSource(current.order, current.all_columns, current_row, current.rows);
         write_row_source(false);
     }
 }
@@ -433,7 +444,7 @@ void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t n
         {
             if (filter_data[i])
             {
-                merged_data.insertRow(current.all_columns, i, current.rows);
+                merged_data.insertRowFromSource(current.order, current.all_columns, i, current.rows);
                 out_row_sources_buf->write(row_source.data);
             }
             else
@@ -444,7 +455,7 @@ void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t n
     }
     else
     {
-        merged_data.insertRows(current.all_columns, current.getRow(), num_rows, current.rows);
+        merged_data.insertRowsFromSource(current.order, current.all_columns, current.getRow(), num_rows, current.rows);
 
         if (out_row_sources_buf)
         {
@@ -494,7 +505,7 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
                 out_row_sources_buf->write(row_source.data);
         }
 
-        merged_data.insertChunk(std::move(chunk), chunk_num_rows);
+        merged_data.insertChunkFromSource(source_num, std::move(chunk), chunk_num_rows);
     }
 }
 
