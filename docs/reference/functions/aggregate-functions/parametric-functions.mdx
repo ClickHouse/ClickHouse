@@ -93,12 +93,12 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
 </Note>
 
 **Arguments**
 
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
+- `timestamp` — Column considered to contain time data. Typical data types are `Date`, `DateTime` and `DateTime64`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
 
 - `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
 
@@ -119,7 +119,7 @@ Type: `UInt8`.
 
 - `.*` — Matches any number of events. You do not need conditional arguments to match this element of the pattern.
 
-- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=`, `==` operators.
+- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=`, `==` operators. The value is always in seconds, including for a `DateTime64` timestamp, so the same pattern keeps its meaning when the column's precision changes.
 
 **Examples**
 
@@ -178,7 +178,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
 <Note>
-Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
 </Note>
 
 **Syntax**
@@ -189,7 +189,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Arguments**
 
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
+- `timestamp` — Column considered to contain time data. Typical data types are `Date`, `DateTime` and `DateTime64`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
 
 - `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
 
@@ -235,7 +235,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 Return event timestamps of longest event chains that matched the pattern.
 
 <Note>
-Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
 </Note>
 
 **Syntax**
@@ -246,7 +246,7 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **Arguments**
 
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
+- `timestamp` — Column considered to contain time data. Typical data types are `Date`, `DateTime` and `DateTime64`. You can also use any of the supported [UInt](/reference/data-types/int-uint) data types.
 
 - `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
 
