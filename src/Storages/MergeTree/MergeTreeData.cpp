@@ -2139,8 +2139,11 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (!filter_dag)
         return {};
 
-    /// Generate valid expressions for filtering
-    bool valid = true;
+    /// Generate valid expressions for filtering.
+    /// The surviving rows are mapped back to parts by their name, so a physical column named
+    /// `_part` shadowing the virtual one - which leaves it out of the block, see
+    /// `getHeaderWithVirtualsForFilter` - makes the filtering by virtual columns unavailable.
+    bool valid = virtual_columns_block.has("_part");
     for (const auto * input : filter_dag->getInputs())
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
@@ -11514,6 +11517,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
+
+        /// A physical column named `_part` shadows the virtual one, which is then absent from the
+        /// block (see `getHeaderWithVirtualsForFilter`), so the surviving rows cannot be mapped back
+        /// to parts. Decline the projection instead of failing the query; the caller falls back to an
+        /// ordinary read.
+        if (!virtual_columns_block.has("_part"))
+            return {};
+
         part_name_column = virtual_columns_block.getByName("_part").column;
     }
 
