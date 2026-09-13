@@ -5,6 +5,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
+#include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
@@ -156,12 +157,14 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
-    TokenizerPtr token_extactor_)
+    TokenizerPtr token_extactor_,
+    NameSet columns_shadowing_map_subcolumns_)
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -486,6 +489,38 @@ bool isLikePatternFunction(const String & function_name)
         || function_name == "mapContainsValueLike";
 }
 
+/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+
+    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
+    {
+        String value = field.safeGet<String>();
+        value.resize(value.find_last_not_of('\0') + 1);
+        return Field(std::move(value));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
+/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
+bool functionIgnoresFixedStringPadding(const String & function_name)
+{
+    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -525,7 +560,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    Field const_value = value_field;
+    /// Every allowed tokenizer `ngrams`, `splitByNonAlpha` and `sparseGrams` emit the terms of the unpadded value as terms of the padded one.
+    Field const_value = functionIgnoresFixedStringPadding(function_name)
+        ? stripFixedStringPaddingForTerms(value_field, value_type)
+        : value_field;
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
@@ -594,7 +632,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
@@ -812,6 +850,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
+        /// Validate the regexp before using its required substring to build
+        /// the skip-index condition.
+        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
@@ -904,11 +945,18 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
+        const bool is_fixed_string_element = WhichDataType(column->getDataType()).isFixedString();
+
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
-            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
+
+            /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
+            std::string_view element = column->getDataAt(row);
+            if (is_fixed_string_element)
+                element = element.substr(0, element.find_last_not_of('\0') + 1);
+
+            forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
         }
     }
 
@@ -931,7 +979,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(
+        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

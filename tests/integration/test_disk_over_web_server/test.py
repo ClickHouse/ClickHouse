@@ -357,7 +357,7 @@ def test_page_cache(cluster):
 
         def get_profile_events(query_name):
             text = node.query(
-                f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents.keys, ProfileEvents.values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
             res = {}
             for line in text.split("\n"):

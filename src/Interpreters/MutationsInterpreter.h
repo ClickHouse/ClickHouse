@@ -54,11 +54,11 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ContextPtr context
 );
 
-/// Re-run set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) on an AST that was re-parsed from a
-/// serialized mutation command, mirroring what `executeQuery` does for top-level queries. Re-parsing loses
-/// this normalization, so any consumer that feeds a re-parsed mutation predicate or `UPDATE` assignment
-/// into the analyzer (`buildQueryTree`) must call this first; otherwise the analyzer rejects such
-/// subqueries with "UNION mode UNION_DEFAULT must be normalized".
+/// Re-run the set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) that `executeQuery` applies to
+/// top-level queries on an AST re-parsed from stored SQL text: a serialized mutation command, a table's
+/// stored `CREATE`. Parsing fills only the syntactic list of modes, so such an AST is un-normalized however
+/// explicit its text was, and every consumer that feeds it to the analyzer (`buildQueryTree`) must call this
+/// first; otherwise the analyzer rejects the set operation with "UNION mode UNION_DEFAULT must be normalized".
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)

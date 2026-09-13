@@ -63,6 +63,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
 
@@ -479,7 +480,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot, "
                                                                  "because replicas are created or removed concurrently");
 
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
@@ -2378,6 +2379,30 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     if (!zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper");
 
+    /// Stop this replica's DDL worker before the calls below re-initialize replication state:
+    /// its recovery reads `max_log_ptr_at_creation` and compares the Keeper metadata with the
+    /// local table set, which those calls rewrite, and a recovery running against a half-updated
+    /// view detaches local tables into `<db>_broken_replicated_tables`.
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
+            ddl_worker->shutdown();
+            ddl_worker_initialized = false;
+            ddl_worker = nullptr;
+        }
+    }
+
+    /// If the restore fails, reinitialize the DDL worker so the database remains functional.
+    /// SAFE: the body runs while an exception propagates and can itself throw (thread
+    /// creation), which must not replace the restore's own error.
+    bool need_reinitialize_ddl_worker = true;
+    SCOPE_EXIT_SAFE({
+        if (need_reinitialize_ddl_worker)
+            reinitializeDDLWorker();
+    });
+
     try
     {
         restoreDatabaseNodesInKeeper(zookeeper);
@@ -2395,6 +2420,8 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     /// Force the database to recover to update the restored metadata
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
+
+    need_reinitialize_ddl_worker = false;
     reinitializeDDLWorker();
 }
 
