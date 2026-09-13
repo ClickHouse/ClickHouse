@@ -26,8 +26,6 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
     }
 
     const IColumn::Filter & filter = column_filter->getData();
-    ColumnPtr filtered = array.getData().filter(filter, -1);
-
     const IColumn::Offsets & in_offsets = array.getOffsets();
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
     IColumn::Offsets & out_offsets = column_offsets->getData();
@@ -44,6 +42,13 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         out_offsets[i] = out_pos;
     }
 
+    if (out_pos == 0)
+        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), std::move(column_offsets));
+
+    if (out_pos == filter.size())
+        return ColumnArray::create(array.getDataPtr(), array.getOffsetsPtr());
+
+    ColumnPtr filtered = array.getData().filter(filter, out_pos);
     return ColumnArray::create(filtered, std::move(column_offsets));
 }
 
