@@ -14,13 +14,13 @@ namespace DB
 template <typename T>
 LazyPreformattedMessage::RefArg<std::remove_cvref_t<T>> refArg(const T & x)
 {
-    return LazyPreformattedMessage::RefArg(x);
+    return {x};
 }
 
 template <typename T>
 LazyPreformattedMessage::CopyArg<std::remove_cvref_t<T>> copyArg(T && x)
 {
-    return LazyPreformattedMessage::CopyArg(std::forward<T>(x));
+    return {std::forward<T>(x)};
 }
 
 template <typename... Markers>
