@@ -1,4 +1,5 @@
 #include <optional>
+#include <unordered_map>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -7,8 +8,10 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
@@ -21,10 +24,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 
-#include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
@@ -57,6 +61,7 @@ struct DictGetFunctionInfo
     ConstantNodePtr dict_name_node;
     ConstantNodePtr attr_col_name_node;
     QueryTreeNodePtr key_expr_node;
+    String function_name;
 
     /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc
     DataTypePtr return_type;
@@ -92,11 +97,204 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
+bool isSafePassThroughQuery(const QueryNode & query_node)
+{
+    if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct() || query_node.hasHaving()
+        || query_node.hasWindow() || query_node.hasQualify() || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy())
+        return false;
+
+    auto join_tree_node_type = query_node.getJoinTree().getNodeType();
+    return join_tree_node_type == QueryTreeNodeType::TABLE || join_tree_node_type == QueryTreeNodeType::QUERY;
+}
+
+/// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
+/// enterImpl below is invoked once per allowed comparison node, so the same view can be inspected
+/// many times over for a single outer query (e.g. `WHERE a = 1 AND b = 2 AND c = 3`). Memoize by
+/// TableNode identity, including negative results, so each view is resolved at most once per query.
+using ViewInspectionCache = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+
+QueryTreeNodePtr
+tryResolveViewInnerQueryForInspection(const TableNode & table_node, const ContextPtr & context, ViewInspectionCache & cache)
+{
+    if (auto it = cache.find(&table_node); it != cache.end())
+        return it->second;
+
+    QueryTreeNodePtr result;
+
+    const auto & storage = table_node.getStorage();
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers())
+    {
+        try
+        {
+            const auto & storage_snapshot = table_node.getStorageSnapshot();
+            auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+
+            ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+            QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
+
+            QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
+            view_analyzer.resolve(view_query_tree, {}, view_context);
+
+            if (view_query_tree->as<QueryNode>())
+                result = view_query_tree;
+        }
+        catch (const Exception &)
+        {
+            result = nullptr;
+        }
+    }
+
+    cache.emplace(&table_node, result);
+    return result;
+}
+
+struct ColumnDefinition
+{
+    QueryTreeNodePtr defining_expression;
+    QueryNodePtr source_query_node;
+};
+
+std::optional<ColumnDefinition>
+tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & context, ViewInspectionCache & cache)
+{
+    auto column_source = column_node.getColumnSourceOrNull();
+    if (!column_source)
+        return std::nullopt;
+
+    QueryNodePtr source_query_node;
+
+    if (column_source->as<QueryNode>())
+    {
+        source_query_node = std::static_pointer_cast<QueryNode>(column_source);
+    }
+    else if (auto * table_node = column_source->as<TableNode>())
+    {
+        auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context, cache);
+        if (!resolved)
+            return std::nullopt;
+        source_query_node = std::static_pointer_cast<QueryNode>(resolved);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+
+    if (!isSafePassThroughQuery(*source_query_node))
+        return std::nullopt;
+
+    const auto & projection_columns = source_query_node->getProjectionColumns();
+    const auto & projection_nodes = source_query_node->getProjection().getNodes();
+    if (projection_columns.size() != projection_nodes.size())
+        return std::nullopt;
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        if (projection_columns[i].name == column_node.getColumnName() && projection_columns[i].type->equals(*column_node.getColumnType()))
+            return ColumnDefinition{projection_nodes[i], source_query_node};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DictGetFunctionInfo>
+tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context, ViewInspectionCache & cache)
 {
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
+    if (!function_node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return std::nullopt;
+
+        auto column_definition = tryResolveColumnDefinition(*column_node, context, cache);
+        if (!column_definition)
+            return std::nullopt;
+
+        auto info = tryParseDictFunctionCall(column_definition->defining_expression, context, cache);
+        if (!info)
+            return std::nullopt;
+
+        try
+        {
+            const String dict_name = info->dict_name_node->getValue().safeGet<String>();
+            auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+            if (!context->getAccess()->isGranted(
+                    AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
+                return std::nullopt;
+        }
+        catch (const Exception &)
+        {
+            return std::nullopt;
+        }
+
+        const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
+        const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
+
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        {
+            if (!info->key_expr_node->isEqual(*projection_nodes[i]))
+                continue;
+
+            NameAndTypePair outer_key_column{projection_columns[i].name, projection_columns[i].type};
+            auto outer_source = column_node->getColumnSource();
+
+            if (const auto * outer_table_node = outer_source->as<TableNode>())
+            {
+                /// The view may declare its own type for the key column position (independent of
+                /// the defining column's own cast, already checked in tryResolveColumnDefinition).
+                /// Reading through a mismatched declared type silently changes the comparison domain
+                /// (e.g. a UInt64 key narrowed to UInt8), so bail unless the view's exposed key type
+                /// exactly matches the inner key's natural type.
+                const auto & declared_columns = outer_table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary();
+                const NameAndTypePair * declared_key_column = nullptr;
+                for (const auto & declared_column : declared_columns)
+                {
+                    if (declared_column.name == outer_key_column.name)
+                    {
+                        declared_key_column = &declared_column;
+                        break;
+                    }
+                }
+                if (!declared_key_column || !declared_key_column->type->equals(*outer_key_column.type))
+                    return std::nullopt;
+
+                /// Crossed a view boundary: check access on the view's own exposed column, not on
+                /// whatever table its private inner resolution happens to use (which can run under
+                /// the view definer's rights, not the invoker's).
+                const auto & storage_id = outer_table_node->getStorageID();
+                if (!context->getAccess()->isGranted(
+                        AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), outer_key_column.name))
+                    return std::nullopt;
+            }
+            else if (const auto * key_column_node = info->key_expr_node->as<ColumnNode>())
+            {
+                /// Plain subquery boundary: no separate grant object, so check access on whatever
+                /// real table the key column is actually read from.
+                if (auto key_source = key_column_node->getColumnSourceOrNull())
+                {
+                    if (const auto * key_table_node = key_source->as<TableNode>())
+                    {
+                        const auto & key_storage_id = key_table_node->getStorageID();
+                        if (!context->getAccess()->isGranted(
+                                AccessType::SELECT,
+                                key_storage_id.getDatabaseName(),
+                                key_storage_id.getTableName(),
+                                key_column_node->getColumnName()))
+                            return std::nullopt;
+                    }
+                }
+            }
+
+            info->key_expr_node = std::make_shared<ColumnNode>(outer_key_column, outer_source);
+            return info;
+        }
+
+        return std::nullopt;
+    }
+
+    if (!isSupportedDictGetFunction(function_node->getFunctionName()))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -116,6 +314,7 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         return std::nullopt;
 
     func_info.key_expr_node = arguments[2];
+    func_info.function_name = function_node->getFunctionName();
     func_info.return_type = function_node->getResultType();
 
     return func_info;
@@ -304,20 +503,26 @@ public:
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info;
 
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+        if (arguments[1]->as<ConstantNode>())
         {
-            dict_side = Side::LHS;
-            dictget_function_info = std::move(*info_lhs);
+            if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext(), view_inspection_cache))
+            {
+                dict_side = Side::LHS;
+                dictget_function_info = std::move(*info_lhs);
+            }
         }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+
+        if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>())
         {
-            dict_side = Side::RHS;
-            dictget_function_info = std::move(*info_rhs);
+            if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext(), view_inspection_cache))
+            {
+                dict_side = Side::RHS;
+                dictget_function_info = std::move(*info_rhs);
+            }
         }
-        else
-        {
+
+        if (dict_side == Side::NONE)
             return;
-        }
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
@@ -394,8 +599,7 @@ public:
                 getContext()))
             return;
 
-        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
-                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+        const String dictget_function_name = dictget_function_info.function_name;
 
         const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
             attr_comparison_function_name,
@@ -546,11 +750,11 @@ public:
 
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node, arguments[1] };
+            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node, arguments[1]};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node };
+            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node};
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
@@ -593,6 +797,9 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+
+    /// Scoped to this visitor instance, i.e. one outer query: see tryResolveViewInnerQueryForInspection.
+    ViewInspectionCache view_inspection_cache;
 };
 
 }
