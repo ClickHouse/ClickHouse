@@ -11,6 +11,9 @@
 #if defined(__SSE4_2__)
     #include <nmmintrin.h>
 #endif
+#if defined(__AVX2__)
+    #include <immintrin.h>
+#endif
 #if defined(__aarch64__)
     #include <arm_neon.h>
 #endif
@@ -151,6 +154,22 @@ inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & 
 }
 #endif
 
+#if defined(__AVX2__)
+template <char s0>
+inline __m256i mm256_is_in(__m256i bytes)
+{
+    return _mm256_cmpeq_epi8(bytes, _mm256_set1_epi8(s0));
+}
+
+template <char s0, char s1, char... tail>
+inline __m256i mm256_is_in(__m256i bytes)
+{
+    __m256i eq0 = _mm256_cmpeq_epi8(bytes, _mm256_set1_epi8(s0));
+    __m256i eq = mm256_is_in<s1, tail...>(bytes);
+    return _mm256_or_si256(eq0, eq);
+}
+#endif
+
 #if defined(__aarch64__)
 /// On AArch64 we use NEON. There is no direct equivalent of pmovmskb, so we
 /// use the well-known shrn-by-4 trick to compress a 16-byte vector of all-0/all-1
@@ -201,6 +220,15 @@ constexpr uint16_t maybe_negate(uint16_t x)
         return x;
     else
         return static_cast<uint16_t>(~x);
+}
+
+template <bool positive>
+constexpr uint32_t maybe_negate(uint32_t x)
+{
+    if constexpr (positive)
+        return x;
+    else
+        return ~x;
 }
 
 #if defined(__aarch64__)
@@ -296,6 +324,27 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 
     return return_mode == ReturnMode::End ? end : nullptr;
 }
+
+#if defined(__AVX2__)
+template <bool positive, ReturnMode return_mode, char... symbols>
+[[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
+{
+    const char * pos = begin;
+
+    for (; pos + 31 < end; pos += 32)
+    {
+        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+
+        __m256i eq = mm256_is_in<symbols...>(bytes);
+
+        uint32_t bit_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq)));
+        if (bit_mask)
+            return pos + __builtin_ctz(bit_mask);
+    }
+
+    return find_first_symbols_sse2<positive, return_mode, symbols...>(pos, end);
+}
+#endif
 
 #if defined(__aarch64__)
 /// Runtime-needle NEON body for long haystacks. Always returns either a
@@ -620,6 +669,13 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
+#if defined(__AVX2__)
+    if constexpr (sizeof...(symbols) >= 1 && sizeof...(symbols) <= 4)
+    {
+        if (end - begin >= 32)
+            return find_first_symbols_avx2<positive, return_mode, symbols...>(begin, end);
+    }
+#endif
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
         return find_first_symbols_sse42<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);

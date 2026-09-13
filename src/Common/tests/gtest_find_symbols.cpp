@@ -1,3 +1,4 @@
+#include <array>
 #include <string>
 #include <vector>
 #include <base/find_symbols.h>
@@ -18,6 +19,66 @@ static void test_find_first_not(const std::string & haystack, const std::string 
     const char * begin = haystack.data();
 
     ASSERT_EQ(begin + expected_pos, find_first_not_symbols(haystack, SearchSymbols(symbols)));
+}
+
+template <char... symbols>
+static void test_compile_time_boundaries()
+{
+    const std::array<char, sizeof...(symbols)> needles {symbols...};
+    const std::array<size_t, 12> sizes {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 256};
+    const std::array<size_t, 12> positions {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255};
+
+    for (const size_t size : sizes)
+    {
+        std::string haystack(size, 'a');
+        const char * begin = haystack.data();
+        const char * end = begin + haystack.size();
+
+        ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end) << "size: " << size;
+        ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), nullptr) << "size: " << size;
+
+        if (size == 0)
+        {
+            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end);
+            continue;
+        }
+
+        for (const size_t position : positions)
+        {
+            if (position >= size)
+                continue;
+
+            haystack.assign(size, 'a');
+            haystack[position] = needles[position % needles.size()];
+            begin = haystack.data();
+            end = begin + haystack.size();
+
+            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
+            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
+        }
+
+        haystack.assign(size, needles[0]);
+        begin = haystack.data();
+        end = begin + haystack.size();
+        ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end) << "size: " << size;
+
+        for (const size_t position : positions)
+        {
+            if (position >= size)
+                continue;
+
+            haystack[position] = 'a';
+            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
+            haystack[position] = needles[0];
+        }
+    }
+}
+
+
+TEST(FindSymbols, CompileTimeBoundaries)
+{
+    test_compile_time_boundaries<'\n'>();
+    test_compile_time_boundaries<'\n', '\r', '\\', '"'>();
 }
 
 
