@@ -40,7 +40,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -360,8 +359,6 @@ namespace
             return hasSecretsInActionsDAG(object_filter_step->getExpression());
         if (const auto * totals_having_step = dynamic_cast<const TotalsHavingStep *>(&step))
             return totals_having_step->getActions() && hasSecretsInActionsDAG(*totals_having_step->getActions());
-        if (const auto * array_join_step = dynamic_cast<const ArrayJoinStep *>(&step))
-            return array_join_step->getElementFilter() && hasSecretsInActionsDAG(*array_join_step->getElementFilter());
         if (const auto * filling_step = dynamic_cast<const FillingStep *>(&step))
             return filling_step->getInterpolateDescription()
                 && hasSecretsInActionsDAG(filling_step->getInterpolateDescription()->actions);
