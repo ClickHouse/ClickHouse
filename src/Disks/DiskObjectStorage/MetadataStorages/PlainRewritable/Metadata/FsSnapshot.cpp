@@ -189,6 +189,7 @@ void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteIn
     root = updateInfo(root, normalized_path, info);
     remote_layout_directories_delta += 1;
     remote_layout_files_delta += info.files.size();
+    record(FsEdits::RecordDirectory{normalized_path.string(), std::move(info)});
 }
 
 void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
@@ -214,6 +215,7 @@ void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "There is a file on the path '{}', can't move", normalized_to.string());
 
     root = moveTree(root, normalized_from, normalized_to);
+    record(FsEdits::MoveDirectory{normalized_from.string(), normalized_to.string()});
 }
 
 void FsSnapshot::removeDirectory(const std::string & path)
@@ -238,6 +240,7 @@ void FsSnapshot::removeDirectory(const std::string & path)
         remote_layout_files_delta -= subtree_node->info->files.size();
         remote_layout_directories_delta -= 1;
     });
+    record(FsEdits::RemoveDirectory{normalized_path.string()});
 }
 
 void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
@@ -259,9 +262,10 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
 
     auto new_directory_info = node->info.value();
-    new_directory_info.files.emplace(normalized_path.filename(), std::move(info));
+    new_directory_info.files.emplace(normalized_path.filename(), info);
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta += 1;
+    record(FsEdits::RecordFile{normalized_path.string(), info});
 }
 
 void FsSnapshot::removeFile(const std::string & path)
@@ -283,6 +287,7 @@ void FsSnapshot::removeFile(const std::string & path)
     new_directory_info.files.erase(normalized_path.filename());
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta -= 1;
+    record(FsEdits::RemoveFile{normalized_path.string()});
 }
 
 std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) const
@@ -374,18 +379,55 @@ std::shared_ptr<FsNode> FsSnapshot::getRoot() const
     return root;
 }
 
-void FsSnapshot::setRoot(std::shared_ptr<FsNode> new_root)
+void FsSnapshot::resetToRoot(std::shared_ptr<FsNode> new_root)
 {
     UniqueLock lock(mutex);
     root = std::move(new_root);
     remote_layout_directories_delta = 0;
     remote_layout_files_delta = 0;
+    journal.emplace();
 }
 
 std::pair<int64_t, int64_t> FsSnapshot::getRemoteLayoutDeltas() const
 {
     UniqueLock lock(mutex);
     return {remote_layout_directories_delta, remote_layout_files_delta};
+}
+
+FsJournal FsSnapshot::getJournal() const
+{
+    UniqueLock lock(mutex);
+    return journal.value_or(FsJournal{});
+}
+
+void FsSnapshot::replay(const FsJournal & edits)
+{
+    for (const auto & edit : edits)
+    {
+        std::visit([this](const auto & concrete_edit)
+        {
+            using Edit = std::decay_t<decltype(concrete_edit)>;
+
+            if constexpr (std::is_same_v<Edit, FsEdits::RecordDirectory>)
+                recordDirectoryPath(concrete_edit.path, concrete_edit.info);
+            else if constexpr (std::is_same_v<Edit, FsEdits::MoveDirectory>)
+                moveDirectory(concrete_edit.from, concrete_edit.to);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RemoveDirectory>)
+                removeDirectory(concrete_edit.path);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RecordFile>)
+                recordFile(concrete_edit.path, concrete_edit.info);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RemoveFile>)
+                removeFile(concrete_edit.path);
+            else
+                static_assert(false, "Unhandled edit type");
+        }, edit);
+    }
+}
+
+void FsSnapshot::record(FsEdit edit)
+{
+    if (journal)
+        journal->push_back(std::move(edit));
 }
 
 }

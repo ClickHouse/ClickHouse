@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -24,6 +25,20 @@ public:
     MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
         std::shared_ptr<Preconditions> preconditions_,
         std::shared_ptr<FsSnapshot> fs_tree_);
+
+    void execute() override;
+};
+
+/// Publishes the changes recorded by the transaction snapshot as the latest state of the metadata.
+/// It is the last operation of a transaction: if it fails, the preceding operations are rolled back as usual.
+class MetadataStorageFromPlainObjectStoragePublishOperation final : public IMetadataOperation
+{
+private:
+    const std::shared_ptr<FsSnapshot> fs_tree;
+    FsMetadata & fs;
+
+public:
+    MetadataStorageFromPlainObjectStoragePublishOperation(std::shared_ptr<FsSnapshot> fs_tree_, FsMetadata & fs_);
 
     void execute() override;
 };

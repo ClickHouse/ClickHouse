@@ -20,6 +20,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -229,6 +230,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     throw;
                 }
 #endif
+                catch (const ErrnoException & e)
+                {
+                    /// The same for the local object storage.
+                    if (e.getErrno() == ENOENT)
+                        return;
+                    throw;
+                }
                 catch (...)
                 {
                     throw;
@@ -271,7 +279,7 @@ MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTr
 void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 {
     std::unique_lock reload_lock(load_mutex);
-    std::unique_lock tx_lock(metadata_mutex);
+    const auto tx_lock = path_locks.lockAll();
     load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/false);
 }
 
@@ -281,11 +289,18 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
         return;
 
     std::unique_lock load_lock(load_mutex, std::defer_lock);
-    if (load_lock.try_lock())
-    {
-        std::unique_lock metadata_lock(metadata_mutex);
-        load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/true);
-    }
+    if (!load_lock.try_lock())
+        return;
+
+    /// The periodic refresh is best-effort. Waiting for the transactions in flight would make every new transaction
+    /// wait behind this one, which is exactly the disk-wide stall during a long operation that the path locks avoid;
+    /// so skip this round instead if anything is in flight. An explicit request (SYSTEM RESTART DISK passes zero
+    /// to bypass the throttle) waits.
+    const auto tx_lock = not_sooner_than_milliseconds == 0 ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
+    if (!tx_lock)
+        return;
+
+    load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/true);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
@@ -401,23 +416,36 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
     if (!std::holds_alternative<NoCommitOptions>(options))
         throwNotImplemented();
 
-    /// 0. Add preconditions for transaction commit.
+    /// 0. Add preconditions for transaction commit and publishing of its result.
     operations.prependOperation(std::make_unique<MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation>(uncommitted_state.getTxPreconditions(), commit_snapshot));
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStoragePublishOperation>(commit_snapshot, metadata_storage.fs));
 
     {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+        /// 1. Exclude the transactions touching the same paths, their ancestors or descendants, as well as full reloads.
+        ///    The preconditions refer only to the affected paths and their ancestors, so they cannot be invalidated
+        ///    while the locks are held. Transactions on unrelated paths proceed concurrently, including their
+        ///    requests to the object storage, which may take a long time.
+        const auto path_locks = metadata_storage.path_locks.lock(affected_paths);
 
-        /// 1. Setup up-to-date fs into snapshot being used during commit.
-        commit_snapshot->setRoot(metadata_storage.fs.takeReadWriteSnapshot()->getRoot());
+        /// 2. Setup up-to-date fs into snapshot being used during commit, and start recording the changes made to it.
+        commit_snapshot->resetToRoot(metadata_storage.fs.takeReadOnlySnapshot()->getRoot());
 
-        /// 2. Execute all operations on top of write set.
+        /// 3. Execute all operations on top of write set.
+        ///    The last operation replays the recorded changes on top of the latest fs, which may have been advanced
+        ///    by concurrent transactions on unrelated paths in the meantime, and publishes the result.
         operations.commit();
-
-        /// 3. Exchange metadata with updated fs.
-        metadata_storage.fs.applySnapshot(commit_snapshot);
     }
 
     operations.finalize();
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath(const std::string & path)
+{
+    auto normalized_path = normalizePath(path).string();
+
+    /// Operations on the root are no-ops, and a lock on the root would exclude every other transaction.
+    if (!normalized_path.empty())
+        affected_paths.push_back(std::move(normalized_path));
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & /*options*/)
@@ -427,6 +455,8 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageT
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
+    addAffectedPath(path);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
         objects.front(),
@@ -444,6 +474,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         return;
     }
 
+    addAffectedPath(path);
     uncommitted_state.createDirectory(path);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
@@ -464,6 +495,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         return;
     }
 
+    addAffectedPath(path);
     uncommitted_state.createDirectory(path);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
@@ -478,6 +510,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
+    addAffectedPath(path_from);
+    addAffectedPath(path_to);
     uncommitted_state.moveDirectory(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
@@ -491,6 +525,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
+    addAffectedPath(path);
     uncommitted_state.useDirectory(normalizePath(path).parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
@@ -505,6 +540,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
 {
+    addAffectedPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 
@@ -518,6 +554,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
+    addAffectedPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 
@@ -532,6 +569,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
+    addAffectedPath(path_from);
+    addAffectedPath(path_to);
     uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
     uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
@@ -546,6 +585,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
+    addAffectedPath(path_from);
+    addAffectedPath(path_to);
     uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
     uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
@@ -562,6 +603,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
+    addAffectedPath(path_from);
+    addAffectedPath(path_to);
     uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
     uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
@@ -581,6 +624,10 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     const auto normalized_path = normalizePath(path);
     if (normalized_path.filename().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
+
+    /// The key is going to be used for writing the file, so the transaction depends on the parent directory,
+    /// which is protected by the lock on the file path.
+    addAffectedPath(path);
 
     const auto parent_path = normalized_path.parent_path();
     const auto parent_info = uncommitted_state.getDirectoryRemoteInfo(parent_path);
