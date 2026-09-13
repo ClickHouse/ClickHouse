@@ -332,6 +332,19 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     return old_ast;
 }
 
+/// Whether the definition of an existing table is one that this feature could have generated:
+/// a stateless proxy over the `merge` or `clusterAllReplicas` table function. Such a table holds
+/// no data of its own and can be replaced; a table of any other shape (e.g. a `MergeTree` table
+/// that a user happened to put on one of the `all_...` names) must never be dropped automatically.
+bool isGeneratedUnionTableDefinition(const ASTCreateQuery & create)
+{
+    if (!create.as_table_function)
+        return false;
+
+    const auto * function = create.as_table_function->as<ASTFunction>();
+    return function && (function->name == "merge" || function->name == "clusterAllReplicas");
+}
+
 /// Escapes a table name for use inside a regular expression
 /// (the argument of the `merge` table function).
 String escapeStringForRegexp(const String & s)
@@ -1046,10 +1059,30 @@ void SystemLog<LogElement>::prepareUnionTable()
 
         if (union_table)
         {
-            String existing_create_query = getCreateTableQueryClean(union_table_id, getContext())->formatWithSecretsOneLine();
+            ASTPtr existing_create_query_ast = getCreateTableQueryClean(union_table_id, getContext());
+            String existing_create_query = existing_create_query_ast->formatWithSecretsOneLine();
             if (existing_create_query == union_create_query)
             {
                 union_table_check_pending = false;
+                return;
+            }
+
+            /// Replacing the table drops the old one together with all of its data, which is only
+            /// acceptable for a stateless proxy over a table function - the shape this feature
+            /// generates. A user table that happens to occupy the name (the `all_...` names are not
+            /// reserved, and a hand-rolled union table is exactly what users created before this
+            /// feature existed) is left untouched instead.
+            const auto * existing_create = existing_create_query_ast->as<ASTCreateQuery>();
+            if (!existing_create || !isGeneratedUnionTableDefinition(*existing_create))
+            {
+                LOG_WARNING(
+                    log,
+                    "Not creating {}: a table with this name already exists and it was not created by the"
+                    " `create_union_system_log_tables` feature, so it may contain data. Drop or rename it"
+                    " to let the union table be created.\nExisting definition: {}",
+                    union_table_id.getNameForLogs(),
+                    existing_create_query);
+                union_table_broken = true;
                 return;
             }
 
