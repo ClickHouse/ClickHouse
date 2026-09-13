@@ -23,7 +23,7 @@ String maskEngineSettingValue(const String & setting_name, const Field & field, 
             /// A registry names a setting that *may* carry a secret and decides per value whether
             /// this one does - a URL without credentials in it does not - so `nullopt` means there
             /// is nothing to hide. The first registry that knows the name answers, as
-            /// `ASTSetQuery::renderSecretChangeValue` does, so the two cannot disagree on what is
+            /// `renderSecretChangeValue` in `ASTSetQuery.cpp` does, so the two cannot disagree on what is
             /// secret.
             auto rendered = it->second(field);
             if (!rendered)

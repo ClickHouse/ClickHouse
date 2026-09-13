@@ -2199,11 +2199,8 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 
 SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
 {
-    /// This storage keeps no settings object: `getSettings` rebuilds one, and the values it puts in
-    /// come from three places - the table metadata in Keeper, which every replica shares; the
-    /// metadata object; and plain members of this storage. An `ALTER ... MODIFY SETTING` run on
-    /// another replica changes the first without this replica's definition changing, which is why
-    /// this table is asked rather than a settings type enumerated statically.
+    /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
+    /// the metadata object and plain members of this storage.
     auto settings = getSettings().enumerateSettings();
 
     /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them

@@ -60,19 +60,15 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
 {
     ColumnsDescription description
     {
-        /// Which table this row is about.
         {"database", std::make_shared<DataTypeString>(), "Database of the table."},
         {"table", std::make_shared<DataTypeString>(), "Name of the table."},
         {"engine", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             "Engine of the table. Setting names are engine-specific, so the same name can mean different things for different engines."},
     };
 
-    /// The same columns, in the same order, that `system.engine_settings` and
-    /// `system.merge_tree_settings` carry, so what a reader knows about those carries over here.
     for (const auto & column : sharedSettingColumns())
         description.add(column);
 
-    /// Particular to this table.
     description.add({"source", originEnum(),
         "Where the value came from. "
         "`default` - the engine's compiled-in default. "
@@ -156,9 +152,7 @@ protected:
                 const bool is_masked = !show_secrets && !setting.masked_value.empty();
                 const String & value = is_masked ? setting.masked_value : setting.value;
 
-                /// A setting that answers to more than one name gets a row per name, as
-                /// `system.settings` does, so that looking it up by the name you happen to know
-                /// finds it. The rows carry the same values; `alias_for` tells them apart.
+                /// A row per name the setting answers to, as `system.settings` does; `alias_for` tells them apart.
                 auto add_row = [&](std::string_view name, std::string_view alias_for)
                 {
                     ++rows_count;
@@ -176,7 +170,6 @@ protected:
                     insertSharedSettingColumns(
                         res_columns, column_mask, src_index, res_index, name, value, setting, alias_for);
 
-                    /// Particular to this table, and so written after the shared columns.
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(static_cast<Int8>(setting.origin));
                     if (column_mask[src_index++])
@@ -240,19 +233,13 @@ protected:
     }
 
 private:
-    /// Which of a database's tables the query can still be about. A table's settings are hundreds of
-    /// rows, so answering `WHERE table = ...` by reading every table and discarding the rest is not
-    /// affordable - and that is the query `SHOW TABLE SETTINGS` generates. So the names are filtered
-    /// first and the real iterator is then asked only for what survived.
+    /// Which of a database's tables the query can still be about. A table's settings are hundreds of rows, so
+    /// `WHERE table = ...` - the query `SHOW TABLE SETTINGS` generates - must not read every table to discard
+    /// the rest: the names are filtered first, and the real iterator is asked only for the survivors.
     ///
-    /// The names must come from `getLightweightTablesIterator`, not `getTablesIterator`: for an
-    /// external database the latter is already the storage-resolving path - `DatabaseRemote` calls
-    /// `fetchTable` per listed table and `DatabaseDataLake` calls `tryGetTableImpl` per readable
-    /// catalog table - so listing names through it would open every table in the database just to
-    /// learn its name, and then open the survivor a second time. It also propagates failures, which
-    /// would let one unrelated unresolvable table fail a single-table lookup. The lightweight
-    /// iterator lists names only, and both databases apply the filter this returns before resolving
-    /// anything, so only the surviving tables are ever opened.
+    /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
+    /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so
+    /// listing names through it would open every table and let one unresolvable table fail the lookup.
     IDatabase::FilterByNameFunction tablesAllowedIn(const String & database_name) const
     {
         if (!table_filter)

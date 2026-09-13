@@ -16,11 +16,9 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery()
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
     const String database = getContext()->resolveDatabase(query.database);
 
-    /// `system.table_settings` is the statement's whole implementation; this only narrows it to one
-    /// table and picks the columns worth reading in a terminal. `description` is deliberately not
-    /// among them: it runs to paragraphs, and four of these columns fit a screen where five do not.
-    /// Anything more - descriptions, other engines, joining `system.tables`, filtering on `source` -
-    /// is a query against that table, which is why the table is the feature and this a convenience.
+    /// `system.table_settings` is the statement's whole implementation; this narrows it to one table and picks
+    /// the columns that fit a terminal - `description` runs to paragraphs, so it is left out. Anything more is a
+    /// query against the table.
     WriteBufferFromOwnString rewritten_query;
     rewritten_query
         << "SELECT name, value, changed, source FROM system.table_settings"
@@ -35,12 +33,9 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery()
     {
         const std::string_view like = query.case_insensitive_like ? "ILIKE " : "LIKE ";
 
-        /// The pattern is matched against the names a setting answers to, not only the one it is
-        /// declared under, and the row printed is still the canonical one. `system.table_settings`
-        /// carries a row per alias so that a lookup by the name you happen to know finds the
-        /// setting; filtering on the canonical name alone would throw that away here and leave
-        /// whoever knows only the old spelling with the empty result the alias rows exist to
-        /// prevent. `NOT LIKE` drops a setting when any name it answers to matches.
+        /// Match the pattern against every name a setting answers to, but print the canonical row: the alias rows
+        /// exist so that a lookup by an old name finds the setting. `NOT LIKE` drops a setting when any of its
+        /// names matches.
         rewritten_query
             << " AND (name " << (query.not_like ? "NOT " : "") << like << DB::quote << query.like
             << (query.not_like ? " AND name NOT IN (" : " OR name IN (")

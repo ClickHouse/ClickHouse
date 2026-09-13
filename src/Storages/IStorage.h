@@ -259,17 +259,11 @@ public:
 
     /// Report this table's settings as they are actually in effect, for `system.table_settings`.
     ///
-    /// The base implementation answers from the table's own `SETTINGS` clause, which is all a
-    /// storage that keeps no settings struct can say - `File`, `URL`, `Join` and the `Log` family
-    /// name global query settings there rather than settings of their own, so for them this is the
-    /// complete answer rather than a fallback.
-    ///
-    /// An engine that keeps a settings struct overrides this to report every setting it has,
-    /// including values that never reach the `CREATE` query: compiled defaults, values taken from a
-    /// named collection, values held in replicated metadata, and values the engine adjusted while
-    /// running. Those last two are why this is a method on the storage rather than a static
-    /// enumeration of the settings type - see `StorageObjectStorageQueue`, which reconstructs its
-    /// settings from Keeper.
+    /// The base implementation answers from the table's own `SETTINGS` clause - the complete answer for a
+    /// storage that keeps no settings struct (`File`, `URL`, `Join`, the `Log` family). An engine that keeps
+    /// one overrides this to report every setting with its origin (see `SettingOrigin`). It is a method on the
+    /// storage rather than a static enumeration of the settings type because some values live only in the
+    /// instance - replicated metadata, see `StorageObjectStorageQueue`.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
@@ -290,7 +284,7 @@ public:
     /// states - which looks like a complete answer and is not, since the effective values can come
     /// from the query context, a named collection or a connection pool default. An engine that is
     /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
-    /// rather than a partial truth. Reporting them properly is its own piece of work.
+    /// rather than a partial truth.
     static SettingDescriptions settingsNotRetainedByEngine() { return {}; }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.

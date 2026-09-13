@@ -257,9 +257,6 @@ namespace
 
 /// The settings a table's stored `CREATE` query states, copied out.
 ///
-/// Returned by value on purpose: the create query is produced on demand and does not outlive the
-/// call, so a pointer into it would dangle.
-///
 /// This is the source `SHOW CREATE TABLE` renders, and the only one every engine keeps:
 /// `StorageInMemoryMetadata::settings_changes` is populated by `MergeTree`, `Memory` and
 /// `ALTER ... MODIFY SETTING` alone, despite its comment naming `Kafka` and `RabbitMQ`. `ALTER`
