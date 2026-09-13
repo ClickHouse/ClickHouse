@@ -588,11 +588,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
     zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
 
+    bool last_occupied = false;
+
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
+        bool occupied = false;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
@@ -629,6 +632,30 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
                 }
+            }
+
+            /// No `metadata` means no table lives here, but the path itself can. A path this table
+            /// may take holds nothing: no children, and no data, which is what every root created
+            /// here holds. The version makes the read and the removal one decision.
+            std::string root_data;
+            Coordination::Stat root_stat;
+            if (zk_client->tryGet(zookeeper_path, root_data, &root_stat))
+            {
+                if (!root_data.empty())
+                {
+                    occupied = true;
+                    return;
+                }
+
+                const auto code_remove_root = zk_client->tryRemove(zookeeper_path, root_stat.version);
+                if (code_remove_root == Coordination::Error::ZNOTEMPTY
+                    || code_remove_root == Coordination::Error::ZBADVERSION)
+                {
+                    occupied = true;
+                    return;
+                }
+                if (code_remove_root == Coordination::Error::ZOK)
+                    LOG_INFO(log, "Removed empty path {}", zookeeper_path.string());
             }
 
             requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
@@ -673,6 +700,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             code = zk_client->tryMulti(requests, responses);
         });
+        if (occupied)
+        {
+            last_occupied = true;
+            continue;
+        }
         if (code.has_value())
         {
             if (*code == Coordination::Error::ZNODEEXISTS)
@@ -683,6 +715,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         "It looks like the table {} was created by another server at the same moment, "
                         "will retry",
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                last_occupied = false;
                 continue;
             }
             if (*code != Coordination::Error::ZOK)
@@ -691,6 +724,16 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         return table_metadata;
     }
+
+    if (last_occupied)
+        throw Exception(
+            ErrorCodes::REPLICA_ALREADY_EXISTS,
+            "Cannot create table: keeper path {} has no `metadata` node, but it is not an empty node "
+            "this table may take: it has children, or data that no `S3Queue`/`AzureQueue` table "
+            "wrote. Its children can be another table's `keeper_path` nested under it, leftovers of "
+            "an incomplete drop, or a removal still in progress. Retry if a drop is in progress, "
+            "otherwise use another `keeper_path`; check what is there before removing anything",
+            zookeeper_path.string());
 
     throw Exception(
         ErrorCodes::REPLICA_ALREADY_EXISTS,
@@ -955,6 +998,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
     bool is_retry = false;
     bool allow_remove_recursive = true;
+    bool removal_started = false;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
@@ -986,6 +1030,15 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 else
                 {
                     LOG_WARNING(log, "Cannot unregister {}: registry {} does not exist", self.table_id, registry_path.string());
+                }
+
+                if (removal_started)
+                {
+                    /// The children are gone but the root is not, so finish the removal here.
+                    /// `ZNOTEMPTY` means the path is alive again and belongs to someone else.
+                    const auto code_remove_root = zk_client->tryRemove(zookeeper_path);
+                    if (code_remove_root != Coordination::Error::ZOK && code_remove_root != Coordination::Error::ZNONODE)
+                        LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), code_remove_root);
                 }
                 return;
             }
@@ -1034,6 +1087,8 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
+                    /// The removal below is not atomic, so it can be interrupted with the root still there.
+                    removal_started = true;
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
                     requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
                 }
@@ -1093,7 +1148,13 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     if (drop_code == Coordination::Error::ZOK)
                         drop_lock->setAlreadyRemoved();
                     else if (drop_code == Coordination::Error::ZNONODE)
-                        LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), drop_code);
+                    {
+                        /// The lock is already gone, so the multi could not remove the root with it.
+                        /// `ZNOTEMPTY` means the path is alive again and belongs to someone else.
+                        const auto code_remove_root = zk_client->tryRemove(zookeeper_path);
+                        if (code_remove_root != Coordination::Error::ZOK && code_remove_root != Coordination::Error::ZNONODE)
+                            LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), code_remove_root);
+                    }
                     else
                         zkutil::KeeperMultiException::check(drop_code, drop_requests, drop_responses);
                 }
