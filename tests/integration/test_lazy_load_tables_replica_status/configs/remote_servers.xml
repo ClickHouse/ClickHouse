@@ -1,0 +1,26 @@
+<clickhouse>
+    <remote_servers>
+        <lazy_replica_cluster>
+            <shard>
+                <replica>
+                    <host>node_lazy</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </lazy_replica_cluster>
+        <!-- The same shard with the up-to-date replica behind the lazy one, so that a query that finds
+             the lazy replica stale has a remote replica to try. -->
+        <lazy_replica_pair_cluster>
+            <shard>
+                <replica>
+                    <host>node_lazy</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_fresh</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </lazy_replica_pair_cluster>
+    </remote_servers>
+</clickhouse>
