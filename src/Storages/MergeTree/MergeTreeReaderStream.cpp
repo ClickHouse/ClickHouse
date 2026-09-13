@@ -443,7 +443,8 @@ void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to marks");
 }
 
-size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position)
+size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(
+    size_t right_mark_non_included, size_t column_position, bool include_shared_block)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
@@ -469,6 +470,12 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
     const auto & right_mark_in_file = marks_getter->getMark(right_mark_included, column_position);
     auto next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, column_position);
 
+    /// Columns can share a compressed block. Include the whole block at the right boundary.
+    size_t boundary_column = column_position;
+    while (include_shared_block && next_stripe_right_mark_in_file.offset_in_decompressed_block != 0
+        && boundary_column + 1 < marks_loader->getNumColumns())
+        next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, ++boundary_column);
+
     /// Try to find suitable right mark in current stripe.
     for (size_t mark = right_mark_included + 1; mark < marks_count; ++mark)
     {
@@ -493,6 +500,7 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
 {
     loadMarks();
 
+    /// These are buffer-size estimates. Scanning shared-block boundaries for every column can take quadratic time.
     /// As a maximal range we return the maximal size of a whole stripe.
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
@@ -509,7 +517,8 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
             /// We found a start of new stripe, now update values.
             if (current_mark > start_of_next_stripe_mark)
             {
-                auto current_range_bytes = getRightOffsetOneColumn(mark, column_position) - start_of_stripe_mark.offset_in_compressed_file;
+                auto current_range_bytes = getRightOffsetOneColumn(mark, column_position, /* include_shared_block = */ false)
+                    - start_of_stripe_mark.offset_in_compressed_file;
 
                 max_range_bytes = std::max(max_range_bytes, current_range_bytes);
                 sum_range_bytes += current_range_bytes;
@@ -519,7 +528,8 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
             }
         }
 
-        auto current_range_bytes = getRightOffsetOneColumn(mark_range.end, column_position) - start_of_stripe_mark.offset_in_compressed_file;
+        auto current_range_bytes = getRightOffsetOneColumn(mark_range.end, column_position, /* include_shared_block = */ false)
+            - start_of_stripe_mark.offset_in_compressed_file;
 
         max_range_bytes = std::max(max_range_bytes, current_range_bytes);
         sum_range_bytes += current_range_bytes;
@@ -589,7 +599,7 @@ std::pair<size_t, size_t> MergeTreeReaderStreamOneOfMultipleColumns::estimateMar
 
 size_t MergeTreeReaderStreamAllOfMultipleColumns::getRightOffset(size_t right_mark_non_included)
 {
-    return getRightOffsetOneColumn(right_mark_non_included, marks_loader->getNumColumns() - 1);
+    return getRightOffsetOneColumn(right_mark_non_included, last_column_position);
 }
 
 std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)

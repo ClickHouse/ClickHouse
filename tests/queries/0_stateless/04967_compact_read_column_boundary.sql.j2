@@ -1,0 +1,27 @@
+{% for packed in [0, 1073741824] %}
+{% for substream_marks in [0, 1] %}
+{% for compress_per_column in [0, 1] %}
+CREATE TABLE compact_read_boundary
+(
+    a UInt64,
+    b Tuple(x UInt64, y Array(UInt64)),
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8,
+    min_bytes_for_wide_part = 1073741824,
+    min_bytes_for_full_part_storage = {{ packed }},
+    write_marks_for_substreams_in_compact_parts = {{ substream_marks }},
+    compress_per_column_in_compact_parts = {{ compress_per_column }};
+
+INSERT INTO compact_read_boundary
+SELECT number, (number * 2, [number, number + 1]), repeat('x', 8) FROM numbers(128);
+
+SELECT sum(a) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+SELECT sum(b.x), sum(arraySum(b.y)) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+SELECT sum(length(c)) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+
+DROP TABLE compact_read_boundary;
+{% endfor %}
+{% endfor %}
+{% endfor %}

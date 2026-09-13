@@ -141,7 +141,7 @@ public:
     }
 
 protected:
-    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position, bool include_shared_block = true);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
@@ -172,14 +172,18 @@ class MergeTreeReaderStreamAllOfMultipleColumns : public MergeTreeReaderStreamMu
 {
 public:
     template <typename... Args>
-    explicit MergeTreeReaderStreamAllOfMultipleColumns(Args &&... args)
+    explicit MergeTreeReaderStreamAllOfMultipleColumns(size_t last_column_position_, Args &&... args)
         : MergeTreeReaderStreamMultipleColumns{std::forward<Args>(args)...}
+        , last_column_position(last_column_position_)
     {
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
+
+private:
+    const size_t last_column_position;
 };
 
 }

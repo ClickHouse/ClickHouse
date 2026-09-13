@@ -115,7 +115,14 @@ try
     if (initialized)
         return;
 
+    size_t last_column_position = 0;
+    for (const auto & position : column_positions)
+        if (position)
+            last_column_position = std::max(last_column_position,
+                has_substream_marks ? columns_substreams.getLastSubstreamPosition(*position) : *position);
+
     stream = std::make_unique<MergeTreeReaderStreamAllOfMultipleColumns>(
+        last_column_position,
         data_part_info_for_read->getDataPartStorage(), MergeTreeDataPartCompact::DATA_FILE_NAME,
         MergeTreeDataPartCompact::DATA_FILE_EXTENSION, data_part_info_for_read->getMarksCount(),
         all_mark_ranges, settings, uncompressed_cache,
