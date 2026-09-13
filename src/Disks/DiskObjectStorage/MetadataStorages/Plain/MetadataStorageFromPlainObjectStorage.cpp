@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_RMDIR;
 }
 
 namespace
