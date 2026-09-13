@@ -628,6 +628,40 @@ static ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
 
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
 
+static std::optional<bool> tryGetUniformFilterValue(const FilterWithCachedCount & filter)
+{
+    if (filter.size() == 0)
+        return true;
+
+    if (filter.alwaysTrue())
+        return true;
+    if (filter.alwaysFalse())
+        return false;
+
+    if (filter.isSparse())
+    {
+        const size_t num_set_rows = filter.getSparseIndices()->size();
+        if (num_set_rows == 0)
+            return false;
+        if (num_set_rows == filter.size())
+            return true;
+        return {};
+    }
+
+    const auto & data = filter.getData();
+    if (data.empty())
+        return true;
+
+    const bool value = data[0] != 0;
+    for (size_t i = 1; i < data.size(); ++i)
+    {
+        if ((data[i] != 0) != value)
+            return {};
+    }
+
+    return value;
+}
+
 void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount & filter)
 {
     if (filter.size() != num_rows)
@@ -672,11 +706,6 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
     if (total_rows_per_granule == 0 || !filter.present())
         return;
 
-    NumRows zero_tails;
-    auto total_zero_rows_in_tails = filter.isSparse()
-        ? countZeroTailsFromSparse(*filter.getSparseIndices(), zero_tails, can_read_incomplete_granules_)
-        : countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules_);
-
     LOG_TEST(log, "ReadResult::optimize() before: {}", dumpInfo());
 
     SCOPE_EXIT(
@@ -687,18 +716,26 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         }
     );
 
-    if (total_zero_rows_in_tails == filter.size())
+    if (const auto uniform_filter_value = tryGetUniformFilterValue(filter))
     {
-        LOG_TEST(log, "ReadResult::optimize() combined filter is const False");
-        clear();
+        if (*uniform_filter_value)
+        {
+            LOG_TEST(log, "ReadResult::optimize() combined filter is const True");
+            setFilterConstTrue();
+        }
+        else
+        {
+            LOG_TEST(log, "ReadResult::optimize() combined filter is const False");
+            clear();
+        }
         return;
     }
-    if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
-    {
-        LOG_TEST(log, "ReadResult::optimize() combined filter is const True");
-        setFilterConstTrue();
-        return;
-    }
+
+    NumRows zero_tails;
+    auto total_zero_rows_in_tails = filter.isSparse()
+        ? countZeroTailsFromSparse(*filter.getSparseIndices(), zero_tails, can_read_incomplete_granules_)
+        : countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules_);
+
     /// Shrinking a tail ends the current delayed read and forces a fresh seek
     /// for the next granule, so it only pays off when enough rows are dropped
     /// to outweigh the extra seek and misaligned filesystem-cache segment.

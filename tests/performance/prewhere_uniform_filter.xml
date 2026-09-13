@@ -1,0 +1,42 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS prewhere_uniform_filter</create_query>
+    <create_query>
+        CREATE TABLE prewhere_uniform_filter
+        (
+            id UInt64,
+            all_pass UInt8,
+            all_drop UInt8,
+            mixed UInt8,
+            tail UInt8,
+            almost_all UInt8,
+            payload UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 8192
+    </create_query>
+    <fill_query>
+        INSERT INTO prewhere_uniform_filter
+        SELECT
+            number,
+            2,
+            0,
+            toUInt8(number % 2),
+            toUInt8(number % 8192 &lt; 8190),
+            toUInt8(number != 9999999),
+            number
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE all_pass FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE all_drop FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE mixed FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE tail FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE almost_all FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_uniform_filter</drop_query>
+</test>
