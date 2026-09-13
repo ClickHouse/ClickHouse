@@ -1,0 +1,7 @@
+--- a non-deterministic lambda in the row policy stays deferred
+1
+--- a deterministic lambda over the sorting key is not deferred
+0
+--- data correctness
+1	aaa	1
+2	bbb	1

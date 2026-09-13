@@ -1,0 +1,4 @@
+total	32000
+lambda predicate is not used to prune files	1
+visible predicate is not used to prune files	1
+deterministic predicate still prunes	2000
