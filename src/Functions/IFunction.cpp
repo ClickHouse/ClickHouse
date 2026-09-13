@@ -290,6 +290,15 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
 
+        /// A function that declines execution on default arguments must not be executed on the rows
+        /// behind a NULL either. `createBlockWithNestedColumns` does not overwrite those rows, so the
+        /// nested column keeps whatever it holds there - for a column that was built as `Nullable`
+        /// from the start that is the type's default value - and a function that throws on it fails
+        /// on entirely valid data, e.g. `parseDateTime` over a `Nullable(String)` containing a NULL.
+        /// The result for those rows is masked out by [[wrapInNullable]] anyway, so filter them out
+        /// before executing instead.
+        const bool must_not_execute_on_null_rows = !canBeExecutedOnDefaultArguments();
+
         bool all_columns_constant = true;
         bool all_numeric_types = true;
         for (const auto & arg: args)
@@ -318,7 +327,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumn();
         }
 
-        if (all_columns_constant || all_numeric_types)
+        if (all_columns_constant || (all_numeric_types && !must_not_execute_on_null_rows))
         {
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
@@ -365,8 +374,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
-            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
+        bool should_short_circuit = result_null_map && rows_with_nulls > 0
+            && (must_not_execute_on_null_rows
+                || (short_circuit_function_evaluation_for_nulls
+                    && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         auto temporary_result_type = removeNullable(result_type);
