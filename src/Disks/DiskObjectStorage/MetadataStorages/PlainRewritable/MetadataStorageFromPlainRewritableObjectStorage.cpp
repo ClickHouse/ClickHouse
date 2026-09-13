@@ -142,6 +142,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             if (!remote_path.has_value())
                 continue;
 
+            /// Reuse the version observed by LIST. A rename/delete after this listing is
+            /// observed by the next refresh; loading is not an atomic snapshot of remote metadata.
             if (do_not_load_unchanged_directories && !file->metadata->etag.empty())
             {
                 if (const auto known_path = local_paths_by_remote_directory.find(*remote_path);
