@@ -18,62 +18,6 @@ class ActionsDAG;
 class Block;
 struct MergeTreeSettings;
 
-/// True when any of `group_by_keys` (primary-key column NAMES, possibly computed such as
-/// `toStartOfDay(ts)` or a subcolumn such as `t.a`) depends on a physical storage column present in
-/// `earlier_set_targets` (the columns assigned by earlier `GROUP BY` TTL `SET`s in the same
-/// `TTLTransform`). When true, this TTL's `TTLAggregationAlgorithm` input is no longer ordered by its
-/// keys (the earlier `SET` rewrote a column the key derives from), so it must NOT take the streaming
-/// flush-on-key-change fast path. A raw name comparison is insufficient: the key can be a computed or
-/// subcolumn expression while the `SET` target is always a physical column.
-bool groupByKeysAffectedByEarlierSet(
-    const Names & group_by_keys,
-    const NameSet & earlier_set_targets,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context);
-
-/// True when this `GROUP BY` TTL's expiry (or WHERE) expression reads a physical storage column in
-/// `earlier_set_targets` (the `SET` targets of earlier FIRING `GROUP BY` TTLs in the same
-/// `TTLTransform`). The per-part precomputed `group_by_ttl.min` proves "won't fire" only for the
-/// UNMODIFIED part; once an earlier `SET` rewrites a column this TTL's expiry depends on, that proof
-/// is void and this TTL may now fire in the same run. Callers then treat it as firing (conservative),
-/// so it is not wrongly kept on the streaming fast path / excluded from the merge repairs. A `SET`
-/// target is always a physical column; subcolumn reads are mapped to their storage parent, and an
-/// expiry that reads a MATERIALIZED column derived from a `SET` target (e.g. `d MATERIALIZED
-/// toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2`) is detected via the materialized dependency graph.
-bool groupByTTLExpiryAffectedByEarlierSet(
-    const TTLDescription & group_by_ttl,
-    const NameSet & earlier_set_targets,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context);
-
-/// True when a `GROUP BY` TTL's `SET` expression reads a MATERIALIZED column derived from an
-/// earlier firing `SET` target. Such a column is stale in the in-stream block until it is
-/// recomputed, so the aggregate expression must not consume its pre-`SET` value.
-bool groupByTTLSetExpressionsAffectedByEarlierSet(
-    const TTLDescription & group_by_ttl,
-    const NameSet & earlier_set_targets,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context);
-
-/// Build an `ActionsDAG` over `header` that refreshes the derived columns whose in-stream value went
-/// stale after an earlier `GROUP BY` TTL `SET`, so this TTL's `TTLAggregationAlgorithm` sees post-`SET`
-/// values. Two kinds of staleness are repaired:
-///  - `group_by_keys`: computed/subcolumn keys are recomputed from the primary-key expression, and a
-///    MATERIALIZED column used as a key is recomputed from its default expression (together with its
-///    transitive affected MATERIALIZED sources). Otherwise the aggregation would group by the pre-`SET`
-///    key value.
-///  - the columns this TTL's expiry/`WHERE` expression reads: a MATERIALIZED expiry input derived from
-///    a `SET` target (e.g. `d MATERIALIZED toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2`) still holds
-///    its pre-`SET` value, so `isTTLExpired` would read the stale `d` and wrongly skip aggregation.
-/// Returns nullopt when nothing needs refreshing (all keys are plain physical columns and no derived
-/// expiry input is affected). Applied before the later `TTLAggregationAlgorithm` consumes the block.
-std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
-    const Block & header,
-    const StorageMetadataPtr & metadata_snapshot,
-    const TTLDescription & group_by_ttl,
-    const NameSet & earlier_set_targets,
-    const ContextPtr & context);
-
 /// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
 /// sorting key depends on (directly, or through an expression such as `toStartOfDay(ts)`).
 /// `TTLAggregationAlgorithm` emits aggregated groups in the input (already-sorted) order, so
@@ -113,10 +57,7 @@ bool groupByTTLAssignsSortKeyColumn(
 /// conservatively as "may fire". A forced merge is not proof that a TTL fired: it only requires
 /// row-by-row evaluation, and a future TTL can still leave every row unchanged.
 NameSet getFiringGroupByTTLSetTargets(
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeDataPartTTLInfos & ttl_infos,
-    time_t current_time,
-    const ContextPtr & context);
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time);
 
 /// The MATERIALIZED sort-key storage columns whose source columns are rewritten by a
 /// `TTL ... GROUP BY ... SET` (e.g. `d` for `d MATERIALIZED toDate(ts)` when `ts` is SET). These

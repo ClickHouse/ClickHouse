@@ -3609,7 +3609,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// conservative repair path; forcing TTL evaluation alone does not prove that a future TTL
         /// rewrote a row.
         const auto firing_set_targets = getFiringGroupByTTLSetTargets(
-            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, merge_context);
+            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
         /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
         /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and
