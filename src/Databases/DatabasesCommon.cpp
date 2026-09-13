@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Storages/StorageTableProxy.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -563,15 +564,20 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
-    if (!filter_by_table_name)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 
-    Tables filtered_tables;
+    /// Consumers of this iterator - the `system.parts` / `system.replicas` family, the `SYSTEM` commands,
+    /// the asynchronous metrics - recognize an engine by downcasting the storage they get, which the
+    /// lazy-load stand-in defeats, so such a table stayed invisible to them even after it had been loaded.
+    /// `mutex` is held here, so never wait for a materialization that is in flight in another thread: it
+    /// would stall every query on this database for the duration of the load.
+    Tables snapshot_tables;
     for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
+    {
+        if (!filter_by_table_name || filter_by_table_name(table_name))
+            snapshot_tables.emplace(table_name, unwrapMaterializedLazyTable(storage, /* wait_for_materialization= */ false));
+    }
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(snapshot_tables), database_name);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
