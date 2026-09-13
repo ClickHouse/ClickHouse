@@ -160,7 +160,7 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -345,6 +345,8 @@ public:
     bool force_anonymous_load_fallback = false;
 
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

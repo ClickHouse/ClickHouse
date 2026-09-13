@@ -1,0 +1,25 @@
+-- MATERIALIZE COLUMN
+Wide	Enum8(\'a\' = 1, \'b\' = 2)
+0
+Enum8(\'a\' = 1, \'b\' = 2)
+1	2
+2	2
+1	2	2
+-- UPDATE recalculating a dependent MATERIALIZED column
+1	2	2
+2	2	2
+1	2	2
+-- CLEAR COLUMN recalculating MATERIALIZED columns
+1	0	2	1
+2	0	2	1
+1	2	2
+-- CLEAR COLUMN of the column carrying statistics
+590	295
+c	7
+-- MATERIALIZE INDEX carries statistics of columns it does not rewrite
+1	1
+2	1
+Enum8(\'a\' = 1, \'b\' = 2)	1
+-- statistics stay prunable after MATERIALIZE STATISTICS and after DELETE
+7	0	6
+7	0	6

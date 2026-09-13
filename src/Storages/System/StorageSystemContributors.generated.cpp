@@ -895,6 +895,7 @@ const char * auto_contributors[] {
     "Kruglov Kirill",
     "Kruglov Pavel",
     "Krzysztof Góralski",
+    "Kseniia",
     "Kseniia Sumarokova",
     "Kuba Kaflik",
     "Kunal Gupta",

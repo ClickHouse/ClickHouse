@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -43,7 +44,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
@@ -171,6 +171,23 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 
     size_t file_size = file_data.size();
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
+}
+
+/// The default ORC memory pool allocates with `std::malloc`, which returns a null pointer when it
+/// fails - and the library dereferences it - and which is invisible to the memory tracker. A
+/// malformed file can ask for an arbitrarily large buffer, so allocate through `operator new`
+/// instead: it is accounted for and it throws instead of returning null.
+class ORCMemoryPool : public orc::MemoryPool
+{
+public:
+    char * malloc(uint64_t size) override { return new char[size]; }
+    void free(char * p) override { delete[] p; }
+};
+
+orc::MemoryPool & getORCMemoryPool()
+{
+    static ORCMemoryPool pool;
+    return pool;
 }
 
 static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
@@ -819,6 +836,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(getORCMemoryPool());
     /// ORC library requires rangeSizeLimit > holeSizeLimit.
     static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
     /// Clamp to avoid overflow when computing holeSizeLimit + 1.
@@ -2146,21 +2164,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         if (null_as_default)
             insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-
-        column.type = header_column.type;
+        castColumnToRequestedType(column, header_column.type);
         columns_list.push_back(std::move(column.column));
     }
 
