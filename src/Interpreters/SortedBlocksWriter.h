@@ -2,6 +2,8 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <functional>
+#include <optional>
 
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -72,20 +74,28 @@ struct SortedBlocksWriter
     Blocks inserted_blocks;
     const size_t rows_in_block;
     const size_t num_files_for_merge;
+    const std::optional<size_t> max_dynamic_subcolumns;
     SortedFiles sorted_files;
     size_t row_count_in_flush = 0;
     size_t bytes_in_flush = 0;
     size_t flush_number = 0;
     size_t flush_inflight = 0;
 
-    SortedBlocksWriter(const SizeLimits & size_limits_, TemporaryDataOnDiskScopePtr tmp_data_, const Block & sample_block_,
-                       const SortDescription & description, size_t rows_in_block_, size_t num_files_to_merge_)
+    SortedBlocksWriter(
+        const SizeLimits & size_limits_,
+        TemporaryDataOnDiskScopePtr tmp_data_,
+        const Block & sample_block_,
+        const SortDescription & description,
+        size_t rows_in_block_,
+        size_t num_files_to_merge_,
+        std::optional<size_t> max_dynamic_subcolumns_ = std::nullopt)
         : size_limits(size_limits_)
         , tmp_data(tmp_data_)
         , sample_block(sample_block_)
         , sort_description(description)
         , rows_in_block(rows_in_block_)
         , num_files_for_merge(num_files_to_merge_)
+        , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {}
 
     void addBlocks(const Blocks & blocks)
@@ -94,8 +104,8 @@ struct SortedBlocksWriter
     }
 
     void insert(Block && block);
-    TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
-    PremergedFiles premerge();
+    TemporaryBlockStreamHolder flush(const BlocksList & blocks, const std::function<void()> & throw_if_cancelled = {}) const;
+    PremergedFiles premerge(std::function<void()> throw_if_cancelled = {});
     SortedFiles finishMerge(std::function<void(const Block &)> callback);
 };
 

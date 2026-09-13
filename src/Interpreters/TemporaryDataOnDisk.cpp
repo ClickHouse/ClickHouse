@@ -506,6 +506,8 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 
     if (metrics.bytes_compressed)
         ProfileEvents::increment(metrics.bytes_compressed.value(), compressed_delta);
+    if (metrics.bytes_compressed_secondary)
+        ProfileEvents::increment(metrics.bytes_compressed_secondary.value(), compressed_delta);
     if (metrics.bytes_uncompressed)
         ProfileEvents::increment(metrics.bytes_uncompressed.value(), uncompressed_delta);
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_delta);

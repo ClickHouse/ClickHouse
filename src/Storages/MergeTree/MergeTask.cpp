@@ -22,6 +22,8 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/IAST.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -48,7 +50,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -94,6 +95,8 @@ namespace ProfileEvents
     extern const Event MergeTextIndexStageExecuteMilliseconds;
     extern const Event MergeProjectionStageExecuteMilliseconds;
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergeTreeDataProjectionWriterCompressedBytes;
+    extern const Event MergeTreeProjectionSerializationCompressedBytes;
     extern const Event MergedProjections;
     extern const Event RebuiltProjections;
 }
@@ -136,6 +139,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
+    extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
@@ -666,6 +670,29 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
     }
+
+    ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
+        ttl_merges_blocker = global_ctx->ttl_merges_blocker,
+        need_remove = ctx->need_remove_expired_values,
+        merge_list_element = global_ctx->merge_list_element_ptr,
+        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
+    {
+        /// Once cancellation is detected, persist it so that subsequent checks still see it
+        /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
+        if (merge_list_element->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
+            || (need_remove && ttl_merges_blocker->isCancelled());
+
+        if (cancelled)
+        {
+            merge_list_element->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
+    };
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
@@ -1265,29 +1292,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
-    ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
-        ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values,
-        merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
-    {
-        /// Once cancellation is detected, persist it so that subsequent checks still see it
-        /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
-        if (merge_list_element->is_cancelled.load(std::memory_order_relaxed))
-            return true;
-
-        bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled());
-
-        if (cancelled)
-        {
-            merge_list_element->is_cancelled.store(true, std::memory_order_relaxed);
-            return true;
-        }
-
-        return false;
-    };
-
     /// This is the end of preparation. Execution will be per block.
     return false;
 }
@@ -1446,10 +1450,65 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::cancel() noexcept
 {
-    if (ctx->merge_projection_parts_task_ptr)
-        ctx->merge_projection_parts_task_ptr->cancel();
+    global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+
+    for (auto & writer : ctx->rebuild_projection_writers)
+        if (writer)
+            writer->cancel();
 }
 
+
+namespace
+{
+
+/// A projection can use the parent merge stream directly only when sorting its
+/// calculated rows is sufficient to preserve the parent stream order. This is
+/// deliberately stricter than a matching list of names: aliases can make two
+/// identically named key columns represent different expressions.
+bool hasParentOrderPrefix(const ProjectionDescription & projection, const StorageMetadataPtr & parent_metadata, const MergeTreeData & data)
+{
+    if (projection.index || projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset)
+        return false;
+
+    const auto projection_settings = data.getSettings(&projection.settings_changes);
+    if ((*projection_settings)[MergeTreeSetting::optimize_row_order])
+        return false;
+
+    const auto & parent_sorting_key = parent_metadata->getSortingKey();
+    const auto & projection_sorting_key = projection.metadata->getSortingKey();
+    const size_t projection_key_size = projection_sorting_key.column_names.size();
+
+    if (projection_key_size > parent_sorting_key.column_names.size()
+        || projection_key_size != projection_sorting_key.data_types.size()
+        || parent_sorting_key.column_names.size() != parent_sorting_key.data_types.size())
+        return false;
+
+    if (projection_key_size == 0)
+        return true;
+
+    if (!parent_sorting_key.expression_list_ast || !projection_sorting_key.expression_list_ast
+        || parent_sorting_key.expression_list_ast->children.size() < projection_key_size
+        || projection_sorting_key.expression_list_ast->children.size() < projection_key_size)
+        return false;
+
+    for (size_t i = 0; i < projection_key_size; ++i)
+    {
+        const bool parent_reverse = !parent_sorting_key.reverse_flags.empty() && parent_sorting_key.reverse_flags[i];
+        const bool projection_reverse = !projection_sorting_key.reverse_flags.empty() && projection_sorting_key.reverse_flags[i];
+
+        if (parent_reverse != projection_reverse
+            || parent_sorting_key.column_names[i] != projection_sorting_key.column_names[i]
+            || !parent_sorting_key.data_types[i]->equals(*projection_sorting_key.data_types[i])
+            || parent_sorting_key.expression_list_ast->children[i]->getTreeHash(/*ignore_aliases=*/false)
+                != projection_sorting_key.expression_list_ast->children[i]->getTreeHash(/*ignore_aliases=*/false)
+            || !projection.sample_block.has(projection_sorting_key.column_names[i]))
+            return false;
+    }
+
+    return true;
+}
+
+}
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild() const
 {
@@ -1584,11 +1643,30 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                 ctx->pre_calculate_required_columns.insert(name);
     }
 
-    for (const auto * projection : global_ctx->projections_to_rebuild)
+    ctx->rebuild_projection_writers.resize(global_ctx->projections_to_rebuild.size());
+    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
+        const auto & projection = *global_ctx->projections_to_rebuild[i];
+
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
-        ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
+        ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection.sample_block.cloneEmpty()),
             settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+
+        const bool source_is_ordered = hasParentOrderPrefix(projection, global_ctx->metadata_snapshot, *global_ctx->data);
+        /// A filtered projection can produce fewer rows than its parent even when the
+        /// parent merge itself cannot. Defer its part-format decision until its output
+        /// proves that it needs a `Wide` part, or until the final row count is known.
+        const bool projection_output_may_reduce_rows
+            = global_ctx->merge_may_reduce_rows || projection.where_clause_ast != nullptr;
+        ctx->rebuild_projection_writers[i] = std::make_unique<MergeTreeProjectionPartWriter>(
+            *global_ctx->data,
+            projection,
+            global_ctx->new_data_part.get(),
+            global_ctx->context,
+            source_is_ordered,
+            projection_output_may_reduce_rows,
+            global_ctx->merge_list_element_ptr->total_rows_count,
+            ctx->is_cancelled);
     }
 }
 
@@ -1642,6 +1720,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
     Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
 
+    auto & writer = ctx->rebuild_projection_writers[projection_idx];
+    chassert(writer);
+    writer->accountProjectionRows(block.rows(), block_to_squash.rows());
+
     /// Everything is deleted by lightweight delete
     if (block_to_squash.rows() == 0)
     {
@@ -1659,14 +1741,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     if (squashed_chunk)
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
-        auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-            global_ctx->compression_codec, ++ctx->projection_block_num,
-            /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
-
-        tmp_part->finalize();
-        tmp_part->part->getDataPartStorage().commitTransaction();
-        ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
+        writer->write(std::move(result));
     }
     ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
 }
@@ -1674,12 +1749,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
 {
+    const bool cancelled = global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+        || (ctx->is_cancelled && ctx->is_cancelled());
+    if (cancelled)
+    {
+        global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+        for (auto & writer : ctx->rebuild_projection_writers)
+            if (writer)
+                writer->cancel();
+        return;
+    }
+
     /// First, flush the shared pre-calculate squash buffer.
-    /// Skip the flush when the merge has been cancelled: starting a fresh
-    /// `projection.calculate` and temp-part write here only to throw the part away in
-    /// `checkOperationIsNotCanceled` below wastes work proportional to the squash size.
-    if (ctx->pre_calculate_squash
-        && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
+    if (ctx->pre_calculate_squash)
     {
         auto & pre_squash = *ctx->pre_calculate_squash;
         Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
@@ -1694,23 +1776,78 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     /// Then, flush any remaining post-calculate squash buffers.
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
-        const auto & projection = *global_ctx->projections_to_rebuild[i];
         auto & projection_squash_plan = ctx->projection_squashes[i];
         auto squashed_chunk = Squashing::squash(
             projection_squash_plan.flush(),
             projection_squash_plan.getHeader());
 
-        if (squashed_chunk)
-        {
-            auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
-            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-                global_ctx->compression_codec, ++ctx->projection_block_num,
-                /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
+        if (!squashed_chunk)
+            continue;
 
-            temp_part->finalize();
-            temp_part->part->getDataPartStorage().commitTransaction();
-            ctx->projection_parts[projection.name].emplace_back(std::move(temp_part->part));
+        auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
+        auto & writer = ctx->rebuild_projection_writers[i];
+        chassert(writer);
+        writer->write(std::move(result));
+    }
+
+    /// Rebuilt projection writers share the parent transaction, so their completed
+    /// parts must be attached before the parent output stream writes its checksums.
+    /// Retain the existing projection-stage state transitions too: callers use them
+    /// to observe a rebuild, and the stage failpoint deliberately pauses before the
+    /// final write rather than after it.
+    NameSet rebuilt_projection_names;
+    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    {
+        auto & writer = ctx->rebuild_projection_writers[i];
+        if (!writer)
+            continue;
+
+        const auto & projection = *global_ctx->projections_to_rebuild[i];
+        const bool has_data = writer->hasData();
+        if (has_data && !global_ctx->projection)
+        {
+            bool new_projection = false;
+            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+            {
+                std::lock_guard lock(parent_elem->projection_introspection_mutex);
+                if (parent_elem->current_projection != projection.name)
+                {
+                    parent_elem->current_projection = projection.name;
+                    new_projection = true;
+                }
+            }
+            if (new_projection)
+                FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+        }
+
+        if (ctx->is_cancelled())
+        {
+            global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+            for (auto & active_writer : ctx->rebuild_projection_writers)
+                if (active_writer)
+                    active_writer->cancel();
+            return;
+        }
+
+        Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
+        if (auto projection_part = writer->finish(ctx->need_sync))
+        {
+            global_ctx->new_data_part->addProjectionPart(projection.name, std::move(projection_part));
+            rebuilt_projection_names.emplace(projection.name);
+        }
+        ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
+        writer.reset();
+
+        if (has_data && !global_ctx->projection)
+        {
+            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+            std::lock_guard lock(parent_elem->projection_introspection_mutex);
+            std::erase(parent_elem->projections_pending, projection.name);
+            parent_elem->projections_done.push_back(projection.name);
+            parent_elem->current_projection.clear();
+            parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
+            parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+            parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
         }
     }
 
@@ -1720,7 +1857,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         std::lock_guard lock(parent_elem->projection_introspection_mutex);
         for (const auto * proj : global_ctx->projections_to_rebuild)
         {
-            if (!ctx->projection_parts.contains(proj->name))
+            if (!rebuilt_projection_names.contains(proj->name))
             {
                 std::erase(parent_elem->projections_pending, proj->name);
                 parent_elem->projections_done.push_back(proj->name);
@@ -1728,101 +1865,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         }
     }
 
-    ctx->projection_parts_iterator = std::make_move_iterator(ctx->projection_parts.begin());
-    if (ctx->projection_parts_iterator != std::make_move_iterator(ctx->projection_parts.end()))
-        constructTaskForProjectionPartsMerge();
+    /// Projection rebuild timing is measured during the horizontal stage now that
+    /// no rebuilt projection enters a follow-up `MergeProjectionPartsTask`.
+    for (auto & [name, elapsed_ns] : ctx->projections_rebuild_elapsed_ns)
+        global_ctx->projections_merge_time[name] += elapsed_ns / 1000000;
+    ctx->projections_rebuild_elapsed_ns.clear();
 }
 
-
-void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPartsMerge() const
-{
-    auto && [name, parts] = *ctx->projection_parts_iterator;
-    const auto & projection = global_ctx->metadata_snapshot->projections.get(name);
-
-    ctx->merge_projection_parts_task_ptr = std::make_unique<MergeProjectionPartsTask>
-    (
-        name,
-        std::move(parts),
-        projection,
-        ctx->projection_block_num,
-        global_ctx->context,
-        global_ctx->holder,
-        global_ctx->mutator,
-        global_ctx->merge_entry,
-        global_ctx->time_of_merge,
-        global_ctx->new_data_part,
-        global_ctx->space_reservation,
-        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
-    );
-}
-
-
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() const
-{
-    /// In case if there are no projections we didn't construct a task
-    if (!ctx->merge_projection_parts_task_ptr)
-    {
-        /// Transfer accumulated rebuild timings to global context
-        for (auto & [name, elapsed_ns] : ctx->projections_rebuild_elapsed_ns)
-            global_ctx->projections_merge_time[name] += elapsed_ns / 1000000;
-        ctx->projections_rebuild_elapsed_ns.clear();
-        return false;
-    }
-
-    const auto & current_projection_name = ctx->projection_parts_iterator->first;
-
-    if (!global_ctx->projection)
-    {
-        bool new_projection = false;
-        {
-            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
-            std::lock_guard lock(parent_elem->projection_introspection_mutex);
-            if (parent_elem->current_projection != current_projection_name)
-            {
-                parent_elem->current_projection = current_projection_name;
-                new_projection = true;
-            }
-        }
-        if (new_projection)
-            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
-    }
-
-    Stopwatch step_watch(CLOCK_MONOTONIC_COARSE);
-
-    if (ctx->merge_projection_parts_task_ptr->executeStep())
-    {
-        ctx->projections_rebuild_elapsed_ns[current_projection_name] += step_watch.elapsedNanoseconds();
-        return true;
-    }
-
-    ctx->projections_rebuild_elapsed_ns[current_projection_name] += step_watch.elapsedNanoseconds();
-    ++ctx->projection_parts_iterator;
-
-    if (!global_ctx->projection)
-    {
-        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
-        std::lock_guard lock(parent_elem->projection_introspection_mutex);
-        std::erase(parent_elem->projections_pending, current_projection_name);
-        parent_elem->projections_done.push_back(current_projection_name);
-        parent_elem->current_projection.clear();
-        parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
-        parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
-        parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
-    }
-
-    if (ctx->projection_parts_iterator == std::make_move_iterator(ctx->projection_parts.end()))
-    {
-        /// Transfer accumulated rebuild timings to global context
-        for (auto & [name, elapsed_ns] : ctx->projections_rebuild_elapsed_ns)
-            global_ctx->projections_merge_time[name] += elapsed_ns / 1000000;
-        ctx->projections_rebuild_elapsed_ns.clear();
-        return false;
-    }
-
-    constructTaskForProjectionPartsMerge();
-
-    return true;
-}
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
@@ -1910,6 +1959,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 {
+    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
+    ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
+
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
     finalizeProjections();
     global_ctx->to->finalizeIndexGranularity();
@@ -1921,9 +1973,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
-
-    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
 }
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
@@ -2470,6 +2519,13 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
+
+    /// Account each recursive projection merge output alongside its temporary inputs.
+    if (global_ctx->projection)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterCompressedBytes, global_ctx->new_data_part->getBytesOnDisk());
+        ProfileEvents::increment(ProfileEvents::MergeTreeProjectionSerializationCompressedBytes, global_ctx->new_data_part->getBytesOnDisk());
+    }
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)

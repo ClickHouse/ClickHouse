@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Core/Block.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -54,6 +56,41 @@ struct MergeTreeTemporaryPart
 
 using MergeTreeTemporaryPartPtr = std::unique_ptr<MergeTreeTemporaryPart>;
 using BlocksWithPartition = std::vector<BlockWithPartition>;
+
+/// Streams rebuilt projection blocks into one projection part. Parent-order-compatible
+/// blocks are written directly once their part format is known; other orderings are
+/// bounded into temporary sorted runs and merged into the same final writer. A
+/// row-reducing parent merge keeps only a bounded `Native` prefix while it determines
+/// the final `Compact`/`Wide` format from projection output, except when the completed
+/// projected row count already proves that the final part must be `Compact`.
+///
+/// The writer is intentionally lazy: a projection which produces no rows does
+/// not create a child directory. `finish` returns the completed child part for
+/// the parent merge to attach before it finalizes its checksums.
+class MergeTreeProjectionPartWriter
+{
+public:
+    MergeTreeProjectionPartWriter(
+        const MergeTreeData & data,
+        const ProjectionDescription & projection,
+        IMergeTreeDataPart * parent_part,
+        ContextPtr context,
+        bool source_is_ordered,
+        bool may_reduce_rows,
+        size_t input_rows_upper_bound,
+        std::function<bool()> is_cancelled = {});
+    ~MergeTreeProjectionPartWriter();
+
+    void write(Block block);
+    void accountProjectionRows(size_t input_rows, size_t output_rows);
+    bool hasData() const;
+    MergeTreeData::MutableDataPartPtr finish(bool sync);
+    void cancel() noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
 
 /** Writes new parts of data to the merge tree.
   */

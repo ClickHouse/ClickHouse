@@ -1,7 +1,14 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeList.h>
 
+#include <Common/ProfileEvents.h>
+
 #include <Disks/IDiskTransaction.h>
+
+namespace ProfileEvents
+{
+    extern const Event MergeTreeRecursiveProjectionPartMergeCommits;
+}
 
 namespace DB
 {
@@ -129,6 +136,7 @@ bool MergeProjectionPartsTask::executeStep()
         /// FIXME (alesapin) we should use some temporary storage for this,
         /// not commit each subprojection part
         next_level_parts.back()->getDataPartStorage().commitTransaction();
+        ProfileEvents::increment(ProfileEvents::MergeTreeRecursiveProjectionPartMergeCommits);
         next_level_parts.back()->is_temp = true;
         next_level_parts.back()->temp_projection_block_number = block_num;
 

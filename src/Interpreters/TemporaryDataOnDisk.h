@@ -42,6 +42,8 @@ struct TemporaryDataMetrics
 {
     CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
     std::optional<ProfileEvents::Event> bytes_compressed = {};
+    /// Optional second accounting view for one temporary stream.
+    std::optional<ProfileEvents::Event> bytes_compressed_secondary = {};
     std::optional<ProfileEvents::Event> bytes_uncompressed = {};
     std::optional<ProfileEvents::Event> num_files = {};
 };

@@ -1,4 +1,7 @@
+#include <limits>
 #include <memory>
+#include <optional>
+#include <vector>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,6 +20,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/SortedBlocksWriter.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -28,6 +32,7 @@
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -49,7 +54,11 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <fmt/ranges.h>
@@ -69,10 +78,21 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
+    extern const Event MergeTreeProjectionSerializationCompressedBytes;
+    extern const Event MergeTreeDataProjectionWriterFinalParts;
     extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event RejectedInserts;
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortMerge;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalSortWritePart;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSort;
 }
 
 namespace DB
@@ -111,10 +131,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsBool materialize_projections_on_insert;
+    extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
+    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
+    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
 }
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
@@ -493,6 +518,835 @@ void MergeTreeTemporaryPart::prewarmCaches()
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
+}
+
+struct MergeTreeProjectionPartWriter::Impl
+{
+    static constexpr size_t max_files_to_merge = 10;
+
+    Impl(
+        const MergeTreeData & data_,
+        const ProjectionDescription & projection_,
+        IMergeTreeDataPart * parent_part_,
+        ContextPtr context_,
+        bool source_is_ordered_,
+        bool may_reduce_rows_,
+        size_t input_rows_upper_bound_,
+        std::function<bool()> is_cancelled_)
+        : data(data_)
+        , projection(projection_)
+        , parent_part(parent_part_)
+        , context(std::move(context_))
+        , metadata_snapshot(projection.metadata)
+        , data_settings(data.getSettings(&projection.settings_changes))
+        , source_is_ordered(source_is_ordered_)
+        , may_reduce_rows(may_reduce_rows_)
+        , input_rows_upper_bound(input_rows_upper_bound_)
+        , is_cancelled(std::move(is_cancelled_))
+    {
+        const auto & table_settings = data.getSettings();
+        indices = collectSkipIndicesToMaterialize(
+            metadata_snapshot,
+            (*table_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge],
+            (*table_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString(),
+            context->getSettingsRef(),
+            *table_settings);
+
+        if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+            sorting_key_and_skip_indices_expression = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
+
+        const Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+        const std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+        sort_description.reserve(sort_columns.size());
+        for (size_t i = 0; i < sort_columns.size(); ++i)
+            sort_description.emplace_back(sort_columns[i], !reverse_flags.empty() && reverse_flags[i] ? -1 : 1, 1);
+
+        external_sort_limits = SizeLimits(
+            (*data_settings)[MergeTreeSetting::merge_max_block_size],
+            (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+            OverflowMode::BREAK);
+    }
+
+    ~Impl()
+    {
+        cancel();
+    }
+
+    bool stopIfCancelled()
+    {
+        if (cancelled || (is_cancelled && is_cancelled()))
+        {
+            cancelled = true;
+            return true;
+        }
+        return false;
+    }
+
+    size_t getExpectedRows(const Block & block, bool use_projected_rows_estimate) const
+    {
+        if (!use_projected_rows_estimate || !projection_input_rows)
+            return block.rows();
+
+        /// Estimate final projection rows from the density observed while evaluating
+        /// the projection. The parent merge's input-row count alone is incorrect for
+        /// projections that filter rows before they reach this writer.
+        const UInt128 numerator = static_cast<UInt128>(input_rows_upper_bound) * projection_output_rows;
+        const UInt128 expected_rows = numerator / projection_input_rows + (numerator % projection_input_rows != 0);
+        return std::max(block.rows(), static_cast<size_t>(std::min<UInt128>(expected_rows, std::numeric_limits<size_t>::max())));
+    }
+
+    size_t getExpectedSize(const Block & block, bool use_projected_rows_estimate) const
+    {
+        const size_t expected_rows = getExpectedRows(block, use_projected_rows_estimate);
+        return block.bytes() <= std::numeric_limits<size_t>::max() / expected_rows
+            ? block.bytes() * expected_rows / block.rows()
+            : std::numeric_limits<size_t>::max();
+    }
+
+    void selectPartFormat(size_t expected_size, size_t expected_rows, size_t reserve_size)
+    {
+        if (part_type)
+            return;
+
+        /// Reserve the current block, not the estimate used only for format selection.
+        MergeTreeData::reserveSpace(reserve_size, parent_part->getDataPartStorage());
+        part_type = data.choosePartFormat(expected_size, expected_rows, parent_part->info.level, &projection).part_type;
+
+        if (*part_type == MergeTreeDataPartType::Wide)
+            max_dynamic_subcolumns = (*data_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (*part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*data_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
+    }
+
+    void selectPartFormat(const Block & block, bool use_projected_rows_estimate)
+    {
+        /// A projection's output format determines the `Dynamic`/`JSON` limit used by
+        /// the run merger. Select and retain that format before sorting or
+        /// aggregation consumes a projected block. A global aggregate collapses
+        /// to one output row, while a grouped aggregate needs the parent estimate.
+        selectPartFormat(
+            getExpectedSize(block, use_projected_rows_estimate),
+            getExpectedRows(block, use_projected_rows_estimate),
+            block.bytes());
+    }
+
+    void normalizeDynamicStructure(Block & block) const
+    {
+        for (auto & column : block)
+        {
+            if (!column.column->hasDynamicStructure())
+                continue;
+
+            VectorWithMemoryTracking<ColumnPtr> source_columns;
+            source_columns.emplace_back(column.column);
+            auto result = column.column->cloneEmpty();
+            result->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
+            result->insertRangeFrom(*column.column, 0, column.column->size());
+            column.column = std::move(result);
+        }
+    }
+
+    /// A reducing parent merge or a filtered projection can turn an arbitrarily
+    /// large source merge into a tiny projection. Keep at most one projected block in memory while waiting for
+    /// the output to prove that it needs a `Wide` part; subsequent undecided blocks
+    /// use one `Native` temporary stream rather than projection parts or transactions.
+    bool formatSelectionIsWide() const
+    {
+        return data.choosePartFormat(
+                   format_selection_bytes,
+                   format_selection_rows,
+                   parent_part->info.level,
+                   &projection)
+                   .part_type
+            == MergeTreeDataPartType::Wide;
+    }
+
+    bool initializeFormatSelectionSpill(const Block & block)
+    {
+        if (format_selection_spill)
+            return true;
+        if (stopIfCancelled())
+            return false;
+
+        auto temporary_data = context->getTempDataOnDisk();
+        if (!temporary_data)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage is not available for rebuilt projection {}", projection.name);
+
+        /// This `Native` stream replaces legacy temporary projection parts while
+        /// the output remains too small to choose its final part format. Include
+        /// it in the same serialization total as final projection parts and
+        /// external sorting runs so the counter covers both rebuild strategies.
+        format_selection_data = temporary_data->childScope(
+            {.bytes_compressed_secondary = ProfileEvents::MergeTreeProjectionSerializationCompressedBytes});
+        format_selection_spill.emplace(std::make_shared<const Block>(block.cloneEmpty()), format_selection_data);
+        for (const auto & buffered : format_selection_blocks)
+        {
+            if (stopIfCancelled())
+                return false;
+            (*format_selection_spill)->write(buffered);
+        }
+        format_selection_blocks.clear();
+        return true;
+    }
+
+    void writeFinalBlock(Block block)
+    {
+        normalizeDynamicStructure(block);
+        initialize(block, /*use_projected_rows_estimate=*/false);
+        stream->write(std::move(block));
+    }
+
+    bool flushFormatSelectionBuffer()
+    {
+        if (format_selection_spill)
+        {
+            if (stopIfCancelled())
+                return false;
+            format_selection_spill->finishWriting();
+            {
+                auto reader = format_selection_spill->getReadStream();
+                Block block;
+                while (!(block = reader->read()).empty())
+                {
+                    if (stopIfCancelled())
+                        return false;
+                    writeFinalBlock(std::move(block));
+                }
+            }
+            format_selection_spill.reset();
+            format_selection_data.reset();
+        }
+
+        for (auto & block : format_selection_blocks)
+        {
+            if (stopIfCancelled())
+                return false;
+            writeFinalBlock(std::move(block));
+        }
+        format_selection_blocks.clear();
+        return true;
+    }
+
+    void writeFinalOutput(Block block)
+    {
+        if (stopIfCancelled())
+            return;
+
+        if ((!may_reduce_rows && projection.type != ProjectionDescription::Type::Aggregate) || part_type)
+        {
+            writeFinalBlock(std::move(block));
+            return;
+        }
+
+        format_selection_rows += block.rows();
+        format_selection_bytes += block.bytes();
+        if (!format_selection_reserve_size)
+            format_selection_reserve_size = block.bytes();
+
+        if (formatSelectionIsWide())
+        {
+            selectPartFormat(format_selection_bytes, format_selection_rows, format_selection_reserve_size);
+            if (!flushFormatSelectionBuffer())
+                return;
+            writeFinalBlock(std::move(block));
+            return;
+        }
+
+        /// One regular merge block is already bounded by the merge settings. Spill
+        /// after it so a highly reducing merge remains bounded even when its final
+        /// projection never reaches the `Wide` thresholds.
+        if (!format_selection_blocks.empty() && !initializeFormatSelectionSpill(block))
+            return;
+
+        if (format_selection_spill)
+            (*format_selection_spill)->write(block);
+        else
+            format_selection_blocks.emplace_back(std::move(block));
+    }
+
+    bool finishFormatSelection()
+    {
+        if ((!may_reduce_rows && projection.type != ProjectionDescription::Type::Aggregate) || part_type || !format_selection_rows)
+            return true;
+        if (stopIfCancelled())
+            return false;
+
+        selectPartFormat(format_selection_bytes, format_selection_rows, format_selection_reserve_size);
+        return flushFormatSelectionBuffer();
+    }
+
+    void initialize(const Block & block, bool use_projected_rows_estimate = true)
+    {
+        if (stream)
+            return;
+
+        selectPartFormat(block, use_projected_rows_estimate);
+        const size_t expected_size = getExpectedSize(block, use_projected_rows_estimate);
+
+        part = parent_part->getProjectionPartBuilder(
+            projection.name,
+            &projection,
+            PartDirIntent::CreateFresh,
+            /*is_temp_projection=*/false)
+            .withPartType(*part_type)
+            .build();
+        part->is_temp = false;
+
+        const auto projection_part_storage = part->getDataPartStoragePtr();
+        projection_part_storage->createDirectories();
+
+        const NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+        SerializationInfo::Settings serialization_settings
+        {
+            static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            true,
+            (*data_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+            (*data_settings)[MergeTreeSetting::serialization_info_version],
+            (*data_settings)[MergeTreeSetting::string_serialization_version],
+            (*data_settings)[MergeTreeSetting::nullable_serialization_version],
+            (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+            (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        };
+        SerializationInfoByName infos(columns, serialization_settings);
+        infos.add(block);
+        part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
+
+        /// The outer merge resolves the parent's codec before this lazy writer sees its first block.
+        /// Reuse that resolved value for the projection instead of selecting from the projection's
+        /// zero-size estimate.
+        chassert(parent_part->default_codec);
+        auto compression_codec = parent_part->default_codec;
+        auto index_granularity = createMergeTreeIndexGranularity(
+            block,
+            *data_settings,
+            part->index_granularity_info,
+            /*blocks_are_granules=*/false);
+
+        stream = std::make_unique<MergedBlockOutputStream>(
+            part,
+            data_settings,
+            metadata_snapshot,
+            columns,
+            indices,
+            compression_codec,
+            std::move(index_granularity),
+            Tx::NonTransactionalTID,
+            expected_size,
+            /*reset_columns=*/true,
+            /*blocks_are_granules_size=*/false,
+            context->getWriteSettings(),
+            static_cast<WrittenOffsetSubstreams *>(nullptr),
+            /*try_adaptive_codec=*/!parent_part->default_codec_is_explicit_recompression);
+
+        /// A streamed writer produces one projection part, even when it accepts
+        /// several projection blocks. Keep this separate from the legacy temporary
+        /// projection-part writer counter.
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterFinalParts);
+    }
+
+    void initializeAggregation(const Block & block)
+    {
+        if (projection.type != ProjectionDescription::Type::Aggregate || aggregation)
+            return;
+
+        aggregation_header = std::make_shared<const Block>(block.cloneEmpty());
+        aggregation = std::make_unique<AggregatingSortedAlgorithm>(
+            aggregation_header,
+            1,
+            sort_description,
+            (*data_settings)[MergeTreeSetting::merge_max_block_size],
+            (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+            max_dynamic_subcolumns,
+            /*allow_tuple_element_aggregation=*/false);
+    }
+
+    void initializeExternalSorter(const Block & block)
+    {
+        if (external_sorter)
+            return;
+
+        auto temporary_data = context->getTempDataOnDisk();
+        if (!temporary_data)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage is not available for rebuilt projection {}", projection.name);
+
+        external_sort_data = temporary_data->childScope(
+            {
+                .current_metric = CurrentMetrics::TemporaryFilesForSort,
+                // This counter is reported separately from final projection-part output
+                // and is retained as the reordered-run guardrail.
+                .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
+                .bytes_compressed_secondary = ProfileEvents::MergeTreeProjectionSerializationCompressedBytes,
+                .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
+                .num_files = ProfileEvents::ExternalSortWritePart,
+            });
+
+        external_sorter = std::make_unique<SortedBlocksWriter>(
+            external_sort_limits,
+            external_sort_data,
+            block.cloneEmpty(),
+            sort_description,
+            (*data_settings)[MergeTreeSetting::merge_max_block_size],
+            max_files_to_merge,
+            max_dynamic_subcolumns);
+    }
+
+    void selectCompactPartFormatWhenProjectionRowsBoundOutput()
+    {
+        if (!may_reduce_rows || part_type || !projection_output_rows || projection.type == ProjectionDescription::Type::Aggregate)
+            return;
+
+        /// For a non-aggregate projection, every row counted here reaches the final
+        /// output. If that completed count satisfies the Compact row/level condition
+        /// with an unlimited byte estimate, the final output is necessarily Compact.
+        /// Select it before replaying external runs so the ordered output can stream
+        /// straight into its final part instead of making a second Native pass only
+        /// to discover the same format. Aggregate output can collapse many input rows
+        /// into a few groups, so its format remains undecided until the aggregate
+        /// transform has emitted the final rows.
+        if (data.choosePartFormat(
+                std::numeric_limits<size_t>::max(),
+                projection_output_rows,
+                parent_part->info.level,
+                &projection)
+                .part_type
+            == MergeTreeDataPartType::Compact)
+        {
+            selectPartFormat(
+                std::numeric_limits<size_t>::max(),
+                projection_output_rows,
+                projection_reserve_size);
+        }
+    }
+
+    bool finishExternalSort()
+    {
+        if (!external_sorter)
+            return true;
+        if (stopIfCancelled())
+            return false;
+
+        /// Keep the file holders alive until the pulling executor has read every
+        /// run. `premerge` bounds fan-in with temporary streams, not `MergeTree`
+        /// projection parts or part transactions. The callback is passed through
+        /// every premerge pass so cancellation does not wait for the whole run tree.
+        SortedBlocksWriter::PremergedFiles premerged;
+        try
+        {
+            premerged = external_sorter->premerge([this]
+            {
+                if (stopIfCancelled())
+                    throw Exception(ErrorCodes::ABORTED, "Cancelled rebuilding projection");
+            });
+        }
+        catch (...)
+        {
+            if (stopIfCancelled())
+                return false;
+            throw;
+        }
+
+        if (stopIfCancelled())
+            return false;
+        if (premerged.files.size() > 1)
+            ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
+
+        QueryPipelineBuilder pipeline;
+        pipeline.init(std::move(premerged.pipe));
+
+        const size_t num_streams = pipeline.getNumStreams();
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+        {
+            pipeline.addTransform(std::make_shared<AggregatingSortedTransform>(
+                pipeline.getSharedHeader(),
+                num_streams,
+                sort_description,
+                (*data_settings)[MergeTreeSetting::merge_max_block_size],
+                (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+                max_dynamic_subcolumns,
+                /*allow_tuple_element_aggregation=*/false));
+        }
+        else if (num_streams > 1)
+        {
+            pipeline.addTransform(std::make_shared<MergingSortedTransform>(
+                pipeline.getSharedHeader(),
+                num_streams,
+                sort_description,
+                (*data_settings)[MergeTreeSetting::merge_max_block_size],
+                (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+                max_dynamic_subcolumns,
+                SortingQueueStrategy::Default));
+        }
+
+        auto merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        PullingPipelineExecutor executor(merged_pipeline);
+        Block block;
+        while (true)
+        {
+            if (stopIfCancelled())
+                return false;
+            if (!executor.pull(block))
+                break;
+            if (!block.rows())
+                continue;
+
+            if (may_reduce_rows || projection.type == ProjectionDescription::Type::Aggregate)
+            {
+                /// The final external merge is ordered. Keep that order in the
+                /// bounded format-selection buffer until the actual projection
+                /// output can choose its part representation. Aggregation also
+                /// reduces rows independently of the parent merge.
+                writeFinalOutput(std::move(block));
+                continue;
+            }
+
+            initialize(block);
+            stream->write(block);
+        }
+
+        if (stopIfCancelled())
+            return false;
+        external_sorter.reset();
+        external_sort_data.reset();
+        return true;
+    }
+
+    void prepareBlock(Block & block) const
+    {
+        if (sorting_key_and_skip_indices_expression)
+        {
+            addSubcolumnsFromSortingKeyAndSkipIndicesExpression(sorting_key_and_skip_indices_expression, block);
+            sorting_key_and_skip_indices_expression->execute(block);
+        }
+    }
+
+    void write(Block block)
+    {
+        if (stopIfCancelled())
+            return;
+
+        if (!projection_reserve_size)
+            projection_reserve_size = std::max<size_t>(1, block.bytes());
+
+        const bool use_projected_rows_estimate = projection.type != ProjectionDescription::Type::Aggregate
+            || projection.key_size != 0;
+        if (!may_reduce_rows && projection.type != ProjectionDescription::Type::Aggregate)
+            selectPartFormat(block, use_projected_rows_estimate);
+
+        if (!may_reduce_rows && source_is_ordered && projection.type != ProjectionDescription::Type::Aggregate)
+            initialize(block);
+
+        prepareBlock(block);
+
+        IColumn::Permutation permutation;
+        IColumn::Permutation * permutation_ptr = nullptr;
+        if (!sort_description.empty())
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterSortingBlocksMicroseconds);
+            if (isAlreadySorted(block, sort_description))
+                ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
+            else
+            {
+                stableGetPermutation(block, sort_description, permutation);
+                permutation_ptr = &permutation;
+            }
+        }
+
+        if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+            && data.merging_params.mode == MergeTreeData::MergingParams::Ordinary)
+        {
+            RowOrderOptimizer::optimize(block, sort_description, permutation);
+            permutation_ptr = &permutation;
+        }
+
+        if (!may_reduce_rows)
+            normalizeDynamicStructure(block);
+
+        if (!source_is_ordered)
+        {
+            initializeExternalSorter(block);
+            external_sorter->insert(permuteBlockIfNeeded(block, permutation_ptr));
+            if (stopIfCancelled())
+                return;
+            has_data = true;
+            return;
+        }
+
+        initializeAggregation(block);
+        if (aggregation)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
+            if (!writeAggregated(permuteBlockIfNeeded(block, permutation_ptr)))
+                return;
+        }
+        else if (may_reduce_rows)
+        {
+            writeFinalOutput(permuteBlockIfNeeded(block, permutation_ptr));
+        }
+        else
+        {
+            Block permuted_columns_cache;
+            stream->writeWithPermutation(block, permutation_ptr, &permuted_columns_cache);
+        }
+        if (stopIfCancelled())
+            return;
+        has_data = true;
+    }
+
+    bool writeAggregated(Block block)
+    {
+        if (stopIfCancelled())
+            return false;
+
+        IMergingAlgorithm::Input input;
+        input.set(Chunk(block.getColumns(), block.rows()));
+
+        if (!aggregation_initialized)
+        {
+            IMergingAlgorithm::Inputs inputs;
+            inputs.emplace_back(std::move(input));
+            aggregation->initialize(std::move(inputs));
+            aggregation_initialized = true;
+        }
+        else
+        {
+            aggregation->consume(input, 0);
+        }
+
+        return drainAggregation(/*finish=*/false);
+    }
+
+    bool drainAggregation(bool finish)
+    {
+        while (true)
+        {
+            if (stopIfCancelled())
+                return false;
+
+            auto status = aggregation->merge();
+            const bool has_output = status.chunk && status.chunk.hasRows();
+            if (has_output)
+            {
+                if (stopIfCancelled())
+                    return false;
+                auto result = aggregation_header->cloneWithColumns(status.chunk.detachColumns());
+                /// The parent merge, projection filter, or aggregate can discard
+                /// most source rows. Buffer the completed projection order until
+                /// its final size can choose Compact or Wide.
+                writeFinalOutput(std::move(result));
+                if (cancelled)
+                    return false;
+            }
+
+            if (status.is_finished)
+            {
+                if (!finish)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection aggregation finished before its input stream");
+                return true;
+            }
+
+            if (status.required_source >= 0)
+            {
+                if (status.required_source != 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected projection aggregation input {}", status.required_source);
+
+                /// With one input, the algorithm removes its cursor before asking
+                /// for the next chunk. At end of stream, one more merge call
+                /// flushes the pending group and reports completion.
+                if (finish)
+                    continue;
+                return true;
+            }
+
+            if (!has_output)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection aggregation returned no output or input request");
+        }
+    }
+
+    MergeTreeData::MutableDataPartPtr finish(bool sync)
+    try
+    {
+        if (cancelled || !has_data)
+        {
+            if (cancelled)
+                cancel();
+            return {};
+        }
+        if (stopIfCancelled())
+        {
+            cancel();
+            return {};
+        }
+
+        if (external_sorter)
+        {
+            selectCompactPartFormatWhenProjectionRowsBoundOutput();
+            if (!finishExternalSort())
+            {
+                cancel();
+                return {};
+            }
+        }
+
+        if (aggregation)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
+            if (!drainAggregation(/*finish=*/true))
+            {
+                cancel();
+                return {};
+            }
+            aggregation.reset();
+        }
+
+        if (!finishFormatSelection())
+        {
+            cancel();
+            return {};
+        }
+
+        if (stopIfCancelled())
+        {
+            cancel();
+            return {};
+        }
+
+        if (!stream)
+            return {};
+
+        stream->finalizeIndexGranularity();
+        if (stopIfCancelled())
+        {
+            cancel();
+            return {};
+        }
+
+        finalizer.emplace(stream->finalizePartAsync(part, IMergedBlockOutputStream::GatheredData{}, sync));
+        finalizer->finish();
+        if (stopIfCancelled())
+        {
+            cancel();
+            return {};
+        }
+
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, part->rows_count);
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, part->getBytesUncompressedOnDisk());
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterCompressedBytes, part->getBytesOnDisk());
+        ProfileEvents::increment(ProfileEvents::MergeTreeProjectionSerializationCompressedBytes, part->getBytesOnDisk());
+
+        stream.reset();
+        finalizer.reset();
+        return std::exchange(part, {});
+    }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+
+    void accountProjectionRows(size_t input_rows, size_t output_rows)
+    {
+        projection_input_rows += input_rows;
+        projection_output_rows += output_rows;
+    }
+
+    void cancel() noexcept
+    {
+        cancelled = true;
+        external_sorter.reset();
+        external_sort_data.reset();
+        aggregation.reset();
+        format_selection_spill.reset();
+        format_selection_data.reset();
+        format_selection_blocks.clear();
+
+        if (finalizer)
+            finalizer->cancel();
+        else if (stream)
+            stream->cancel();
+
+        finalizer.reset();
+        stream.reset();
+        part.reset();
+    }
+
+    const MergeTreeData & data;
+    const ProjectionDescription & projection;
+    IMergeTreeDataPart * const parent_part;
+    const ContextPtr context;
+    const StorageMetadataPtr metadata_snapshot;
+    const MergeTreeSettingsPtr data_settings;
+    const bool source_is_ordered;
+    /// A reducing parent merge or filtered projection cannot predict the final
+    /// projection size from its source parts. Delay format selection until the projection output proves
+    /// that it is `Wide`, or until the final output size is known.
+    const bool may_reduce_rows;
+    const size_t input_rows_upper_bound;
+    std::function<bool()> is_cancelled;
+    size_t projection_input_rows{0};
+    size_t projection_output_rows{0};
+    size_t projection_reserve_size{0};
+    size_t format_selection_rows{0};
+    size_t format_selection_bytes{0};
+    size_t format_selection_reserve_size{0};
+    std::vector<Block> format_selection_blocks;
+    TemporaryDataOnDiskScopePtr format_selection_data;
+    std::optional<TemporaryBlockStreamHolder> format_selection_spill;
+    std::optional<MergeTreeDataPartType> part_type;
+    std::optional<size_t> max_dynamic_subcolumns;
+    MergeTreeIndices indices;
+    ExpressionActionsPtr sorting_key_and_skip_indices_expression;
+    SortDescription sort_description;
+    SizeLimits external_sort_limits;
+    TemporaryDataOnDiskScopePtr external_sort_data;
+    std::unique_ptr<SortedBlocksWriter> external_sorter;
+    MergeTreeData::MutableDataPartPtr part;
+    std::unique_ptr<MergedBlockOutputStream> stream;
+    std::optional<MergedBlockOutputStream::Finalizer> finalizer;
+    SharedHeader aggregation_header;
+    std::unique_ptr<AggregatingSortedAlgorithm> aggregation;
+    bool aggregation_initialized{false};
+    bool has_data{false};
+    bool cancelled{false};
+};
+
+MergeTreeProjectionPartWriter::MergeTreeProjectionPartWriter(
+    const MergeTreeData & data,
+    const ProjectionDescription & projection,
+    IMergeTreeDataPart * parent_part,
+    ContextPtr context,
+    bool source_is_ordered,
+    bool may_reduce_rows,
+    size_t input_rows_upper_bound,
+    std::function<bool()> is_cancelled)
+    : impl(std::make_unique<Impl>(data, projection, parent_part, std::move(context), source_is_ordered, may_reduce_rows, input_rows_upper_bound, std::move(is_cancelled)))
+{
+}
+
+MergeTreeProjectionPartWriter::~MergeTreeProjectionPartWriter() = default;
+
+void MergeTreeProjectionPartWriter::write(Block block)
+{
+    impl->write(std::move(block));
+}
+
+void MergeTreeProjectionPartWriter::accountProjectionRows(size_t input_rows, size_t output_rows)
+{
+    impl->accountProjectionRows(input_rows, output_rows);
+}
+
+bool MergeTreeProjectionPartWriter::hasData() const
+{
+    return impl->has_data;
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeProjectionPartWriter::finish(bool sync)
+{
+    return impl->finish(sync);
+}
+
+void MergeTreeProjectionPartWriter::cancel() noexcept
+{
+    impl->cancel();
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -1347,6 +2201,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterCompressedBytes, new_data_part->getBytesOnDisk());
+    if (is_temp)
+        ProfileEvents::increment(ProfileEvents::MergeTreeProjectionSerializationCompressedBytes, new_data_part->getBytesOnDisk());
 
     return temp_part;
 }
