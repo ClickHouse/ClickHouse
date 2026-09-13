@@ -30,6 +30,19 @@
         FROM numbers_mt(16384)
     </fill_query>
 
+    <!-- Two sparse series cover alternating points of an 8192-point grid. Each row has 4096
+         samples, but the union of timestamps is larger than the timestamp cache. -->
+    <fill_query>
+        INSERT INTO promql_range_timestamp_cache (metric_name, tags, time_series)
+        SELECT
+            'sparse_cache_metric',
+            map('instance', if(number = 0, 'even', 'odd')),
+            arrayMap(
+                step -&gt; (toDateTime64(1700000000 + step * 15, 3), toFloat64(1)),
+                arrayFilter(step -&gt; step % 2 = number, range(8192)))
+        FROM numbers(2)
+    </fill_query>
+
     <query type="shell"><![CDATA[
         ${CLICKHOUSE_CURL} -G "${CLICKHOUSE_URL}prometheus/api/v1/query_range" \
             --data-urlencode "query=cache_metric" \
@@ -38,6 +51,21 @@
             --data-urlencode "step=15" \
             --data-urlencode "max_block_size=16384" \
             --data-urlencode "max_threads=8" \
+            --data-urlencode "use_query_cache=0" \
+            --data-urlencode "enable_http_compression=0" \
+            --data-urlencode "allow_experimental_time_series_table=1" \
+            -o /dev/null
+    ]]></query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} -G "${CLICKHOUSE_URL}prometheus/api/v1/query_range" \
+            --data-urlencode "query=sparse_cache_metric" \
+            --data-urlencode "start=1700000000" \
+            --data-urlencode "end=1700122865" \
+            --data-urlencode "step=15" \
+            --data-urlencode "lookback_delta=1s" \
+            --data-urlencode "max_block_size=2" \
+            --data-urlencode "max_threads=1" \
             --data-urlencode "use_query_cache=0" \
             --data-urlencode "enable_http_compression=0" \
             --data-urlencode "allow_experimental_time_series_table=1" \
