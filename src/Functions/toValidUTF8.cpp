@@ -1,9 +1,15 @@
+#include "config.h"
+
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
 
 #include <string_view>
 
@@ -35,6 +41,16 @@ struct ToValidUTF8Impl
 {
     static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
     {
+#if USE_SIMDUTF
+        static constexpr size_t SIMDUTF_MIN_SIZE = 128;
+        const size_t size = static_cast<size_t>(end - begin);
+        if (size >= SIMDUTF_MIN_SIZE && simdutf::validate_utf8(begin, size))
+        {
+            write_buffer.write(begin, size);
+            return;
+        }
+#endif
+
         static constexpr std::string_view replacement = "\xEF\xBF\xBD";
 
         const char * p = begin;
