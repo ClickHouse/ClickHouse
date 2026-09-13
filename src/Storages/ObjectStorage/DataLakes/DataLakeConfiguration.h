@@ -213,6 +213,14 @@ public:
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::check(context);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
