@@ -904,3 +904,51 @@ def test_remove_orphan_files_refuses_undeclared_scheme(
         "remove_orphan_files refused but deleted objects anyway.\n"
         f"  Before: {files_before}\n  After:  {files_after}"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_last_updated_ms_tie(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Ambiguity is whatever the policy in force cannot order, not always a repeated version.
+
+    Under `iceberg_recent_metadata_file_by_last_updated_ms_field` candidates are ranked by that
+    field, so two DIFFERENT versions carrying one timestamp are the undecidable pair, and a
+    check keyed on the version number sees nothing wrong with them at all. A copy of the newest
+    file under the next version number is such a pair by construction."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ms_tie")
+    env.populate(
+        3,
+        additional_settings=["iceberg_recent_metadata_file_by_last_updated_ms_field = true"],
+    )
+
+    # Control: this policy on its own must not stop the cleanup, so the refusal below is the
+    # tie's doing rather than the setting's.
+    env.add_orphan("data", "orphan-before-tie.parquet")
+    time.sleep(2)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"Cleanup must still work under this policy with nothing planted: {counts}"
+    )
+
+    newest = env.newest_metadata_version()
+    twin_name = f"v{newest + 1}.metadata.json"
+    env.copy_metadata_file(f"v{newest}.metadata.json", twin_name)
+    assert env.metadata_files_with_version(newest) == [f"v{newest}.metadata.json"], (
+        "Fixture put two files on one version, so a version-keyed check would refuse here too "
+        "and the case would not be about the timestamp at all"
+    )
+    assert env.metadata_files_with_version(newest + 1) == [twin_name]
+
+    env.add_orphan("data", "orphan-ms-tie.parquet")
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="rank equal by their last-updated-ms field"):
+        env.remove_orphans(older_than=env.now_ts())
+
+    files_after = sorted(env.list_files())
+    assert files_after == files_before, (
+        "remove_orphan_files refused but deleted objects anyway.\n"
+        f"  Before: {files_before}\n  After:  {files_after}"
+    )
+    env.assert_data_intact()

@@ -95,11 +95,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
-/// `ignore_metadata_pointer_overrides` distrusts the version named by either configured pointer to a
-/// metadata file (`iceberg_metadata_file_path`, `version-hint.text`), which may be older than the
-/// newest committed one, and resolves by listing instead. The scheme a pointer's name is spelled in
-/// still counts, as the only declaration of how this table commits; a listing that holds both schemes
-/// with no pointer to tell them apart is ambiguous, and these callers refuse it.
+/// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
+/// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
+/// is spelled in still counts, and a listing these callers cannot order unambiguously is refused.
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const String & table_path,

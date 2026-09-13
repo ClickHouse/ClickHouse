@@ -1378,18 +1378,22 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         const ShortMetadataFileInfo & latest_metadata_file_info
             = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
 
-        /// One version can be claimed by a plain and a compressed spelling of the same name
-        /// (`v7.metadata.json`, `v7.gz.metadata.json`). Both are committed under the name-collision
-        /// rule, so which one is current is not decidable here, and listing order would decide it.
-        if (own_scheme_is_version_numbered)
+        /// `max_element` returns the first of equal elements, so a candidate ranking equal to the
+        /// winner was separated from it by listing order alone. Ambiguity is whatever the policy in
+        /// force cannot order: one number spelled plain and compressed, or one timestamp on two numbers.
+        if (own_scheme_is_version_numbered || ignore_metadata_pointer_overrides)
             for (const auto & candidate : metadata_files_with_versions)
-                if (candidate.path != latest_metadata_file_info.path && candidate.version == latest_metadata_file_info.version)
+                if (candidate.path != latest_metadata_file_info.path
+                    && !ranks_below(candidate, latest_metadata_file_info)
+                    && !ranks_below(latest_metadata_file_info, candidate))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Iceberg table with path {} has two metadata files claiming version {}: '{}' and '{}'. "
-                        "Remove or rename the one that is not current",
+                        "Iceberg table with path {} has two metadata files that rank equal by {}: '{}' and '{}', "
+                        "so which one is current cannot be determined. Remove or rename the one that is not current",
                         table_path,
-                        latest_metadata_file_info.version,
+                        selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+                            ? "their last-updated-ms field"
+                            : "their version number",
                         latest_metadata_file_info.path,
                         candidate.path);
 
