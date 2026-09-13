@@ -243,6 +243,41 @@ void FilterTransform::transform(Chunk & chunk)
 namespace
 {
 
+static std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
+{
+    const auto * dense_filter_description = typeid_cast<const FilterDescription *>(&filter_description);
+    if (!dense_filter_description || !dense_filter_description->data
+        || dense_filter_description->data->size() != expected_size || dense_filter_description->data->empty())
+        return {};
+
+    const auto & filter = *dense_filter_description->data;
+    const bool value = filter[0] != 0;
+    size_t i = 1;
+
+    /// Keep the common mixed-mask case cheap.
+    const size_t scalar_end = std::min<size_t>(filter.size(), 16);
+    for (; i < scalar_end; ++i)
+    {
+        if ((filter[i] != 0) != value)
+            return {};
+    }
+
+    const UInt64 expected_mask = value ? std::numeric_limits<UInt64>::max() : UInt64{0};
+    for (; i + 64 <= filter.size(); i += 64)
+    {
+        if (bytes64MaskToBits64Mask(filter.data() + i) != expected_mask)
+            return {};
+    }
+
+    for (; i < filter.size(); ++i)
+    {
+        if ((filter[i] != 0) != value)
+            return {};
+    }
+
+    return value;
+}
+
 /// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
 /// `ChunkInfoRowNumbers.applied_filter`, mirroring `DeletionVectorTransform`, so physical row
 /// numbers survive filtering. No-op when the chunk carries no such info.
@@ -367,6 +402,21 @@ void FilterTransform::doTransform(Chunk & chunk)
         }
     }
     (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
+
+    if (const auto uniform_filter_value = tryGetUniformFilterValue(*filter_description, num_rows_before_filtration))
+    {
+        if (!*uniform_filter_value)
+        {
+            writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+            incrementProfileEvents(0, {});
+            return;
+        }
+
+        incrementProfileEvents(num_rows_before_filtration, columns);
+        removeFilterIfNeed(columns);
+        chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        return;
+    }
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
