@@ -106,7 +106,6 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
     extern const char merge_tree_leader_election_stale_lease_between_move_publishes[];
     extern const char merge_tree_leader_election_stale_lease_between_move_commits[];
-    extern const char merge_tree_leader_election_pause_after_detach_clone[];
 }
 
 namespace Setting
@@ -3587,7 +3586,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
-void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch)
+DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
@@ -3637,12 +3636,10 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         sleepForMilliseconds(200);
     } while (true);
 
-    LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
-             covered_parts.size(), new_parts.size(), transaction.getTID());
-
     /// The rename below is the first write that publishes the covering empty parts into the
     /// (possibly shared) storage prefix. A lease lost during `stopMergesAndWait` or the empty-part
     /// preparation above must fail closed here, before anything becomes visible to the new leader.
+    DataPartsVector removed_parts;
     try
     {
         assertWritableLeaderAtEpoch(admission_epoch);
@@ -3650,10 +3647,21 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         /// done are undone if the lease goes stale in the middle, so on a failure here nothing of
         /// this DDL is left under a persistent name either.
         transaction.renameParts();
+
+        /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock
+        /// and recomputes the covered set, so it is the only authoritative answer to "what was
+        /// removed". Everything below -- and the clone to `detached/` made by the callers -- must
+        /// use that answer, otherwise a concurrently appearing covering part makes us report,
+        /// undelay and detach a part that is still active.
+        ///
+        /// The commit is inside the fenced scope as well: it re-checks the epoch itself and undoes
+        /// the renames above on any failure, so its exception must run the same cleanup as a
+        /// failure of the publish.
+        removed_parts = transaction.commit();
     }
     catch (...)
     {
-        /// The covering parts were never renamed to their persistent names, and their names are
+        /// The covering parts are no longer under their persistent names, and those names are
         /// deterministic (covered part with `level + 1`). A regular rollback would leave them in
         /// the working set as Outdated with storage still pointing at the `tmp_empty_*` directory;
         /// a later retry of the same DDL on the same partition re-creates that exact directory,
@@ -3667,13 +3675,29 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         throw;
     }
 
-    transaction.commit();
+    LOG_INFO(log, "Removed {} parts out of the {} selected by covering them with empty {} parts. With txn {}.",
+             removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
-    for (auto & part: covered_parts)
+    for (auto & part : removed_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
-    dropDeduplicationLogParts(covered_parts);
+    dropDeduplicationLogParts(removed_parts);
+
+    return removed_parts;
+}
+
+void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+
+    for (const auto & part : parts)
+    {
+        String part_dir = part->getDataPartStorage().getPartDirectory();
+        LOG_INFO(log, "Detaching {}", part_dir);
+        auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+        part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+    }
 }
 
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
@@ -3779,51 +3803,24 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (!part)
                 throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
-            std::vector<StagedDetachedClone> detached_clones;
-            std::vector<scope_guard> detached_dir_holders;
-            if (detach)
-            {
-                /// The detached copy below is an irreversible shared-storage side effect made
-                /// BEFORE the admission-epoch fence inside `renameAndCommitEmptyParts`, so
-                /// re-check the fence first: a stale leader must be rejected before writing to
-                /// `detached/`, not only at the empty-part publish.
-                assertWritableLeaderAtEpoch(admission_epoch);
-
-                auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-                if (auto clone = cloneToDetachedForDrop(part, metadata_snapshot, detached_dir_holders))
-                    detached_clones.push_back(std::move(*clone));
-            }
+            /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
+            /// anything is written, so that the usual case fails without any side effect at all.
+            /// It is only a fast path, not a reservation: the removal itself is what decides, so the
+            /// clone to `detached/` is made after it, out of the parts it reports as removed.
+            checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
 
             {
-                FutureNewEmptyParts future_parts;
-                MutableDataPartsVector new_data_parts;
-                std::vector<scope_guard> tmp_dir_holders;
-                /// The rollback must cover the ENTIRE post-clone path, not only the commit: any
-                /// failure between writing the clone above and committing the covering empty
-                /// part leaves a durable copy of a `DETACH` that never committed.
-                try
-                {
-                    future_parts = initCoverageWithNewEmptyParts({part});
+                auto future_parts = initCoverageWithNewEmptyParts({part});
 
-                    LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
-                             fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
-                             transaction.getTID());
+                LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
+                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
+                         transaction.getTID());
 
-                    std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
-                    renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
-                }
-                catch (...)
-                {
-                    /// A rejected `DETACH` must not leave persistent copies behind on shared
-                    /// storage: a later `ATTACH` could re-import data from a DDL that failed.
-                    if (!detached_clones.empty())
-                        tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
-                    removeDetachedClonesOfRejectedDetach(detached_clones);
-                    throw;
-                }
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
-                /// Committed: only now may the copies become visible to the other servers.
-                publishDetachedClones(detached_clones);
+                if (detach)
+                    clonePartsToDetached(removed_parts, query_context);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3925,51 +3922,22 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
 
-            std::vector<StagedDetachedClone> detached_clones;
-            std::vector<scope_guard> detached_dir_holders;
+            /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
+            /// only once the removal has gone through.
+            checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
+
+            auto future_parts = initCoverageWithNewEmptyParts(parts);
+
+            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                     future_parts.size(), parts.size(),
+                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                     transaction.getTID());
+
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+
             if (detach)
-            {
-                /// See the comment in `dropPart` — re-check the fence before the first detached
-                /// copy is written, and remember the copies to remove them if the publish below
-                /// is rejected.
-                assertWritableLeaderAtEpoch(admission_epoch);
-
-                for (const auto & part : parts)
-                {
-                    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-                    if (auto clone = cloneToDetachedForDrop(part, metadata_snapshot, detached_dir_holders))
-                        detached_clones.push_back(std::move(*clone));
-                }
-            }
-
-            FutureNewEmptyParts future_parts;
-            MutableDataPartsVector new_data_parts;
-            std::vector<scope_guard> tmp_dir_holders;
-            /// See the comment in `dropPart` — the rollback covers the entire post-clone path.
-            try
-            {
-                future_parts = initCoverageWithNewEmptyParts(parts);
-
-                LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
-                         future_parts.size(), parts.size(),
-                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
-                         transaction.getTID());
-
-                std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
-                renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
-            }
-            catch (...)
-            {
-                /// A rejected `DETACH` must not leave persistent detached copies behind on
-                /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
-                if (!detached_clones.empty())
-                    tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
-                removeDetachedClonesOfRejectedDetach(detached_clones);
-                throw;
-            }
-
-            /// Committed: only now may the copies become visible to the other servers.
-            publishDetachedClones(detached_clones);
+                clonePartsToDetached(removed_parts, query_context);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3985,19 +3953,11 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-
     if (detach)
     {
         /// If DETACH clone parts to detached/ directory
         /// NOTE: no race with background cleanup until we hold pointers to parts
-        for (const auto & part : parts_to_remove)
-        {
-            String part_dir = part->getDataPartStorage().getPartDirectory();
-            LOG_INFO(log, "Detaching {}", part_dir);
-            auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
-        }
+        clonePartsToDetached(parts_to_remove, query_context);
     }
 
     dropDeduplicationLogParts(parts_to_remove);
@@ -4356,6 +4316,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             throwIfTableSizeLimitsExceededForReplacement(
                 data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
 
+            /// The new parts are committed before the replaced ones are removed, and that removal can be
+            /// refused for a part whose creating transaction has not committed. Find that out now, while
+            /// nothing has been published yet, so a refused REPLACE does not leave the partition half
+            /// replaced. The same `data_parts_lock` is held throughout, so no part can gain an in-flight
+            /// creator in between.
+            if (replace && !local_context->getCurrentTransaction())
+                checkPartsCanBeRemovedNonTransactionally(
+                    grabActivePartsToRemoveForDropRange(NO_TRANSACTION_RAW, drop_range, data_parts_lock),
+                    NonTransactionalRemovalKind::Discard);
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
@@ -4629,6 +4599,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto src_data_parts_lock = lockParts();
 
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+            /// The destination is committed before the source parts are covered by the empty parts, and
+            /// that removal can be refused for a part whose creating transaction has not committed. Find
+            /// that out now, so a refused MOVE does not leave the partition half moved. The check is
+            /// stricter than for a plain removal: a creation that is still running may yet roll back, and
+            /// committing its rows in another table cannot be taken back.
+            if (!txn)
+                checkPartsCanBeRemovedNonTransactionally(src_parts, NonTransactionalRemovalKind::Republish);
 
             for (auto & part : dst_parts)
             {
@@ -5166,100 +5144,6 @@ void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, boo
     }
 
     clearEmptyParts();
-}
-
-std::optional<StorageMergeTree::StagedDetachedClone> StorageMergeTree::cloneToDetachedForDrop(
-    const DataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, std::vector<scope_guard> & dir_holders)
-{
-    const String part_dir = part->getDataPartStorage().getPartDirectory();
-    LOG_INFO(log, "Detaching {}", part_dir);
-
-    if (!(*getSettings())[MergeTreeSetting::leader_election])
-    {
-        dir_holders.push_back(getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir));
-        part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
-        return {};
-    }
-
-    /// See the comment in the header: the copy must not appear in the shared `detached/` before
-    /// the `DETACH` commits. Reserve the name it will get there — chosen exactly as
-    /// `makeCloneInDetached` would choose it, including the `_tryN` suffix when the name is taken.
-    auto detached_path = part->getRelativePathForDetachedPart("", /*broken*/ false);
-    if (!detached_path)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot choose a directory name in detached/ for part {}", part->name);
-    const String detached_dir = fs::path(*detached_path).filename();
-
-    /// The staging directory is scoped to this server process: the data path is shared, and a
-    /// `tmp_` name is what the temporary-directory cleanup of every node recognizes as garbage.
-    const String staged_dir = fmt::format("tmp_detach_{}_{}", getPostfixForTempPartName(), part_dir);
-    dir_holders.push_back(getTemporaryPartDirectoryHolder(staged_dir));
-    dir_holders.push_back(getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + detached_dir));
-
-    auto cloned_storage = part->makeCloneAt(staged_dir, /*disk_transaction*/ {});
-
-    /// Test hook: hold the command in the window this staging exists for — the copy is durable,
-    /// the covering empty part is not committed yet.
-    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_leader_election_pause_after_detach_clone);
-
-    return StagedDetachedClone{
-        getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), staged_dir, detached_dir};
-}
-
-void StorageMergeTree::publishDetachedClones(const std::vector<StagedDetachedClone> & clones)
-{
-    /// Fail-closed: a failure here leaves the copy in its staging directory, where `ATTACH` does
-    /// not see it, while the `DETACH` itself is already committed. Report it instead of hiding
-    /// it, naming the directory that has to be moved into `detached/` by hand to make the
-    /// detached copy usable again. Publish every copy first, so one failure does not strand the
-    /// rest of the batch.
-    std::exception_ptr first_error;
-    for (const auto & clone : clones)
-    {
-        try
-        {
-            clone.disk->moveDirectory(
-                fs::path(relative_data_path) / clone.staged_dir,
-                fs::path(relative_data_path) / DETACHED_DIR_NAME / clone.detached_dir);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Cannot move the copy of a committed DETACH from {} to detached/{}; the data is dropped, "
-                "but the detached copy is not available until the directory is moved manually",
-                clone.staged_dir, clone.detached_dir));
-            if (!first_error)
-                first_error = std::current_exception();
-        }
-    }
-    if (first_error)
-        std::rethrow_exception(first_error);
-}
-
-void StorageMergeTree::removeDetachedClonesOfRejectedDetach(const std::vector<StagedDetachedClone> & clones)
-{
-    /// Fail-closed: a removal failure must fail the command instead of being swallowed —
-    /// otherwise the `DETACH` would return its original exception while its copy stays durable
-    /// on shared storage, to be published by a retry that assumes it is its own. Attempt every
-    /// clone (so one failure does not leave the rest behind), then rethrow the first error,
-    /// which names the copies that require manual cleanup.
-    std::exception_ptr first_error;
-    for (const auto & clone : clones)
-    {
-        try
-        {
-            LOG_INFO(log, "Removing the copy {} left behind by a DETACH rejected before its commit (leader_election)", clone.staged_dir);
-            removeDetachedPart(clone.disk, fs::path(relative_data_path) / clone.staged_dir / "", clone.staged_dir);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Cannot remove the copy {} of a rejected DETACH; it must be removed manually", clone.staged_dir));
-            if (!first_error)
-                first_error = std::current_exception();
-        }
-    }
-    if (first_error)
-        std::rethrow_exception(first_error);
 }
 
 void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const

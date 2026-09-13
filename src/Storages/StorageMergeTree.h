@@ -280,40 +280,6 @@ private:
     /// effective, so on a stale lease the cleanup is simply left to the current leader.
     void clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations);
 
-    /// A copy of a part written by `DETACH PART` / `DETACH PARTITION` under `leader_election`,
-    /// while the covering empty part that makes the `DETACH` effective is not committed yet.
-    struct StagedDetachedClone
-    {
-        DiskPtr disk;
-        /// Directory of the copy, relative to the table's data path, while the `DETACH` is not
-        /// committed. It is deliberately OUTSIDE `detached/`, see `cloneToDetachedForDrop`.
-        String staged_dir;
-        /// Directory name inside `detached/` the copy is moved to once the `DETACH` commits.
-        String detached_dir;
-    };
-
-    /// Writes the detached copy of a part being dropped by `DETACH PART` / `DETACH PARTITION`.
-    ///
-    /// Without `leader_election` it goes straight to `detached/<part>`, as it always did. Under
-    /// `leader_election` the copy is staged in a process-scoped `tmp_detach_*` directory outside
-    /// `detached/` and published by `publishDetachedClones` only after the covering empty part is
-    /// committed: `detached/` is shared with the other servers, and their `ATTACH PARTITION` only
-    /// consults their OWN `temporary_parts` set, so a copy visible there before the commit could
-    /// be attached by a new leader after a failover — duplicating the data of a `DETACH` that was
-    /// then rejected by its own epoch fence. Returns an empty optional when nothing has to be
-    /// published or rolled back afterwards.
-    std::optional<StagedDetachedClone> cloneToDetachedForDrop(
-        const DataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, std::vector<scope_guard> & dir_holders);
-
-    /// Moves the staged copies into `detached/`, making them visible to the other servers. Called
-    /// right after the covering empty parts are committed, i.e. once the `DETACH` is a fact.
-    void publishDetachedClones(const std::vector<StagedDetachedClone> & clones);
-
-    /// Removal of the staged copies of a `DETACH` whose empty-part publish was rejected — by
-    /// `assertWritableLeaderAtEpoch` or by any other failure before the commit. Without this, a
-    /// rejected `DETACH` would leave its copies behind on shared storage forever.
-    void removeDetachedClonesOfRejectedDetach(const std::vector<StagedDetachedClone> & clones);
-
     /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
     /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
     /// parts, persist removal TIDs). During construction and while a follower the lease is not
@@ -361,10 +327,20 @@ private:
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
+    /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
     /// `admission_epoch` is the leadership epoch captured by the caller at the DDL's admission
     /// gate; it is re-checked immediately before the covering empty parts are published (see
     /// `assertWritableLeaderAtEpoch`).
-    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch);
+
+    /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
+    /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
+    /// statement would add another `_tryN` directory next to it. Under `leader_election` that
+    /// ordering is what keeps the shared `detached/` namespace free of copies of a `DETACH` that
+    /// was rejected: another server's `ATTACH PARTITION` only consults its OWN `temporary_parts`
+    /// set, so a copy visible there before the commit could be attached by a new leader after a
+    /// failover, duplicating rows that are still live.
+    void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists

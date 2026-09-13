@@ -574,8 +574,7 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes the same clone as `makeCloneInDetached`, but in `relative_dir_name` (relative to the
-    /// storage data directory) instead of a directory in `detached/`. Used to stage the copy of a
-    /// `DETACH` outside `detached/` until the command commits, see `StorageMergeTree::cloneToDetachedForDrop`.
+    /// storage data directory) instead of a directory in `detached/`.
     DataPartStoragePtr makeCloneAt(const String & relative_dir_name, const DiskTransactionPtr & disk_transaction) const;
 
     /// The directory in `detached/` a clone with this prefix would be put into, `_tryN` suffix and

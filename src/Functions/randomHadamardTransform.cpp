@@ -48,7 +48,8 @@
   * - The core transform is a swappable kernel: a portable scalar FWHT and a NEON + ILP kernel for
   *   float32 on AArch64. Both perform exactly the same butterflies in the same stage order, so
   *   they are bit-for-bit identical; the kernel can be selected for testing with the environment
-  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
+  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" | "avx2" (default: neon on AArch64,
+  *   avx2 on x86 with AVX2 support, scalar elsewhere).
   * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
   *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
   *   input dimension. H_m is built once via the Paley construction. See kroneckerFactorFor / kronecker*.
@@ -181,7 +182,7 @@ private:
         auto & result_offsets = result_offsets_column->getData();
         result_offsets.resize(rows);
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__AVX2__)
         [[maybe_unused]] const FwhtKernel kernel = selectKernel();
 #endif
 
@@ -319,6 +320,17 @@ private:
                     }
                     else
                         fwhtScalar(buffer.data(), working_dim);
+#elif defined(__AVX2__)
+                    if constexpr (std::is_same_v<Compute, float>)
+                    {
+                        if (kernel == FwhtKernel::Avx2)
+                            fwhtAvx2(buffer.data(), working_dim);
+                        else
+                            fwhtScalar(buffer.data(), working_dim);
+                    }
+                    else
+                        fwhtScalar(buffer.data(), working_dim);
+
 #else
                     fwhtScalar(buffer.data(), working_dim);
 #endif
