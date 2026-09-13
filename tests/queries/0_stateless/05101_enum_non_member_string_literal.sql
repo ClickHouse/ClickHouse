@@ -91,12 +91,22 @@ SELECT 'bloomFilter hasAll', count() FROM t_enum_bloom_filter WHERE hasAll(a, ['
 SELECT 'bloomFilter mapContainsValue', count() FROM t_enum_bloom_filter WHERE mapContainsValue(m, '4');
 SELECT 'bloomFilter arrayJoin', count() FROM t_enum_bloom_filter ARRAY JOIN a AS x WHERE x = '4';
 
+-- `m['k'] = '4'` reaches the map equality branch of the condition builder instead, which hashes the constant
+-- as a value of the `mapValues` index type. With `optimize_functions_to_subcolumns = 1` the atom is the
+-- `m.key_k` subcolumn and without it an `arrayElement` call; both forms go through that branch.
+SELECT 'bloomFilter mapEquals', count() FROM t_enum_bloom_filter WHERE m['k'] = '4' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'bloomFilter mapEquals', count() FROM t_enum_bloom_filter WHERE m['k'] = '4' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'bloomFilter mapNotEquals', count() FROM t_enum_bloom_filter WHERE m['k'] != '4' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'bloomFilter mapNotEquals', count() FROM t_enum_bloom_filter WHERE m['k'] != '4' SETTINGS optimize_functions_to_subcolumns = 0;
+
 -- A member literal is still hashed and the index is still used to prune.
 SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE e = 'b';
 SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE has(a, 'b');
 SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE hasAny(a, ['b']);
 SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE mapContainsValue(m, 'b');
 SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter ARRAY JOIN a AS x WHERE x = 'b';
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE m['k'] = 'b' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE m['k'] = 'b' SETTINGS optimize_functions_to_subcolumns = 0;
 
 -- With the validation enabled it throws, as it does without the index.
 SELECT count() FROM t_enum_bloom_filter WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }

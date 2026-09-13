@@ -306,6 +306,28 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
     return tryParseMapSubcolumn(key_node.getColumnName(), header);
 }
 
+/// Hash a map key or a map value constant as a value of the indexed type. The constant does not arrive as
+/// one: comparing an `Enum`, a `DateTime` or a `UUID` with a string literal keeps the literal a `String`
+/// (see `FunctionComparison::executeWithConstString`), and `arrayElement` keeps a map key literal unpadded
+/// even when the key type is a `FixedString`. `BloomFilterHash::hashWithField` reads the `Field` as the
+/// indexed type, so hashing the constant as it arrives throws `BAD_GET` in the first case, and in the second
+/// hashes a value the index never stored, which prunes away a granule that does match.
+///
+/// Returns `nullptr` when the constant converts to no value of the indexed type - a string literal naming no
+/// member of an `Enum`, or a number out of the indexed type's range. The atom must then be declined, so that
+/// the query does not depend on whether the map happens to be indexed. See `stringConstantIsNotAnEnumMember`.
+ColumnPtr hashMapConstant(const Field & const_value, const IDataType & actual_type, const IDataType * from_type_hint)
+{
+    if (stringConstantIsNotAnEnumMember(const_value, actual_type))
+        return nullptr;
+
+    Field converted_value = convertFieldToType(const_value, actual_type, from_type_hint);
+    if (converted_value.isNull())
+        return nullptr;
+
+    return BloomFilterHash::hashWithField(&actual_type, converted_value);
+}
+
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
@@ -709,7 +731,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            auto key_hash = hashMapConstant(map_info->key_field, *actual_type, nullptr);
+            if (!key_hash)
+                return false;
+            out.predicate.emplace_back(std::make_pair(position, key_hash));
         }
         else if (map_info->has_values_index)
         {
@@ -1219,6 +1244,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             size_t position = 0;
             Field const_value;
+            const IDataType * const_value_type_hint = nullptr;
 
             if (map_info->has_keys_index)
             {
@@ -1229,17 +1255,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 position = map_info->values_index_position;
                 const_value = value_field;
+                const_value_type_hint = value_type.get();
             }
             else
             {
                 return false;
             }
 
-            out.function = RPNElement::FUNCTION_EQUALS;
-
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+
+            auto const_value_hash = hashMapConstant(const_value, *actual_type, const_value_type_hint);
+            if (!const_value_hash)
+                return false;
+
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.predicate.emplace_back(std::make_pair(position, const_value_hash));
 
             return true;
         }

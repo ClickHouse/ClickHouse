@@ -29,6 +29,12 @@ bloomFilter hasAny	0
 bloomFilter hasAll	0
 bloomFilter mapContainsValue	0
 bloomFilter arrayJoin	0
+bloomFilter mapEquals	0
+bloomFilter mapEquals	0
+bloomFilter mapNotEquals	2
+bloomFilter mapNotEquals	2
+bloomFilter member	1
+bloomFilter member	1
 bloomFilter member	1
 bloomFilter member	1
 bloomFilter member	1
