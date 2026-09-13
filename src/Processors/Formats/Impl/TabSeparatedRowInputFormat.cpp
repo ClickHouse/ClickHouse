@@ -163,7 +163,7 @@ std::vector<String> TabSeparatedFormatReader::readRowImpl()
 }
 
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
+    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/, size_t /*column_index*/)
 {
     const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
