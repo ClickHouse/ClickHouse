@@ -49,6 +49,8 @@ namespace
 /// `DateTime`-like types without an explicit timezone resolve the session timezone when their
 /// serialization is constructed (see `DataTypeDateTime::doGetSerialization`), so a cached `JSON`
 /// serialization containing them is only valid for the timezone it was built under.
+/// `Date` and `Date32` use calendar day numbers: their text serialization is timezone-independent
+/// even though their serializers hold a `DateLUTImpl` reference.
 bool isTimezoneDependent(const IDataType & type)
 {
     switch (type.getTypeId())
