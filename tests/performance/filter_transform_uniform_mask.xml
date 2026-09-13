@@ -1,6 +1,7 @@
 <test>
     <settings>
         <max_threads>1</max_threads>
+        <optimize_trivial_count_query>0</optimize_trivial_count_query>
     </settings>
 
     <query>SELECT sum(payload) FROM (SELECT toDecimal256(number, 0) AS payload, (number % 2) + 1 AS condition FROM numbers(10000000)) WHERE condition FORMAT Null</query>

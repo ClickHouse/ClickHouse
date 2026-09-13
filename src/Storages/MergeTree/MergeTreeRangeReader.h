@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -162,6 +163,8 @@ public:
             cached_count_bytes = sparse_indices ? sparse_indices->size() : DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }
+
+    std::optional<bool> tryGetUniformValue() const;
 };
 
 /// `getLogger` locks a process-global mutex and looks the logger up by name, while range readers are
