@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/LazyPreformattedMessage/details/Arguments.h>
-#include <Common/LazyPreformattedMessage/details/Message.h>
-#include <Common/LazyPreformattedMessage/details/create.h>
+#include <Common/LazyPreformattedMessage/impl/Arguments.h>
+#include <Common/LazyPreformattedMessage/impl/Message.h>
+#include <Common/LazyPreformattedMessage/impl/create.h>
 #include <Common/LoggingFormatStringHelpers.h>
 
 #include <type_traits>
@@ -11,22 +11,24 @@
 namespace DB
 {
 
+using LazyPreformattedMessage = LazyPreformattedMessageImpl::Message;
+
 template <typename T>
-LazyPreformattedMessage::RefArg<std::remove_cvref_t<T>> refArg(const T & x)
+LazyPreformattedMessageImpl::RefArg<std::remove_cvref_t<T>> refArg(const T & x)
 {
     return {x};
 }
 
 template <typename T>
-LazyPreformattedMessage::CopyArg<std::remove_cvref_t<T>> copyArg(T && x)
+LazyPreformattedMessageImpl::CopyArg<std::remove_cvref_t<T>> copyArg(T && x)
 {
     return {std::forward<T>(x)};
 }
 
 template <typename... Markers>
-LazyPreformattedMessage::Message createLazyMessage(FormatStringHelper<typename std::remove_cvref_t<Markers>::value_type...> fmt, Markers &&... markers)
+LazyPreformattedMessage createLazyMessage(FormatStringHelper<typename std::remove_cvref_t<Markers>::value_type...> fmt, Markers &&... markers)
 {
-    return LazyPreformattedMessage::create(std::move(fmt), std::forward<Markers>(markers)...);
+    return LazyPreformattedMessageImpl::create(std::move(fmt), std::forward<Markers>(markers)...);
 }
 
 }

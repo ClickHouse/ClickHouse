@@ -44,7 +44,7 @@ TEST(LazyPreformattedMessage, Move)
 
 TEST(LazyPreformattedMessage, Lanes)
 {
-    std::vector<LazyPreformattedMessage::Message> alive;
+    std::vector<LazyPreformattedMessage> alive;
     for (size_t i = 0; i < 16; ++i)
         alive.push_back(createLazyMessage("{}", copyArg(i)));
 

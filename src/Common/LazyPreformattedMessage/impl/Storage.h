@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <utility>
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 struct Storage

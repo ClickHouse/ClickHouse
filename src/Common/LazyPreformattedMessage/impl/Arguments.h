@@ -1,6 +1,6 @@
 #pragma once
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 template <typename T>

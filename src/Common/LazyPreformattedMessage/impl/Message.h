@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <string>
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 class Message : private boost::noncopyable

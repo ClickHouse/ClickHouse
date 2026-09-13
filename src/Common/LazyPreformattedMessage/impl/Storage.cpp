@@ -1,4 +1,4 @@
-#include <Common/LazyPreformattedMessage/details/Storage.h>
+#include <Common/LazyPreformattedMessage/impl/Storage.h>
 #include <Common/Exception.h>
 
 #include <array>
@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 }
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 namespace

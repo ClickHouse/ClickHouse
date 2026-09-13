@@ -1,10 +1,10 @@
-#include <Common/LazyPreformattedMessage/details/Message.h>
-#include <Common/LazyPreformattedMessage/details/Storage.h>
+#include <Common/LazyPreformattedMessage/impl/Message.h>
+#include <Common/LazyPreformattedMessage/impl/Storage.h>
 #include <base/defines.h>
 
 #include <utility>
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 Message::Message(fmt::string_view fmt_str_, FormatFn format_fn_, DestroyFn destroy_fn_, void * args_, size_t lane_)

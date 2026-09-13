@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/LazyPreformattedMessage/details/Arguments.h>
-#include <Common/LazyPreformattedMessage/details/Message.h>
-#include <Common/LazyPreformattedMessage/details/Storage.h>
+#include <Common/LazyPreformattedMessage/impl/Arguments.h>
+#include <Common/LazyPreformattedMessage/impl/Message.h>
+#include <Common/LazyPreformattedMessage/impl/Storage.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <base/defines.h>
 
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace DB::LazyPreformattedMessage
+namespace DB::LazyPreformattedMessageImpl
 {
 
 template <typename Stored>
