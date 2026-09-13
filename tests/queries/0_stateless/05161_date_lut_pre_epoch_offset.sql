@@ -1,5 +1,6 @@
--- `Europe/Moscow` was +02:30:17 until 1919: inside the table but before the epoch, where the fast paths
--- gated on offset properties sampled from the epoch onwards must not be taken.
+-- `Europe/Moscow`'s offset kept a sub-minute component until 1919-07-01 (+02:30:17, then +02:31:19 from
+-- 1916-07-03): inside the table but before the epoch, where the fast paths gated on offset properties
+-- sampled from the epoch onwards must not be taken.
 SELECT
     toString(t, 'Europe/Moscow') AS local,
     toHour(t, 'Europe/Moscow') AS h,
@@ -11,7 +12,7 @@ FROM (SELECT toDateTime64(-2195911170, 0, 'Europe/Moscow') AS t);
 
 -- The same over the early years of the table: the accessors must match what `toString` prints, and
 -- truncating must land on a local boundary within one interval. `Asia/Kolkata` was +05:21:10 until 1906 and
--- `Europe/Amsterdam` +00:19:32 until 1937; `UTC` is whole throughout, so it must keep its fast paths.
+-- `Europe/Amsterdam` +00:19:32 until 1937; `UTC` is whole throughout and is the control.
 CREATE TEMPORARY TABLE pre_epoch AS
     SELECT toDateTime64(-2208988800 + number * 1013, 0, 'UTC') AS t FROM numbers(100000);
 

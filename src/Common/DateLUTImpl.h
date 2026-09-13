@@ -249,8 +249,8 @@ private:
     /// Whether the local day always starts at a whole number of hours / minutes past the UTC hour. The
     /// `_during_epoch` flags are sampled only from the local days that can contain a non-negative time point;
     /// the `_in_lut` ones hold over the whole table, which a fast path serving a pre-epoch time point needs
-    /// (`Europe/Moscow` was +2:30:17 until 1919, `Europe/Amsterdam` +0:19:32 until 1937). Each `_in_lut` flag
-    /// implies its `_during_epoch` counterpart.
+    /// (`Europe/Moscow`'s offset kept a sub-minute component until 1919 - +2:30:17, then +2:31:19 from 1916 -
+    /// and `Europe/Amsterdam`'s until 1937). Each `_in_lut` flag implies its `_during_epoch` counterpart.
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
     bool offset_is_whole_number_of_hours_in_lut;
