@@ -61,11 +61,46 @@ public:
         LOG_TRACE(log, "Loading lazy table on first access");
 
         auto nested_storage = get_nested();
+        /// The database replaces this proxy with the loaded storage as soon as it notices the load
+        /// (see `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`), after which the two
+        /// objects are both around and both reachable as this table. Hand over the table-level
+        /// locks, so that they keep excluding each other across the replacement.
+        nested_storage->takeTableLocksFrom(*this);
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
         return nested;
+    }
+
+    StoragePtr getLoadedLazyTable() const override
+    {
+        /// Never wait for the load to finish. This is called by the database with its own mutex
+        /// held, while `getNested` keeps `nested_mutex` for as long as the table takes to load, so
+        /// waiting here would hold the whole database up. Reporting "not loaded yet" is harmless:
+        /// the next lookup replaces the proxy instead.
+        std::unique_lock lock{nested_mutex, std::try_to_lock};
+        if (!lock.owns_lock())
+            return nullptr;
+        return nested;
+    }
+
+    /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
+    /// DELETE. Without these, the first such statement addressed to a table that has not been loaded
+    /// yet is answered by the `IStorage` defaults and rejected, e.g. with
+    /// `Table engine MergeTree doesn't support mutations`. They all mean the table is about to be
+    /// written to, so materializing it here costs nothing.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
     }
 
     bool storesDataOnDisk() const override { return true; }

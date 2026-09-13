@@ -365,6 +365,24 @@ public:
     /// heavyweight and makes table irresponsive.
     TableExclusiveLockHolder lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout);
 
+    /// For a lazily loaded table (see the `lazy_load_tables` database setting), the storage this one
+    /// stands for, once it has been loaded, and nullptr before that. Never triggers the load.
+    /// Any other storage returns nullptr: it already is the storage it stands for.
+    virtual StoragePtr getLoadedLazyTable() const { return nullptr; }
+
+    /// Make this storage use the very same table-level locks as `other` instead of its own, so that
+    /// the two objects form a single lock domain for lockForShare, lockForAlter and lockExclusively.
+    ///
+    /// This exists for lazily loaded tables. A `StorageTableProxy` is published in the database
+    /// before the real storage exists, and is replaced by the real storage once it has been loaded.
+    /// Queries that resolved the table before the replacement keep a reference to the proxy and lock
+    /// it, while queries that resolve it afterwards lock the real storage. Unless both objects lock
+    /// the same primitives, a DROP or an ALTER would not wait for a SELECT that is still running.
+    ///
+    /// Must be called on a freshly created storage that has not been published anywhere yet, and
+    /// both storages must stand for the same table.
+    void takeTableLocksFrom(const IStorage & other);
+
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server, or an aggregate projection.)
@@ -847,7 +865,8 @@ public:
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
-    mutable std::timed_mutex alter_lock;
+    /// Held behind a shared_ptr so that it can be shared with another storage, see takeTableLocksFrom.
+    mutable std::shared_ptr<std::timed_mutex> alter_lock = std::make_shared<std::timed_mutex>();
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).

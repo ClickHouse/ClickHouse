@@ -96,7 +96,7 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const Poco::T
 
 std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::Timespan & acquire_timeout)
 {
-    AlterLockHolder lock{alter_lock, std::defer_lock};
+    AlterLockHolder lock{*alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
         return {};
@@ -118,6 +118,12 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
     return std::move(*lock);
 }
 
+
+void IStorage::takeTableLocksFrom(const IStorage & other)
+{
+    alter_lock = other.alter_lock;
+    drop_lock = other.drop_lock;
+}
 
 TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout)
 {

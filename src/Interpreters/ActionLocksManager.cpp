@@ -62,6 +62,24 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
         storage_locks[table.get()].erase(action_type);
 }
 
+void ActionLocksManager::transfer(const IStorage * from, const StoragePtr & to)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = storage_locks.find(from);
+    if (it == storage_locks.end())
+        return;
+
+    auto moved_locks = std::move(it->second);
+    storage_locks.erase(it);
+
+    /// The locks themselves already belong to `to`: a proxy forwards `getActionLock` to the storage
+    /// it stands for. Only the key has to change. Anything `to` already holds stays as it is.
+    auto & locks = storage_locks[to.get()];
+    for (auto & [action_type, action_lock] : moved_locks)
+        locks.try_emplace(action_type, std::move(action_lock));
+}
+
 void ActionLocksManager::cleanExpired()
 {
     std::lock_guard lock(mutex);
