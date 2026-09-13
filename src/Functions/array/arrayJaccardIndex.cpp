@@ -7,7 +7,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getMostSubtype.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -132,9 +134,23 @@ public:
         const ColumnUInt32 * right_unique_sizes = nullptr;
         if (!typeid_cast<const DataTypeNothing *>(intersect_column_type->getNestedType().get()))
         {
+            /// `arrayIntersect` compares the elements only after casting both arguments to their most common subtype,
+            /// so the unique counts that form the union cardinality must be computed in the same domain.
+            /// Otherwise elements that collapse into one during that cast (for example `Decimal` values of different
+            /// scale) are counted twice in the denominator while contributing a single element to the numerator.
+            const DataTypePtr common_type = getMostSubtype(
+                {arguments[0].type, arguments[1].type}, /* throw_if_result_is_nothing = */ true, /* force_support_conversion = */ true);
+
             auto execute_array_uniq = [&](const ColumnWithTypeAndName & argument)
             {
-                ColumnsWithTypeAndName single_argument{argument};
+                ColumnWithTypeAndName cast_argument = argument;
+                if (!argument.type->equals(*common_type))
+                {
+                    cast_argument.column = castColumn(argument, common_type);
+                    cast_argument.type = common_type;
+                }
+
+                ColumnsWithTypeAndName single_argument{cast_argument};
                 auto uniq_function = array_uniq->build(single_argument);
                 return uniq_function->execute(single_argument, uniq_function->getResultType(), input_rows_count, /* dry_run = */ false)
                     ->convertToFullColumnIfConst();
