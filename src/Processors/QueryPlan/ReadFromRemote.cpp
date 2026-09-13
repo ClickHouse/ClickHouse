@@ -250,6 +250,46 @@ ASTPtr tryBuildAdditionalFilterAST(
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
+    /** Dropping a conjunct that cannot be converted weakens an `AND`, which is only sound where the
+      * predicate is used with positive polarity. Under a `NOT` the weakened `AND` makes the whole
+      * predicate stronger - `NOT (a AND b)` becomes `NOT (a)` - and the shard then drops rows that
+      * the initiator-side filter can never bring back.
+      *
+      * So collect the chain of `AND`s hanging directly off the filter's output, which is the only
+      * place where the polarity is known to be positive. A node with more than one parent may also be
+      * reachable through some other function, so require a single parent while descending.
+      */
+    std::unordered_set<const ActionsDAG::Node *> conjuncts_safe_to_drop;
+    {
+        std::unordered_map<const ActionsDAG::Node *, size_t> num_parents;
+        for (const auto & dag_node : dag.getNodes())
+            for (const auto * child : dag_node.children)
+                ++num_parents[child];
+
+        auto is_and = [](const ActionsDAG::Node * candidate)
+        {
+            return candidate->type == ActionsDAG::ActionType::FUNCTION && candidate->function_base
+                && candidate->function_base->getName() == "and";
+        };
+
+        std::stack<const ActionsDAG::Node *> to_visit;
+        if (is_and(dag.getOutputs().front()))
+            to_visit.push(dag.getOutputs().front());
+
+        while (!to_visit.empty())
+        {
+            const auto * and_node = to_visit.top();
+            to_visit.pop();
+
+            if (!conjuncts_safe_to_drop.insert(and_node).second)
+                continue;
+
+            for (const auto * child : and_node->children)
+                if (is_and(child) && num_parents[child] == 1)
+                    to_visit.push(child);
+        }
+    }
+
     struct Frame
     {
         const ActionsDAG::Node * node;
@@ -374,9 +414,9 @@ ASTPtr tryBuildAdditionalFilterAST(
                 arguments.push_back(std::move(ast));
         }
 
-        /// Allow to skip children only for AND function.
+        /// Allow to skip children only for an AND whose polarity is known to be positive.
         auto func_name = node->function_base->getName();
-        bool is_function_and = func_name == "and";
+        bool is_function_and = func_name == "and" && conjuncts_safe_to_drop.contains(node);
         if (!has_all_args && !is_function_and)
             continue;
 
