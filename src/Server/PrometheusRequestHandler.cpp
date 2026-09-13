@@ -349,7 +349,7 @@ public:
                 if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream)
                     || (write_request.timeseries().empty()
                         && write_request.metadata().empty()
-                        && write_request.GetReflection()->GetUnknownFields(write_request).field_count()))
+                        && write_request.unknown_fields().field_count()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
                 protocol.write(write_request.timeseries(), write_request.metadata());
             }
