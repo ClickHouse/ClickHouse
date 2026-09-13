@@ -10,11 +10,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
-String likePatternToRegexp(std::string_view pattern, bool * has_end_anchor)
+String likePatternToRegexp(std::string_view pattern)
 {
-    if (has_end_anchor)
-        *has_end_anchor = false;
-
     String res;
     res.reserve(pattern.size() * 2);
 
@@ -86,9 +83,6 @@ String likePatternToRegexp(std::string_view pattern, bool * has_end_anchor)
         }
         ++pos;
     }
-
-    if (has_end_anchor)
-        *has_end_anchor = true;
 
     res += '$';
     return res;
@@ -207,27 +201,6 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
     }
 
     return res;
-}
-
-bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
-{
-    const char * pos = pattern.data();
-    const char * const end = pattern.data() + pattern.size();
-
-    while (pos < end)
-    {
-        if (*pos == '\\')
-        {
-            ++pos;
-            if (pos == end)
-                return true;
-            if (*pos != '%' && *pos != '_' && *pos != '\\')
-                return true;
-        }
-        ++pos;
-    }
-
-    return false;
 }
 
 }

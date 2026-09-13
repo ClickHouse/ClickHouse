@@ -19,21 +19,9 @@ public:
     static void visit(ASTPtr & ast);
 
 private:
-    static void visit(
-        ASTSelectWithUnionQuery & selects,
-        const std::map<String, ASTPtr> & exprs,
-        const ASTPtr & with_expression_list,
-        bool recursive_with);
-    static void visit(
-        ASTSelectQuery & select,
-        const std::map<String, ASTPtr> & exprs,
-        const ASTPtr & with_expression_list,
-        bool recursive_with);
-    static void visit(
-        ASTSelectIntersectExceptQuery & select,
-        const std::map<String, ASTPtr> & exprs,
-        const ASTPtr & with_expression_list,
-        bool recursive_with);
+    static void visit(ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
+    static void visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
+    static void visit(ASTSelectIntersectExceptQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
 };
 
 }
