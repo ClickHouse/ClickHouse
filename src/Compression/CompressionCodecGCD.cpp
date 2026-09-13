@@ -27,6 +27,7 @@ public:
     explicit CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_type_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -62,7 +63,11 @@ CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_t
     : gcd_bytes_size(gcd_bytes_size_)
     , is_signed_type(is_signed_type_)
 {
-    setCodecDescription("GCD", {});
+}
+
+ASTPtr CompressionCodecGCD::getCodecDesc() const
+{
+    return makeCodecDescription("GCD");
 }
 
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const

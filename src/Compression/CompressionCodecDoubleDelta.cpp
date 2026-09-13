@@ -11,9 +11,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #include <cstring>
 #include <cstdlib>
@@ -126,6 +124,7 @@ public:
     explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -505,7 +504,11 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("DoubleDelta");
+}
+
+ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
+{
+    return makeCodecDescription("DoubleDelta");
 }
 
 uint8_t CompressionCodecDoubleDelta::getMethodByte() const
