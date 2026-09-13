@@ -12,9 +12,10 @@ BACKUP_URL="http://localhost:11111/test/${BACKUP_PATH}"
 # One table on the local disk and one on an S3 disk: a restore of the first reads every file of the
 # backup through a buffer, a restore of the second copies it from S3 to S3 natively. Their contents
 # differ, so that the backup does not deduplicate the data file of one onto the data file of the other,
-# and the parts are wide with plain file names, so that the data file of the only column is `n.bin`.
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE on_local (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE on_s3 (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0"
+# and the parts are wide, fully stored (not packed) and have plain file names, so that the data file of
+# the only column is `n.bin`.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE on_local (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, replace_long_file_name_to_hash = 0"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE on_s3 (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, replace_long_file_name_to_hash = 0"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO on_local SELECT number FROM numbers(100)"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO on_s3 SELECT number * 2 FROM numbers(100)"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE on_local, TABLE on_s3 TO S3(s3_conn, '${BACKUP_PATH}')" > /dev/null
