@@ -22,6 +22,11 @@ SELECT DISTINCT if(toUInt8((number % 3) * 2), NULL, toUInt32(7)) FROM numbers(30
 SELECT DISTINCT tuple(if(number % 3, NULL, 'x')) FROM numbers(30) ORDER BY 1;
 ('x')
 (NULL)
+-- A hash-only aggregate reaches the byte through `updateHashWithValue`, and keeps nothing but the
+-- hash. The argument has to be a tuple: a Nullable argument's NULLs are dropped by the aggregate's
+-- Null combinator and never reach the hash. The second column is the canonical control.
+SELECT uniqExact(tuple(if(number % 3, NULL, 'x'))), uniqExact(tuple(if(number % 2, NULL, 'x'))) FROM numbers(30);
+2	2
 -- Negating a null map must negate its nullness, not its bits: `1 ^ 2` is truthy, which turned rows
 -- holding 'x' into NULLs. Only the group whose condition byte is 2 was affected.
 SELECT number % 3 AS c, countIf(v IS NULL) FROM (SELECT number, if(number % 3, toNullable('x'), NULL) AS v FROM numbers(30)) GROUP BY c ORDER BY c;
