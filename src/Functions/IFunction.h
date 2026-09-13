@@ -54,11 +54,6 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
-    /// guarantees this, so it is the default answer; functions that handle NULLs themselves but
-    /// still propagate them (`CAST`, `toNullable`, ...) override it to say so.
-    virtual bool isNullPropagating(const DataTypePtr & /*result_type*/) const { return useDefaultImplementationForNulls(); }
-
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
@@ -207,6 +202,15 @@ public:
 #endif
 
     virtual bool isStateful() const { return false; }
+
+    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
+      * noticeable amount of time, performs an external request, or accounts profile events that a user can
+      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
+      * Such a function still returns the same value for the same arguments, so it is neither
+      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
+      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
+      */
+    virtual bool hasObservableSideEffects() const { return false; }
 
     /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
       * to a small fixed-size result, so that computing it early and carrying the result instead of the
@@ -591,11 +595,6 @@ public:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
-      * override this when the function handles NULLs itself but still propagates them.
-      */
-    virtual bool isNullPropagating(const DataTypePtr & /*result_type*/) const { return useDefaultImplementationForNulls(); }
-
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
       */
@@ -657,6 +656,8 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::hasObservableSideEffects`.
+    virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }

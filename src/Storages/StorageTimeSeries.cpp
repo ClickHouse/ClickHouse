@@ -1,8 +1,5 @@
 #include <Storages/StorageTimeSeries.h>
 
-#include <Access/Common/AccessFlags.h>
-#include <Access/Common/RowPolicyDefs.h>
-#include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -24,7 +21,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -53,7 +49,6 @@ namespace TimeSeriesSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -349,20 +344,6 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
     if (auto target_table = tryGetTargetTable(target_kind, local_context))
         return target_table->getStorageID();
     return StorageID::createEmpty();
-}
-
-StorageID StorageTimeSeries::tryGetConfiguredExternalTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
-{
-    const auto * target = tryGetTarget(target_kind);
-
-    /// An inner target carries a UUID or nothing at all, and the name of a non-Atomic one is derived from
-    /// this table's own identity, so in either case there is no separate name a grant could be written on.
-    if (!target || target->table_id.table_name.empty())
-        return StorageID::createEmpty();
-
-    /// The same resolution getTargetTableImpl() performs, so the two cannot disagree about which table the
-    /// configured name means.
-    return local_context->tryResolveStorageID(target->table_id);
 }
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
@@ -804,54 +785,6 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
-void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, const ContextPtr & context, AccessType access_type)
-{
-    context->checkAccess(access_type, time_series_storage_id);
-
-    if (access_type != AccessType::SELECT)
-        return;
-
-    auto row_policy_filter = context->getRowPolicyFilter(
-        time_series_storage_id.getDatabaseName(), time_series_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    /// The rows are the target table's, and its columns are not the TimeSeries table's, so a filter written
-    /// against the latter has nothing here to evaluate against and cannot be translated.
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "A row policy is defined on table {}, and it cannot be enforced on the rows returned by this table "
-            "function because they belong to a target table with different columns",
-            time_series_storage_id.getNameForLogs());
-}
-
-
-void checkAccessToTimeSeriesTargetTable(
-    const StoragePtr & target_table, const ContextPtr & context, AccessType access_type, const String & column)
-{
-    if (column.empty())
-        context->checkAccess(access_type, target_table->getStorageID());
-    else
-        context->checkAccess(access_type, target_table->getStorageID(), column);
-
-    if (const auto * alias = target_table->as<StorageAlias>();
-        alias && !alias->isTargetTableGranted(context, access_type, column))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges to access the table that {} points to",
-            target_table->getStorageID().getNameForLogs());
-}
-
-
-void checkAccessToTimeSeriesTargetTableID(
-    const StorageID & target_table_id, const ContextPtr & context, AccessType access_type, const String & column)
-{
-    if (column.empty())
-        context->checkAccess(access_type, target_table_id);
-    else
-        context->checkAccess(access_type, target_table_id, column);
-}
-
-
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
@@ -885,12 +818,12 @@ metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: v
 metric_name2[...] = ...
 ```
 
-:::info
+<Info>
 This is a private preview feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
 with the `enable_time_series_table` setting.
 Input the command `set enable_time_series_table = 1`.
-:::
+</Info>
 
 ## Syntax {#syntax}
 
@@ -903,9 +836,9 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
 
-:::note
+<Note>
 The keyword `SAMPLES` has an alias `DATA` which is kept for backwards compatibility.
-:::
+</Note>
 
 ## Usage {#usage}
 
@@ -1248,11 +1181,11 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 This statement will add columns `instance` and `job` to the inner [tags](#tags-table) target table.
 The values of the tags `instance` and `job` will be stored both in those columns and in the `tags` column.
 
-:::note
+<Note>
 In tables created by older versions of ClickHouse the `tags` column contains only the tags without dedicated
 columns and without the metric name, and the `all_tags` column is an ephemeral column which was filled on insertion
 with all the tags except the metric name.
-:::
+</Note>
 
 ## Table engines of inner target tables {#inner-table-engines}
 
