@@ -250,6 +250,16 @@ private:
     bool offset_is_whole_number_of_minutes_during_epoch;
     bool offset_is_fixed;
 
+    /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
+    /// stopped changing their offset before 1970. The minute variant is weaker - a whole number of minutes,
+    /// changing only by whole hours - which is what makes the minute independent of the offset.
+    bool offset_is_fixed_during_epoch;
+    bool offset_minute_of_hour_is_constant_during_epoch;
+    /// Added before the division in `toHour` / `toMinute`: one extra whole day (hour) shifts the quotient by
+    /// exactly one cycle, so the result modulo 24 (60) is unchanged, and the dividend stays non-negative.
+    Time hour_of_day_offset_addend;
+    Time minute_of_hour_offset_addend;
+
     /// Time zone name.
     std::string time_zone;
 
@@ -865,6 +875,9 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.hour);
 
+        if (t >= 0 && offset_is_fixed_during_epoch)
+            return static_cast<unsigned>(((t + hour_of_day_offset_addend) / 3600) % 24);
+
         const LUTIndex index = findIndexInRange(t);
 
         Time time = t - lut[index].date;
@@ -941,8 +954,12 @@ public:
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t / 60) % 60;
 
-        /// To consider the DST changing situation within this day
-        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
+        if (t >= 0 && offset_minute_of_hour_is_constant_during_epoch)
+            return static_cast<unsigned>(((t + minute_of_hour_offset_addend) / 60) % 60);
+
+        /// The zones reaching here are the ones whose minute-of-hour offset is not constant during the epoch,
+        /// such as `Australia/Lord_Howe` (a 30-minute DST step) and `Asia/Kathmandu` (a sub-hour offset that
+        /// moved in 1986), so the offset change within the day has to be applied explicitly.
 
         LUTIndex index = findIndexInRange(t);
         UInt32 time = static_cast<UInt32>(t - lut[index].date);

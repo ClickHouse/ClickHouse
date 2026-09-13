@@ -300,29 +300,25 @@ Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, Postgr
 
 Enable PRQL - an alternative to SQL.
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge/>
-
-**Aliases**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to enable experimental timeSeries* aggregate functions."}]}]}/>
-
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
 
 <ExperimentalBadge/>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Added new setting to allow the TimeSeries table engine"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}]}]}/>
 
-Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
-- 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
-- 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
+Enable the `trino` value of the `dialect` setting.
+
+When `dialect` is set to `trino`, queries are written in Trino SQL: Trino-specific
+syntax (`ARRAY[...]` literals, `TRY_CAST`, `UNNEST`, `ROW` types, `OFFSET` before `LIMIT`)
+is translated to ClickHouse SQL, and Trino function names are mapped to their
+ClickHouse equivalents. The `SET` query is still parsed as plain SQL so that the
+dialect can be switched back.
+
+The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
+on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
+An explicit `SETTINGS` clause in the query still takes precedence.
 
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 

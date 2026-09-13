@@ -143,6 +143,14 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
     offset_is_fixed = true;
+    offset_is_fixed_during_epoch = true;
+    offset_minute_of_hour_is_constant_during_epoch = true;
+
+    /// The UTC time of day at which a local day begins: 66600 for `Asia/Kolkata`, whose +05:30 puts local
+    /// midnight at 18:30 the day before.
+    const Time utc_time_of_day_at_local_midnight = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
+    hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
+    minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
     cctz::civil_day date = lut_start;
     cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
@@ -215,6 +223,22 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
 
         if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
             offset_is_whole_number_of_minutes_during_epoch = false;
+
+        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point;
+        /// west of UTC that day starts before the epoch.
+        if (start_of_day > -86400)
+        {
+            Time time_of_day = start_of_day % 86400;
+            if (time_of_day < 0)
+                time_of_day += 86400;
+
+            if (values.amount_of_offset_change_value != 0 || (i != 0 && values.date - lut[i - 1].date != 86400))
+                offset_is_fixed_during_epoch = false;
+
+            if (time_of_day % 60 != 0 || time_of_day % 3600 != utc_time_of_day_at_local_midnight % 3600
+                || values.amount_of_offset_change() % 3600 != 0)
+                offset_minute_of_hour_is_constant_during_epoch = false;
+        }
 
         /// An offset change at midnight makes consecutive days start more or less than 86400 seconds apart;
         /// a change at any other time is recorded in amount_of_offset_change_value of the affected day.
