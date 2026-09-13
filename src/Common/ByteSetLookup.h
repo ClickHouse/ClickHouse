@@ -17,7 +17,7 @@
 namespace DB
 {
 
-/// A set of bytes with an O(1) membership test with for the first byte that is (or is not) in the set.
+/// A set of bytes with an O(1) membership test for the first byte that is (or is not) in the set.
 ///
 /// Supports vectorized search for long sequences of bytes.
 /// The vectorized search classifies 16 bytes at once with two nibble lookups (`pshufb` / `tbl`).
@@ -161,11 +161,14 @@ private:
 #if defined(__SSSE3__)
         return static_cast<UInt32>(_mm_movemask_epi8(std::bit_cast<__m128i>(lanes)));
 #else
-        /// Keep one distinct bit per lane within each 8-lane half, then sum the halves pairwise.
+        /// Keep one distinct bit per lane within each 8-lane half, so that summing a half ORs its bits.
+        /// Three rounds of `addp` of the vector with itself leave the sums of the halves in lanes 0 and 1, the two bytes of the mask.
         const uint8x16_t bit_per_lane = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
-        uint8x16_t bits = vandq_u8(std::bit_cast<uint8x16_t>(lanes), bit_per_lane);
-        uint64x2_t halves = vpaddlq_u32(vpaddlq_u16(vpaddlq_u8(bits)));
-        return static_cast<UInt32>(vgetq_lane_u64(halves, 0) | (vgetq_lane_u64(halves, 1) << 8));
+        uint8x16_t sums = vandq_u8(std::bit_cast<uint8x16_t>(lanes), bit_per_lane);
+        sums = vpaddq_u8(sums, sums);
+        sums = vpaddq_u8(sums, sums);
+        sums = vpaddq_u8(sums, sums);
+        return vgetq_lane_u16(vreinterpretq_u16_u8(sums), 0);
 #endif
     }
 
