@@ -112,6 +112,8 @@ private:
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();
+
+    friend void registerSystemCommands();
 };
 
 
