@@ -129,9 +129,14 @@ def is_leader(node, table_name="test_le"):
     filters with `x > 0`, so the probe rows are not cleaned up — `s3_plain_rewritable`
     (the shared-metadata disk these tests require) does not support mutations, and
     we would not be able to issue an `ALTER ... DELETE` here even on the leader.
+
+    `x` is named explicitly so that the probe also fits the tables of this module that
+    carry more than that one column: a bare `VALUES (0)` is a `SYNTAX_ERROR` there, and
+    the caller cannot tell that apart from a follower's refusal, so the table would look
+    like it never elects a leader.
     """
     try:
-        node.query(f"INSERT INTO {table_name} VALUES (0)")
+        node.query(f"INSERT INTO {table_name} (x) VALUES (0)")
         return True
     except Exception as e:
         if "TABLE_IS_READ_ONLY" in str(e):
