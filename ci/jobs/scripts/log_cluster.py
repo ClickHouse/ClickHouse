@@ -89,9 +89,44 @@ class LogCluster:
         ),
     )
 
+    # The columns that tell apart the servers of one check: the integration
+    # tests run many servers per check and fill these in per instance (see
+    # tests/integration/helpers/ci_logs_export.py), every other job exports one
+    # server and leaves them empty. They belong to the `system.*_log` export
+    # only - the hand-made tables of LogClusterBuildProfileQueries do not have
+    # them - so they extend META_COLUMNS in `log_export_columns` rather than
+    # being a part of it.
+    PER_SERVER_COLUMNS = (
+        MetaColumn(
+            name="test_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+            index="INDEX ix_test (test_name) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="node_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+        ),
+    )
+
+    # The META_COLUMNS column the per-server columns follow.
+    PER_SERVER_COLUMNS_AFTER = "check_name"
+
     @classmethod
     def meta_columns(cls):
         return cls.META_COLUMNS
+
+    @classmethod
+    def log_export_columns(cls):
+        """The columns of the `system.*_log` export: META_COLUMNS with
+        PER_SERVER_COLUMNS spliced in after PER_SERVER_COLUMNS_AFTER."""
+        columns = []
+        for column in cls.META_COLUMNS:
+            columns.append(column)
+            if column.name == cls.PER_SERVER_COLUMNS_AFTER:
+                columns.extend(cls.PER_SERVER_COLUMNS)
+        return tuple(columns)
 
     @classmethod
     def workflow_start_time(cls):
@@ -130,20 +165,64 @@ class LogCluster:
         followed by their skip indexes. The trailing separator belongs to it,
         the script splices the fragment right after the opening parenthesis of
         a `SHOW CREATE TABLE` output."""
-        columns = cls.meta_columns()
+        columns = cls.log_export_columns()
         return "".join(
             [f"{c.name} {c.type}, " for c in columns]
             + [f"{c.index}, " for c in columns if c.index]
         )
 
     @classmethod
-    def extra_columns_expression(cls, check_start_time, check_name="", commit_sha=""):
+    def _expression(cls, columns, values):
+        return ", ".join(
+            f"{c.cast.format(values[c.name])} AS {c.name}" for c in columns
+        )
+
+    @classmethod
+    def log_export_values(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
+        """Value of every column of the `system.*_log` export."""
+        values = cls.meta_values(check_start_time, check_name, commit_sha)
+        values["test_name"] = test_name
+        values["node_name"] = node_name
+        return values
+
+    @classmethod
+    def extra_columns_expression(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
         """`EXTRA_COLUMNS_EXPRESSION` for setup_log_cluster.sh: the same
         columns as SELECT expressions, in the same order as the DDL above."""
-        values = cls.meta_values(check_start_time, check_name, commit_sha)
-        return ", ".join(
-            f"{c.cast.format(values[c.name])} AS {c.name}" for c in cls.meta_columns()
+        return cls._expression(
+            cls.log_export_columns(),
+            cls.log_export_values(
+                check_start_time, check_name, commit_sha, test_name, node_name
+            ),
         )
+
+    @classmethod
+    def extra_columns_expression_head(
+        cls, check_start_time, check_name="", commit_sha=""
+    ):
+        """The part of `extra_columns_expression` before the per-server columns.
+
+        A job that runs more than one server per check - the integration tests -
+        gets the expression in two parts and fills the per-server columns in
+        itself, for every server it starts."""
+        columns = cls.log_export_columns()
+        head = columns[: columns.index(cls.PER_SERVER_COLUMNS[0])]
+        return cls._expression(
+            head, cls.meta_values(check_start_time, check_name, commit_sha)
+        )
+
+    @classmethod
+    def extra_columns_expression_tail(cls):
+        """The part of `extra_columns_expression` after the per-server columns.
+
+        None of these columns depends on the check, so it takes no arguments."""
+        columns = cls.log_export_columns()
+        tail = columns[columns.index(cls.PER_SERVER_COLUMNS[-1]) + 1 :]
+        return cls._expression(tail, cls.meta_values(""))
 
     @classmethod
     def meta_column_names(cls):
