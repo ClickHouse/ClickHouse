@@ -39,11 +39,12 @@
 #include <Analyzer/Utils.h>
 
 #include <Common/SipHash.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 
 #include <stack>
 
@@ -62,11 +63,14 @@ namespace Setting
 namespace
 {
 
+using CaseInsensitiveColumnNamesCache = std::unordered_map<const IQueryTreeNode *, NameSet>;
+
 struct ColumnContext
 {
     NameAndTypePair column;
     TableExpressionNodePtr column_source;
     ContextPtr context;
+    CaseInsensitiveColumnNamesCache & case_insensitive_column_names_cache;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -159,21 +163,36 @@ bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
     return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
 }
 
+NameSet & getCaseInsensitiveColumnNames(
+    const QueryTreeNodePtr & column_source,
+    CaseInsensitiveColumnNamesCache & cache)
+{
+    auto [it, inserted] = cache.try_emplace(column_source.get());
+    if (!inserted)
+        return it->second;
+
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
+        return it->second;
+
+    auto columns = storage_snapshot->getColumns(GetColumnsOptions::All);
+    it->second.reserve(columns.size());
+    for (const auto & column : columns)
+        it->second.insert(boost::to_upper_copy(column.name));
+
+    return it->second;
+}
+
 /// True when the source declares a top-level column whose name matches `column_name` up to case.
 /// A reader with case-insensitive column matching (e.g. `input_format_orc_case_insensitive_column_matching`)
 /// binds a flattened subcolumn name like `a.b` to such a column instead of the tuple element,
 /// so the rewrite must not fire.
-bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, const String & column_name)
+bool sourceHasColumnCaseInsensitive(
+    const QueryTreeNodePtr & column_source,
+    const String & column_name,
+    CaseInsensitiveColumnNamesCache & cache)
 {
-    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
-    if (!storage_snapshot)
-        return false;
-
-    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions::All))
-        if (boost::iequals(column.name, column_name))
-            return true;
-
-    return false;
+    return getCaseInsensitiveColumnNames(column_source, cache).contains(boost::to_upper_copy(column_name));
 }
 
 /// Two substreams are the same step only if they are the same kind AND name the same element: `type`
@@ -267,7 +286,7 @@ bool canOptimizeFunctionToSubcolumn(const FunctionNode & function_node, TypeInde
 bool canOptimizeStringSizeSubcolumn(const ColumnContext & ctx, const NameAndTypePair & column)
 {
     return !sourceHasColumn(ctx.column_source, column.name)
-        && !sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+        && !sourceHasColumnCaseInsensitive(ctx.column_source, column.name, ctx.case_insensitive_column_names_cache)
         && canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type);
 }
 
@@ -556,7 +575,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
-            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name, ctx.case_insensitive_column_names_cache)
             || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
 
@@ -1430,6 +1449,7 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 private:
     IdentifiersToOptimize identifiers_to_optimize;
     std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
+    CaseInsensitiveColumnNamesCache case_insensitive_column_names_cache;
 
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
@@ -1499,7 +1519,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext()};
+                ColumnContext ctx{std::move(column), column_source, getContext(), case_insensitive_column_names_cache};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1522,7 +1542,7 @@ public:
                 && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_source, getContext()};
+                ColumnContext ctx{std::move(column), chain_source, getContext(), case_insensitive_column_names_cache};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))
