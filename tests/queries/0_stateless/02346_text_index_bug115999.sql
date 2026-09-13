@@ -363,7 +363,7 @@ ENGINE = MergeTree
 ORDER BY id;
 
 CREATE TABLE t_115999_dist AS t_115999_local
-ENGINE = Distributed('default', currentDatabase(), t_115999_local, rand());
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), t_115999_local, rand());
 
 INSERT INTO t_115999_local VALUES (1, 1, ['alpha beta']), (2, 2, ['gamma delta']);
 

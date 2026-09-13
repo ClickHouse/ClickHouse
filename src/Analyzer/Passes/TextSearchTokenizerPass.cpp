@@ -15,6 +15,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/StorageDistributed.h>
@@ -263,12 +264,16 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, size_t & s
 /// The names one indexed expression can be read through, the carriers MergeTreeIndexConditionText also
 /// accepts: `m['k']` and the `m.key_*` subcolumn for a `mapValues(m)` index, and a CAST around a JSON
 /// subcolumn (`j.k::String`).
-Names carrierNames(const IQueryTreeNode & resolved, const String & resolved_name)
+Names carrierNames(const IQueryTreeNode & resolved, const String & resolved_name, const StorageInMemoryMetadata & metadata)
 {
     Names names{resolved_name};
 
-    if (auto parsed = tryParseMapSubcolumnName(resolved_name))
-        names.push_back("mapValues(" + parsed->first + ")");
+    /// Building the shadowing set walks every column, so only ask once the name has the shape at all.
+    if (looksLikeMapSubcolumnName(resolved_name))
+    {
+        if (auto parsed = tryParseMapSubcolumnName(resolved_name, getColumnsShadowingMapSubcolumns(metadata)))
+            names.push_back("mapValues(" + parsed->first + ")");
+    }
 
     const auto * function_node = resolved.as<FunctionNode>();
     if (!function_node)
@@ -341,7 +346,7 @@ private:
             return it->second;
 
         /// Otherwise the row scan would tokenize a carrier differently from the index describing it.
-        const Names carriers = carrierNames(*resolved, key.second);
+        const Names carriers = carrierNames(*resolved, key.second, *metadata);
 
         for (const auto & index : indices)
         {
