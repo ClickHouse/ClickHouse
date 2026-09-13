@@ -463,6 +463,19 @@ public:
         bool skip_partition_pruning_ = false);
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
+
+    /// The query condition cache key for granules that the query's filtering as a whole excludes:
+    /// the hash of `query_info.filter_actions_dag` - which holds the WHERE predicate and, for a TopK
+    /// read, the `__topKFilter` PREWHERE - salted for a TopK read with the TopK plan parameters and
+    /// the part set. Every writer of such granules (index analysis here, the WHERE `FilterTransform`
+    /// tagged by `updateQueryConditionCache`, and the PREWHERE `__topKFilter` in
+    /// `MergeTreeSelectProcessor::read`) must use it, and `filterPartsByQueryConditionCache` probes
+    /// it. Empty when nothing may be recorded for this filter.
+    static std::optional<UInt64> getQueryConditionCacheConditionHash(
+        const SelectQueryInfo & query_info_,
+        const std::optional<TopKFilterInfo> & top_k_filter_info_,
+        bool use_query_condition_cache_for_top_k);
+
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }

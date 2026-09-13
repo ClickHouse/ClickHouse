@@ -691,6 +691,26 @@ bool isDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+    }
+
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return node->isDeterministic();
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return node->function_base->getName() == "__topKFilter";
+
+    return true;
+}
+
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)

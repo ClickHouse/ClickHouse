@@ -422,31 +422,48 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
                     && task->getInfo().data_part_info->getDataPart())
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    /// A TopK read's PREWHERE is the dynamic `__topKFilter`, which is deliberately
+                    /// non-deterministic (it compares against a running threshold), so it cannot be
+                    /// hashed as a predicate. Such a read is given a precomputed key instead: the hash
+                    /// of the query's whole filter, salted with the TopK plan parameters and the part
+                    /// set. Recording the emptied granules under it is sound - a granule that
+                    /// `__topKFilter` emptied holds no row that the threshold's final value would have
+                    /// kept, hence no row of the query's result - and the salt keeps the decision from
+                    /// being reused by a query with a different filter, LIMIT or sort column.
+                    std::optional<UInt64> condition_hash = reader_settings.top_k_condition_hash;
+
+                    if (!condition_hash)
                     {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
+                        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                         {
+                            if (output->result_name != prewhere_info->prewhere_column_name)
+                                continue;
+
                             if (!VirtualColumnUtils::isDeterministic(output))
                                 continue;
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
+                            condition_hash = output->getHash();
                             break;
                         }
+                    }
+
+                    if (condition_hash)
+                    {
+                        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                        const auto & data_part_info = task->getInfo().data_part_info;
+
+                        String part_name = data_part_info->isProjectionPart()
+                            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                            : data_part_info->getPartName();
+                        query_condition_cache->write(
+                            /// QueryConditionCache is a coordinator feature; concrete part present here.
+                            data_part_info->getDataPart()->storage.getStorageID().uuid,
+                            part_name,
+                            *condition_hash,
+                            prewhere_info->prewhere_actions.getNames()[0],
+                            task->getPrewhereUnmatchedMarks(),
+                            data_part_info->getIndexGranularity().getMarksCount(),
+                            data_part_info->getIndexGranularity().hasFinalMark());
                     }
                 }
 

@@ -1630,9 +1630,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
         /// read goes through a TopK filter, the cached granule decisions are valid only for the same
         /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
-        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
-        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
-        /// always misses.
+        /// read path passes `apply_top_k_salt = false`: a TopK read's PREWHERE is `__topKFilter`,
+        /// which is not hashable as a predicate, so `MergeTreeSelectProcessor::read` records the
+        /// granules it empties under this same (salted) WHERE key rather than under the PREWHERE one.
         if (apply_top_k_salt && top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
@@ -1772,6 +1772,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
+                /// Nothing is ever written under the hash of a non-deterministic PREWHERE - a TopK
+                /// read's `__topKFilter` is recorded under the WHERE key below instead - so probing it
+                /// would only cost a cache lookup per part.
+                if (!VirtualColumnUtils::isDeterministic(outputs))
+                    break;
+
                 auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",

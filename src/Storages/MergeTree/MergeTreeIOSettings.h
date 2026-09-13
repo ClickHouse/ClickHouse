@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -63,6 +64,14 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Set only for a TopK read (`ORDER BY ... LIMIT n` served by the dynamic `__topKFilter`
+    /// PREWHERE): the query condition cache key under which the granules that PREWHERE empties are
+    /// recorded. It covers the query's whole filter and is salted with the TopK plan parameters and
+    /// the part set, because `__topKFilter` alone hashes the same across queries that select
+    /// different rows. See `ReadFromMergeTree::getQueryConditionCacheConditionHash`. For a non-TopK
+    /// read this is empty and PREWHERE-emptied granules are recorded under the PREWHERE predicate's
+    /// own hash instead.
+    std::optional<UInt64> top_k_condition_hash;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

@@ -157,32 +157,6 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
-/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
-/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
-///
-/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
-/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
-/// captures such constants could write QCC entries and reuse them later when the constant's
-/// value has changed.
-bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
-{
-    for (const auto * child : node->children)
-        if (!isDeterministicAllowingTopKFilter(child))
-            return false;
-
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
-        return node->function_base->getName() == "__topKFilter";
-
-    return true;
-}
-
 bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
 {
     std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
@@ -3722,29 +3696,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
 
-        std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
+        std::optional<UInt64> condition_hash;
+        if (reader_settings.use_query_condition_cache
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
                 && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
-            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-            /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
-            /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
-            /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
-            /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
-            /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
-            /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
-            /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
-            const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
-            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
-            {
-                size_t hash = outputs.front()->getHash();
-                if (top_k_filter_info)
-                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
-                condition_hash = hash;
-            }
+            condition_hash = getQueryConditionCacheConditionHash(
+                query_info_, top_k_filter_info, settings[Setting::use_query_condition_cache_for_top_k]);
         }
 
         /// Fill query condition cache with ranges excluded by index analysis.
@@ -5099,6 +5058,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    /// For a TopK read, the granules that the dynamic `__topKFilter` PREWHERE empties are recorded
+    /// under the key of the query's whole filter (the `WHERE` predicate and `__topKFilter` together),
+    /// salted with the TopK plan parameters and the part set - not under the PREWHERE predicate's own
+    /// hash. `__topKFilter` compares against a running threshold derived from the rows that survive
+    /// the `WHERE`, so its verdict is only reusable by a query that filters the same rows and asks for
+    /// the same top N; the bare `__topKFilter(col)` predicate is identical across queries with
+    /// different `WHERE` clauses and would let one of them reuse another's granule decisions.
+    /// This is the key `updateQueryConditionCache` gives the `WHERE` filter and `selectRangesToReadImpl`
+    /// gives the index-analysis exclusions, and the one `filterPartsByQueryConditionCache` probes.
+    if (reader_settings.use_query_condition_cache && top_k_filter_info && !vector_search_parameters.has_value()
+        && !result.sampling.use_sampling)
+    {
+        reader_settings.top_k_condition_hash = getQueryConditionCacheConditionHash(
+            query_info, top_k_filter_info, context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]);
+    }
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).
@@ -6109,6 +6084,40 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     size_t combined_hash = top_k_filter_info->condition_hash;
     boost::hash_combine(combined_hash, parts_hash.get64());
     top_k_filter_info->condition_hash = combined_hash;
+}
+
+std::optional<UInt64> ReadFromMergeTree::getQueryConditionCacheConditionHash(
+    const SelectQueryInfo & query_info_,
+    const std::optional<TopKFilterInfo> & top_k_filter_info_,
+    bool use_query_condition_cache_for_top_k)
+{
+    if (!query_info_.filter_actions_dag || query_info_.isFinal())
+        return {};
+
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, nothing may
+    /// be recorded for a TopK read: the excluded granules include ones dropped by the running
+    /// `__topKFilter` threshold, which is not sound to store in a threshold-oblivious cache.
+    if (top_k_filter_info_ && !use_query_condition_cache_for_top_k)
+        return {};
+
+    /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but
+    /// de-risks the implementation a lot while not losing much usefulness.
+    const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+    if (outputs.size() != 1)
+        return {};
+
+    /// Issues #81506 and #84508. For a non-TopK read `top_k_filter_info_` is empty and this is
+    /// equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
+    if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(outputs.front()))
+        return {};
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
+    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+    size_t hash = outputs.front()->getHash();
+    if (top_k_filter_info_)
+        boost::hash_combine(hash, top_k_filter_info_->condition_hash);
+    return hash;
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
