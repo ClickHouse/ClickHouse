@@ -550,6 +550,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 ² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint for patterns the dictionary scan does not support: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
+Some needles are additionally not eligible, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
@@ -1424,6 +1425,12 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
+
+For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
+
+- The needle contains the letter `k`. `ilike` treats `U+212A KELVIN SIGN` as a `k`, but the dictionary scan compares bytes and would miss a row spelled that way. `U+212A` is the only character that `ilike` folds onto an ASCII letter or digit, so `k` is the only affected needle character.
+- The index preprocessor expression contains `lowerUTF8` or `upperUTF8`. These rewrite non-ASCII characters into ASCII letters (`ß` into `SS`, `ſ` into `S`), which would make the index report rows that `ilike` does not match.
 
 ### Trivial count queries {#count-queries-perf}
 

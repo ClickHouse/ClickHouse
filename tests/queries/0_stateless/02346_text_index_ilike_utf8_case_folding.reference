@@ -1,0 +1,32 @@
+lowerUTF8 preprocessor, U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE folds to i + U+0307
+[2]
+[2]
+lowerUTF8 preprocessor, U+212A KELVIN SIGN folds to k
+[2]
+[2]
+upperUTF8 preprocessor, U+00DF LATIN SMALL LETTER SHARP S folds to SS
+[2]
+[2]
+upperUTF8 preprocessor, U+017F LATIN SMALL LETTER LONG S folds to S
+[2]
+[2]
+no preprocessor, U+212A KELVIN SIGN is a token separator but ILIKE reads it as k
+[1,2]
+[1,2]
+lower preprocessor, same as above
+[1,2]
+[1,2]
+upper preprocessor, needle folded to K by the preprocessor is rejected too
+[1,2]
+[1,2]
+array tokenizer, same needle restriction
+[1,2]
+[1,2]
+0
+1
+Which predicates still reach the dictionary scan
+ILIKE %monde%	1	1
+ILIKE %monkey%	0
+LIKE %Monkey%	1
+['Hello Monkey']
+['Hello Monkey']
