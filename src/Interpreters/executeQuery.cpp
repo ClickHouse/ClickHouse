@@ -2839,21 +2839,28 @@ static BlockIO executeQueryImpl(
                 query_table = query_with_table_output->getTable();
             }
 
-            /// Propagate WITH statement to children ASTSelect.
-            if (settings[Setting::enable_global_with_statement])
+            /// `EXPLAIN TEXT` preserves its source for formatting and explicit actions
+            const auto * explain_query = out_ast->as<ASTExplainQuery>();
+            if (!explain_query || explain_query->getKind() != ASTExplainQuery::FormattedQuery)
             {
-                ApplyWithGlobalVisitor::visit(out_ast);
-            }
+                /// propagate `WITH` statements to child `ASTSelectQuery` nodes
+                if (settings[Setting::enable_global_with_statement])
+                {
+                    ApplyWithGlobalVisitor::visit(out_ast);
+                }
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
-            }
+                {
+                    SelectIntersectExceptQueryVisitor::Data data{
+                        settings[Setting::intersect_default_mode],
+                        settings[Setting::except_default_mode]};
+                    SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
+                }
 
-            {
-                /// Normalize SelectWithUnionQuery
-                NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+                {
+                    /// Normalize `ASTSelectWithUnionQuery`
+                    NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+                    NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+                }
             }
 
             /// Check the limits.

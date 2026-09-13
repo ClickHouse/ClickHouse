@@ -92,7 +92,6 @@ namespace Setting
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
