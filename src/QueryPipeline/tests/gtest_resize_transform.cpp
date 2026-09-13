@@ -44,6 +44,10 @@ testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstre
 
     const std::vector<std::string> key_columns{"K1", "K2", "K3"};
 
+    /// A strict resize from N streams to N streams does nothing, so `Pipe::resize`
+    /// elides it before it can be split. No StrictResize is built in that case.
+    const bool strict_no_op = strict && instreams == outstreams;
+
     size_t expected_groups = std::min<size_t>(instreams, outstreams / min_outstreams_per_resize_after_split);
     size_t groups_with_extra_instream = instreams % expected_groups;
     size_t groups_with_extra_outstream = outstreams % expected_groups;
@@ -62,6 +66,22 @@ testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstre
             resize_procs.push_back(proc);
         else if (strict && proc->getName() == "StrictResize")
             resize_procs.push_back(proc);
+    }
+
+    if (strict_no_op)
+    {
+        EXPECT_EQ(resize_procs.size(), 0);
+
+        /// The pipe must still deliver every row even though nothing was inserted.
+        QueryPipeline no_op_pipeline(std::move(pipe));
+        PullingPipelineExecutor no_op_executor(no_op_pipeline);
+
+        size_t no_op_rows = 0;
+        Block no_op_block;
+        while (no_op_executor.pull(no_op_block))
+            no_op_rows += no_op_block.rows();
+        EXPECT_EQ(no_op_rows, rows_per_stream * instreams);
+        return;
     }
 
     ASSERT_GE(resize_procs.size(), 1);

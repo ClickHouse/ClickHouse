@@ -147,6 +147,18 @@ private:
             futexWakeAll(writer_active);
     }
 
+    /// `isb` is used rather than `yield` deliberately. It is an instruction
+    /// synchronisation barrier rather than a wait hint, but that is the point:
+    /// it stalls the pipeline, and a stall is what throttles the rate at which
+    /// this loop probes the contended line. `yield` is architecturally a hint
+    /// and is a no-op on the cores we run on, so it does not back off at all.
+    /// Measured on Graviton4 with 1 writer against N readers spinning here,
+    /// reader throughput relative to `isb` was 0.71x (`yield`) and 0.85x (no
+    /// hint) at 8 readers, and 0.56x / 0.67x at 48; drain latency was lowest
+    /// with `isb` throughout (942ns vs 1872/1301 at 8 readers). Without the
+    /// stall the writer is also intermittently starved outright -- no hint
+    /// livelocked it in 2 of 3 runs at 32 readers, `yield` in 1 of 3 at 48,
+    /// `isb` in none.
     static void spinPause()
     {
 #if defined(__x86_64__)

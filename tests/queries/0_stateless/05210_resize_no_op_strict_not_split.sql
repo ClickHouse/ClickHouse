@@ -7,6 +7,11 @@
 --
 -- Only the plan is inspected, so the row counts below are never read.
 
+-- The assertions below depend on the exact stream count, so `max_threads` must
+-- survive as written. The free-memory limiter would otherwise silently lower it,
+-- and then "no StrictResize" would hold for the wrong reason.
+SET max_threads_min_free_memory_per_thread = 0;
+
 -- Below the split threshold: no resize between the expression and the
 -- aggregation. Expect 0.
 SELECT count()
@@ -34,6 +39,16 @@ FROM (
     SETTINGS max_threads = 96, max_block_size = 64
 )
 WHERE explain LIKE '%StrictResize%';
+
+-- Guard: the case above is only meaningful if the pipeline really is that wide,
+-- since a narrower one would have no eligible split at all. Expect 1.
+SELECT count() >= 1
+FROM (
+    EXPLAIN PIPELINE
+    SELECT count() FROM (SELECT number FROM numbers_mt(20000000) WHERE number != 0)
+    SETTINGS max_threads = 48, max_block_size = 64
+)
+WHERE explain LIKE '%× 48%';
 
 -- A resize that genuinely changes the stream count must still be split, so the
 -- fix above must not have disabled the optimisation. The split form is printed
