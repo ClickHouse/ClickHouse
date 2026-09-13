@@ -301,7 +301,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             data_prefix = data_prefix + [""]
         if format_opts.get("printable", False) == False:
             raw_message = "hex(_raw_message)"
-        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         create_query = create_query_generator(
             f"kafka_{format_name}",
             "id Int64, blockNo UInt16, val1 String, val2 Float32, val3 UInt8",
@@ -313,6 +312,10 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "kafka_flush_interval_ms": 1000,
             },
         )
+        # Create both materialized views, then detach/re-attach the Kafka table,
+        # before producing any message. Creating the first view starts the
+        # streaming loop, so producing earlier lets the loop consume and commit
+        # the broken message before the errors view is attached, leaving it empty.
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka_{format_name};
@@ -328,8 +331,12 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
+
+            DETACH TABLE test.kafka_{format_name};
+            ATTACH TABLE test.kafka_{format_name};
             """
         )
+        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
 
     raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
@@ -383,13 +390,27 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         assert TSV(result) == TSV(expected), "Proper result for format: {}".format(
             format_name
         )
-        errors_result = json.loads(
-            instance.query(
-                "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow".format(
-                    format_name=format_name
-                )
-            )
+        # 26.3 predates the per-format retry master wraps this query in, so bring in
+        # master's retry + guard directly, with #108252's bumped retry_count and
+        # empty-result guard already folded in.
+        errors_query = "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv FORMAT JSONEachRow".format(
+            format_name=format_name
         )
+        errors_text = instance.query_with_retry(
+            errors_query,
+            retry_count=60,
+            sleep_time=1,
+            check_callback=lambda res: len(res) > 0,
+        )
+        # query_with_retry returns the last result even if check_callback never
+        # passed, so guard against an empty error MV before json.loads (which
+        # would otherwise raise an opaque "Expecting value" JSONDecodeError).
+        assert (
+            len(errors_text) > 0
+        ), "Error row for format {} did not appear in kafka_errors_{}_mv".format(
+            format_name, format_name
+        )
+        errors_result = json.loads(errors_text)
         # print(errors_result.strip())
         # print(errors_expected.strip())
         assert (
