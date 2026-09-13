@@ -369,9 +369,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Kafka table engine
 
-:::tip
+<Tip>
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
-:::
+</Tip>
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -497,9 +497,9 @@ CREATE TABLE queue3 (
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -508,9 +508,9 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-:::info
+<Info>
 The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
-:::
+</Info>
 
 ## Description {#description}
 
@@ -617,9 +617,9 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
-:::note
+<Note>
 AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
-:::
+</Note>
 
 AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
 
