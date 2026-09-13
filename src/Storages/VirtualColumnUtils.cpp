@@ -531,6 +531,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
         }
+        else if (virtual_column.name == "_headers")
+        {
+            if (virtual_values.headers)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
             if (virtual_values.data_lake_snapshot_version)

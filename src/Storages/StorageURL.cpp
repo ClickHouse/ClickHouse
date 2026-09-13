@@ -414,7 +414,7 @@ StorageURLSource::StorageURLSource(
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , need_headers_virtual_column(info.requested_virtual_columns.contains("_headers"))
-    , requested_virtual_columns(info.requested_virtual_columns.eraseNames({"_headers"}))
+    , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
     , format(format_)
@@ -566,6 +566,13 @@ Chunk StorageURLSource::generate()
                     getContext());
             }
 
+            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
+            if (need_headers_virtual_column && !http_response_headers_initialized)
+            {
+                http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
+                http_response_headers_initialized = true;
+            }
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 requested_virtual_columns,
@@ -576,25 +583,11 @@ Chunk StorageURLSource::generate()
                     .last_modified = current_file_last_modified
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
+                    .headers = need_headers_virtual_column ? &http_response_headers : nullptr,
                 },
                 getContext(),
                 format_settings);
 
-            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
-            if (need_headers_virtual_column)
-            {
-                if (!http_response_headers_initialized)
-                {
-                    http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
-                    http_response_headers_initialized = true;
-                }
-
-                auto type = std::make_shared<DataTypeMap>(
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
-            }
             return chunk;
         }
 
