@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- The `splitByNonAlpha` tokenizer keeps non-ASCII bytes, even invalid UTF-8.
 -- It skips empty tokens and preserves token order and duplicates.
 SELECT 'empty, ASCII, Unicode, and binary strings';
