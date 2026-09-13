@@ -1,6 +1,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -102,6 +103,19 @@ struct JoinExpressionActions::Data : boost::noncopyable
 
     ActionsDAG actions_dag;
     NodeToSourceMapping expression_sources;
+
+    /// `expression_sources` is a memo: the source relations of a derived node are computed on first
+    /// use (`getExpressionSourcesImpl`) and kept. The shape predicates of `JoinOperator` consult it
+    /// from `JoinStepLogical::serializeSettings`, i.e. while the plan is already shared - a plan is
+    /// serialized on the per-connection thread that sends it (`MultiplexedConnections::sendQueryPlan`),
+    /// and the same `Data` can be reached from a plan that is being lowered to a pipeline at the same
+    /// time. Two such walks memoizing at once rehash the map concurrently and free its bucket array
+    /// twice, which shows up as an ASan `new-delete-type-mismatch` on an unrelated allocation that has
+    /// meanwhile reused the memory. Guard every access to the map with this mutex.
+    ///
+    /// A reference into the map stays valid once the lock is released: `std::unordered_map` is
+    /// node-based, so a rehash moves only the bucket array, never the elements.
+    mutable std::mutex expression_sources_mutex;
 };
 
 JoinExpressionActions::JoinExpressionActions()
@@ -166,8 +180,12 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-static const BitSet & getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+/// `JoinExpressionActions::Data` is a private type, so the memo and its mutex are passed separately.
+static const BitSet & getExpressionSourcesImpl(
+    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
+    std::lock_guard lock(expression_sources_mutex);
+
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
         return it->second;
@@ -216,18 +234,24 @@ std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
 
 void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
 {
+    std::lock_guard lock(data->expression_sources_mutex);
     data->expression_sources = std::move(expression_sources);
 }
 
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
 {
+    std::lock_guard lock(data->expression_sources_mutex);
     data->expression_sources.insert(expression_sources.begin(), expression_sources.end());
 }
 
 std::pair<ActionsDAG, JoinExpressionActions::NodeToSourceMapping> JoinExpressionActions::detachActionsDAG()
 {
     auto actions_dag = std::move(data->actions_dag);
-    auto expression_sources = std::move(data->expression_sources);
+    Data::NodeToSourceMapping expression_sources;
+    {
+        std::lock_guard lock(data->expression_sources_mutex);
+        expression_sources = std::move(data->expression_sources);
+    }
     data = std::make_shared<Data>(ActionsDAG(), Data::NodeToSourceMapping());
     return std::make_pair(std::move(actions_dag), std::move(expression_sources));
 }
@@ -309,7 +333,10 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
 JoinActionRef JoinExpressionActions::addInput(const String & column_name, const DataTypePtr & type, size_t source_relation)
 {
     const auto * actions_dag_node = &data->actions_dag.addInput(column_name, type);
-    data->expression_sources[actions_dag_node].set(source_relation);
+    {
+        std::lock_guard lock(data->expression_sources_mutex);
+        data->expression_sources[actions_dag_node].set(source_relation);
+    }
     return JoinActionRef(actions_dag_node, data);
 }
 
@@ -323,6 +350,7 @@ void JoinExpressionActions::swapExpressionSources()
     if (!data)
         return;
 
+    std::lock_guard lock(data->expression_sources_mutex);
     for (auto & source : data->expression_sources)
     {
         /// Check that there are not more than 2 sources
@@ -346,6 +374,7 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
 {
     auto actions_dag = getActionsDAG()->clone(node_map);
     JoinExpressionActions::Data::NodeToSourceMapping new_expression_sources;
+    std::lock_guard lock(data->expression_sources_mutex);
     for (const auto & [node, source] : data->expression_sources)
     {
         auto it = node_map.find(node);
@@ -360,7 +389,8 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
 
 const BitSet & JoinActionRef::getSourceRelations() const
 {
-    return getExpressionSourcesImpl(getData()->expression_sources, *this);
+    auto data_ptr = getData();
+    return getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
 }
 
 void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
@@ -371,6 +401,7 @@ void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(node);
 
+    std::lock_guard lock(data_ptr->expression_sources_mutex);
     auto & expression_sources = data_ptr->expression_sources;
     while (!stack.empty())
     {
@@ -424,13 +455,15 @@ bool JoinActionRef::isFunction(JoinConditionOperator op) const
 
 bool JoinActionRef::fromLeft() const
 {
-    auto src_rels = getExpressionSourcesImpl(getData()->expression_sources, *this);
+    auto data_ptr = getData();
+    auto src_rels = getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(0);
 }
 
 bool JoinActionRef::fromRight() const
 {
-    auto src_rels = getExpressionSourcesImpl(getData()->expression_sources, *this);
+    auto data_ptr = getData();
+    auto src_rels = getExpressionSourcesImpl(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(1);
 }
 

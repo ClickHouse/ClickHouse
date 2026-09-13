@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <barrier>
+#include <thread>
+#include <vector>
+
 #include <base/unit.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
@@ -619,4 +623,52 @@ TEST(ExperimentalSpillCodecPlanSetting, TheMergeAlgorithmsDeclineAMixedOnExpress
     asof_join.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
     asof_join.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
     EXPECT_FALSE(asof_join.buildsMixedJoinExpression());
+}
+
+/// A plan is serialized on the thread that sends it to a peer (`MultiplexedConnections::sendQueryPlan`),
+/// and the same join expression data can be reached from a plan being lowered to a pipeline at the same
+/// time, so `JoinSettings::updatePlanSettings` runs concurrently for one operator. It consults the shape
+/// predicates of `JoinOperator`, and those memoize the source relations of every condition into the shared
+/// `JoinExpressionActions` data (`JoinActionRef::fromLeft` -> `getExpressionSourcesImpl`). While that memo
+/// was unguarded, two walks rehashed its `unordered_map` at the same time and freed the bucket array twice,
+/// seen in CI as an ASan `new-delete-type-mismatch` blaming an unrelated allocation that had reused the
+/// memory. Every round below starts its threads on an operator whose memo is still empty, so the racing
+/// window is the memoizing walk itself; the thread sanitizer reports the unsynchronized access directly.
+TEST(ExperimentalSpillCodecPlanSetting, OneOperatorIsSerializedConcurrently)
+{
+    tryRegisterFunctions();
+
+    const auto spilling_join = [&]
+    {
+        auto join_settings = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
+        join_settings.max_bytes_before_external_join = 1_MiB;
+        return join_settings;
+    }();
+
+    constexpr size_t num_threads = 4;
+    constexpr size_t num_rounds = 32;
+
+    for (size_t round = 0; round < num_rounds; ++round)
+    {
+        TestJoinOperator keyed_inner(JoinKind::Inner);
+        std::barrier sync(num_threads);
+        std::vector<size_t> carried(num_threads, 0);
+
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            threads.emplace_back([&, i]
+            {
+                sync.arrive_and_wait();
+                carried[i] = joinCarriesSetting(spilling_join, keyed_inner.join_operator) ? 1 : 0;
+            });
+        }
+        for (auto & thread : threads)
+            thread.join();
+
+        /// The verdict cannot depend on which thread got there first.
+        for (size_t i = 0; i < num_threads; ++i)
+            EXPECT_EQ(carried[i], 1u) << "round " << round << ", thread " << i;
+    }
 }
