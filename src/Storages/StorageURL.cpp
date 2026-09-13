@@ -465,7 +465,10 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        /// A cached row count skips the data `GET`, whose response headers are the only source of
+        /// `_headers`, so taking the shortcut would report an empty map.
+        if (need_only_count && !need_headers_virtual_column
+            && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
