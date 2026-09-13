@@ -1,5 +1,7 @@
 #include <DataTypes/Utils.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -247,6 +249,94 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     }
 
     return true;
+}
+
+bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
+{
+    if (from.equals(to))
+        return true;
+
+    const WhichDataType which_from(from);
+    const WhichDataType which_to(to);
+
+    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
+    /// mapping is the identity: the target must agree on the values AND be wide enough not to
+    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
+    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
+    {
+        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
+        {
+            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
+                return true;
+        }
+        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+            return true;
+    }
+
+    /// Widening an integer keeps the order when the signedness is preserved or the target is
+    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
+    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
+    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
+    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
+    if (which_from.isInteger() && which_to.isInteger()
+        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
+        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
+            || !to.isValueRepresentedByUnsignedInteger()))
+        return true;
+
+    /// Exact widenings: every source value is representable in the target and the mapping is strictly
+    /// monotonic, so both the order and the distinctness survive.
+    ///   - `Float32` to `Float64`: every `Float32` is a `Float64`.
+    ///   - `Date` to `Date32`: the same day number in a wider integer.
+    ///   - `DateTime` to `DateTime64`: the seconds are multiplied by `10^scale`; the largest `DateTime`
+    ///     (2106) at the largest scale (9) is about 4.3e18 and fits an `Int64`.
+    ///   - `Decimal(P1, S1)` to `Decimal(P2, S2)` with `S2 >= S1` and `P2 - S2 >= P1 - S1`: the value is
+    ///     multiplied by `10^(S2 - S1)` and the integer part is not narrowed, so nothing overflows.
+    ///     A smaller target scale rounds, which collapses distinct values.
+    ///   - `FixedString(N)` to `String`: the cast trims the trailing zero bytes, which is still strictly
+    ///     monotonic on a fixed length. Two distinct fixed strings differ at some byte; the one holding
+    ///     the smaller byte there is the smaller value, and trimming only removes zero bytes - the
+    ///     minimum - from the end, so it can neither change that first difference nor make the trimmed
+    ///     value the prefix of the other unless it was already the smaller one.
+    if (which_from.isFloat32() && which_to.isFloat64())
+        return true;
+    if (which_from.isDate() && which_to.isDate32())
+        return true;
+    if (which_from.isDateTime() && which_to.isDateTime64())
+        return true;
+    if (which_from.isDecimal() && which_to.isDecimal())
+        return getDecimalScale(from) <= getDecimalScale(to)
+            && getDecimalPrecision(from) - getDecimalScale(from) <= getDecimalPrecision(to) - getDecimalScale(to);
+    if (which_from.isFixedString() && which_to.isString())
+        return true;
+
+    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
+    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
+    /// side; it never nests, so the stripped side is not `LowCardinality` again.
+    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
+    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
+    if (from_lc || to_lc)
+        return conversionPreservesOrder(
+            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
+
+    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
+    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
+    /// then has to become a concrete one and NULL placement changes.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+    {
+        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
+        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
+    }
+
+    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
+    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
+    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    if (from_array && to_array)
+        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
+
+    return false;
 }
 
 }

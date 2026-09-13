@@ -23,11 +23,9 @@
 #include <Columns/ColumnString.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -483,76 +481,6 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     });
 
     return supported_columns;
-}
-
-namespace
-{
-
-/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
-/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
-/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
-bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
-{
-    if (from.equals(to))
-        return true;
-
-    const WhichDataType which_from(from);
-    const WhichDataType which_to(to);
-
-    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
-    /// mapping is the identity: the target must agree on the values AND be wide enough not to
-    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
-    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
-    {
-        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
-        {
-            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
-                return true;
-        }
-        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
-            return true;
-    }
-
-    /// Widening an integer keeps the order when the signedness is preserved or the target is
-    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
-    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
-    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
-    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
-    if (which_from.isInteger() && which_to.isInteger()
-        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
-        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
-            || !to.isValueRepresentedByUnsignedInteger()))
-        return true;
-
-    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
-    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
-    /// side; it never nests, so the stripped side is not `LowCardinality` again.
-    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
-    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
-    if (from_lc || to_lc)
-        return conversionPreservesOrder(
-            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
-
-    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
-    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
-    /// then has to become a concrete one and NULL placement changes.
-    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
-    {
-        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
-        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
-    }
-
-    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
-    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
-    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
-    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
-    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
-    if (from_array && to_array)
-        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
-
-    return false;
-}
-
 }
 
 bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
