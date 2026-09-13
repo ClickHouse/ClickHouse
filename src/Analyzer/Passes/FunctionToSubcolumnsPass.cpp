@@ -264,14 +264,20 @@ bool canOptimizeFunctionToSubcolumn(const FunctionNode & function_node, TypeInde
     return true;
 }
 
+bool canOptimizeStringSizeSubcolumn(const ColumnContext & ctx, const NameAndTypePair & column)
+{
+    return !sourceHasColumn(ctx.column_source, column.name)
+        && !sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+        && canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type);
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+    if (!canOptimizeStringSizeSubcolumn(ctx, column))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -284,9 +290,7 @@ void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & func
         return;
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name)
-        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+    if (!canOptimizeStringSizeSubcolumn(ctx, column))
         return;
 
     /// `byteSize(String)` includes the storage representation's per-row
@@ -316,8 +320,7 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+    if (!canOptimizeStringSizeSubcolumn(ctx, column))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
