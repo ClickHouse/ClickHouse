@@ -4,7 +4,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -36,14 +35,14 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
 
-DatabaseFilesystem::DatabaseFilesystem(
-    const String & name_, const String & path_, ContextPtr context_, bool is_internal_metadata_replay)
+DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
@@ -63,15 +62,7 @@ DatabaseFilesystem::DatabaseFilesystem(
     }
 
     if (!fs::exists(path))
-    {
-        /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
-        /// would make a directory removed since then enough to stop the server from starting. Tables resolve
-        /// their file on access, so an unreachable path costs only the tables; the database still drops.
-        if (!is_internal_metadata_replay)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
-
-        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
@@ -80,13 +71,15 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -148,7 +141,8 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 {
     /// `EXISTS TABLE` requires only `SHOW TABLES`, so answering it without the read source grant turns
     /// this database into an oracle for `user_files`. Claim the table: resolving it reports the denial.
-    if (!context_->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ ""))
+    /// `isGrantedWithFilter` does not exist on this branch; with an empty filter it is `isGranted`.
+    if (!context_->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE)))
         return true;
 
     if (tryGetTableFromCache(name))
@@ -207,7 +201,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage && !renames_after_processing)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -287,7 +281,6 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -308,63 +301,8 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        /// The loader flag, not `internal`, is the discriminator: an internal query is not necessarily the
-        /// server's own replay, because wrappers run user statements as internal ones.
-        const bool is_internal_metadata_replay
-            = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
-
-        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
+        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::FILE,
-    }, Documentation{
-        .description = R"DOCS_MD(
-The `Filesystem` database engine exposes files in a local directory as read-only tables. A table name is resolved as a path relative to the database directory and is read using the [`file`](/reference/functions/table-functions/file) table function.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE files
-ENGINE = Filesystem([path]);
-```
-
-`path` is the directory that contains the files. If it is omitted, ClickHouse uses the current directory in `clickhouse-local` and the `user_files` directory in ClickHouse server.
-
-## Usage {#usage}
-
-For example, with `data.csv` in the selected directory:
-
-```sql
-CREATE DATABASE files ENGINE = Filesystem('imports');
-
-SELECT * FROM files.`data.csv`;
-```
-
-The table name can include a relative path beneath the database directory. The table schema and format are inferred in the same way as for the `file` table function.
-
-The database owns no table definitions: tables are created when their files are first resolved and are only cached for subsequent access. `CREATE TABLE`, `INSERT`, and other writes through this database are not supported.
-
-## Access control {#access-control}
-
-On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
-
-Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
-
-```sql
-GRANT READ, WRITE ON FILE TO user_name;
-```
-
-See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
-
-## See also {#see-also}
-
-- [`file` table function](/reference/functions/table-functions/file)
-- [S3 database engine](/reference/engines/database-engines/s3)
-- [HDFS database engine](/reference/engines/database-engines/hdfs)
-)DOCS_MD",
-        .syntax = "ENGINE = Filesystem([path])",
-        .related = {"S3", "HDFS"}});
+    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
 }
 }

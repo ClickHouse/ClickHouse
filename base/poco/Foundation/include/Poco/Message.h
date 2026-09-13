@@ -54,8 +54,7 @@ public:
         PRIO_INFORMATION, /// An informational message, usually denoting the successful completion of an operation.
         PRIO_DEBUG, /// A debugging message.
         PRIO_TRACE, /// A tracing message. This is the lowest priority useful for production.
-        PRIO_TEST, /// A message for test environment.
-        PRIO_END
+        PRIO_TEST /// A message for test environment.
     };
 
     Message();

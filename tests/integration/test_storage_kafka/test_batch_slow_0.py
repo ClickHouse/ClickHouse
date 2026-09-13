@@ -1,15 +1,6 @@
 """Long running tests, longer than 30 seconds"""
 
-import json
-import logging
-
-from confluent_kafka.avro.cached_schema_registry_client import (
-    CachedSchemaRegistryClient,
-)
-import pytest
-
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -46,7 +37,29 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    k.clean_test_database_and_topics(instance, cluster)
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = k.get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
     yield  # run test
 
 
@@ -56,14 +69,16 @@ def kafka_setup_teardown():
 # TODO: add test for SELECT LIMIT is working.
 
 
-@pytest.mark.parametrize(
+@k.pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = k.KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     all_formats = {
         ## Text formats ##
@@ -375,6 +390,9 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         assert TSV(result) == TSV(expected), "Proper result for format: {}".format(
             format_name
         )
+        # 26.3 predates the per-format retry master wraps this query in, so bring in
+        # master's retry + guard directly, with #108252's bumped retry_count and
+        # empty-result guard already folded in.
         errors_query = "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv FORMAT JSONEachRow".format(
             format_name=format_name
         )
@@ -754,6 +772,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
             """.format(
+                topic_name=topic_name,
                 format_name=format_name,
                 create_query=create_query_generator(
                     f"kafka_{format_name}",

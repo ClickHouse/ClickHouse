@@ -1,12 +1,9 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemWorkloads.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -24,9 +21,8 @@ ColumnsDescription StorageSystemWorkloads::getColumnsDescription()
 
 void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
-    auto storage = context->getWorkloadEntityStoragePtr();
-    const auto & entities = storage->getAllEntities();
+    const auto & storage = context->getWorkloadEntityStorage();
+    const auto & entities = storage.getAllEntities();
     for (const auto & [name, ast] : entities)
     {
         if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
@@ -38,18 +34,16 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
     }
 }
 
-void StorageSystemWorkloads::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+void StorageSystemWorkloads::backupData(BackupEntriesCollector & /*backup_entries_collector*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    backup_entries_collector.getContext()->getWorkloadEntityStoragePtr()->backup(
-        backup_entries_collector, data_path_in_backup, WorkloadEntityType::Workload);
+    // TODO(serxa): add backup for workloads
+    // storage.backup(backup_entries_collector, data_path_in_backup);
 }
 
-void StorageSystemWorkloads::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+void StorageSystemWorkloads::restoreDataFromBackup(RestorerFromBackup & /*restorer*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    restorer.getContext()->getWorkloadEntityStoragePtr()->restore(restorer, data_path_in_backup, WorkloadEntityType::Workload);
+    // TODO(serxa): add restore for workloads
+    // storage.restore(restorer, data_path_in_backup);
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWorkloads) }

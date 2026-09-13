@@ -21,7 +21,6 @@
 
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -83,7 +82,6 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
-    interpreter.setIsMetadataReplay(true);
     if (!create)
     {
         interpreter.setForceAttach(true);
@@ -184,7 +182,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
             backQuote(actual_name));
     }
 }
-static void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
+void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
 {
     for (const auto & restoring_database_name : restoring_database_names)
     {
@@ -400,7 +398,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     }
 
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
-    chassert(tmp_database->getEngineName() == "Atomic");
+    assert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
     std::unordered_set<String> inner_mv_tables;

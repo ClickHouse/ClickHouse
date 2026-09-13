@@ -3,9 +3,6 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -18,11 +15,6 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
-}
-
-namespace FailPoints
-{
-    extern const char delta_lake_write_cancel_in_commit_window[];
 }
 
 DeltaLakeSink::DeltaLakeSink(
@@ -45,40 +37,6 @@ DeltaLakeSink::DeltaLakeSink(
     , write_compression_method(compression_method)
 {
     delta_transaction->validateSchema(getHeader());
-}
-
-DeltaLakeSink::~DeltaLakeSink()
-{
-    if (isCancelled())
-        cancelBuffers();
-}
-
-void DeltaLakeSink::cancelBuffers()
-{
-    /// The inner sinks are plain members, not pipeline processors, so the
-    /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
-    /// this flips its isCancelled(), so its destructor finalizes/cancels its
-    /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
-    /// WriteBuffer::cancel does not unlink an already written data file, so also
-    /// remove each uncommitted object (mirrors the commit-failure cleanup in
-    /// onFinish); otherwise a failed insert leaves an orphan parquet file behind.
-    for (auto & data_file : data_files)
-    {
-        data_file.sink->cancel();
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(data_file.sink->getPath()));
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DeltaLakeSink", "Failed to remove uncommitted data file on cancel");
-        }
-    }
-}
-
-void DeltaLakeSink::onException(std::exception_ptr)
-{
-    cancelBuffers();
 }
 
 DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
@@ -127,14 +85,6 @@ void DeltaLakeSink::onFinish()
         files.emplace_back(std::move(file_location), file_size, written_rows, Map{});
     }
 
-    /// Test-only hook for the commit window: the data files are finalized and the commit below has
-    /// not run yet. `onFinish` runs inside `IProcessor::work()`, which must only use CPU and never
-    /// wait, so the hook cancels the query the same way `KILL QUERY` does instead of blocking.
-    fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            query_context->killCurrentQuery();
-    });
-
     try
     {
         delta_transaction->commit(files);
@@ -150,13 +100,6 @@ void DeltaLakeSink::onFinish()
         }
         throw;
     }
-
-    /// The commit succeeded: the data files are now referenced by the Delta log.
-    /// Drop the tracked sinks so a cancel that arrives after this point (the
-    /// pipeline executor flips isCancelled() asynchronously, so it can race with
-    /// this commit) does not make ~DeltaLakeSink -> cancelBuffers() unlink the
-    /// just-committed files and leave the Delta log pointing at missing data.
-    data_files.clear();
 }
 
 }

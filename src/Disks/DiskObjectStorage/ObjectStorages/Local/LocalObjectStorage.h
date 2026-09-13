@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
@@ -47,14 +48,6 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
-
-    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
         std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
@@ -67,9 +60,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 

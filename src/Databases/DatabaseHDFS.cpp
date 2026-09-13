@@ -36,6 +36,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
@@ -60,16 +61,20 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS host: {}. "
                             "It should have structure 'hdfs://<host_name>:<port>'", source);
+
+        context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
     }
 }
 
-StoragePtr DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
@@ -133,7 +138,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
     /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -235,7 +240,6 @@ DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const Filt
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseHDFS(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -256,66 +260,9 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
             source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        /** The allowlist is checked here rather than in the constructor, and not for the server's own
-          * metadata replay. Startup rebuilds every database by replaying its stored `ATTACH DATABASE`
-          * statement and `loadMetadata` aborts on the first exception, so a check that throws there
-          * takes the whole server down with it - and tightening `remote_url_allow_hosts` is exactly
-          * what turns a stored host into a disallowed one. Every statement a user writes, `CREATE` and
-          * `ATTACH` alike, is still checked up front, and the allowlist holds for every use of the
-          * database regardless: `DatabaseHDFS::checkUrl` runs it for each table, which is where
-          * `DatabaseS3` enforces it too.
-          */
-        if (!args.internal && !source_url.empty())
-            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
-
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::HDFS,
-    }, Documentation{
-        .description = R"DOCS_MD(
-The `HDFS` database engine exposes files in HDFS as read-only tables. A table name is resolved through the [`hdfs`](/reference/functions/table-functions/hdfs) table function.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE hdfs_data
-ENGINE = HDFS([hdfs_host_and_root_path]);
-```
-
-`hdfs_host_and_root_path` optionally sets a base HDFS URL. When it is present, table names are paths relative to that URL. Without it, table names must be full `hdfs://` URLs.
-
-## Usage {#usage}
-
-```sql
-CREATE DATABASE hdfs_data
-ENGINE = HDFS('hdfs://namenode:9000/data');
-
-SELECT * FROM hdfs_data.`events.parquet`;
-```
-
-The schema and format are inferred in the same way as for the `hdfs` table function. The database owns no table definitions and does not support table DDL or writes.
-
-## Access control {#access-control}
-
-HDFS URLs are checked against the server's remote-host filter. Creating this database requires `READ` and `WRITE` source grants on `HDFS`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant), for example:
-
-```sql
-GRANT READ, WRITE ON HDFS TO user_name;
-```
-
-See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
-
-## See also {#see-also}
-
-- [`hdfs` table function](/reference/functions/table-functions/hdfs)
-- [Filesystem database engine](/reference/engines/database-engines/filesystem)
-- [S3 database engine](/reference/engines/database-engines/s3)
-)DOCS_MD",
-        .syntax = "ENGINE = HDFS([hdfs_host_and_root_path])",
-        .related = {"S3", "Filesystem"}});
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 

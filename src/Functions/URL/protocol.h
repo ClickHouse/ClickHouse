@@ -10,14 +10,11 @@ namespace DB
 /// Extracts scheme from given url.
 inline std::string_view getURLScheme(const char * data, size_t size)
 {
-    if (size == 0)
-        return {};
-
     // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
     const char * pos = data;
     const char * end = data + size;
 
-    if (pos < end && isAlphaASCII(*pos))
+    if (isAlphaASCII(*pos))
     {
         for (++pos; pos < end; ++pos)
         {
