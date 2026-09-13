@@ -1,0 +1,10 @@
+future ttl leaves materialized	1
+future ttl after modify leaves materialized	1
+future group by leaves column ttl materialized	1
+const folded mat seeded	2
+const folded mat set fired	2
+const folded mat recomputed	2	2
+const folded tuple rows	1
+const folded tuple value	1
+unsorted group by count	100
+unsorted group by spilled	1

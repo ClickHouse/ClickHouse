@@ -1493,6 +1493,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
+            {"ttl_resort_max_bytes_before_external_sort", 0, 268435456, "New setting bounding the memory of the re-sort a merge performs after a `TTL ... GROUP BY ... SET` that rewrites a sorting key column; the previous value disables spilling to keep the pre-26.9 in-memory behavior"},
+            {"ttl_group_by_unsorted_max_bytes_before_external_group_by", 0, 268435456, "New setting bounding the memory of the hash aggregation a `GROUP BY` TTL performs when an earlier `TTL ... GROUP BY ... SET` rewrote its grouping key; the previous value disables spilling to keep the pre-26.9 in-memory behavior"},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
