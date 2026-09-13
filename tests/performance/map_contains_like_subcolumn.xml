@@ -86,6 +86,21 @@
         SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, max_threads = 1
     </query>
 
+    <query tag="both Map LIKE predicates optimized">
+        SELECT count()
+        FROM map_contains_key_like_subcolumn_perf
+        WHERE mapContainsKeyLike(m, 'target%') AND mapContainsValueLike(m, '%')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+    <query tag="both Map LIKE predicates baseline">
+        SELECT count()
+        FROM map_contains_key_like_subcolumn_perf
+        WHERE mapContainsKeyLike(m, 'target%') AND mapContainsValueLike(m, '%')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+
     <query tag="mapContainsValueLike optimized">
         SELECT count()
         FROM map_contains_value_like_subcolumn_perf
