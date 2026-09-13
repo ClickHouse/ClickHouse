@@ -339,6 +339,55 @@ FROM (
 )
 WHERE explain ILIKE '%InOrder%';
 
+-- The hard read bound is zeroed for a read that carries a filter, so a query whose only filter was the
+-- withdrawn threshold has to get it back: the in-order read must stop at the LIMIT instead of scanning on
+-- until cancellation catches up. Measured against the same query with the mechanism off, which keeps the
+-- bound throughout, so both sides see the same randomized settings (expected 1). Before the fix the
+-- guarded query read the whole table whatever the LIMIT was. The granularity is small because the bound
+-- only changes what is read once the table holds many more granules than the LIMIT needs.
+DROP TABLE IF EXISTS t_topk_proj_bound;
+CREATE TABLE t_topk_proj_bound (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_proj_bound
+SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_proj_bound FINAL;
+ALTER TABLE t_topk_proj_bound ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_proj_bound MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1,
+         query_plan_max_limit_for_top_k_optimization = 100, log_comment = '04545_bound_guarded'
+FORMAT Null;
+
+SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 0,
+         query_plan_max_limit_for_top_k_optimization = 100, log_comment = '04545_bound_off'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    (SELECT read_rows FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+        AND log_comment = '04545_bound_guarded' ORDER BY event_time_microseconds DESC LIMIT 1)
+    <= 4 * (SELECT read_rows FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+        AND log_comment = '04545_bound_off' ORDER BY event_time_microseconds DESC LIMIT 1)
+    AS read_stops_at_the_limit;
+
+-- A bound that stops the read too early would drop rows the LIMIT still wants, so the bounded read must
+-- return exactly the rows a plain full sort returns (expected 1).
+SELECT groupArray(id) = (
+        SELECT groupArray(id) FROM (
+            SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+            SETTINGS optimize_read_in_order = 0, optimize_use_projections = 0, use_top_k_dynamic_filtering = 0
+        )
+    ) AS bounded_read_returns_same_rows
+FROM (
+    SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1,
+             query_plan_max_limit_for_top_k_optimization = 100
+);
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
 DROP TABLE t_topk_unmat;
@@ -347,3 +396,4 @@ DROP TABLE t_topk_sample;
 DROP TABLE t_topk_nulls;
 DROP TABLE t_topk_drift;
 DROP TABLE t_topk_cheaper_competitor;
+DROP TABLE t_topk_proj_bound;

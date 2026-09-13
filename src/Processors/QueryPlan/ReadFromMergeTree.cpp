@@ -3933,6 +3933,12 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 /// A projection read arrives already analyzed, and the read is fed from the analysis.
                 if (analyzed_result_ptr)
                     analyzed_result_ptr->column_names_to_read = all_column_names;
+
+                /// The caller zeroes `read_limit` for a read that carries a filter and passes the intact
+                /// bound as `query_limit`; this read keeps no filter, so the bound applies again.
+                if (!read_limit && query_limit && !query_info.row_level_filter)
+                    query_info.input_order_info
+                        = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, query_limit);
             }
         }
     }
