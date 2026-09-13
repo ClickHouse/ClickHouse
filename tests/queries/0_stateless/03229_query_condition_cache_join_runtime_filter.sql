@@ -106,6 +106,26 @@ SELECT count() FROM system.query_condition_cache;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 0;
 
+SELECT '-- control: a runtime filter driving index analysis on data read is rejected too';
+-- `enable_join_runtime_filters_index_analysis` prunes marks in the readers chain rather than through
+-- PREWHERE, so the rows it removes are invisible to every filter the arms above inspect. The two
+-- counters are what stop the cache count from being the output of a query that pruned nothing.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
+SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
+         use_skip_indexes_on_data_read = 1, join_runtime_filter_min_probe_rows = 0,
+         join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
+         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_index_scan';
+SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal']),
+       ProfileEvents['RuntimeFilterRowsChecked'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = 'qcc_jrf_index_scan' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
 -- The PREWHERE below matches every row, so the only thing that can prune marks on the second run is
 -- the cache entry the WHERE filter wrote. Both runs return 1 row; only the second one prunes.
 SELECT '-- a deterministic PREWHERE must not stop the WHERE filter from populating the cache';

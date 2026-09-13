@@ -142,6 +142,19 @@ echo "the runtime-filter query recorded no cache miss (expect 0):"
 profile_event "$qid_join" QueryConditionCacheMisses
 echo "the runtime-filter query recorded no cache hit (expect 0):"
 profile_event "$qid_join" QueryConditionCacheHits
+# `FunctionApplyFilter` passes every row while the filter is unbuilt, and in that state no row group is
+# emptied, so nothing above can fail. These counters pin that premise: the filter was consulted and it
+# did remove rows. The same join without runtime filters is the negative control for the first of them.
+echo "the runtime filter was consulted (expect 1):"
+profile_event "$qid_join" RuntimeFilterRowsChecked
+echo "the runtime filter removed rows (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT ProfileEvents['RuntimeFilterRowsPassed'] < ProfileEvents['RuntimeFilterRowsChecked']
+    FROM system.query_log
+    WHERE query_id = '$qid_join' AND current_database = currentDatabase() AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1"
+echo "without runtime filters the same counter is absent (expect 0):"
+profile_event "$qid_norf_join" RuntimeFilterRowsChecked
 echo "deterministic PREWHERE run 1 was a cache miss (expect 1):"
 profile_event "$qid_det_miss" QueryConditionCacheMisses
 echo "deterministic PREWHERE run 2 was a cache hit (expect 1):"
