@@ -59,6 +59,14 @@ You can run BYOC in a service project on a network that lives in a separate [Sha
 Two prerequisites are specific to this setup:
 
 - **Attach the service project to the host project before you begin.** A Shared VPC GKE cluster requires the attachment to already exist. Pre-flight validation reads the network and subnet through the host-project grants whether or not the attachment is in place, so it passes either way and provisioning then fails later at cluster creation. Whoever administers Shared VPC in your organization must do this; the onboarding Terraform cannot grant it.
-- **Run the onboarding Terraform with the host project set.** Pass `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region` and `shared_vpc_host_private_subnet_id` to the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp). A single invocation writes into both projects, so the credentials running it need IAM admin on the service project and on the host project. The grants it adds to the host project are read and use only — ClickHouse gets no write access to your network topology.
+- **Run the onboarding Terraform with the host project set.** Pass `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region` and `shared_vpc_host_private_subnet_id` to the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp). A single invocation writes into both projects, so the credentials running it need IAM admin on the service project and on the host project.
+
+The grants the module adds to your host project are narrow, but they are not all read-only:
+
+| Principal | Grant on the host project | Why |
+|---|---|---|
+| ClickHouse management service account | `compute.networks.get`, `compute.subnetworks.get`, `compute.subnetworks.use`, and `compute.networkUser` on the subnet | Read your network and subnet, and let the Private Service Connect attachment use your PSC subnet. This identity only reads and uses; it never writes to the host project. |
+| Your service project's GKE service agent and Google APIs service account | `roles/container.hostServiceAgentUser` and `compute.networkUser` on the subnet | Required for any Shared VPC GKE cluster |
+| Your service project's GKE service agent | Create, delete, get, list and update firewall rules, and `compute.networks.updatePolicy` | Under Shared VPC, GKE creates its cluster and load-balancer firewall rules in the host project rather than the service project. Without this the internal load balancer health-check rule is never created, ingress backends stay unhealthy, and private link does not work. This is Google's documented granular alternative to granting `roles/compute.securityAdmin`. |
 
 Then enter the host project in the **Shared VPC host project ID** field described above. If you want private link, create the `PRIVATE_SERVICE_CONNECT` subnet in the host project as well, in the same region as the infrastructure.
