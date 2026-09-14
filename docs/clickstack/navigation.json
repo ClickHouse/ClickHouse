@@ -110,6 +110,12 @@
               "group": "2026",
               "pages": [
                 {
+                  "group": "September",
+                  "pages": [
+                    "clickstack/demo-days/2026/2026-09-04"
+                  ]
+                },
+                {
                   "group": "August",
                   "pages": [
                     "clickstack/demo-days/2026/2026-08-28",
@@ -270,7 +276,8 @@
         "clickstack/integration-partners/index",
         "clickstack/integration-partners/bindplane",
         "clickstack/integration-partners/bitdrift",
-        "clickstack/integration-partners/odigos"
+        "clickstack/integration-partners/odigos",
+        "clickstack/integration-partners/telflo"
       ]
     },
     {

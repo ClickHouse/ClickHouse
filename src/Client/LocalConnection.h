@@ -43,6 +43,7 @@ struct LocalQueryState
     UInt64 max_parser_backtracks = 0;
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
+    bool allow_experimental_trino_dialect = false;
     String promql_database;
     String promql_table;
     Field promql_evaluation_time;
