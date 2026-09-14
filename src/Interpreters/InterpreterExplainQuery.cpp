@@ -37,7 +37,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -48,11 +47,6 @@
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sources/DelayedSource.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
