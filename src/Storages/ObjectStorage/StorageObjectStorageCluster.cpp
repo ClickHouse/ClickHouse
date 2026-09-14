@@ -878,6 +878,11 @@ IDataLakeMetadata * StorageObjectStorageCluster::getExternalMetadata(ContextPtr 
     return configuration->getExternalMetadata();
 }
 
+std::shared_ptr<DataLake::ICatalog> StorageObjectStorageCluster::getCatalog() const
+{
+    return pure_storage->getCatalog();
+}
+
 void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
     if (getClusterName(context).empty())

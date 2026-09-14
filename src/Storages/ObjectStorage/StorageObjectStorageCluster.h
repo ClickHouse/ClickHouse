@@ -94,6 +94,8 @@ public:
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
