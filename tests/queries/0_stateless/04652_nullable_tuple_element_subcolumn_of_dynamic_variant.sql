@@ -80,9 +80,7 @@ SELECT toTypeName(value.`Tuple(a UInt32, b String)`.a), value.`Tuple(a UInt32, b
 SELECT value.`Tuple(a Array(Nullable(UInt32)))`.a FROM t_controls ORDER BY id;
 SELECT value.`Tuple(a Map(String, Nullable(UInt32)))`.a FROM t_controls ORDER BY id;
 -- Reads an intrinsically nullable and an extraction-wrapped subcolumn of the same column in one
--- query, so both serializations are built while the same serialization pool is alive. The two are
--- already discriminated by their nested serialization, so the flag in the pooling key is defence in
--- depth against a future nested-serialization change.
+-- query, so both serializations are built and used for the same read.
 SELECT value.UInt32, value.`Tuple(a Nullable(UInt32), b String)`.a FROM t_controls ORDER BY id;
 
 -- The shared variant branch always reads into a Nullable column, so its unwrap stays unconditional.

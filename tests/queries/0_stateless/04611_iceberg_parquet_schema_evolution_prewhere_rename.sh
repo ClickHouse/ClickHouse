@@ -32,6 +32,11 @@
 # Without the fix (parquet data files):
 #   `SELECT count() FROM t PREWHERE renamed_c0 > 10` -> 0 (should be 89)
 
+# `input_format_parquet_use_native_reader_v3` gates `PREWHERE` support for `Parquet`, and
+# `clickhouse-test` randomizes it to `0`, which makes `IcebergLocal` throw `ILLEGAL_PREWHERE`.
+# Pin it to `1`, including in the `CREATE TABLE` session: `supports_prewhere` is computed in
+# the `StorageObjectStorage` constructor.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -46,7 +51,7 @@ rm -rf "${ICEBERG_PATH}"
 # Create an Iceberg table with PARQUET data files under its first schema
 # (c0 Int64, c1 String, c2 Int32). One data file, 100 rows.
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_insert_into_iceberg = 1;
+    SET allow_experimental_insert_into_iceberg = 1, input_format_parquet_use_native_reader_v3 = 1;
 
     CREATE TABLE ${TEST_TABLE} (c0 Int64, c1 String, c2 Int32)
         ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
@@ -59,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # column-id under its old name `c0`; the current snapshot has it as
 # `renamed_c0`. Reads now go through the schema-changed path.
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_insert_into_iceberg = 1;
+    SET allow_insert_into_iceberg = 1, input_format_parquet_use_native_reader_v3 = 1;
     ALTER TABLE ${TEST_TABLE} RENAME COLUMN c0 TO renamed_c0;
 "
 
@@ -67,6 +72,7 @@ ${CLICKHOUSE_CLIENT} --query "
 #    (remove_prewhere_column = true). Rows with renamed_c0 in (10..99] -> 89.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${TEST_TABLE} PREWHERE renamed_c0 > 10
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # 2) PREWHERE on the renamed column plus a WHERE on another (unrenamed) column
@@ -74,6 +80,7 @@ ${CLICKHOUSE_CLIENT} --query "
 #    '1' -> {1x} in (10..99]: 12..19 and 100 excluded -> 9.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${TEST_TABLE} PREWHERE renamed_c0 > 10 WHERE startsWith(c1, '1')
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # 3) Read another column with PREWHERE on the renamed column only (the renamed
@@ -81,18 +88,21 @@ ${CLICKHOUSE_CLIENT} --query "
 #    (10..99] = sum(11..99) = 4895.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT sum(toInt64(c1)) FROM ${TEST_TABLE} PREWHERE renamed_c0 > 10
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # 4) Control: PREWHERE on a NON-renamed column (c2) must stay correct. Rows
 #    with c2 < 50 -> 50.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${TEST_TABLE} PREWHERE c2 < 50
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # 5) Same predicate as (1) but via WHERE — always worked (fallback filter runs
 #    after schema_transform). Kept as an oracle: PREWHERE must equal WHERE. 89.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${TEST_TABLE} WHERE renamed_c0 > 10
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # 6) Row policy on the renamed column, combined with PREWHERE on it. The policy
@@ -107,6 +117,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${TEST_POLICY} ON ${TEST_TABLE} 
 
 ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=pq_pwd_evol --query "
     SELECT count() FROM ${TEST_TABLE} PREWHERE renamed_c0 > 10
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
 "
 
 # Cleanup
