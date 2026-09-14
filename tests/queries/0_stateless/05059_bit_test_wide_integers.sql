@@ -18,6 +18,8 @@ SELECT
     bitTestAny(toInt128(-1), 127) = 1,
     bitTestAny(toInt256(-1), 255) = 1;
 
+SELECT bitTestAll(toInt64(-1), 63);
+
 SELECT
     bitTest(toUInt128(0), 127),
     bitTest(bitShiftLeft(toUInt256(1), 200), 199),

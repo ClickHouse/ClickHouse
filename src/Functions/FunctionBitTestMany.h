@@ -161,7 +161,7 @@ private:
     }
 
     template <typename PosType, typename ValueType>
-    bool addToConstMaskImpl(ValueType & mask, const IColumn * const pos_col_untyped) const
+    bool NO_SANITIZE_UNDEFINED addToConstMaskImpl(ValueType & mask, const IColumn * const pos_col_untyped) const
     {
         if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
