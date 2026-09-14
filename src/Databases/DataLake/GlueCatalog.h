@@ -4,6 +4,7 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/glue/model/Column.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
@@ -127,6 +128,18 @@ private:
     };
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
+
+    /// Fetches and caches the parsed Iceberg metadata JSON for `metadata_uri`.
+    /// Returns the cached object on subsequent calls for the same URI.
+    Poco::JSON::Object::Ptr getOrFetchMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
+
+    /// Shared implementation for updateMetadata / updateSchema that optionally
+    /// sets StorageDescriptor columns in the Glue UpdateTable call.
+    bool updateTableInGlue(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const std::vector<Aws::Glue::Model::Column> & columns = {}) const;
 
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
