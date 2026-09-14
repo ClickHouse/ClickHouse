@@ -497,10 +497,13 @@ void IcebergSchemaProcessor::addSchemaImpl(const Poco::JSON::Object::Ptr & schem
                 field->getValue<Int32>(f_id));
     }
 
-    if (replace_existing)
-        dropSchemaImpl(schema_id);
+    /// Convert into temporaries first: `getFieldType` throws on malformed or unknown types, and the
+    /// shared processor must then look exactly as it did before this call (see the header comment).
+    chassert(!pending_schema.has_value());
+    pending_schema.emplace(PendingSchema{.schema_id = schema_id, .types_by_source_ids = {}, .ids_by_source_names = {}});
+    /// The lambda runs while the caller still holds the exclusive lock (`TSA_REQUIRES(mutex)` above).
+    SCOPE_EXIT({ TSA_SUPPRESS_WARNING_FOR_WRITE(pending_schema).reset(); });
 
-    current_schema_id = schema_id;
     auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
     String current_full_name{};
     for (size_t i = 0; i != fields->size(); ++i)
@@ -511,12 +514,18 @@ void IcebergSchemaProcessor::addSchemaImpl(const Poco::JSON::Object::Ptr & schem
         current_full_name = name;
         auto type = getFieldType(field, f_type, required, current_full_name, true);
         clickhouse_schema->push_back(NameAndTypePair{name, type});
-        clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
-        clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+        pending_schema->types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
+        pending_schema->ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
     }
+
+    /// Everything below only moves already-built values into place, so it cannot throw halfway.
+    if (replace_existing)
+        dropSchemaImpl(schema_id);
+
+    clickhouse_types_by_source_ids.merge(pending_schema->types_by_source_ids);
+    clickhouse_ids_by_source_names.merge(pending_schema->ids_by_source_names);
     clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
-    current_schema_id = std::nullopt;
 }
 
 void IcebergSchemaProcessor::dropSchemaImpl(Int32 schema_id)
@@ -678,18 +687,16 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
             auto required = field->getValue<bool>(f_required);
             if (is_subfield_of_root)
             {
-                /// NOTE: getComplexTypeFromObject() with is_subfield_of_root==true called only from addIcebergTableSchema(), which already holds the exclusive lock
-                /// So it is OK to use TSA_SUPPRESS_WARNING_FOR_READ/TSA_SUPPRESS_WARNING_FOR_WRITE
-                Int32 schema_id = TSA_SUPPRESS_WARNING_FOR_READ(current_schema_id).value();
+                /// NOTE: getComplexTypeFromObject() with is_subfield_of_root==true called only from addSchemaImpl(), which already holds the exclusive lock
+                /// So it is OK to use TSA_SUPPRESS_WARNING_FOR_WRITE
+                auto & pending = TSA_SUPPRESS_WARNING_FOR_WRITE(pending_schema).value();
 
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
-                [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
-
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)
-                [{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+                pending.types_by_source_ids[{pending.schema_id, field->getValue<Int32>(f_id)}]
+                    = NameAndTypePair{current_full_name, element_types.back()};
+                pending.ids_by_source_names[{pending.schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {

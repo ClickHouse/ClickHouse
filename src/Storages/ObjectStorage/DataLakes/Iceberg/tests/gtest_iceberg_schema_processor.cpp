@@ -386,6 +386,71 @@ TEST(IcebergSchemaProcessor, ReplacingManifestSchemaDropsDerivedLookups)
     EXPECT_FALSE(processor.tryGetColumnIDByName(0, "stale").has_value());
 }
 
+/// A replacement is built in full before the manifest header copy is dropped: when the metadata.json
+/// copy turns out to be malformed halfway through conversion, the processor must look exactly as it
+/// did before, and a later valid copy of the same id must not inherit lookups of the bad one.
+TEST(IcebergSchemaProcessor, MalformedReplacementKeepsRegisteredSchemaAndLeavesNoPartialLookups)
+{
+    auto from_manifest = parseSchema(
+        R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"},{"id":2,"name":"p","required":false,"type":"int"}]})json");
+    /// The first two fields convert fine and are recorded before the third one fails.
+    auto malformed = parseSchema(
+        R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":7,"name":"bad_only","required":false,"type":{"type":"struct","fields":[{"id":8,"name":"inner","required":false,"type":"long"}]}},{"id":9,"name":"broken","required":false,"type":"no_such_type"}]})json");
+    auto valid = parseSchema(
+        R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"p","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, FROM_MANIFEST, TOLERANT);
+
+    EXPECT_THROW(processor.addIcebergTableSchema(malformed, FROM_METADATA, TOLERANT), DB::Exception);
+
+    /// The manifest header copy is still the registered one, untouched.
+    ASSERT_TRUE(processor.hasClickHouseTableSchemaById(0));
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 2u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(DateTime64(6))");
+    auto p = processor.tryGetFieldCharacteristics(0, 2);
+    ASSERT_TRUE(p.has_value());
+    EXPECT_EQ(p->type->getName(), "Nullable(Int32)");
+    /// Nothing of the malformed copy leaked, neither root fields nor nested struct members.
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 7).has_value());
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 8).has_value());
+    EXPECT_FALSE(processor.tryGetColumnIDByName(0, "bad_only").has_value());
+    EXPECT_FALSE(processor.tryGetColumnIDByName(0, "bad_only.inner").has_value());
+
+    /// The id is still a manifest-only registration, so a later valid metadata.json copy replaces it
+    /// cleanly, and the result contains only what that copy defines.
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(valid, FROM_METADATA, TOLERANT));
+    p = processor.tryGetFieldCharacteristics(0, 2);
+    ASSERT_TRUE(p.has_value());
+    EXPECT_EQ(p->type->getName(), "Nullable(Int64)");
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 7).has_value());
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 8).has_value());
+    EXPECT_FALSE(processor.tryGetColumnIDByName(0, "bad_only.inner").has_value());
+}
+
+/// The same guarantee for a first registration of an id: a malformed schema must not leave partial
+/// lookups that a later valid registration of the same id (which takes the non-replace path) keeps.
+TEST(IcebergSchemaProcessor, MalformedFirstRegistrationLeavesNoPartialLookups)
+{
+    auto malformed = parseSchema(
+        R"json({"schema-id":3,"fields":[{"id":1,"name":"ok","required":true,"type":"int"},{"id":2,"name":"broken","required":false,"type":"no_such_type"}]})json");
+    auto valid = parseSchema(R"json({"schema-id":3,"fields":[{"id":5,"name":"x","required":true,"type":"string"}]})json");
+    IcebergSchemaProcessor processor;
+
+    EXPECT_THROW(processor.addIcebergTableSchema(malformed, FROM_METADATA, STRICT), DB::Exception);
+    EXPECT_FALSE(processor.hasClickHouseTableSchemaById(3));
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(3, 1).has_value());
+    EXPECT_FALSE(processor.tryGetColumnIDByName(3, "ok").has_value());
+
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(valid, FROM_METADATA, STRICT));
+    ASSERT_TRUE(processor.hasClickHouseTableSchemaById(3));
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(3, 1).has_value());
+    EXPECT_FALSE(processor.tryGetColumnIDByName(3, "ok").has_value());
+    auto x = processor.tryGetFieldCharacteristics(3, 5);
+    ASSERT_TRUE(x.has_value());
+    EXPECT_EQ(x->type->getName(), "String");
+}
+
 /// Schema transformation DAGs are cached by (old id, new id) and never rebuilt, so one built against
 /// a manifest header copy has to be dropped together with it.
 TEST(IcebergSchemaProcessor, ReplacingManifestSchemaDropsCachedTransformation)

@@ -144,7 +144,17 @@ private:
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
-    std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
+
+    /// The schema currently being converted by `addSchemaImpl`. Its per-field lookups are collected
+    /// here and merged into the maps above only after the whole schema has converted, so a malformed
+    /// schema that throws halfway leaves nothing behind in the shared processor.
+    struct PendingSchema
+    {
+        Int32 schema_id;
+        std::map<std::pair<Int32, Int32>, NameAndTypePair> types_by_source_ids;
+        std::map<std::pair<Int32, std::string>, Int32> ids_by_source_names;
+    };
+    std::optional<PendingSchema> pending_schema TSA_GUARDED_BY(mutex);
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
     /// Schema-ids whose registered copy was taken from a manifest file header and has not been
@@ -158,8 +168,10 @@ private:
     std::unordered_set<Int32> manifest_only_schema_ids TSA_GUARDED_BY(mutex);
 
     /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered copy of the
-    /// same id when asked. Field names are validated before anything is dropped or written, so a
-    /// malformed schema cannot leave the id without a schema at all.
+    /// same id when asked. The schema is fully validated and converted into temporaries before
+    /// anything is dropped or written, so a malformed schema leaves the processor exactly as it was:
+    /// the previous copy of the id stays registered, and no partial lookups of the bad copy survive
+    /// to be picked up by a later registration of the same id.
     void addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_existing) TSA_REQUIRES(mutex);
 
     /// Drops the schema registered for `schema_id` together with everything derived from it.
