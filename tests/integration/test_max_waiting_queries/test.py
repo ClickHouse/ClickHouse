@@ -173,6 +173,22 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
         )
         wait_for(waiters_on_startup_job, "1", "the query to block on the startup job")
 
+        # The same discount is promised for the per-user and all-users limits, which are query-level
+        # settings, so each probe carries its own limit instead of reloading the config. One query is
+        # waiting, so a limit of 1 is reached unless that query is discounted.
+        assert (
+            node.query(
+                "SELECT 1", settings={"max_concurrent_queries_for_user": 1}
+            ).strip()
+            == "1"
+        )
+        assert (
+            node.query(
+                "SELECT 1", settings={"max_concurrent_queries_for_all_users": 1}
+            ).strip()
+            == "1"
+        )
+
         # Lower max_concurrent_queries to exactly the number of queries in the process list. Both the
         # reload and every query after it run while that one query is waiting; the reload itself is
         # admitted because the limit it installs is not in effect yet when it starts.
