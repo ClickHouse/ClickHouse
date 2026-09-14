@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace fs = std::filesystem;
 
@@ -151,7 +152,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    /// TODO: void applyFilters(ActionDAGNodes added_filter_nodes) can be implemented to filter out disk names
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
@@ -208,6 +209,44 @@ void StorageSystemRemoteDataPaths::readImpl(
         header,
         max_block_size);
     query_plan.addStep(std::move(read_step));
+}
+
+void ReadFromSystemRemoteDataPaths::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+
+    if (!predicate)
+        return;
+
+    /// Reading one disk walks its whole `store` and `data` subtree and reads the metadata of every
+    /// file in it, which on a disk with shared metadata (`plain`, `plain_rewritable`) or on a `web`
+    /// disk means listing the object storage. There is no way to narrow that traversal down, so a
+    /// query that names the disks it is interested in must not pay for all the others: on a server
+    /// that holds a large table on some other object-storage disk, the difference is minutes.
+    auto disk_name_column = ColumnString::create();
+    for (const auto & [disk_name, _] : disks)
+        disk_name_column->insertData(disk_name.data(), disk_name.size());
+
+    Block block{ColumnWithTypeAndName(std::move(disk_name_column), std::make_shared<DataTypeString>(), "disk_name")};
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+
+    /// A predicate that says nothing about `disk_name` leaves every row in place.
+    const auto & filtered_column = *block.getByPosition(0).column;
+    NameSet requested_disks;
+    for (size_t i = 0; i < filtered_column.size(); ++i)
+        requested_disks.emplace(filtered_column.getDataAt(i));
+
+    for (auto it = disks.begin(); it != disks.end();)
+    {
+        if (requested_disks.contains(it->first))
+            ++it;
+        else
+            it = disks.erase(it);
+    }
 }
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
