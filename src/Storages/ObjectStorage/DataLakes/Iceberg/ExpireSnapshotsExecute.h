@@ -22,7 +22,8 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation);
 
 Pipe executeExpireSnapshots(
     const ASTPtr & args,
@@ -32,7 +33,8 @@ Pipe executeExpireSnapshots(
     const PersistentTableComponents & persistent_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation);
 
 }
 

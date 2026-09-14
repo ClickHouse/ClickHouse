@@ -49,7 +49,8 @@ void alter(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog);
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    std::optional<UInt64> validated_incarnation);
 
 }
 

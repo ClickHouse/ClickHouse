@@ -355,6 +355,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
+            /// A data lake table refreshes its metadata - the schema, the pinned table state, and
+            /// the trusted `table-uuid` behind the metadata cache key - only here. It has to
+            /// happen before the snapshot below is captured, or the alter would be validated and
+            /// applied against the previous state of the table while its storage already holds
+            /// the new one.
+            table->updateExternalDynamicMetadataIfExists(context);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
@@ -370,6 +376,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
+                /// As in the `AlterCommands` branch above: a data lake table only refreshes its
+                /// external metadata here, and the mutation has to be validated against the
+                /// same incarnation of the table that will execute it.
+                table->updateExternalDynamicMetadataIfExists(context);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
@@ -396,6 +406,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
+            /// As in the branches above: a data lake table only refreshes its external metadata
+            /// here, and `ALTER TABLE ... EXECUTE` (`remove_orphan_files`, `expire_snapshots`)
+            /// must operate on the incarnation of the table that is in storage now.
+            table->updateExternalDynamicMetadataIfExists(context);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;

@@ -123,6 +123,11 @@ private:
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
+    /// Pinned for the lifetime of the iterator: the manifests it decodes belong to the incarnation
+    /// the query was validated against, and must be resolved through that incarnation's schemas
+    /// even if the table is replaced in place while the iteration is running. Shared read-only by
+    /// the concurrent decode tasks, exactly as `persistent_components.schema_processor` is.
+    Iceberg::IcebergSchemaProcessorPtr schema_processor;
     /// Shared read-only by the concurrent data- and delete-manifest decode tasks.
     std::shared_ptr<const ActionsDAG> manifest_filter_dag;
     IDataLakeMetadata::FileProgressCallback callback;

@@ -33,11 +33,31 @@ namespace DB
 
 namespace Iceberg
 {
+/// A strong content identifier the object listing reported for a metadata file, used as a cache
+/// validator: an external writer that replaces a table in place rewrites `metadata.json` at a
+/// path that was already read, and the listing is the only place where that rewrite is visible
+/// for free.
+///
+/// Only a strong `etag` qualifies. The `(size, last_modified)` pair the listing also carries is
+/// not a content identifier on the backends this code targets: S3 and Azure report
+/// `last_modified` at whole-second precision, so a same-second rewrite that happens to keep the
+/// byte size would compare equal and the replaced table would go unnoticed.
+struct MetadataFileIdentity
+{
+    String etag;
+
+    bool operator==(const MetadataFileIdentity &) const = default;
+};
+
 struct MetadataFileWithInfo
 {
     Int32 version{};
     String path;
     CompressionMethod compression_method{};
+    /// Absent when the file was not reached through a listing (an explicit
+    /// `iceberg_metadata_file_path`, a version hint) or when the storage reports no strong
+    /// `etag`, in which case the file cannot be told apart from a rewrite of itself.
+    std::optional<MetadataFileIdentity> identity;
 };
 }
 

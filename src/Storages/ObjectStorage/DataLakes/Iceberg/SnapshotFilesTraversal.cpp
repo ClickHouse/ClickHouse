@@ -24,7 +24,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation)
 {
     SnapshotReferencedFiles files;
 
@@ -45,7 +46,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
             files.manifest_paths.insert(manifest_entry.manifest_file_path);
 
             auto entries_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id);
+                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id,
+                validated_incarnation);
 
             for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
@@ -127,20 +129,25 @@ ReachableFilesResult collectReachableFiles(
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log)
+    LoggerPtr log,
+    std::optional<UInt64> validated_incarnation)
 {
-    auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [version, metadata_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
         context,
         log.get(),
-        persistent_table_components.table_uuid,
+        persistent_table_components.getTableUuid(),
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
 
+    /// Read it bypassing the UUID-keyed content cache. The reachable set of this very listing is
+    /// what is being computed, and the cache is keyed by the trusted UUID and the path: a table
+    /// replaced at the same root would be answered with the previous table's cached JSON, and the
+    /// check below would then re-confirm the UUID that came from it.
     auto metadata = getMetadataJSONObject(
         metadata_path,
         object_storage,
@@ -148,7 +155,14 @@ ReachableFilesResult collectReachableFiles(
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        /* table_uuid */ std::nullopt);
+
+    /// The whole reachable set is derived from this file, and the read may have gone to storage
+    /// rather than to the cache: a table replaced at the same root reaches a different set of
+    /// files, and taking it for the validated one would mark every file of the validated table as
+    /// an orphan. Validate before the walk starts.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(
+        metadata, validated_incarnation, "EXECUTE remove_orphan_files");
 
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;
@@ -174,7 +188,7 @@ ReachableFilesResult collectReachableFiles(
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
-        snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+        snapshots, object_storage, persistent_table_components, context, log, current_schema_id, validated_incarnation);
 
     for (const auto & path : snapshot_files.manifest_list_paths)
         reachable.insert(resolver.resolve(path));
