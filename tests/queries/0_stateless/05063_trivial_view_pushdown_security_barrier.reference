@@ -1,6 +1,8 @@
 === filtering view: pushdown declined, the view stays a subquery ===
 1
-=== projection-only twin: pushdown still fires ===
+=== projection-only NONE twin: pushdown declined too ===
+1
+=== INVOKER twin: pushdown still fires ===
 1
 === results are unchanged for the invoker without access to the table ===
 [1,3]

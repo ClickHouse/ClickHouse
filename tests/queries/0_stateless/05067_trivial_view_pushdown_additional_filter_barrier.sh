@@ -3,8 +3,9 @@
 # `optimize_trivial_view_pushdown_to_distributed` folds an `additional_table_filters` entry keyed by
 # the view into the shipped query's `WHERE`, where the invoker's own predicate is free to merge with
 # it on the shard. A `SQL SECURITY NONE` / `DEFINER` view must therefore decline the rewrite when
-# such an entry applies to it, exactly as it does for a row policy or a filtering view body. Without
-# the entry the projection-only view keeps the pushdown - that is the positive control.
+# such an entry applies to it, exactly as it does for a row policy or a filtering view body. An
+# `INVOKER` view is no barrier and keeps the pushdown - that is the positive control (a `NONE` view
+# over `Distributed` declines it regardless of the entry, see 05063 and 05220).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,6 +25,7 @@ ${CLICKHOUSE_CLIENT} --query "
 
     -- The view body hides nothing: all the row hiding comes from \`additional_table_filters\`.
     CREATE VIEW ${db}.v05067 SQL SECURITY NONE AS SELECT id FROM ${db}.t05067_dist;
+    CREATE VIEW ${db}.v05067_invoker SQL SECURITY INVOKER AS SELECT id FROM ${db}.t05067_dist;
 
     CREATE USER ${user};
     GRANT SELECT ON ${db}.v05067 TO ${user};
@@ -46,11 +48,11 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM (EXPLAIN SELECT id FROM ${db}.v05067 WHERE id != 3);
 "
 
-echo "=== no additional filter: pushdown still fires ==="
+echo "=== INVOKER view: pushdown still fires ==="
 ${CLICKHOUSE_CLIENT} --query "
     ${common_settings}
     SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
-    FROM (EXPLAIN SELECT id FROM ${db}.v05067 WHERE id != 3);
+    FROM (EXPLAIN SELECT id FROM ${db}.v05067_invoker WHERE id != 3);
 "
 
 echo "=== the filter still applies to the result ==="
@@ -62,6 +64,7 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP VIEW  ${db}.v05067;
+    DROP VIEW  ${db}.v05067_invoker;
     DROP TABLE ${db}.t05067_dist;
     DROP TABLE ${db}.t05067_local;
     DROP USER  ${user};

@@ -749,27 +749,29 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     {
         return nullptr;
     }
+
+    /// The pushdown replaces the view with its inner query and reads the `Distributed` table
+    /// directly, so `StorageView::readImpl` never runs and the plan carries no security-barrier
+    /// step: the outer predicate is shipped to the shards and evaluated there, below anything that
+    /// hides rows from the caller. For a barrier view that is exactly what the barrier forbids, and
+    /// it cannot be excused by a proof over the view's definition: a shard resolves the
+    /// `Distributed` table to a table of its own and runs the shipped query as the cluster's user
+    /// (or as the initial user when the cluster has a `secret`), so a row policy on the shard-local
+    /// table hides rows on the non-pushdown path while nothing on the initiator can see that policy
+    /// - `canHideRows` can only inspect the tables of this server. Decline the rewrite for every
+    /// barrier view, the same fail-closed rule the other pre-plan decisions apply to a remote source;
+    /// `readImpl` then keeps the invoker's predicate on the initiator, above the view's read.
+    /// (`DEFINER` is rejected above regardless of the setting.)
+    if (isSecurityBarrier(*snapshot->metadata, context))
+    {
+        return nullptr;
+    }
+
     const auto & inner_query = snapshot->metadata->getSelectQuery().inner_query;
     auto underlying = tryGetTrivialViewUnderlyingStorage(inner_query, context);
     if (!underlying || !typeid_cast<const StorageDistributed *>(underlying.get()))
     {
         return nullptr;
-    }
-
-    /// The pushdown replaces the view with its inner query and reads the `Distributed` table
-    /// directly, so `StorageView::readImpl` never runs and the plan carries no security-barrier
-    /// step: the outer predicate is merged with the view's own `WHERE` and evaluated on the
-    /// shards below it, which is exactly what the barrier forbids. Decline the rewrite for a
-    /// barrier view that can hide rows, the same fail-closed rule the other pre-plan decisions
-    /// use. (`DEFINER` is rejected above regardless of the setting.)
-    if (isSecurityBarrier(*snapshot->metadata, context))
-    {
-        auto storage_id = getStorageID();
-        auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
-        if (has_row_policy || canHideRows(inner_query, getViewContext(context, snapshot, this, /*view_alias=*/ std::nullopt), /*remote_source_is_read_identically=*/ true))
-            return nullptr;
     }
 
     return underlying;
@@ -1339,7 +1341,7 @@ bool StorageView::shapeDependentOverflowCanHideRows(const ContextPtr & context, 
     return group_by_breaks || sort_breaks || distinct_breaks;
 }
 
-bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically)
+bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context)
 {
     if (!inner_query)
         return true;
@@ -1504,7 +1506,7 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
 
     /// A view can hide rows of its own, and these engines read other tables, which may be views.
     const auto & engine = table->getName();
-    if (table->isView() || (table->isRemote() && !remote_source_is_read_identically) || engine == "Merge" || engine == "Buffer")
+    if (table->isView() || table->isRemote() || engine == "Merge" || engine == "Buffer")
         return true;
 
     /// `MaterializedPostgreSQL` rewrites every read of its data with `FINAL` and a `_sign = 1`

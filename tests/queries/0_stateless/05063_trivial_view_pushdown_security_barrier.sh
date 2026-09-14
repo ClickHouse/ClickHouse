@@ -4,8 +4,10 @@
 # `optimize_trivial_view_pushdown_to_distributed`. That rewrite replaces the view with its inner
 # query and reads the `Distributed` table directly, so `StorageView::readImpl` never runs and the
 # plan carries no security-barrier step - the invoker's predicate would then be merged with the
-# view's own `WHERE` and evaluated on the shards below it. The projection-only twin is the
-# positive control: it hides nothing, so it keeps the pushdown.
+# view's own `WHERE` and evaluated on the shards below it. The projection-only `NONE` twin is
+# declined as well: a shard runs the shipped query as the cluster's user, and a row policy on the
+# shard-local table hides rows that the initiator cannot see (05220 covers the leak). The
+# `INVOKER` twin is the positive control: it is no barrier, so it keeps the pushdown.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,8 +29,12 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE VIEW ${db}.v05063_filtering SQL SECURITY NONE
         AS SELECT id FROM ${db}.t05063_dist WHERE id != 2;
 
-    -- The twin hides nothing, so the pushdown stays available for it.
+    -- The twin hides nothing of its own, but the shards it reads may; it is a barrier as well.
     CREATE VIEW ${db}.v05063_plain SQL SECURITY NONE
+        AS SELECT id FROM ${db}.t05063_dist;
+
+    -- An INVOKER view is no barrier, so the pushdown stays available for it.
+    CREATE VIEW ${db}.v05063_invoker SQL SECURITY INVOKER
         AS SELECT id FROM ${db}.t05063_dist;
 
     CREATE USER ${user};
@@ -52,11 +58,18 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM (EXPLAIN SELECT id FROM ${db}.v05063_filtering WHERE id != 3);
 "
 
-echo "=== projection-only twin: pushdown still fires ==="
+echo "=== projection-only NONE twin: pushdown declined too ==="
+${CLICKHOUSE_CLIENT} --query "
+    ${common_settings}
+    SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS view_is_a_barrier
+    FROM (EXPLAIN SELECT id FROM ${db}.v05063_plain WHERE id != 3);
+"
+
+echo "=== INVOKER twin: pushdown still fires ==="
 ${CLICKHOUSE_CLIENT} --query "
     ${common_settings}
     SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
-    FROM (EXPLAIN SELECT id FROM ${db}.v05063_plain WHERE id != 3);
+    FROM (EXPLAIN SELECT id FROM ${db}.v05063_invoker WHERE id != 3);
 "
 
 echo "=== results are unchanged for the invoker without access to the table ==="
@@ -69,6 +82,7 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "
 ${CLICKHOUSE_CLIENT} --query "
     DROP VIEW  ${db}.v05063_filtering;
     DROP VIEW  ${db}.v05063_plain;
+    DROP VIEW  ${db}.v05063_invoker;
     DROP TABLE ${db}.t05063_dist;
     DROP TABLE ${db}.t05063_local;
     DROP USER  ${user};

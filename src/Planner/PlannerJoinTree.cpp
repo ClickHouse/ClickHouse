@@ -2143,7 +2143,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// row policies do not apply to the underlying distributed table. Use that
                         /// same context here to match `StorageView::readImpl`, which uses the override
                         /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
+                        /// are rejected by `tryGetUnderlyingDistributed` outright, and so is every
+                        /// `NONE` view while `sql_security_views_are_optimization_barriers` is on, so
+                        /// this branch is only reached with that server setting off.)
                         if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
                             inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
 
