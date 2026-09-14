@@ -17,6 +17,9 @@
         twice the threshold with an early hit for every supported element width. The additional
         twice-threshold missing-needle queries force the SIMD loop to scan the full array.
 
+        The position-one cases at the exact threshold are kept separate for has and indexOf. They
+        cover the scalar-prefix/SIMD crossover where the search can stop after two elements.
+
         The alignment table alternates adjacent row lengths around each SIMD threshold. This
         makes ColumnArray row starts move through different 32-byte alignment phases instead of
         reusing the same phase for every row.
@@ -269,6 +272,48 @@
     </query>
     <query>
         SELECT sum(has(u64_64, toUInt64(0)) + indexOf(u64_64, toUInt64(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <!-- Exact-threshold position-one hits, measured separately for has and indexOf. -->
+    <query>
+        SELECT sum(has(u8_64, toUInt8(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u8_64, toUInt8(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_32, toUInt16(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u16_32, toUInt16(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32_16, toUInt32(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u32_16, toUInt32(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64_32, toUInt64(1)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u64_32, toUInt64(1)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
