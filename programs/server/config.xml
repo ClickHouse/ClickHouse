@@ -711,7 +711,8 @@
                         The resulting DN will be constructed by replacing all '{user_name}' substrings of the template with the actual
                          user name during each authentication attempt.
                         The exact value '{user_dn}' selects search-and-bind: the DN to bind to is the one found by 'user_dn_detection'
-                         under the 'lookup_bind_dn' identity (which is then required). Either 'bind_dn' or 'lookup_bind_dn' must be set.
+                         under the 'lookup_bind_dn' identity (which is then required). This parameter is mandatory and cannot be
+                         empty; 'lookup_bind_dn' does not replace it.
                 lookup_bind_dn - optional DN of a service account. When set, every LDAP search ('user_dn_detection' and 'role_mapping')
                          runs under this identity instead of the user's, and 'bind_dn' may be '{user_dn}'. Must not contain
                          '{user_name}', requires 'user_dn_detection' whose 'base_dn' or 'search_filter' depends on '{user_name}',
