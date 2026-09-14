@@ -7,7 +7,10 @@ DROP TABLE IF EXISTS t_ngram_backslash;
 CREATE TABLE t_ngram_backslash (s String, INDEX i s TYPE ngrambf_v1(2, 512, 2, 0) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 
-INSERT INTO t_ngram_backslash VALUES ('xxab\\\\cdyy'), ('other1'), ('other2'), ('other3');
+-- 'xxabcdyy' is the same value without the backslashes and lives in another granule: a pattern that
+-- requires them must neither match that value nor keep its granule.
+
+INSERT INTO t_ngram_backslash VALUES ('xxab\\\\cdyy'), ('other1'), ('xxabcdyy'), ('other2'), ('other3');
 
 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\\\\\%cd%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\\\\\%cd%';
@@ -55,7 +58,7 @@ DROP TABLE IF EXISTS t_text_index_backslash;
 CREATE TABLE t_text_index_backslash (s String, INDEX i s TYPE text(tokenizer = ngrams(2)) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 
-INSERT INTO t_text_index_backslash VALUES ('xxab\\\\cdyy'), ('other1'), ('other2'), ('other3');
+INSERT INTO t_text_index_backslash VALUES ('xxab\\\\cdyy'), ('other1'), ('xxabcdyy'), ('other2'), ('other3');
 
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\\\\\%cd%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\\\\\%cd%'
