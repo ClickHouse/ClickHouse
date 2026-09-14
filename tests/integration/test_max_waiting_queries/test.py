@@ -71,12 +71,13 @@ def wait_for(probe, expected, description, timeout=90):
     )
 
 
-def pin_startup_of_replicated_database(zk_path):
+def pin_startup_of_replicated_database(zk_path, create_table=True):
     """Leave `re`'s startup load job blocked inside the pause fail point, so queries that wait for
     the database to start pile up in a set that only this test adds to."""
     node.query("DROP DATABASE IF EXISTS re SYNC")
     node.query(f"CREATE DATABASE re ENGINE = Replicated('{zk_path}', 's1', 'r1')")
-    node.query("CREATE TABLE re.t (a Int) ENGINE = MergeTree ORDER BY a")
+    if create_table:
+        node.query("CREATE TABLE re.t (a Int) ENGINE = MergeTree ORDER BY a")
 
     pause_failpoint(True)
     node.restart_clickhouse()
@@ -186,6 +187,43 @@ def test_waiting_queries_limit(started_cluster):
                 f"<max_waiting_queries>{live}</max_waiting_queries>",
                 "<max_waiting_queries>2</max_waiting_queries>",
             )
+        cleanup(handles)
+
+
+def test_waiting_queries_limit_refuses_database_drop(started_cluster):
+    handles = []
+    try:
+        pin_startup_of_replicated_database(
+            "/test/max_waiting_queries/drop", create_table=False
+        )
+        assert server_setting("max_waiting_queries") == "2"
+
+        for i in range(2):
+            handles.append(
+                node.get_query_request(
+                    f"CREATE TABLE re.w{i} (a Int) ENGINE = MergeTree ORDER BY a"
+                )
+            )
+        wait_for(waiters_on_startup_job, "2", "both queries to block on the startup job")
+
+        # The database has no tables, so nothing between the interpreter's own wait and the catalog
+        # removal waits for the startup job. Unrefused, this drop reaches `~LoadTask`, whose cleanup
+        # wait cannot be refused, and parks there holding the exclusive database DDL guard, hence the
+        # explicit timeout.
+        try:
+            error = node.query_and_get_error("DROP DATABASE re SYNC", timeout=60)
+        except Exception as e:
+            raise AssertionError(
+                "DROP DATABASE over max_waiting_queries was not refused, it is still waiting"
+            ) from e
+        assert "Too many simultaneous waiting queries. Maximum: 2, waiting: 2" in error, error
+        # Nothing may have been dropped: the refusal happens before the first destructive step.
+        assert node.query("EXISTS DATABASE re").strip() == "1"
+        assert waiters_on_startup_job() == "2"
+
+        unpin_and_join(handles)
+        wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
+    finally:
         cleanup(handles)
 
 
