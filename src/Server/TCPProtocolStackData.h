@@ -17,8 +17,6 @@ struct TCPProtocolStackData
     std::string certificate;
     // default database from endpoint configuration to TCP layer
     std::string default_database;
-    // introspection flag from endpoint configuration to TCP layer
-    bool is_introspection = false;
 };
 
 }

@@ -84,6 +84,7 @@ private:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const std::shared_ptr<DataLake::ICatalog> catalog;
+    NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
