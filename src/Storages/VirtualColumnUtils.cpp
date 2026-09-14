@@ -672,6 +672,11 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
     return true;
 }
 
+/// Both walks below have to look at more than the `FUNCTION` nodes of this DAG. Constant folding turns a
+/// lambda whose captures are all constant into a `COLUMN` node holding a `ColumnFunction` carrier, and the
+/// interesting call - the one that takes the lambda argument - lives in that lambda's own `ActionsDAG`, not
+/// here. `allNodeFunctions` walks the carrier (and the lambdas nested in it) for exactly that reason.
+
 bool isDeterministic(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)
@@ -680,13 +685,10 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    /// A query-time constant, such as a folded `now()`, is not deterministic across queries.
-    if (node->type == ActionsDAG::ActionType::COLUMN && !node->isDeterministic())
+    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+    if (!node->isDeterministic())
         return false;
 
-    /// `allNodeFunctions` also looks inside a `COLUMN` node holding a constant-folded lambda,
-    /// which is what a lambda without non-constant captured columns becomes, and inside the
-    /// lambdas nested in it as its captured columns.
     return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
