@@ -282,6 +282,17 @@ namespace
         }
     }
 
+    int toLDAPScope(LDAPClient::SearchParams::Scope scope)
+    {
+        switch (scope)
+        {
+            case LDAPClient::SearchParams::Scope::BASE:      return LDAP_SCOPE_BASE;
+            case LDAPClient::SearchParams::Scope::ONE_LEVEL: return LDAP_SCOPE_ONELEVEL;
+            case LDAPClient::SearchParams::Scope::SUBTREE:   return LDAP_SCOPE_SUBTREE;
+            case LDAPClient::SearchParams::Scope::CHILDREN:  return LDAP_SCOPE_CHILDREN;
+        }
+    }
+
 }
 
 void LDAPClient::handleError(int result_code, String text)
@@ -656,6 +667,33 @@ void LDAPClient::closeConnection() noexcept
     handle = nullptr;
 }
 
+void LDAPClient::assertBoundForSearch() const
+{
+    const auto expected = params.hasLookupIdentity() ? BindMode::Service : BindMode::User;
+    if (bound_as != expected)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted while bound as {} instead of {}", toString(bound_as), toString(expected));
+}
+
+std::pair<String, String> LDAPClient::resolveSearchTemplates(const SearchParams & search_params) const
+{
+    /// `{user_name}` is the raw login and is escaped for the context it lands in; the DN
+    /// placeholders are already DNs and are only filter-escaped when used in a filter.
+    auto final_base_dn = replacePlaceholders(search_params.base_dn, {
+        {"{user_name}", escapeForDN(placeholders.user_name)},
+        {"{bind_dn}", placeholders.bind_dn},
+        {"{user_dn}", placeholders.user_dn}
+    });
+
+    auto final_search_filter = replacePlaceholders(search_params.search_filter, {
+        {"{user_name}", escapeForFilter(placeholders.user_name)},
+        {"{bind_dn}", escapeForFilter(placeholders.bind_dn)},
+        {"{user_dn}", escapeForFilter(placeholders.user_dn)},
+        {"{base_dn}", escapeForFilter(final_base_dn)}
+    });
+
+    return {std::move(final_base_dn), std::move(final_search_filter)};
+}
+
 LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params, bool tolerate_no_such_object)
 {
     std::lock_guard lock(ldap_global_mutex);
@@ -663,39 +701,12 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params,
     if (!handle)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted without an open connection");
 
-    /// Invariant: once a lookup identity is configured, no search may ever run as the user
-    /// (users frequently cannot read group containers or their own `memberOf`, and a search
-    /// as the user would silently return fewer roles). Without a lookup identity the legacy
-    /// model applies and the connection must be bound as the user.
-    const auto expected = params.hasLookupIdentity() ? BindMode::Service : BindMode::User;
-    if (bound_as != expected)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted while bound as {} instead of {}", toString(bound_as), toString(expected));
+    assertBoundForSearch();
 
     SearchResults result;
 
-    int scope = 0;
-    switch (search_params.scope)
-    {
-        case SearchParams::Scope::BASE:      scope = LDAP_SCOPE_BASE;     break;
-        case SearchParams::Scope::ONE_LEVEL: scope = LDAP_SCOPE_ONELEVEL; break;
-        case SearchParams::Scope::SUBTREE:   scope = LDAP_SCOPE_SUBTREE;  break;
-        case SearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
-    }
-
-    /// `{user_name}` is the raw login and is escaped for the context it lands in; the DN
-    /// placeholders are already DNs and are only filter-escaped when used in a filter.
-    const auto final_base_dn = replacePlaceholders(search_params.base_dn, {
-        {"{user_name}", escapeForDN(placeholders.user_name)},
-        {"{bind_dn}", placeholders.bind_dn},
-        {"{user_dn}", placeholders.user_dn}
-    });
-
-    const auto final_search_filter = replacePlaceholders(search_params.search_filter, {
-        {"{user_name}", escapeForFilter(placeholders.user_name)},
-        {"{bind_dn}", escapeForFilter(placeholders.bind_dn)},
-        {"{user_dn}", escapeForFilter(placeholders.user_dn)},
-        {"{base_dn}", escapeForFilter(final_base_dn)}
-    });
+    const int scope = toLDAPScope(search_params.scope);
+    const auto [final_base_dn, final_search_filter] = resolveSearchTemplates(search_params);
 
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
     ::timeval timeout = { params.search_timeout.count(), 0 };
@@ -819,6 +830,20 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params,
                 int rc = LDAP_SUCCESS;
                 char * matched_msg = nullptr;
                 char * error_msg = nullptr;
+
+                /// Both strings are copies owned by the caller.
+                SCOPE_EXIT({
+                    if (matched_msg)
+                    {
+                        ldap_memfree(matched_msg);
+                        matched_msg = nullptr;
+                    }
+                    if (error_msg)
+                    {
+                        ldap_memfree(error_msg);
+                        error_msg = nullptr;
+                    }
+                });
 
                 handleError(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, nullptr, 0));
 
@@ -1005,6 +1030,16 @@ std::optional<String> LDAPClient::detectUserDN(bool)
 
 void LDAPClient::closeConnection() noexcept
 {
+}
+
+void LDAPClient::assertBoundForSearch() const
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::pair<String, String> LDAPClient::resolveSearchTemplates(const SearchParams &) const
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams &, bool)

@@ -248,9 +248,21 @@ protected:
 
     void closeConnection() noexcept;
 
-    /// Runs a search on the open connection. Asserts (as `LOGICAL_ERROR`) that the connection
-    /// is bound as the service account when `lookup_bind_dn` is configured, or as the user
-    /// otherwise, so role searches can never accidentally run under the wrong identity.
+    /// Throws `LOGICAL_ERROR` unless the connection is bound as the identity every search must
+    /// run under: the service account when `lookup_bind_dn` is configured (users frequently
+    /// cannot read group containers or their own `memberOf`, and a search as the user would
+    /// silently return fewer roles), the user otherwise (the legacy model).
+    MAYBE_NORETURN void assertBoundForSearch() const;
+
+    /// Substitutes `placeholders` into `search_params.base_dn` and `search_params.search_filter`
+    /// and returns the pair (base DN, filter). `{user_name}` is escaped once for the context it
+    /// lands in; the DN placeholders are already DNs and are filter-escaped only in the filter;
+    /// `{base_dn}` in the filter stands for the substituted base DN.
+    MAYBE_NORETURN std::pair<String, String> resolveSearchTemplates(const SearchParams & search_params) const;
+
+    /// Runs a search on the open connection, see `assertBoundForSearch` for the identity it
+    /// runs under. Returns the values of `search_params.attribute` of every matching entry
+    /// (the entry DNs when the attribute is `dn`), capped by `params.search_limit`.
     /// When `tolerate_no_such_object` is set, an `LDAP_NO_SUCH_OBJECT` (rc=32) reply from the
     /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`.
     MAYBE_NORETURN SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
