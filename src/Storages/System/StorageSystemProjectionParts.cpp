@@ -265,7 +265,7 @@ void StorageSystemProjectionParts::processNextStorage(
             if (part->default_codec_is_approximate)
                 columns[res_index++]->insert("UNKNOWN");
             else if (part->default_codec)
-                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
+                columns[res_index++]->insert(part->default_codec->getCodecDescription()->formatForLogging());
             else
                 columns[res_index++]->insertDefault();
         }

@@ -1206,6 +1206,15 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
+            else if (name == "indexHint" && need_inversion)
+            {
+                /// `indexHint` returns 1 for every row, so an inverted hint is 0 for every row. Index
+                /// analysis re-reads a hint's arguments from the `FunctionIndexHint` object, not from the
+                /// cloned children, so an inverted hint node would contribute its condition un-inverted.
+                auto uint8_type = std::make_shared<DataTypeUInt8>();
+                res = &inverted_dag.addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+                handled_inversion = true;
+            }
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
@@ -1217,7 +1226,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                            arg = &cloneDAGWithInversionPushDown(
+                                *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
                     }
                 }
 
@@ -1444,7 +1454,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 /// All arguments should be regular input columns.
                 if (child->type == ActionsDAG::ActionType::INPUT)
                 {
-                    curve.arguments.push_back(child->result_name);
+                    curve.arguments.push_back({child->result_name, child->result_type});
                 }
                 else
                 {
@@ -1454,7 +1464,9 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             }
 
             /// So far we only support the case of two arguments.
-            if (2 == curve.arguments.size())
+            if (2 == curve.arguments.size()
+                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
+                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -2996,6 +3008,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 
     chassert(set_types.size() == set_columns.size());
 
+    bool repacked_only_by_transform_input = false;
+
     /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
     /// `key_tuple IN ((a, b), (c, d), ...)`.
     ///
@@ -3004,15 +3018,37 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     /// the key column type when preparing index conditions
     if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
     {
-        DataTypePtr key_type = removeNullable(data_types[0]);
+        /// Set elements are pushed through the key transform before the comparison, so the layout to
+        /// match is that chain's input type, not the key expression result (`String` for `toString(k)`).
+        const bool key_is_transformed = set_transforming_dags[0].has_value();
+        DataTypePtr key_type = removeNullable(key_is_transformed ? set_transforming_dags[0]->input_type : data_types[0]);
         if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
         {
             if (key_tuple_type->getElements().size() == set_types.size())
             {
+                /// The key expression result type re-packs a tuple of the same arity by itself, so only
+                /// a layout it rejects reaches index analysis here for the first time.
+                const auto * result_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(data_types[0]).get());
+                repacked_only_by_transform_input
+                    = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == set_types.size());
+
                 set_columns = {ColumnTuple::create(set_columns)};
                 set_types = {std::make_shared<DataTypeTuple>(set_types)};
             }
         }
+    }
+
+    /// A layout the key expression result type rejects has never reached index analysis before, so it is
+    /// unknown whether the transform maps distinct key values onto distinct transformed ones: `toString`
+    /// claims that for every type, yet it folds NaN payloads and fall-back hours.
+    if (repacked_only_by_transform_input)
+    {
+        const auto & function_name = func.getFunctionName();
+        if (function_name == "notIn" || function_name == "notNullIn" || function_name == "globalNotIn"
+            || function_name == "globalNotNullIn")
+            return false;
+
+        out.relaxed = true;
     }
 
     if (!tryPrepareSetColumnsForIndex(
@@ -3452,11 +3488,11 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         {
             for (size_t i = 0, size = curve.arguments.size(); i < size; ++i)
             {
-                if (curve.arguments[i] == name)
+                if (curve.arguments[i].name == name)
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
-                    out_key_column_type = sample_block.getByName(name).type;
+                    out_key_column_type = curve.arguments[i].type;
                     return true;
                 }
             }
@@ -4640,8 +4676,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
             /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
             /// reverts to reading and filtering those rows, which is correct.
+            /// Require a boolean reading, not merely a numeric type: `WHERE w` is rejected for a
+            /// wide integer or a `BFloat16`, so reading such a key as `key != 0` would prune
+            /// granules that no row-level filter can account for.
             if (!key_type_not_low_cardinality->isNullable()
-                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+                && key_type_not_low_cardinality->canBeUsedInBooleanContext())
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = Range(Field(UInt64(0)));
@@ -5580,6 +5619,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    if (functions.empty())
+        return key_range;
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -6622,52 +6664,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
+                /// the helper returns the range unchanged.
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    sparse_hyperrectangle[sparse_pos],
+                    element.monotonic_functions_chain,
+                    sparse_data_types[sparse_pos],
+                    single_point);
 
-                /// The case when the column is wrapped in a chain of possibly monotonic functions.
-                if (!element.monotonic_functions_chain.empty())
+                if (!new_range)
                 {
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
-                        single_point);
-
-                    if (!new_range)
-                    {
-                        /// Cannot determine monotonicity on this range – unknown.
-                        rpn_stack.emplace_back(true, true);
-                    }
-                    else
-                    {
-                        key_range = *new_range;
-
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
-
-                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                        /// analysis may incorrectly include NaN values.
-                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                        ///   so no comparison condition can be true.
-                        /// - If only right bound is NaN: the range extends into NaN territory,
-                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
-                        {
-                            intersects = false;
-                            contains = false;
-                        }
-                        else if (unlikely(key_range.right.isNaN()))
-                        {
-                            contains = false;
-                        }
-
-                        rpn_stack.emplace_back(intersects, !contains);
-                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
-                    }
+                    /// Cannot determine monotonicity on this range – unknown.
+                    rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
+                    const Range & key_range = *new_range;
+
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
@@ -6689,7 +6702,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
-
                 }
             }
 
