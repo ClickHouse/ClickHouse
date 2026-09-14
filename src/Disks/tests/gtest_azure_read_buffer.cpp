@@ -3527,5 +3527,3 @@ TEST(PlainRewritableLayoutScratch, ScratchBlobsAreNotUnderTheRootFiles)
 }
 
 #endif
-||||||| a5efd3a38a15
-=======
