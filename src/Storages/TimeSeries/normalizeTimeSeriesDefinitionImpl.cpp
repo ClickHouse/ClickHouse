@@ -31,6 +31,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>

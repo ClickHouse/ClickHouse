@@ -23,6 +23,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>

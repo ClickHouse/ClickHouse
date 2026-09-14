@@ -24,7 +24,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Core/UUID.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 
 
 namespace DB
