@@ -60,8 +60,8 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_transparent_wrap
 
 SELECT
     count() = 100000,
-    sum(arraySum(arrayMap(x -> x.a, array_value))) = 10000200000,
-    sum(arraySum(arrayMap(x -> x.c, aggregate_value))) = 5000750000
+    sum(arraySum(arrayMap(x -> tupleElement(x, 'a'), array_value))) = 10000200000,
+    sum(arraySum(arrayMap(x -> tupleElement(x, 'c'), aggregate_value))) = 5000750000
 FROM t_tuple_codec_transparent_wrappers;
 
 ALTER TABLE t_tuple_codec_transparent_wrappers
