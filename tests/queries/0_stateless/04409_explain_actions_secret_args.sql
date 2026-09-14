@@ -28,9 +28,7 @@ EXPLAIN actions = 1
 SELECT hex(HMAC('sha256', toString(number), 'MY_SUPER_SECRET_KEY_123'))
 FROM numbers(3);
 
--- The session setting alone must not reveal the key: the `display_secrets_in_show_and_select`
--- server setting and the `displaySecretsInShowAndSelect` privilege are also required, and the
--- stateless test server has neither.
+-- With the setting enabled the key is shown verbatim.
 SET format_display_secrets_in_show_and_select = 1;
 
 EXPLAIN actions = 1

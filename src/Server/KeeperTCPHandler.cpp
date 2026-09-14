@@ -1,6 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ErrnoException.h>
-#include <Common/saturatedWaitDuration.h>
 
 #if USE_NURAFT
 
@@ -34,8 +33,6 @@
 #    include <Compression/CompressionFactory.h>
 
 #    include <boost/algorithm/string/trim.hpp>
-
-#    include <sys/socket.h>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL
@@ -253,14 +250,8 @@ KeeperTCPHandler::KeeperTCPHandler(
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , keeper_context(keeper_dispatcher->getKeeperContext())
-    /// Poco::Timespan counts microseconds, so the ms value is multiplied by 1000. Saturate that
-    /// product: this value is the session TTL and is reported to the client, so its magnitude is
-    /// preserved up to the full Poco::Timespan::TimeDiff (Int64) range rather than clamped to a
-    /// wait bound. The wait itself is bounded inside KeeperDispatcher::getSessionID.
-    , min_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS)))
-    , max_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS)))
+    , min_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
+    , max_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
@@ -427,7 +418,7 @@ void KeeperTCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_INFO(log, "Client has not sent any data. peer address = {} address = {}", socket().peerAddress().toString(), socket().address().toString());
+        LOG_INFO(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
         return;
     }
 
@@ -1023,25 +1014,21 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
     connections.erase(conn);
 }
 
-/// A TLS socket serialises every SSL-level operation, StreamSocket::shutdown() included, on a mutex that
-/// the handler thread holds for the whole of a blocking read, so the SSL path cannot interrupt that read.
-/// Shutting the descriptor down needs no lock, at the cost of closing TLS abortively: no close_notify.
-static void shutdownSocketDescriptor(const Poco::Net::StreamSocket & socket)
-{
-    const auto fd = socket.impl()->sockfd();
-    if (fd == POCO_INVALID_SOCKET)
-        return;
-
-    [[maybe_unused]] const int rc = ::shutdown(fd, SHUT_RDWR);
-}
-
 void KeeperTCPHandler::closeAllConnections()
 {
     std::lock_guard lock(conns_mutex);
     for (auto * conn : connections)
     {
         conn->closing_for_shutdown.store(true, std::memory_order_release);
-        shutdownSocketDescriptor(conn->socket());
+
+        try
+        {
+            conn->socket().shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(conn->log, "Failed to close Keeper connection during shutdown");
+        }
     }
 }
 
