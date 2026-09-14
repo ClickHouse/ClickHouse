@@ -65,3 +65,29 @@ EXPLAIN SYNTAX SELECT a FROM t_bad_constraint;
 EXPLAIN QUERY TREE SELECT a FROM t_bad_constraint SETTINGS enable_analyzer = 1;
 
 DROP TABLE t_bad_constraint;
+
+-- Coverage for SubstituteColumnOptimizer.cpp lines 239-317 (legacy AST path, bypassed when
+-- enable_analyzer=1). Substitutes equivalent columns via ASSUME constraints, choosing the
+-- cheapest by column size. This code is only reached when enable_analyzer=0.
+CREATE TABLE t_subst_legacy (a UInt64, b UInt64, CONSTRAINT c1 ASSUME a = b)
+ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_subst_legacy SELECT number, number FROM numbers(100);
+
+SET enable_analyzer = 0;
+SET convert_query_to_cnf = 1;
+SET optimize_using_constraints = 1;
+SET optimize_substitute_columns = 1;
+
+-- b is substituted with a (a is in the primary key → cheaper)
+SELECT a, b FROM t_subst_legacy WHERE b = 42;
+
+-- Multiple references to b
+SELECT b, b + 1 FROM t_subst_legacy WHERE b < 3 ORDER BY b;
+
+-- PREWHERE clause: exercises SubstituteColumnOptimizer refPrewhere path (lines 243-244)
+SELECT a, b FROM t_subst_legacy PREWHERE b < 50 WHERE b = 42;
+
+-- HAVING clause with aggregate: exercises SubstituteColumnOptimizer refHaving path (lines 247-248)
+SELECT a, b FROM t_subst_legacy GROUP BY a, b HAVING count() > 0 ORDER BY a LIMIT 3;
+
+DROP TABLE t_subst_legacy;
