@@ -45,19 +45,23 @@ void registerStatementOnCluster(StatementFactory & factory)
 {
     factory.registerStatement("ON CLUSTER",
     {
-        .description = R"(
-For statements that support this clause, `ON CLUSTER` executes the query on all the servers of a cluster instead of only
-on the server which received it. The query is put into the distributed DDL queue (see `system.distributed_ddl_queue`)
-and is executed by every server of the cluster.
+        .description = R"DOCS_MD(
+By default, the `CREATE`, `DROP`, `ALTER`, and `RENAME` queries affect only the current server where they are executed. In a cluster setup, it is possible to run such queries in a distributed manner with the `ON CLUSTER` clause.
 
-**Examples**
+For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
 
-**Create a table on every server of a cluster**
-
-```sql title="Query"
-CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits);
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
-)",
+
+In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
+
+The local version of the query will eventually be executed on each host in the cluster, even if some hosts are currently not available.
+
+<Warning>
+The order for executing queries within a single host is guaranteed.
+</Warning>
+)DOCS_MD",
         .syntax = R"(
 <query> ... ON CLUSTER cluster ...
 )",

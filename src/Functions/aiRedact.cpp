@@ -118,7 +118,7 @@ REGISTER_FUNCTION(AiRedact)
         .description = R"(
 Detects and redacts personally identifiable information (PII) in the given text using an LLM provider.
 
-:::warning
+<Warning>
 `aiRedact` performs PII detection and redaction on a best-effort basis using an LLM, and its output is not
 reliable. Whether PII is detected and removed depends on the chosen model, the prompt, and the input: the
 model can miss identifiers, redact them only partially, or alter the surrounding text. It works best with
@@ -126,7 +126,7 @@ well-formed English text; results may be worse for other languages or for text w
 punctuation, or grammatical errors. `aiRedact` does not guarantee that its output is free of PII and must not
 be treated as a safe or sufficient anonymization mechanism on its own. Always review the output to ensure it
 meets your organization's data privacy and compliance policies before exposing data to untrusted parties.
-:::
+</Warning>
 
 Each detected PII span is replaced with a redaction token (`[REDACTED]` by default, configurable via the
 `replacement` parameter). The `categories` array restricts which PII types are redacted; an empty array
@@ -151,7 +151,7 @@ is disabled) rather than returning partially redacted text.
         .returned_value = {"The text with detected PII replaced by the redaction token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Redact specific categories", "SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [REDACTED] with email [REDACTED]"},
-            {"Redact the default PII categories with a custom token", "SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
+            {"Redact the default PII categories with a custom token", "CREATE TABLE tickets (body String) ENGINE = Memory;\nINSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');\nSELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
         },
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});

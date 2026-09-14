@@ -334,7 +334,12 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
 
         if (to_table_engine)
+        {
             manual_create_query->set(manual_create_query->storage, to_table_engine);
+            /// We need to set this flag for consistency with the parser.
+            if (to_table_engine->engine && (to_table_engine->engine->name == "TimeSeries"))
+                manual_create_query->is_time_series_table = true;
+        }
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
@@ -794,7 +799,6 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *view_metadata;
-    const StorageInMemoryMetadata & old_metadata = *view_metadata;
 
     /// Use the database where the materialized view is created to resolve nested views
     ContextMutablePtr mv_db_context = Context::createCopy(local_context);
@@ -824,11 +828,10 @@ void StorageMaterializedView::alter(
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = DefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
-
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.addDependency(*new_metadata.definer, table_id);
+    else
+        instance.removeDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
 

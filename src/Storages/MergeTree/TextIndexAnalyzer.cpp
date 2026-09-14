@@ -8,6 +8,7 @@ namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -227,21 +228,25 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
 
-    if (token_info->embedded_postings)
-        addPostings(token, token_info->embedded_postings);
+    if (!token_info->embedded_postings.empty())
+    {
+        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        addPostings(token, embedded);
+        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+    }
 }
 
-void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
+void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
 {
     tokens_with_postings.emplace(token);
 
     /// Clip the postings to the readable rows once.
     std::optional<PostingList> clipped_postings;
-    const auto * postings_ptr = postings.get();
+    const auto * postings_ptr = &postings;
 
     if (readable_rows)
     {
-        clipped_postings = readable_rows->clipPostings(*postings);
+        clipped_postings = readable_rows->clipPostings(postings);
 
         if (clipped_postings->isEmpty())
         {
@@ -313,6 +318,7 @@ void TextIndexAnalyzer::bypassPatternQueries()
     {
         auto & query_builder = query_builders.at(query_hash);
         query_builder.markBypassed();
+        query_builder.is_analysis_incomplete = true;
 
         for (const auto & [query_token, _] : query_builder.tokens)
             queries_by_token[query_token].erase(query_hash);
@@ -322,7 +328,7 @@ void TextIndexAnalyzer::bypassPatternQueries()
 double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
 {
     const auto & query = *query_builder.query;
-    chassert(!query.getTokens().empty());
+    chassert(!query.getTokens().empty() || !query.getPatterns().empty());
     const double n = static_cast<double>(total_rows);
 
     switch (query.getSearchMode())
@@ -362,6 +368,20 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
                 : 1.0;
 
+            /// A pattern query declares no tokens, it owns the ones the dictionary scan matched.
+            if (query.getTokens().empty())
+            {
+                for (const auto & [token, token_info] : query_builder.tokens)
+                {
+                    if (hasReadPostings(token))
+                        continue;
+
+                    not_in_any *= (1.0 - static_cast<double>(token_info->cardinality) / n);
+                }
+
+                return n * (1.0 - not_in_any);
+            }
+
             for (const auto & token : query.getTokens())
             {
                 auto it = query_builder.tokens.find(token);
@@ -399,10 +419,8 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
         if (query.getDirectReadMode() != TextIndexDirectReadMode::Hint)
             continue;
 
-        /// Pure-pattern queries have no declared tokens at parse time; their tokens are
-        /// discovered dynamically during dictionary scan. Skip the cardinality check in
-        /// that case — it would have no inputs to work with.
-        if (query.getTokens().empty())
+        /// A pure-pattern query is estimated from the tokens the dictionary scan discovered.
+        if (query.getTokens().empty() && query_builder.tokens.empty())
             continue;
 
         double estimated_cardinality = estimateQueryCardinality(query_builder, total_rows);

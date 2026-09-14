@@ -1,7 +1,6 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it. The experimental TimeSeries table engine does not
--- round-trip through DatabaseReplicated.
+-- grammar requires it.
 
 -- Regression test: `offset` inside a range selector (e.g. `rate(m[2m] offset 5m)`)
 -- used to fail with "Illegal type Decimal(18, 0) of argument of function

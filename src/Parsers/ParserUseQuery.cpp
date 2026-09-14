@@ -61,21 +61,17 @@ void registerStatementUse(StatementFactory & factory)
 {
     factory.registerStatement("USE",
     {
-        .description = R"(
-Sets the current database of the session. The current database is used to look up the tables which are not qualified
-with a database name.
-
-The statement cannot be used over the HTTP protocol, because there is no concept of a session there; pass the
-`database` parameter instead.
-
-**Examples**
-
-**Switch the current database**
-
-```sql title="Query"
-USE system;
+        .description = R"DOCS_MD(
+```sql
+USE [DATABASE] db
 ```
-)",
+
+Lets you set the current database for the session.
+
+The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
+
+This query can't be made when using the HTTP protocol, since there is no concept of a session.
+)DOCS_MD",
         .syntax = R"(
 USE [DATABASE] db
 )",

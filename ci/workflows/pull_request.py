@@ -23,10 +23,6 @@ FUNCTIONAL_TESTS_JOBS = [
     job
     for job in JobConfigs.functional_tests_jobs
     if not any(sanitizer in job.name for sanitizer in SANITIZERS)
-    # All existing Wasm UDF functional tests are `no-msan`, so selected test
-    # discovery cannot provide a representative WasmEdge smoke test. Keep the
-    # established full-suite MSan/WasmEdge lanes until that coverage exists.
-    or "amd_msan, WasmEdge" in job.name
 ] + JobConfigs.stateless_tests_selected_pr_jobs
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
@@ -75,12 +71,12 @@ workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
-        JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -231,6 +227,9 @@ workflow = Workflow.Config(
         JobConfigs.sqlstorm_test_job.set_run_after(
             CORE_BLOCKING_JOB_NAMES
         ),
+        JobConfigs.docs_examples_job.set_run_after(
+            CORE_BLOCKING_JOB_NAMES
+        ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job
@@ -293,6 +292,11 @@ workflow = Workflow.Config(
         "build": "Build (amd_binary)",
     },
     runs_on_label_prefix="pr-",
+    ai_orchestrator=Workflow.OrchestratorAI.Config(
+        enabled=False,
+        provider="bedrock",
+        model="global.anthropic.claude-sonnet-5",
+    ),
 )
 
 WORKFLOWS = [

@@ -28,12 +28,15 @@ import clickhouse_grpc_pb2_grpc
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.xml", "configs/cluster.xml"],
+    main_configs=["configs/config.xml", "configs/cluster.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
+# node2 is the interserver peer. Its global `default_session_user` names a user that is not
+# declared in `configs/users.xml`, so connections to it without a user name fail; it does not
+# mount `configs/config.xml`, whose endpoints nothing on this node uses.
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.xml", "configs/cluster.xml"],
+    main_configs=["configs/config_undeclared_global.xml", "configs/cluster.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
 # A node with an empty global `default_session_user`: connections without a user name are
@@ -41,7 +44,7 @@ node2 = cluster.add_instance(
 # reject mode can only be enabled globally, which needs a separate node.
 node_reject = cluster.add_instance(
     "node_reject",
-    main_configs=["configs/config_reject.xml"],
+    main_configs=["configs/config_reject.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
 
@@ -54,6 +57,14 @@ def started_cluster():
         # port that the readiness check uses.
         node1.wait_until_port_is_ready(9110, timeout=10)
         node_reject.wait_until_port_is_ready(9110, timeout=10)
+        # `SYSTEM RELOAD CONFIG` is the only reloader every test below relies on.
+        for node in (node1, node2, node_reject):
+            assert (
+                node.query(
+                    "SELECT value FROM system.server_settings WHERE name = 'config_reload_interval_ms'"
+                ).strip()
+                == "3600000"
+            )
         yield cluster
     finally:
         cluster.shutdown()
@@ -466,6 +477,18 @@ def test_postgres_default_session_user_with_password():
     assert not postgres_login(9114, "", "wrong_password")
     with assert_login_success("proto_pg_password_user", "PostgreSQL"):
         assert postgres_login(9114, "", "pg_secret")
+
+
+def test_undeclared_default_session_user():
+    # An undeclared `default_session_user` is not diagnosed while the configuration is loaded:
+    # the name is substituted for the empty user name and then authenticated like any other, so
+    # a request without a user name fails authentication under the configured name.
+    error = node2.http_query_and_get_error("SELECT currentUser()")
+    assert "403 Forbidden" in error
+    assert "undeclared_user: Authentication failed" in error
+
+    # An explicitly specified user is not affected.
+    assert node2.http_query("SELECT currentUser()", user="explicit_user") == "explicit_user\n"
 
 
 def test_interserver_connections_do_not_use_default_session_user():

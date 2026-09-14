@@ -19,7 +19,8 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY id
     SETTINGS
         enable_block_number_column = 1,
-        enable_block_offset_column = 1;
+        enable_block_offset_column = 1,
+        patch_parts_version = 'v2';
 
     INSERT INTO t_lwu_block_number VALUES (1, 'aa') (2, 'bb') (3, 'cc');
     UPDATE t_lwu_block_number SET s = 'foo' WHERE id = 1;
@@ -43,7 +44,7 @@ sleep 1.0
 $CLICKHOUSE_CLIENT --query "
     SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
-    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL;
+    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-217fed773f8b0f1741d2ccea2e599cdf-all' FINAL;
 "
 
 wait
