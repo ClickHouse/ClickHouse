@@ -16,6 +16,10 @@
         The threshold table below covers threshold - 1, threshold, threshold + one vector, and
         twice the threshold with an early hit for every supported element width. The additional
         twice-threshold missing-needle queries force the SIMD loop to scan the full array.
+
+        The alignment table alternates adjacent row lengths around each SIMD threshold. This
+        makes ColumnArray row starts move through different 32-byte alignment phases instead of
+        reusing the same phase for every row.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -56,6 +60,16 @@
             u64_64 Array(UInt64)
         ) ENGINE = Memory
     </create_query>
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_alignment</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_alignment
+        (
+            u8 Array(UInt8),
+            u16 Array(UInt16),
+            u32 Array(UInt32),
+            u64 Array(UInt64)
+        ) ENGINE = Memory
+    </create_query>
     <fill_query>
         INSERT INTO perf_array_index_simd_numeric
         SELECT materialize(range(4096)::Array(UInt32))
@@ -90,6 +104,15 @@
             materialize(range(32)::Array(UInt64)),
             materialize(range(36)::Array(UInt64)),
             materialize(range(64)::Array(UInt64))
+        FROM numbers(20000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_alignment
+        SELECT
+            materialize(if(number % 2 = 0, range(64)::Array(UInt8), range(65)::Array(UInt8))),
+            materialize(if(number % 2 = 0, range(32)::Array(UInt16), range(33)::Array(UInt16))),
+            materialize(if(number % 2 = 0, range(16)::Array(UInt32), range(17)::Array(UInt32))),
+            materialize(if(number % 2 = 0, range(32)::Array(UInt64), range(33)::Array(UInt64)))
         FROM numbers(20000)
     </fill_query>
 
@@ -274,6 +297,49 @@
         FORMAT Null
     </query>
 
+    <!-- Variable-offset rows around each SIMD threshold force different load-alignment phases. -->
+    <query>
+        SELECT sum(has(u8, toUInt8(255)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u8, toUInt8(255)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16, toUInt16(65535)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u16, toUInt16(65535)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32, toUInt32(4294967295)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u32, toUInt32(4294967295)))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64, toUInt64('18446744073709551615')))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u64, toUInt64('18446744073709551615')))
+        FROM perf_array_index_simd_alignment
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_alignment</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
