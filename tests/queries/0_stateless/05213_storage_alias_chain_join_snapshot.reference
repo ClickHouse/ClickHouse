@@ -1,0 +1,10 @@
+alias_chain_join
+1	a	A
+2	b	B
+distributed_alias_join
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+distributed_alias_join_explain_ok
+1
