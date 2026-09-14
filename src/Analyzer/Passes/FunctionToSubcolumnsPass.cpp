@@ -138,7 +138,9 @@ struct IdentifiersToOptimize
     ColumnInSourceSet everywhere;
 
     /// Identifiers that also have plain column references, but have at least one
-    /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
+    /// filter-only transformer use in WHERE/PREWHERE. The permission is scoped
+    /// to the identifier: another otherwise eligible direct transformer for it
+    /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
@@ -656,6 +658,26 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
+        {TypeIndex::Map, "mapContainsValue"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
+                return;
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
+            function_arguments_nodes[0] = std::move(has_function_argument);
+
+            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+        },
+    },
+    {
         {TypeIndex::Nullable, "count"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
@@ -739,21 +761,28 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
     {TypeIndex::Map, "arrayElement"},
 };
 
-/// Transformers that should be applied even when the full column is also read
-/// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
+/// Transformers that should mark their identifier for filter-only optimization
+/// even when the full column is also read elsewhere in the query (e.g., in
+/// SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
-/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
-/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// subcolumn identifier complicates analysis. But for Map subcolumn filters,
+/// Tuple element access, Variant element access and QBit element access, the
+/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
+/// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. The reads are independent and semantically
 /// correct.
+/// The second pass applies this permission at identifier granularity, so another
+/// eligible direct transformer on the same identifier may also be rewritten in
+/// the filter. Keep this set limited to transformers that make that behavior safe.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapKeys"},
+    {TypeIndex::Map, "mapValues"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
@@ -1257,9 +1286,9 @@ public:
         /// When there are also plain column references but a transformable use
         /// exists in WHERE/PREWHERE (recorded in `identifiers_with_filter_optimization`),
         /// the identifier goes into `filter_only` — it is rewritten only inside
-        /// WHERE/PREWHERE by the second pass. This is beneficial for Map key
-        /// lookups: only the relevant bucket is read for the filter while the
-        /// full Map is still read for matching rows in SELECT.
+        /// WHERE/PREWHERE by the second pass. This is beneficial for Map
+        /// subcolumn filters: only the relevant subcolumn is read for the filter,
+        /// while the full Map is still read for matching rows in SELECT.
         ///
         /// Do not optimize index columns (primary, min-max, secondary),
         /// because otherwise analysis of indexes may be broken.
@@ -1461,6 +1490,8 @@ public:
             auto qualified_name = makeColumnInSource(column_source, column.name);
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+            /// The permission is intentionally scoped to the whole identifier,
+            /// not to the transformer that caused it to be marked.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
             if (!should_optimize
                 && identifiers_to_optimize.filter_only.contains(qualified_name)
