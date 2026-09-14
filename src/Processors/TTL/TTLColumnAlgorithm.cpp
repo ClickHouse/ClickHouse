@@ -53,12 +53,12 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (isMaxTTLExpired() && !is_compact_part)
     {
         auto result_column = column_with_type.column->cloneEmpty();
-        result_column->reserve(block.rows());
 
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
         if (default_column)
         {
             default_column = default_column->convertToFullColumnIfConst();
+            result_column->reserve(block.rows());
             result_column->insertRangeFrom(*default_column, 0, block.rows());
         }
         else
