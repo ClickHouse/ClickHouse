@@ -5,6 +5,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -43,6 +44,31 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
     subquery_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
     subquery_context->applySettingsChanges(changes);
     return subquery_context;
+}
+
+/// The branches of a recursive element's body: the branches of a `UNION`, or the operands of an
+/// `INTERSECT` / `EXCEPT`, either reached through any number of single-branch wrappers. This is
+/// the same rule `QueryTreeBuilder` and `AddDefaultDatabaseVisitor::isRecursiveElement` apply, so
+/// a body that they take for a recursive element is taken for one here too. Null when the body
+/// is a single `SELECT`, which is an ordinary CTE within a `WITH RECURSIVE` list.
+ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
+{
+    if (!subquery || subquery->children.empty())
+        return nullptr;
+
+    IAST * body = subquery->children.front().get();
+    while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
+    {
+        if (!union_query->list_of_selects)
+            return nullptr;
+        auto & branches = union_query->list_of_selects->children;
+        if (branches.size() != 1)
+            return branches.size() > 1 ? &branches : nullptr;
+        body = branches.front().get();
+    }
+    if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
+        return &intersect_except->children;
+    return nullptr;
 }
 
 }
@@ -108,17 +134,18 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     }
 }
 
-/// The recursive members of a recursive element, every `UNION` branch after the first, reference
-/// the element itself, so there its name must not be replaced by the body of a same-named element
-/// of an enclosing `SELECT`. The first branch is the seed, which the analyzer resolves like any
-/// other query, so an enclosing element stays visible in it.
+/// The recursive members of a recursive element, every branch of its body after the first,
+/// reference the element itself, so there its name must not be replaced by the body of a
+/// same-named element of an enclosing `SELECT`. The first branch is the seed, which the analyzer
+/// resolves like any other query, so an enclosing element stays visible in it. An `INTERSECT` /
+/// `EXCEPT` body is a recursive element too: the analyzer rejects it as unsupported, and it must
+/// keep its self-reference for that rejection to happen, both live and when a stored query is
+/// created or loaded.
 void ApplyWithSubqueryVisitor::visitRecursiveWithElement(ASTWithElement & with_element, const Data & data)
 {
-    auto * union_query = with_element.subquery && !with_element.subquery->children.empty()
-        ? with_element.subquery->children.front()->as<ASTSelectWithUnionQuery>()
-        : nullptr;
+    auto * branches = getRecursiveBodyBranches(with_element.subquery);
     bool shadows = data.subqueries.contains(with_element.name) || data.literals.contains(with_element.name);
-    if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() < 2 || !shadows)
+    if (!branches || !shadows)
     {
         visit(with_element.subquery, data);
         return;
@@ -128,10 +155,9 @@ void ApplyWithSubqueryVisitor::visitRecursiveWithElement(ASTWithElement & with_e
     shadowed.subqueries.erase(with_element.name);
     shadowed.literals.erase(with_element.name);
 
-    auto & branches = union_query->list_of_selects->children;
-    visit(branches.front(), data);
-    for (size_t i = 1; i < branches.size(); ++i)
-        visit(branches[i], shadowed);
+    visit(branches->front(), data);
+    for (size_t i = 1; i < branches->size(); ++i)
+        visit((*branches)[i], shadowed);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
