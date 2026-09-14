@@ -1311,8 +1311,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
     Stopwatch stopwatch;
 
-    /// Set when the target commits the incremental cursor atomically with the data (e.g. Iceberg), so
-    /// the refresh must not also persist it in the Keeper znode (see the read-back after success).
+    /// Set for a transactional target (e.g. Iceberg) that commits the cursor with its data; the refresh
+    /// then resumes from that cursor and does not also persist it in the Keeper znode.
     bool cursor_persisted_by_target = false;
 
     try
@@ -1326,8 +1326,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         CursorTreeNodePtr stream_cursor;
         if (incremental)
         {
-            /// A transactional target (e.g. Iceberg) keeps the cursor with its data and provides a store to
-            /// read it back; otherwise resume from the cursor persisted in the Keeper coordination znode.
+            /// A transactional target (e.g. Iceberg) commits the cursor with its data and is the source of
+            /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
             if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
@@ -1520,8 +1520,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
 
-    /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
-    /// A transactional target already committed it atomically with the data, so leave the znode cursor empty.
+    /// Persist the cursor the streaming source advanced to. A transactional target already committed it
+    /// with its data, so the znode cursor stays empty for it.
     if (!cursor_persisted_by_target)
         if (auto cursor = refresh_context->getStreamingCursor())
             out_cursor = cursor->tree;

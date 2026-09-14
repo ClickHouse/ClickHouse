@@ -39,6 +39,21 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     return result.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
+void carryForwardRefreshCursor(
+    Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
+{
+    std::optional<String> cursor = new_cursor;
+    if (!cursor.has_value() && parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
+    {
+        auto parent_summary = parent_snapshot->get(Iceberg::f_summary).extract<Poco::JSON::Object::Ptr>();
+        if (parent_summary->has(Iceberg::f_refresh_cursor))
+            cursor = parent_summary->getValue<String>(Iceberg::f_refresh_cursor);
+    }
+    if (cursor.has_value())
+        summary->set(Iceberg::f_refresh_cursor, *cursor);
+}
+
 /// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
 std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
 {
@@ -229,9 +244,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else if (num_deleted_rows != 0)
         operation_name = Iceberg::f_overwrite;
     summary->set(Iceberg::f_operation, operation_name);
-    /// Commit the incremental refreshable-MV cursor atomically with the appended data files.
-    if (refresh_cursor.has_value())
-        summary->set(Iceberg::f_refresh_cursor, *refresh_cursor);
+    carryForwardRefreshCursor(summary, parent_snapshot, refresh_cursor);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
@@ -360,6 +373,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, Iceberg::f_replace);
+    carryForwardRefreshCursor(summary, parent_snapshot, std::nullopt);
     summary->set(Iceberg::f_added_data_files, "0");
     summary->set(Iceberg::f_added_records, "0");
     summary->set(Iceberg::f_added_files_size, "0");
