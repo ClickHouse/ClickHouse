@@ -600,9 +600,12 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
     }
-    else
+    else if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials))
     {
         // Just in case external_roles are changed. This will be no-op if they are not.
+        // Interserver `AlwaysAllowCredentials` skip the LDAP round-trip (see `areLDAPCredentialsValidNoLock`),
+        // so `external_roles` is empty for them; updating from it would wipe the roles mapped at the user's
+        // last password login until the next one (https://github.com/ClickHouse/ClickHouse/pull/101920).
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
