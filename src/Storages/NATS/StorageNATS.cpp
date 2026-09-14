@@ -743,22 +743,29 @@ void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
 
-    /// A closed connection is dead for good, and this task only waits for one to reconnect. Hand
-    /// the table back to the initialization task, which builds a new connection and new consumers.
+    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
+    /// so build a new connection and new consumers here. Only the connection: whether the new
+    /// consumers subscribe is decided below, the same way as for any other cycle. A stopped or
+    /// paused table must hold no subscription - with core NATS a message delivered to it is
+    /// dropped, and in a queue group it is taken away from the members which are still running -
+    /// but it does keep its connection, so it can still run the one-shot cycle a `SYSTEM REFRESH`
+    /// entitles it to, and `SYSTEM START` finds it ready.
     ///
-    /// Not while the table is stopped or paused: reinitialization subscribes, and a stopped table
-    /// must hold no subscription - with core NATS a message delivered to it is dropped, and in a
-    /// queue group it is taken away from the members which are still running. This task keeps
-    /// running while the table is blocked, so the connection is rebuilt on the tick after
-    /// `SYSTEM START`.
-    if (!shutdown_called && !stream_control.isBlocked() && consumers_connection && consumers_connection->isClosed())
+    /// No connection at all means a previous attempt dropped the closed one and then failed to
+    /// connect, so try again.
+    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
     {
-        LOG_INFO(log, "The connection to {} is closed, reinitializing the consumers",
-            consumers_connection->connectionInfoForLog());
-
-        unsubscribeConsumers();
-        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
-        return;
+        try
+        {
+            createConsumersConnection();
+            createConsumers();
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
     }
 
     bool consumers_queues_are_empty = false;

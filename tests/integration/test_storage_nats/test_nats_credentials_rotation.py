@@ -70,7 +70,7 @@ def start_fake_broker():
     raise Exception("The fake NATS broker did not start")
 
 
-def create_pipeline(subject):
+def create_pipeline(subject, extra_settings=""):
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
     instance.query(
@@ -83,7 +83,7 @@ def create_pipeline(subject):
                      nats_username = 'clickhouse',
                      nats_password = 'the_original_one',
                      nats_reconnect_wait = 500,
-                     nats_startup_connect_tries = 1;
+                     nats_startup_connect_tries = 1{};
 
         CREATE TABLE test.destination (key UInt64, value UInt64)
             ENGINE = MergeTree ORDER BY key;
@@ -91,7 +91,7 @@ def create_pipeline(subject):
         CREATE MATERIALIZED VIEW test.consumer TO test.destination AS
             SELECT * FROM test.nats;
         """.format(
-            BROKER_PORT, subject
+            BROKER_PORT, subject, extra_settings
         )
     )
 
@@ -207,5 +207,60 @@ def test_stopped_nats_table_does_not_resubscribe_after_rotation(started_cluster)
     # The table is released, and only now is it allowed to rebuild the connection and resume.
     instance.query("SYSTEM START test.nats")
     wait_for_consumed_above(consumed_while_stopped)
+
+    instance.query("DROP DATABASE test SYNC")
+
+
+def test_stopped_nats_table_refreshes_after_rotation(started_cluster):
+    """`SYSTEM REFRESH` on a stopped table still runs its one-shot cycle after a closed connection.
+
+    A stopped table holds no subscription but does keep its connection, so once the client library
+    has closed that connection the table has to rebuild it - without subscribing - for the one
+    out-of-order cycle a `SYSTEM REFRESH` entitles it to, and for `SYSTEM START` to find it ready.
+    """
+    set_broker_state("accept")
+    # The one-shot cycle of a refresh ends as soon as the consumer has nothing buffered, which is
+    # right away when it has just subscribed. Hold its block open for a while instead, so that
+    # the broker gets to deliver into it.
+    create_pipeline(
+        "refreshed_subject",
+        ", nats_flush_interval_ms = 3000, nats_wait_for_flush_interval = 1",
+    )
+    wait_for_consumed_above(0)
+
+    instance.query("SYSTEM STOP test.nats")
+    consumed_while_stopped = wait_for_consumption_to_stop()
+
+    rejections_before = broker_log_count("rejecting the credentials")
+    set_broker_state("reject")
+    wait_for_broker_log_count("rejecting the credentials", rejections_before + 2)
+
+    # The credentials are accepted again: the stopped table rebuilds its connection, and nothing
+    # else - it does not subscribe and consumes nothing.
+    accepted_before = broker_log_count("credentials accepted")
+    subscriptions_before = broker_log_count("subscribed sid")
+    set_broker_state("accept")
+    wait_for_broker_log_count("credentials accepted", accepted_before + 1)
+    assert (
+        broker_log_count("subscribed sid") == subscriptions_before
+    ), "A stopped table subscribed while rebuilding a closed connection"
+    assert consumed() == consumed_while_stopped, "A stopped table consumed a message"
+
+    # The one-shot cycle of a refresh: subscribe, consume what the broker delivers, unsubscribe.
+    instance.query("SYSTEM REFRESH test.nats")
+    wait_for_consumed_above(consumed_while_stopped)
+    consumed_after_refresh = wait_for_consumption_to_stop()
+
+    # The refresh did not resume the stream: the table is still stopped, holds no subscription
+    # and consumes nothing.
+    subscriptions_after_refresh = broker_log_count("subscribed sid")
+    time.sleep(10)
+    assert (
+        broker_log_count("subscribed sid") == subscriptions_after_refresh
+    ), "A refreshed table stayed subscribed after its one-shot cycle"
+    assert consumed() == consumed_after_refresh, "A refreshed table kept consuming"
+
+    instance.query("SYSTEM START test.nats")
+    wait_for_consumed_above(consumed_after_refresh)
 
     instance.query("DROP DATABASE test SYNC")
