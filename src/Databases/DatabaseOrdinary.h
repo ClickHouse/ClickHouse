@@ -2,6 +2,7 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Storages/TableZnodeInfo.h>
 
 
 namespace DB
@@ -100,7 +101,8 @@ public:
 
     /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
-    static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
+    /// Returns the resolved path, split into the Keeper cluster name and the raw path inside it.
+    static TableZnodeInfo checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.

@@ -128,31 +128,26 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
+/// The template may address an auxiliary Keeper ("<auxiliary_zookeeper_name>:/path"), so the probe goes to the
+/// cluster the resolved path names and asks about the raw path, the same way the table itself will later.
+static void checkReplicaPathExists(const TableZnodeInfo & znode_info, const StorageID & table_id, ContextPtr local_context)
 {
-    Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
-    info.table_id = table_id;
-    info.expand_special_macros_only = false;
-
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
-    String replica_path = local_context->getServerSettings()[ServerSetting::default_replica_path];
-    String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
-    if (local_context->getZooKeeper()->exists(zookeeper_path))
+    if (local_context->getDefaultOrAuxiliaryZooKeeper(znode_info.zookeeper_name)->exists(znode_info.path))
         throw Exception(
             ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
-            zookeeper_path, backQuote(table_id.getFullTableName())
+            znode_info.full_path, backQuote(table_id.getFullTableName())
         );
 }
 
-void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
+TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
 {
     /// A conversion mints a path the table never had, so the substituted name is validated as strictly
     /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
     /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
-    TableZnodeInfo::resolve(
+    return TableZnodeInfo::resolve(
         server_settings[ServerSetting::default_replica_path],
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
@@ -259,8 +254,8 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         create_query.uuid = UUIDHelpers::generateV4();
         create_query.has_uuid = true;
     }
-    checkReplicaPathIsSafe(create_query, getContext());
-    checkReplicaPathExists(create_query, getContext());
+    const auto znode_info = checkReplicaPathIsSafe(create_query, getContext());
+    checkReplicaPathExists(znode_info, StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), getContext());
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database);
     if (ordinary_database)
     {
