@@ -12,7 +12,7 @@ INSERT INTO test_partition_in_order SELECT number % 100, number+1000 FROM number
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 Skip stream merging: 1
 Read each partition through separate port: 1
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Distinct%Transform%' OR explain LIKE '%Resize%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%DistinctSortedStreamTransform%' OR explain LIKE '%Resize%';
 DistinctTransform × 8
 DistinctSortedStreamTransform × 8
 SELECT count() = (SELECT uniqExact(a) FROM test_partition_in_order) FROM (SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1);
