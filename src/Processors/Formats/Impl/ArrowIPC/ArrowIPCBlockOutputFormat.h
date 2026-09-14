@@ -99,8 +99,8 @@ private:
     VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
 
     /// Rows of consecutive chunks that are individually smaller than the configured record batch target,
-    /// to be written as one record batch. Copied in on arrival rather than kept as the chunks themselves,
-    /// whose columns can hold the capacity of the blocks they were filtered out of.
+    /// to be written as one record batch. The first chunk becomes the accumulator itself, so a staged batch
+    /// can hold one source block's allocations until it is written.
     Chunk staged;
 };
 

@@ -385,11 +385,10 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
         return;
     }
 
-    if (!staged.getNumRows())
-        /// Empty columns rather than the chunk itself: a filtered column keeps the capacity reserved for
-        /// its whole source block, which the accumulator would then hold for the lifetime of every batch.
-        staged.setColumns(chunk.cloneEmptyColumns(), 0);
-    staged.append(chunk);
+    if (staged.getNumRows())
+        staged.append(chunk);
+    else
+        staged = std::move(chunk);
 
     if (reached(staged.getNumRows(), staged.bytes()))
         writeChunk(std::move(staged));
