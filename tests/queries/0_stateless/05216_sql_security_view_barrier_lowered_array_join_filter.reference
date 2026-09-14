@@ -1,0 +1,33 @@
+===== fuse_filter_into_array_join = 0: the invoker's predicate stays above the barrier =====
+tagged_invoker	2
+tagged_definer	0
+tagged_none	0
+tagged_invoker	3
+tagged_definer	0
+tagged_none	0
+===== fuse_filter_into_array_join = 0: the invoker's predicate cannot observe a hidden row =====
+tagged_invoker: the outer predicate saw a hidden row
+tagged_definer: 2
+tagged_none: 2
+tagged_invoker: the outer predicate saw a hidden row
+tagged_definer: 2
+tagged_none: 2
+===== fuse_filter_into_array_join = 1: the invoker's predicate stays above the barrier =====
+tagged_invoker	2
+tagged_definer	0
+tagged_none	0
+tagged_invoker	3
+tagged_definer	0
+tagged_none	0
+===== fuse_filter_into_array_join = 1: the invoker's predicate cannot observe a hidden row =====
+tagged_invoker: the outer predicate saw a hidden row
+tagged_definer: 2
+tagged_none: 2
+tagged_invoker: the outer predicate saw a hidden row
+tagged_definer: 2
+tagged_none: 2
+===== the lowered filter still hides the same rows =====
+1
+3
+1
+3
