@@ -509,6 +509,16 @@ void StorageStripeLog::checkAlterIsPossible(const AlterCommands & commands, Cont
 }
 
 
+std::optional<NameAndTypePair> StorageStripeLog::getColumnForRowCount(const StorageSnapshotPtr & storage_snapshot) const
+{
+    const auto & all_physical = storage_snapshot->metadata->getColumns().getAllPhysical();
+    if (all_physical.empty())
+        return {};
+
+    return all_physical.front();
+}
+
+
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
@@ -561,7 +571,8 @@ Pipe StorageStripeLog::read(
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     /// Filter out virtual columns - they are not stored on disk and not in the index.
-    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(
+        column_names, storage_snapshot, getColumnForRowCount(storage_snapshot));
     const NameSet required_columns{physical_column_names.begin(), physical_column_names.end()};
     const auto current_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
     bool read_blocks_individually = false;

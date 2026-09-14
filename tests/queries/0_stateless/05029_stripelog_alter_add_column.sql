@@ -28,3 +28,25 @@ SELECT c FROM stripelog_alter_add_column ORDER BY c;
 SELECT * FROM stripelog_alter_add_column ORDER BY a;
 
 DROP TABLE stripelog_alter_add_column;
+
+DROP TABLE IF EXISTS stripelog_alter_add_column_trivial_queries;
+
+CREATE TABLE stripelog_alter_add_column_trivial_queries
+(
+    a UInt64
+)
+ENGINE = StripeLog;
+
+INSERT INTO stripelog_alter_add_column_trivial_queries VALUES (1);
+
+ALTER TABLE stripelog_alter_add_column_trivial_queries
+    ADD COLUMN b UInt8 DEFAULT intDiv(1, a - a);
+
+SELECT 1 FROM stripelog_alter_add_column_trivial_queries;
+SELECT _table FROM stripelog_alter_add_column_trivial_queries;
+SELECT _database FROM stripelog_alter_add_column_trivial_queries;
+
+ALTER TABLE stripelog_alter_add_column_trivial_queries ADD COLUMN first_column UInt8 FIRST; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE stripelog_alter_add_column_trivial_queries ADD COLUMN after_column UInt8 AFTER a; -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE stripelog_alter_add_column_trivial_queries;

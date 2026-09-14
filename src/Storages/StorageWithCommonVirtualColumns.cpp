@@ -60,7 +60,12 @@ void StorageWithCommonVirtualColumns::read(
     }
 
     /// Proxy to underlying storage.
-    auto filtered_columns = VirtualColumnUtils::filterVirtualColumns(column_names, storage_snapshot->metadata, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan);
+    auto filtered_columns = VirtualColumnUtils::filterVirtualColumns(
+        column_names,
+        storage_snapshot->metadata,
+        VirtualsKind::Ephemeral,
+        VirtualsMaterializationPlace::Plan,
+        getColumnForRowCount(storage_snapshot));
     readImpl(query_plan, filtered_columns, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     /// Materialize constant virtuals.
