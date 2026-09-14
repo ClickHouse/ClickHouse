@@ -240,11 +240,16 @@ void ObjectStorageQueueMetadata::startup()
     if (startup_called.exchange(true))
          return;
 
-    /// Union of both guards: master narrowed this to the three flags, which are fixed at construction,
-    /// while `isUnordered(mode)` covers an unordered table whose cleanup settings are only turned on
-    /// later by `ALTER`. Dropping the mode term would leave such a table with no sweep at all.
-    if (!cleanup_task
-        && (isUnordered(mode) || cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
+    /// Always create the periodic cleanup task, rather than gating it on the three
+    /// constructor-time flags (`cleanup_processed_files` / `cleanup_failed_files` /
+    /// `cleanup_processing_files`) or `isUnordered(mode)`. Those flags and the settings behind
+    /// them (`tracked_file_ttl_sec`, `failed_files_ttl_sec`, `persistent_processing_node_ttl_seconds`,
+    /// `use_persistent_processing_nodes`, `tracked_files_limit`) are all alterable at runtime via
+    /// `ALTER TABLE ... MODIFY SETTING`, so a table created with none of them set must still be able
+    /// to turn any of this cleanup on later, in any mode - not just unordered. `cleanupThreadFuncImpl()`
+    /// already re-derives every category live per run and correctly no-ops when there is nothing to
+    /// do, so an idle table only pays for the cheap ephemeral Keeper lock each interval, not a real sweep.
+    if (!cleanup_task)
     {
         cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
@@ -1355,9 +1360,13 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     /// here: unlike the user-facing drop, this task is periodic, so the next scheduled run is the retry.
     try
     {
-        /// Check the TTL as well: it is changeable at runtime and zero disables
-        /// the cleanup (otherwise every node would be treated as stale).
-        if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
+        /// Re-derived live rather than taken from `cleanup_processing_files`: that member is a
+        /// constructor-time snapshot, but `use_persistent_processing_nodes` and
+        /// `persistent_processing_node_ttl_seconds` are both alterable at runtime via
+        /// `ALTER TABLE ... MODIFY SETTING`, so a table created with processing-node cleanup
+        /// disabled must still be able to turn it on later without a restart. `startup()` already
+        /// guarantees a periodic task exists to reach this code at all (see the comment there).
+        if (!isExclusive(mode) && use_persistent_processing_nodes.load() && persistent_processing_node_ttl_seconds.load())
             cleanupPersistentProcessingNodes(zk_client);
 
         /// Re-derived per run rather than taken from the members: `tracked_files_limit`,
