@@ -588,9 +588,12 @@ struct AnalysisOfVarianceMoments
 
     void read(ReadBuffer & buf)
     {
-        readVectorBinary(xs1, buf);
-        readVectorBinary(xs2, buf);
-        readVectorBinary(ns, buf);
+        /// add and merge cap the group count at MAX_GROUPS_NUMBER via resizeIfNeeded, but read
+        /// trusts the serialized lengths. Enforce the same bound here, before the vectors are
+        /// resized, so a crafted state cannot exceed the aggregate's own invariant.
+        readVectorBinary(xs1, buf, MAX_GROUPS_NUMBER);
+        readVectorBinary(xs2, buf, MAX_GROUPS_NUMBER);
+        readVectorBinary(ns, buf, MAX_GROUPS_NUMBER);
 
         /// The three vectors hold one entry per group and must stay equal in length.
         /// The finalize path iterates up to xs1.size() and indexes xs2 and ns with the
