@@ -50,6 +50,13 @@ batches: 50
 --- the row criterion still applies when the byte criterion is set, and bounds that batch ---
 batches: 13, rows per batch: [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]
 100	1	100000
+--- a block keeping the dictionary of the block it was filtered out of reaches the byte target alone ---
+batches: 4, rows per batch: [1, 1, 1, 1]
+4	4	1000
+batches: 1, rows per batch: [4]
+--- the row target alone combines those same blocks ---
+batches: 1, rows per batch: [4]
+4	4	1000
 --- the Arrow file format coalesces too, and its footer stays consistent ---
 batches: 1
 64	2016	1

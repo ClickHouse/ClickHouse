@@ -129,6 +129,24 @@ ${CLICKHOUSE_LOCAL} --query "SELECT toLowCardinality(repeat('x', 1000)) AS s FRO
 arrow_batches stream detail
 string_oracle
 
+echo "--- a block keeping the dictionary of the block it was filtered out of reaches the byte target alone ---"
+# `ColumnLowCardinality::filter` keeps the whole source dictionary, so each surviving row measures the
+# ~64 KB dictionary its 250-row block built and is written as its own record batch, which also ends the
+# batches the row target set here would otherwise have combined. The `OR` is what keeps the filter above
+# the projection that builds `s`, so the dictionary is built for the whole block; `length(s) = 0` is
+# never true. The `String` arm below has the same values and the same targets and is combined.
+LC_SOURCE_DICT="SELECT s FROM (SELECT toLowCardinality(repeat(toString(number), 100)) AS s, number AS n FROM numbers(1000)) WHERE (n % 250 = 0) OR (length(s) = 0)"
+${CLICKHOUSE_LOCAL} --query "${LC_SOURCE_DICT} SETTINGS max_block_size = 250, ${COMMON}, output_format_arrow_low_cardinality_as_dictionary = 0, output_format_arrow_record_batch_size = 65409, output_format_arrow_record_batch_size_bytes = 8192 FORMAT ArrowStream" > "${FILE}"
+arrow_batches stream detail
+string_oracle
+${CLICKHOUSE_LOCAL} --query "SELECT s FROM (SELECT repeat(toString(number), 100) AS s, number AS n FROM numbers(1000)) WHERE (n % 250 = 0) OR (length(s) = 0) SETTINGS max_block_size = 250, ${COMMON}, output_format_arrow_record_batch_size = 65409, output_format_arrow_record_batch_size_bytes = 8192 FORMAT ArrowStream" > "${FILE}"
+arrow_batches stream detail
+
+echo "--- the row target alone combines those same blocks ---"
+${CLICKHOUSE_LOCAL} --query "${LC_SOURCE_DICT} SETTINGS max_block_size = 250, ${COMMON}, output_format_arrow_low_cardinality_as_dictionary = 0, output_format_arrow_record_batch_size = 65409, output_format_arrow_record_batch_size_bytes = 0 FORMAT ArrowStream" > "${FILE}"
+arrow_batches stream detail
+string_oracle
+
 echo "--- the Arrow file format coalesces too, and its footer stays consistent ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT number FROM numbers(64) SETTINGS max_block_size = 1, ${COMMON}, output_format_arrow_record_batch_size = 65409 FORMAT Arrow" > "${FILE}"
 arrow_batches file
