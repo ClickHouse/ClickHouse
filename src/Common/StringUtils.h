@@ -136,6 +136,16 @@ inline bool isWhitespaceASCIIOneLine(char c)
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
 
+/// Remove the leading and trailing ASCII whitespace.
+inline std::string_view trimWhitespace(std::string_view str)
+{
+    while (!str.empty() && isWhitespaceASCII(str.front()))
+        str.remove_prefix(1);
+    while (!str.empty() && isWhitespaceASCII(str.back()))
+        str.remove_suffix(1);
+    return str;
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;

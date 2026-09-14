@@ -89,6 +89,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
@@ -109,6 +111,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int USER_EXPIRED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 static const NameSet settings_to_skip
@@ -602,6 +605,20 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
+
+    /// A non-parallel quorum insert permits a single in-flight quorum part per table, which an
+    /// asynchronous insert - a flush writing the data of several queries at once - cannot honour.
+    /// The check belongs here rather than at one of the call sites: an `INSERT` with inlined data
+    /// arrives through `executeQuery`, while one whose data is sent as blocks over the native
+    /// protocol arrives straight from `TCPHandler`, and only the former used to be checked - the
+    /// latter reached `ReplicatedMergeTreeSink` and failed there with a `LOGICAL_ERROR`.
+    auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
+    if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_PARAMETER,
+            "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum "
+            "or set insert_quorum_parallel=1 or do not use async inserts");
+
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
@@ -1388,8 +1405,10 @@ try
         auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
         pipeline.complete(Pipe(std::move(source)));
 
-        CompletedPipelineExecutor completed_executor(pipeline);
-        completed_executor.execute();
+        {
+            CompletedPipelineExecutor completed_executor(pipeline);
+            completed_executor.execute();
+        }
 
         finish_entries(std::move(pipeline), num_rows, num_bytes);
     }

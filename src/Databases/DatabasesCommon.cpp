@@ -463,8 +463,92 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
+void DatabaseWithOwnTablesBase::setDeferredPopulation(std::function<void(IDatabase &)> populate)
+{
+    std::lock_guard lock(populate_mutex);
+    deferred_populate = std::move(populate);
+    deferred_shadowing_candidates.clear();
+
+    if (deferred_populate)
+    {
+        std::lock_guard tables_lock(mutex);
+        for (const auto & [table_name, _] : tables)
+            deferred_shadowing_candidates.insert(table_name);
+    }
+
+    has_deferred_population.store(deferred_populate != nullptr, std::memory_order_release);
+}
+
+bool DatabaseWithOwnTablesBase::mayShadowDeferredTable(const String & table_name) const
+{
+    if (!has_deferred_population.load(std::memory_order_acquire))
+        return false;
+    if (deferred_populate_failed.load(std::memory_order_acquire))
+        return true;
+    return deferred_shadowing_candidates.contains(table_name);
+}
+
+void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (!has_deferred_population.load(std::memory_order_acquire))
+        return;
+
+    std::unique_lock lock(populate_mutex);
+
+    if (populating && populating_thread == std::this_thread::get_id())
+        return;
+
+    populated.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !populating; });
+
+    if (deferred_populate_error)
+        std::rethrow_exception(deferred_populate_error);
+
+    if (!deferred_populate)
+        return;
+
+    auto populate = std::move(deferred_populate);
+    deferred_populate = nullptr;
+    populating = true;
+    populating_thread = std::this_thread::get_id();
+    lock.unlock();
+
+    auto finish = [this](std::exception_ptr error)
+    {
+        {
+            std::lock_guard finish_lock(populate_mutex);
+            populating = false;
+            populating_thread = {};
+            deferred_populate_error = error;
+            if (error)
+                deferred_populate_failed.store(true, std::memory_order_release);
+            else
+                has_deferred_population.store(false, std::memory_order_release);
+        }
+        populated.notify_all();
+    };
+
+    try
+    {
+        populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
+    }
+    catch (...)
+    {
+        finish(std::current_exception());
+        throw;
+    }
+    finish(nullptr);
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
+    if (!mayShadowDeferredTable(table_name))
+    {
+        std::lock_guard lock(mutex);
+        if (tables.contains(table_name))
+            return true;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.contains(table_name);
 }
@@ -477,6 +561,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -492,6 +577,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
     ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
@@ -509,12 +595,20 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
 
 bool DatabaseWithOwnTablesBase::empty() const
 {
+    {
+        std::lock_guard lock(mutex);
+        if (!tables.empty())
+            return false;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return detachTableUnlocked(table_name);
 }
@@ -614,34 +708,38 @@ void DatabaseWithOwnTablesBase::shutdown()
     /// and rethrow it once all cleanup has run.
     std::exception_ptr first_error;
 
-    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
-    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
-    /// could write into a table that has already entered shutdown-prepared read-only mode and
-    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
-        try
+    /// Prepare runs sequentially and twice. Sequentially, because tables flush into each other here
+    /// (a Buffer flushes to its destination in flushAndPrepareForShutdown) and doing it in parallel
+    /// could write into a table already in shutdown-prepared read-only mode and drop rows. Twice,
+    /// because a destination prepared before its source (Buffer -> Buffer, name order) keeps the rows
+    /// in memory, and StorageBuffer has no shutdown()/destructor flush — the second pass re-flushes
+    /// them, as the old flushAndShutdown() did, before the parallel drain drops them.
+    for (size_t pass = 0; pass < 2; ++pass)
+        for (const auto & kv : tables_snapshot)
         {
-            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+            auto table_id = kv.second->getStorageID();
+            try
             {
-                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
-            });
-            kv.second->flushAndPrepareForShutdown();
+                fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+                {
+                    if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
+                });
+                kv.second->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                if (!first_error)
+                    first_error = std::current_exception();
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
+            }
         }
-        catch (...)
-        {
-            if (!first_error)
-                first_error = std::current_exception();
-            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
-        }
-    }
 
     /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
     /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
-    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
-    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
+    /// concurrently. Prepare (including the re-flush) already ran above, so call shutdown() directly
+    /// rather than flushAndShutdown(): the flush is done, and re-running it here in parallel could
+    /// race dependent tables.
     if (!tables_snapshot.empty())
     {
         Stopwatch watch;
@@ -832,6 +930,15 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
+    if (!mayShadowDeferredTable(table_name))
+    {
+        std::lock_guard lock(mutex);
+        auto it = tables.find(table_name);
+        if (it != tables.end())
+            return it->second;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())

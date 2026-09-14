@@ -8,14 +8,15 @@ doc_type: 'landing-page'
 
 يتكامل ClickHouse مع مجموعة من كتالوجات بحيرات البيانات عبر محرّك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake). وتشرح الأدلة التالية كيفية ربط ClickHouse بكل كتالوج مدعوم، بما في ذلك الإعداد والمصادقة وأمثلة على الاستعلامات.
 
-| الكتالوج                                                                     | الوصف                                                                                                |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog)                  | الاستعلام عن جداول Iceberg المسجّلة في Glue Data Catalog على AWS والتي تُخزَّن بياناتها في S3.       |
-| [Databricks Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) | الاتصال بـ Databricks Unity Catalog للوصول إلى جداول Delta Lake وIceberg.                            |
-| [Iceberg REST Catalog](/ar/guides/use-cases/data-warehousing/rest-catalog)      | استخدام أي كتالوج يطبّق مواصفة Iceberg REST، مثل Tabular.                                            |
-| [Lakekeeper](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog)          | الاتصال بـ Lakekeeper Catalog لجداول Iceberg.                                                        |
-| [Project Nessie](/ar/guides/use-cases/data-warehousing/nessie-catalog)          | الاستعلام عن جداول Iceberg باستخدام Nessie Catalog مع التحكّم في إصدارات البيانات على غرار Git.      |
-| [Microsoft OneLake](/ar/guides/use-cases/data-warehousing/onelake-catalog)      | الاستعلام عن جداول Iceberg في Microsoft Fabric OneLake.                                              |
-| [Polaris catalog](/ar/guides/use-cases/data-warehousing/polaris-catalog)        | الاتصال بـ Polaris catalog لجداول Iceberg.                                                           |
-| [BigLake Metastore](/ar/guides/use-cases/data-warehousing/biglake-catalog)      | الاستعلام عن جداول Iceberg المسجّلة في BigLake Metastore.                                            |
-| [SeaweedFS](/ar/guides/use-cases/data-warehousing/seaweedfs-catalog)            | الاستعلام عن جداول Iceberg وكتابتها في حاويات جداول S3 في SeaweedFS عبر كتالوج Iceberg REST المضمّن. |
+| الكتالوج                                                                        | الوصف                                                                                                |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog)                     | الاستعلام عن جداول Iceberg المسجّلة في Glue Data Catalog على AWS والتي تُخزَّن بياناتها في S3.       |
+| [Databricks Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)    | الاتصال بـ Databricks Unity Catalog للوصول إلى جداول Delta Lake وIceberg.                            |
+| [Iceberg REST Catalog](/ar/guides/use-cases/data-warehousing/rest-catalog)         | استخدام أي كتالوج يطبّق مواصفة Iceberg REST، مثل Tabular.                                            |
+| [Lakekeeper](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog)             | الاتصال بـ Lakekeeper Catalog لجداول Iceberg.                                                        |
+| [Project Nessie](/ar/guides/use-cases/data-warehousing/nessie-catalog)             | الاستعلام عن جداول Iceberg باستخدام Nessie Catalog مع التحكّم في إصدارات البيانات على غرار Git.      |
+| [Microsoft OneLake](/ar/guides/use-cases/data-warehousing/onelake-catalog)         | الاستعلام عن جداول Iceberg في Microsoft Fabric OneLake.                                              |
+| [Polaris catalog](/ar/guides/use-cases/data-warehousing/polaris-catalog)           | الاتصال بـ Polaris catalog لجداول Iceberg.                                                           |
+| [Snowflake Horizon catalog](/ar/guides/use-cases/data-warehousing/horizon-catalog) | قراءة جداول Iceberg التي تديرها Snowflake وكتابتها عبر Horizon Catalog.                              |
+| [BigLake Metastore](/ar/guides/use-cases/data-warehousing/biglake-catalog)         | الاستعلام عن جداول Iceberg المسجّلة في BigLake Metastore.                                            |
+| [SeaweedFS](/ar/guides/use-cases/data-warehousing/seaweedfs-catalog)               | الاستعلام عن جداول Iceberg وكتابتها في حاويات جداول S3 في SeaweedFS عبر كتالوج Iceberg REST المضمّن. |

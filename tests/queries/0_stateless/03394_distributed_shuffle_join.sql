@@ -7,7 +7,6 @@ CREATE TABLE test_3(id UInt64, a Array(Int64)) ENGINE = MergeTree ORDER BY id;
 insert into test_3 select number, [number] from numbers(0, 100000);
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 

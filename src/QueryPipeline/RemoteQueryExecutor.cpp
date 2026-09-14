@@ -75,8 +75,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
-    extern const char remote_query_executor_receive_packet_pause[];
-    extern const char remote_query_executor_finish_drain_pause[];
+    extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -475,6 +474,22 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
+    /// Plan-level execution limits are serialized beginning with version 10. Before that version,
+    /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
+    /// carries the query settings and lets the remote server build a plan with the same limits.
+    /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
+    if (query_plan
+        && (query_plan->getMaxThreads() || query_plan->getConcurrencyControl())
+        && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required for execution limits",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
+
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
     {
@@ -636,14 +651,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
                 return ReadResult(Block());
         }
 
-        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
-        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
-        /// connections before `receivePacket` below runs.
-        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
-            in_receive_packet_window = true;
-            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
-            in_receive_packet_window = false;
-        });
+        /// `was_cancelled` was checked and `was_cancelled_mutex` released above, so a parallel
+        /// `onUpdatePorts` -> `finish` can cancel and drain these connections before `receivePacket`
+        /// below runs. `finish()` takes that mutex itself, which is not held at this point.
+        fiu_do_on(FailPoints::remote_query_executor_cancel_and_drain_in_receive_window, { finish(); });
 
         auto packet = connections->receivePacket();
 
@@ -1052,11 +1063,6 @@ void RemoteQueryExecutor::finish()
                 break;
         }
     }
-
-    /// Reached only with this executor's own reader parked above, i.e. with its connections
-    /// cancelled and fully drained - the state that reader will observe when it wakes.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
