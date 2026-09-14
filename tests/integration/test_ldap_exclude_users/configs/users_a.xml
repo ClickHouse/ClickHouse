@@ -1,0 +1,24 @@
+<clickhouse>
+    <users>
+        <default remove="remove">
+        </default>
+        <common_user>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </common_user>
+        <!-- `janedoe` also exists in the LDAP fixture (password `qwerty`). The LDAP directory
+             excludes her, so this local definition is the only one that may authenticate her. -->
+        <janedoe>
+            <password>local</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+        </janedoe>
+        <!-- Application account with a locally managed secret, excluded from the LDAP directory. -->
+        <app_user1>
+            <password>vault-secret</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+        </app_user1>
+    </users>
+</clickhouse>
