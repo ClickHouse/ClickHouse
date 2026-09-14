@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TRINO_OPTS="--allow_experimental_trino_dialect 1 --dialect trino"
+TRINO_OPTS="--enable_trino_dialect 1 --dialect trino"
 
 # The trino dialect requires the experimental setting
 $CLICKHOUSE_CLIENT --dialect trino -q "SELECT 1" 2>&1 | grep -om1 "SUPPORT_IS_DISABLED"
