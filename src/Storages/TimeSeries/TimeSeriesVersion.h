@@ -18,13 +18,25 @@ class StorageTimeSeries;
 ///   0 - Tables created before the `version` setting was introduced (including "prealpha" tables
 ///       and tables without the recent samples table).
 ///   1 - The `version` setting was introduced.
+///   2 - The `id_type` setting was introduced: a table with an external tags table records the type of the `id` column
+///       in `id_type` and the expression generating identifiers in `id_generator`, so its definition doesn't depend on
+///       the external table. `id_type` is also recorded when the `id_generator` setting is set.
+///   3 - The outer column `time_series` was renamed to `samples`. The stored data didn't change, and tables of earlier
+///       versions keep the old name of the column (see `TimeSeriesColumnNames::getOuterSamples`).
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 1;
+    constexpr UInt64 LATEST = 3;
+
+    /// The first version recording the `id_type` setting (see the version history above).
+    /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
+    constexpr UInt64 MIN_WITH_ID_TYPE_SETTING = 2;
+
+    /// The first version naming the outer column with samples `samples` instead of `time_series` (see the version history above).
+    constexpr UInt64 MIN_WITH_SAMPLES_OUTER_COLUMN = 3;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -40,6 +52,8 @@ namespace TimeSeriesVersion
     constexpr UInt64 MIN_SUPPORTED_BY_PROMQL = 0;
 
     static_assert(MIN_SUPPORTED <= MIN_WRITABLE);
+    static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
+    static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
     static_assert(MIN_WRITABLE <= LATEST);
     static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);
     static_assert(MIN_SUPPORTED_BY_PROMQL <= LATEST);
