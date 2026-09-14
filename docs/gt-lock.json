@@ -7,36 +7,36 @@
       "versionId": "50e477436157957a0f36d659e6183e88f6590a52d8c1258583757a502991034c",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-09-13T12:48:44.173Z",
+          "updatedAt": "2026-09-14T07:35:04.203Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-13T12:48:44.438Z",
+          "updatedAt": "2026-09-14T07:35:04.580Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-13T12:48:44.702Z",
+          "updatedAt": "2026-09-14T07:35:04.949Z",
           "fileName": "docs.json",
           "postProcessHash": "24f2a926ce54e9a8a33ca70fcd1a3be69836e66ef22f9bca24d0b088fd8557aa"
         },
         "ja": {
-          "updatedAt": "2026-09-13T12:48:43.876Z",
+          "updatedAt": "2026-09-14T07:35:03.857Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-13T12:48:44.302Z",
+          "updatedAt": "2026-09-14T07:35:04.389Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-13T12:48:44.570Z",
+          "updatedAt": "2026-09-14T07:35:04.761Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-13T12:48:44.040Z",
+          "updatedAt": "2026-09-14T07:35:04.026Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-13T12:48:43.724Z",
+          "updatedAt": "2026-09-14T07:35:03.667Z",
           "fileName": "docs.json"
         }
       },
@@ -76321,47 +76321,47 @@
     },
     {
       "fileId": "26ae50b88e6d3ab5f0fb62bb8181ef25c6580338c26d83abe3c95a86938df061",
-      "versionId": "355533b5448343aa338926eb030ed62f2e818e2a8c7d13c4c5bfa76d17714eac",
+      "versionId": "a352400b050231e9beb890f4a22bf872919f817950ee57521136d09ae6c70a75",
       "translations": {
         "zh": {
-          "updatedAt": "2026-09-11T09:34:31.619Z",
+          "updatedAt": "2026-09-14T07:35:10.208Z",
           "fileName": "zh/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "a7eec7deaf9b47af6d83c453bca4769e0c29fe5dd3faf7ad6e69152e0b691b94"
-        },
-        "fr": {
-          "updatedAt": "2026-09-11T09:34:32.657Z",
-          "fileName": "fr/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "c8980ffe0180ce78f3fd31b77a0c5de7468b545252b0cc251a146e361a3307aa"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-11T09:34:32.658Z",
-          "fileName": "pt-BR/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "b356d3b90b15b8c9e392342e03145be33215213819ba30d781a77a825ea7bdd7"
-        },
-        "ko": {
-          "updatedAt": "2026-09-11T09:34:32.894Z",
-          "fileName": "ko/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "af79afafa4d1309b9c7b0fb5c41063749dd822dd18316892c33c0b7e3ab3de08"
-        },
-        "es": {
-          "updatedAt": "2026-09-11T09:34:32.896Z",
-          "fileName": "es/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "a381675e43e86ff642739a72f1d4ee547d8024ca749f232eb1e5390059df145e"
+          "postProcessHash": "562ddac7f0fb58b4587d52dd52b29daafd83f67f3e9b21e0f24c59d7631c29dc"
         },
         "ru": {
-          "updatedAt": "2026-09-11T09:34:32.897Z",
+          "updatedAt": "2026-09-14T07:35:10.210Z",
           "fileName": "ru/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "3f4279a32833a380ff9c18a0d6f9bf74e095b1677767e4b24e35cca9c76db441"
+          "postProcessHash": "70d47fbf9eab3efdcbc40143fb44f01818c3f0e220d0fb06716c61cee705c453"
+        },
+        "fr": {
+          "updatedAt": "2026-09-14T07:35:10.218Z",
+          "fileName": "fr/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "c7b0333924df05a4204df3243adc89e97699ac084c5aa6c22fcffbafa556f744"
         },
         "ja": {
-          "updatedAt": "2026-09-11T09:34:32.899Z",
+          "updatedAt": "2026-09-14T07:35:10.220Z",
           "fileName": "ja/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "2a2a2daece8383260303721e7cd3638028222a0fc99eaa089213b4a9ad4d962f"
+          "postProcessHash": "4277ac46f266683b02dcbbfc1d3db5e82f9b9ce80645967c7ce4ba72ea8f9a19"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-14T07:35:10.222Z",
+          "fileName": "pt-BR/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "46d871877b0956352e6a0b54c912bd31b806d7a389eff4300e898b204047cf70"
+        },
+        "es": {
+          "updatedAt": "2026-09-14T07:35:10.223Z",
+          "fileName": "es/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "14fcdb4bfc201bdba81966cf4a34cb2ae42944ed14dbcaa35b8a512e01c569d4"
+        },
+        "ko": {
+          "updatedAt": "2026-09-14T07:35:10.225Z",
+          "fileName": "ko/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "0dad90fce197fbd329559bbbdc30918dccc1def96f135c0179850857427a78b0"
         },
         "ar": {
-          "updatedAt": "2026-09-11T09:34:32.900Z",
+          "updatedAt": "2026-09-14T07:35:10.227Z",
           "fileName": "ar/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "1a8c9074920832ad522f33c85f10d4dde57f48a20b4e393f715defa8d4ca0984"
+          "postProcessHash": "7dd61d38e58a3d398bd06e1a01e9712b3b5ec486a1e411910d03d1ce5f924146"
         }
       },
       "fileName": "guides/oss/deployment-and-scaling/keeper/index.mdx"
