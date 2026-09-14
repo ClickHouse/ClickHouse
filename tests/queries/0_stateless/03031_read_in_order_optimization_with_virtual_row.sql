@@ -108,9 +108,8 @@ ORDER BY query_start_time DESC
 LIMIT 1;
 
 SELECT '========';
--- Expecting two chunks (8192*2) filtered out + one chunk for result (8192) from the first
--- part. Per-block virtual rows announce the filtered-out intervals, which lets the
--- read-ahead read the second part (8192*3) in parallel instead of waiting for demand.
+-- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
+-- all chunks come from the same part. With one thread nothing reads ahead of the merge.
 SELECT k
 FROM t
 WHERE k > 8192 * 2

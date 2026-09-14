@@ -4480,7 +4480,7 @@ The number of sources deferred behind virtual rows that are allowed to read ahea
 
 Possible values:
 
-- -1 — as many sources as there are threads in the query pipeline (the default).
+- -1 — one fewer than the number of threads in the query pipeline (the default): one thread serves the merge and the source it demands, the others read ahead.
 - 0 — read-ahead is disabled; sources deferred behind virtual rows are read strictly on demand, one at a time.
 - N > 0 — at most N sources read ahead.
 )", 0) \

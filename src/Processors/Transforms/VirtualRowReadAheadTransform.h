@@ -45,6 +45,7 @@ private:
         size_t rows_since_boundary = 0;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
+        size_t pushed_rows = 0;
         UInt64 rows_read = 0;
         bool output_started = false;
         bool demanded = false;
@@ -60,6 +61,7 @@ private:
     bool earlier(size_t lhs, size_t rhs) const;
     bool needsMoreSources(size_t lane_num, const Chunk & chunk) const;
     bool canBuffer(const Lane & lane) const;
+    const Columns * coverageBoundary();
 
     const SharedHeader header;
     const SortDescription description;
@@ -73,6 +75,7 @@ private:
 
     std::vector<Lane> lanes;
     std::vector<size_t> candidates;
+    std::vector<size_t> data_lanes;
     std::vector<size_t> ready_lanes;
     size_t finished_lanes = 0;
     bool read_ahead_started = false;

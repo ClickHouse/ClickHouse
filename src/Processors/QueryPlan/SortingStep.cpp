@@ -417,8 +417,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
+        /// One thread alternates between the merge and the source it demands; only the
+        /// remaining threads have capacity for speculative reads.
         size_t read_ahead_window = sort_settings.virtual_row_prefetch_window < 0
-            ? pipeline.getNumThreads()
+            ? pipeline.getNumThreads() - std::min<size_t>(1, pipeline.getNumThreads())
             : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
 
         /// Deferral needs only a one-chunk buffer per lane; deeper buffering is the
