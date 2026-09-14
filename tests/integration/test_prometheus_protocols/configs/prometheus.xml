@@ -94,6 +94,12 @@
                     <table>default.prometheus_multi</table>
                 </handler>
             </my_rule_15>
+            <my_rule_17>
+                <url>/api/v1/status/buildinfo</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_17>
 
             <my_rule_10>
                 <!-- This handler sets no database and no table, so both database and table names
