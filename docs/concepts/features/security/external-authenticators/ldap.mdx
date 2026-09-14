@@ -456,6 +456,6 @@ Each run writes one `INFO` line per change (`Added LDAP user`, `Updated roles of
 
 ### Offboarding and locking {#ldap-user-sync-offboarding}
 
-A user that leaves the groups selected by `search_filter`, or is disabled in a way the filter excludes, is removed from the directory at the next run without any login: their sessions are terminated by the access-control subscribers and further logins fail as "not found" (with `only_synced_users`). To lock a synchronized user immediately, run `SYSTEM RELOAD USERS` after the change in LDAP, or list the name in `exclude_users`, which takes effect at the next restart.
+A user that leaves the groups selected by `search_filter`, or is disabled in a way the filter excludes, is removed from the directory at the next run without any login: queries in their open sessions fail from then on (`User has been dropped`) and further logins fail as "not found" (with `only_synced_users`). To lock a synchronized user immediately, run `SYSTEM RELOAD USERS` after the change in LDAP, or list the name in `exclude_users`, which takes effect at the next restart.
 
 Synchronized users are ephemeral and cannot be altered with SQL. For users **persisted** in a writable storage (`CREATE USER ... IDENTIFIED WITH ldap SERVER ...`), note that `ALTER USER ... NOT IDENTIFIED` is not a lock: it sets the authentication type `no_password`, that is, a passwordless login. The lock for a persisted user is an expiry date in the past, `ALTER USER name VALID UNTIL '2000-01-01 00:00:00 UTC'`, which rejects the login before any external check.
