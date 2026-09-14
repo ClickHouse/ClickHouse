@@ -162,8 +162,8 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     source_size -= compression_methods_size + 1;
 
     /// source --memcpy--> compressed_buf --decode--> uncompressed_buf --swap--> compressed_buf --decode--> ... --decode--> uncompressed_buf --memcpy--> dest
-    /// Buffers get the codec's padding, the caller's `source` and `dest` have none. 
-    /// A first stage that needs no padding decodes `source` directly, skipping the first memcpy. 
+    /// Buffers get the codec's padding, the caller's `source` and `dest` have none.
+    /// A first stage that needs no padding decodes `source` directly, skipping the first memcpy.
     /// A last stage that needs no padding decodes into `dest` directly, skipping the last one.
     PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf;
