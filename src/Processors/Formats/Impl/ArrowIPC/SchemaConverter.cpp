@@ -1165,7 +1165,7 @@ DataTypePtr fieldToCHType(
 
     if (make_nullable && result->canBeInsideNullable())
     {
-        /// A Tuple (from an Arrow Struct) is wrapped in Nullable only when `allow_experimental_nullable_tuple_type`
+        /// A Tuple (from an Arrow Struct) is wrapped in Nullable only when `enable_nullable_tuple_type`
         /// is enabled; otherwise schema inference would return a `Nullable(Tuple)` that `CREATE TABLE` rejects.
         /// Without it the struct is read as a plain Tuple (its null map is dropped), as before `Nullable(Tuple)`
         /// was supported. The decode path applies the same gate.
