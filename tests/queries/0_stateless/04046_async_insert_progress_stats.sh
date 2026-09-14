@@ -26,7 +26,8 @@ echo -e "one\n two\n three" | ${CLICKHOUSE_CLIENT} --progress err --query_id="$q
 query_http_id="ASYNC_INSERT_HTTP_$RANDOM$RANDOM"
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query_id=$query_http_id" \
     -d "INSERT INTO test_async_insert_progress VALUES ('four'), ('five'), ('six')" 2>&1 \
-    | grep "X-ClickHouse-Summary" | grep -v "Access-Control-Expose-Headers" | sed 's/,\"elapsed_ns[^}]*//' | sed 's/,\"memory_usage[^}]*//'
+    | grep "X-ClickHouse-Summary" | grep -v "Access-Control-Expose-Headers" | sed 's/,\"elapsed_ns[^}]*//' | sed 's/,\"memory_usage[^}]*//' \
+    | sed 's/\"accepted_bytes\":\"[1-9][0-9]*\"/\"accepted_bytes\":\"positive\"/'
 
 for _ in $(seq 1 60);
 do
