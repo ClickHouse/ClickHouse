@@ -115,9 +115,23 @@ TEST(JoinSpillTriggerPlanSetting, NotOnTheWireTowardsOldPeersAndReadBackAsLegacy
 TEST(JoinSpillTriggerPlanSetting, RefusedTowardsOldPeersWhenTheContractsDiverge)
 {
     /// A size limit is a hard cap here and a spill trigger there: whether the query truncates, throws or spills
-    /// depends on which side runs it, so the plan must not be downgraded.
+    /// depends on which side runs it, so the plan must not be downgraded. The default settings are spill-capable
+    /// (`max_bytes_ratio_before_external_join` is non-zero out of the box, and `parallel_hash` runs the step), so a
+    /// bare size limit already diverges.
     EXPECT_THROW(serializeAt(makeJoinSettings({{"max_rows_in_join", 100u}}), pre_setting_version), Exception);
     EXPECT_THROW(serializeAt(makeJoinSettings({{"max_bytes_in_join", 1000u}}), pre_setting_version), Exception);
+    EXPECT_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "hash"}, {"max_bytes_ratio_before_external_join", 0.0},
+                              {"max_bytes_before_external_join", 1000000u}, {"max_rows_in_join", 100u}}),
+            pre_setting_version),
+        Exception);
+
+    /// Nothing in the list is known to run the step: `direct` needs a key-value right side. Whether the old peer
+    /// spills on the limit cannot be told from the step, so the gate stays on the safe side.
+    EXPECT_THROW(
+        serializeAt(makeJoinSettings({{"join_algorithm", "direct"}, {"max_rows_in_join", 100u}}), pre_setting_version),
+        Exception);
 
     /// Standalone `grace_hash` takes its spill threshold from `max_bytes_before_external_join` /
     /// `max_bytes_ratio_before_external_join` here and ignores both there, where the (unset) size limits are its
@@ -191,6 +205,30 @@ TEST(JoinSpillTriggerPlanSetting, AllowedTowardsOldPeersWhenBothContractsAgree)
     /// The default `join_algorithm` does not list `grace_hash`, so the default settings pass the gate even though
     /// `max_bytes_ratio_before_external_join` is non-zero out of the box.
     EXPECT_NO_THROW(serializeAt(makeJoinSettings({}), pre_setting_version));
+
+    /// A size limit on a step that never spills on the old peer either: without a spill threshold `hash` /
+    /// `parallel_hash` build a plain in-memory join there, which checks the limits as hard caps, exactly like here.
+    for (const auto & algorithms : {"hash", "parallel_hash", "direct,parallel_hash,hash", "auto"})
+    {
+        for (const auto & limit : {std::pair<String, Field>{"max_rows_in_join", 100u},
+                                   std::pair<String, Field>{"max_bytes_in_join", 1000u}})
+        {
+            EXPECT_NO_THROW(serializeAt(
+                makeJoinSettings({{"join_algorithm", algorithms}, {"max_bytes_ratio_before_external_join", 0.0}, limit}),
+                pre_setting_version))
+                << algorithms << " " << limit.first;
+        }
+    }
+
+    /// The merge algorithms never spill on the size limits, on either side, so a step they run may carry one
+    /// whatever the spill threshold says.
+    for (const auto & algorithms : {"full_sorting_merge", "parallel_full_sorting_merge", "partial_merge", "direct,partial_merge,hash"})
+    {
+        EXPECT_NO_THROW(serializeAt(
+            makeJoinSettings({{"join_algorithm", algorithms}, {"max_bytes_before_external_join", 1000000u}, {"max_rows_in_join", 100u}}),
+            pre_setting_version))
+            << algorithms;
+    }
 }
 
 TEST(JoinSpillTriggerPlanSetting, TrailingGraceHashBehindAnAlgorithmThatRunsTheStep)
@@ -215,10 +253,25 @@ TEST(JoinSpillTriggerPlanSetting, TrailingGraceHashBehindAnAlgorithmThatRunsTheS
                         pre_setting_version))
             << algorithms;
 
-        /// The size limits still diverge whatever the list looks like.
+    }
+
+    /// The size limits diverge behind a hash-family entry with the default, non-zero spill ratio: the old peer
+    /// spills on them once the collected right side crosses the threshold, this side caps.
+    for (const auto & algorithms : {"hash,grace_hash", "parallel_hash,grace_hash", "prefer_partial_merge,grace_hash",
+                                    "auto,grace_hash", "direct,hash,grace_hash"})
+    {
         EXPECT_THROW(
             serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version),
             Exception)
+            << algorithms;
+    }
+
+    /// Behind a merge algorithm that runs the step they are hard caps on both sides.
+    for (const auto & algorithms : {"full_sorting_merge,grace_hash", "parallel_full_sorting_merge,grace_hash",
+                                    "partial_merge,grace_hash", "direct,full_sorting_merge,grace_hash"})
+    {
+        EXPECT_NO_THROW(
+            serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version))
             << algorithms;
     }
 }
@@ -289,8 +342,12 @@ TEST(JoinSpillTriggerPlanSetting, StepsGraceHashCannotRun)
     const Step on_constant(JoinKind::Inner, JoinStrictness::All, {});
     EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, on_constant.join_operator));
 
-    /// The size limits diverge for these steps like for any other.
+    /// The size limits do not diverge for these steps either: the old peer cannot switch them to `GraceHashJoin`,
+    /// so its plain hash join (or `ConstantJoin`) checks them as hard caps, like this side. A plain equi-join with
+    /// the same settings is spill-capable there and is refused.
     const auto with_size_limit = makeJoinSettings({{"max_rows_in_join", 100u}});
-    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, asof.join_operator), Exception);
-    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, cross.join_operator), Exception);
+    EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, asof.join_operator));
+    EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, cross.join_operator));
+    EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, on_constant.join_operator));
+    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version), Exception);
 }

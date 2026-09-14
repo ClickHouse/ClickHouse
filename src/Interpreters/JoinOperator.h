@@ -146,6 +146,9 @@ struct JoinSettings
     /// this step - always for the hash family, for the kind and strictness of a plain equi-join for the
     /// merge algorithms - is what both sides run instead. Where the step's `ON` clause could make an
     /// earlier merge algorithm decline it, the answer stays on the safe side and the plan is refused.
+    /// The size limits count only where the older peer spills on them: a hash-family entry the step
+    /// reaches, with a spill threshold, for a step `grace_hash` can run. Elsewhere - no threshold, a step
+    /// `GraceHashJoin` declines, a merge algorithm, a CROSS join - they are hard caps on both sides.
     bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),

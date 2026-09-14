@@ -339,16 +339,21 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     if (legacy_join_size_limits_trigger_spilling)
         return false;
 
-    /// Hard caps here, a spill trigger there.
-    if (max_rows_in_join != 0 || max_bytes_in_join != 0)
-        return true;
-
     /// A CROSS / comma / PASTE join, and a join on a constant (`ON 1`, `ON NULL`), do not consult the preference
-    /// list at all: `ConstantJoin` / `PasteJoin` are the only way to run them, on both sides.
+    /// list at all: `ConstantJoin` / `PasteJoin` are the only way to run them, on both sides, and the size limits
+    /// are hard caps for both of them on both sides.
     if (isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind))
         return false;
     if (join_operator.expression.empty() && join_operator.strictness != JoinStrictness::Asof)
         return false;
+
+    /// Hard caps here, a spill trigger there - but only where the old peer spills at all. Its plain `HashJoin` /
+    /// `ConcurrentHashJoin` (no spill threshold, or a step `GraceHashJoin` cannot run) and its merge algorithms
+    /// check the limits as hard caps exactly like this side, so such a step runs the same with or without the name.
+    /// The peer computes its threshold from `max_bytes_ratio_before_external_join` and its own memory limits, which
+    /// are unknown here, so a non-zero ratio counts as a threshold.
+    const bool size_limits_set = max_rows_in_join != 0 || max_bytes_in_join != 0;
+    const bool spill_threshold_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0;
 
     /// `grace_hash` diverges either way here. With a spill threshold it spills at
     /// `max_bytes_before_external_join` here, and ignores it there. Without one it is not a runnable algorithm
@@ -368,9 +373,18 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
             continue;
         }
         if (producesJoinForStep(algorithm, join_operator))
+        {
+            /// The hash family becomes a `SpillingHashJoin` on the old peer once it has a threshold and the step
+            /// fits `GraceHashJoin`, and that is where the size limits used to trigger the spill instead of capping.
+            if (alwaysProducesJoin(algorithm))
+                return size_limits_set && spill_threshold_set && graceHashSupports(join_operator);
             return false;
+        }
     }
-    return false;
+
+    /// Nothing in the list is known to run the step (`direct`, `ie_join`, a merge algorithm the `ON` clause could
+    /// make decline it): with a size limit the answer depends on more than the step tells, so stay on the safe side.
+    return size_limits_set;
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
