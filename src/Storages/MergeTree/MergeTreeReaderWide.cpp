@@ -499,10 +499,15 @@ bool MergeTreeReaderWide::isColumnPartiallyRead(size_t pos) const
     return partially_read_columns.contains(columns_to_read[pos].name);
 }
 
+bool MergeTreeReaderWide::servingRangeStillReadsFromPart() const
+{
+    return !partially_read_columns.empty();
+}
+
 void MergeTreeReaderWide::readPartiallyReadColumnsWhileServing(
     MutableColumns & res_columns, size_t from_mark, bool continue_reading, size_t max_rows_to_read)
 {
-    if (partially_read_columns.empty())
+    if (!servingRangeStillReadsFromPart())
         return;
 
     const size_t num_columns = res_columns.size();
@@ -569,6 +574,15 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
         || data_part_info_for_read->isProjectionPart())
         return false;
     if (all_mark_ranges.getNumberOfMarks() == 0)
+        return false;
+
+    /// A hit is not the same as a read without IO. `findColumnsCacheEntriesForRange` ignores the
+    /// partially read columns, because the write path can never produce an entry for one, so it
+    /// reports a hit for a range whose serve path still reads those columns from the part - and
+    /// deserializes the prefix of every column on the way. Skipping the prefetch for such a range
+    /// would leave exactly the repeated read that still goes to object storage without read-ahead.
+    /// So the prefetch is skipped only when no stream of the range will be touched at all.
+    if (servingRangeStillReadsFromPart())
         return false;
 
     /// Only the first mark range matters: that is the only one this prefetch covers. Entries

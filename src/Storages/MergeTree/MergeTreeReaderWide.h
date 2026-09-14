@@ -216,8 +216,15 @@ private:
     /// Filled by `addStreams`.
     NameSet columns_absent_from_part;
 
-    /// Whether the first mark range of this reader can be served from the cache as a whole, and
-    /// so its streams need not be prefetched. See `prefetchBeginOfRange`.
+    /// Whether a range served from the cache still reads streams of the part.
+    /// `readPartiallyReadColumnsWhileServing` is what does it, and once one partially read column
+    /// is in the read it touches that column's data streams and the prefix of every column, so
+    /// the whole serve path is free of IO exactly when no column of the read is partially read.
+    bool servingRangeStillReadsFromPart() const;
+
+    /// Whether the first mark range of this reader can be served from the cache as a whole
+    /// *without touching a single stream of it*, and so need not be prefetched.
+    /// See `prefetchBeginOfRange`.
     bool canServeFirstRangeFromCache();
 
     /// Serve the next rows of the range from the columns held by `lookupColumnsCache`.
