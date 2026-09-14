@@ -938,13 +938,23 @@ static void buildORCSearchArgumentImpl(
                     literals.emplace_back(*literal);
                 }
 
-                /// set has zero element
-                if (literals.empty())
-                    builder.literal(orc::TruthValue::YES);
-                else if (fail)
+                if (fail)
                     builder.literal(orc::TruthValue::YES_NO_NULL);
+                else if (literals.empty())
+                    builder.literal(orc::TruthValue::NO);
                 else
+                {
+                    /// A set without NULL has no NULL matches. ORC evaluates `IN` as NULL for a
+                    /// NULL key, so exclude NULL explicitly before applying any outer negation.
+                    /// This preserves `nullIn` and `notNullIn` semantics. For regular nullable
+                    /// `IN`, it can only retain extra rows, which the query filter removes.
+                    builder.startAnd();
+                    builder.startNot();
+                    builder.isNull(orc_type->getColumnId(), *predicate_type);
+                    builder.end();
                     builder.in(orc_type->getColumnId(), *predicate_type, literals);
+                    builder.end();
+                }
             }
 
             if (need_wrap_not)
