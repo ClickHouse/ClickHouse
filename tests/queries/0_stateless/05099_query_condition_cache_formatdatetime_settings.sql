@@ -153,4 +153,21 @@ SELECT count() FROM t_qcc_short_circuit WHERE if(flag, intDiv(42, x), 0) = 1 SET
 
 DROP TABLE t_qcc_short_circuit;
 
+-- `session_timezone` is not captured by any function: `DateLUT::instance()` reads it from the query context whenever
+-- a function needs the implicit time zone, which is what `toDateTime(s)` does for a `String` argument without an
+-- explicit time zone. The result type is the plain `DateTime` either way, so the DAG hash is the same, while
+-- `'2024-05-06 00:00:00'` is 1714953600 in `UTC` and 9 hours earlier in `Asia/Tokyo` (which has no DST). The
+-- comparison is against the Unix timestamp, which is absolute, so only the parsing side depends on the time zone.
+DROP TABLE IF EXISTS t_qcc_session_timezone;
+CREATE TABLE t_qcc_session_timezone (k UInt64, s String) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_session_timezone SELECT number, '2024-05-06 00:00:00' FROM numbers(1000000);
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_session_timezone WHERE toUnixTimestamp(toDateTime(s)) = 1714953600 SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT count() FROM t_qcc_session_timezone WHERE toUnixTimestamp(toDateTime(s)) = 1714953600 SETTINGS session_timezone = 'UTC';
+SELECT count() FROM t_qcc_session_timezone WHERE toUnixTimestamp(toDateTime(s)) = 1714953600 SETTINGS use_query_condition_cache = 0, session_timezone = 'UTC';
+
+DROP TABLE t_qcc_session_timezone;
+
 DROP TABLE t_qcc_formatdatetime;
