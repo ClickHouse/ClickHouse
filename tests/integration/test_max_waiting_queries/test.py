@@ -57,7 +57,8 @@ def waiting_queries_metric():
 
 def wait_for(probe, expected, description, timeout=90):
     """Poll `probe` until it returns `expected`. Every state this waits for is observable in a system
-    table, and the paused load job keeps it from changing behind our back, so there are no sleeps."""
+    table, and the paused load job keeps it from changing behind our back, so no wait here stands in
+    for a barrier."""
     deadline = time.monotonic() + timeout
     observed = None
     while time.monotonic() < deadline:
@@ -111,7 +112,7 @@ def test_waiting_queries_limit(started_cluster):
         pin_startup_of_replicated_database("/test/max_waiting_queries/limit")
         assert server_setting("max_waiting_queries") == "2"
 
-        # Each of these blocks in DatabaseReplicated::waitDatabaseStarted().
+        # Each of these blocks in DatabaseReplicated::waitDatabaseStarted.
         for i in range(2):
             handles.append(
                 node.get_query_request(
