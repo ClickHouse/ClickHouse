@@ -275,6 +275,7 @@ struct QuantilePrometheusHistogramArrayData
     void add(const IColumn ** columns, size_t row_num)
     {
         const Float64 le = columns[0]->getFloat64(row_num);
+        const bool has_valid_le = !isNaN(le);
 
         const auto & values_column = assert_cast<const ColumnArray &>(*columns[1]);
         const auto & offsets = values_column.getOffsets();
@@ -296,12 +297,6 @@ struct QuantilePrometheusHistogramArrayData
         }
 
         Bucket * bucket = nullptr;
-        if (!isNaN(le))
-        {
-            auto & bucket_ref = buckets[le];
-            bucket_ref.resize(grid_size);
-            bucket = &bucket_ref;
-        }
 
         for (size_t t = 0; t < num_steps; ++t)
         {
@@ -313,6 +308,13 @@ struct QuantilePrometheusHistogramArrayData
             /// still makes the result non-null. The result for a grid position with no valid
             /// bucket bounds matches the nested aggregate's default value.
             has_values[t] = 1;
+
+            if (!bucket && has_valid_le)
+            {
+                auto & bucket_ref = buckets[le];
+                bucket_ref.resize(grid_size);
+                bucket = &bucket_ref;
+            }
 
             if (bucket)
             {
