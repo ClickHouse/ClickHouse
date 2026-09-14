@@ -134,4 +134,21 @@ printf '%s\t%s\n' 'data files that record bytes' "${RECORDING}"
 query "${WORK_DIR}/db_c" "BACKUP TABLE w TO File('${WORK_DIR}/backups/c')" | grep -o BACKUP_CREATED
 printf '%s\t%s\n' 'backup keeps the table data' "$(backup_holds "${WORK_DIR}/backups/c" k.bin)"
 
+# The converse, and the only arm whose answer is that there is nothing to preserve: the second arm's
+# fabrication on the engine that keeps no marks. The engine is the sole difference between the two, so
+# the marks are the whole reason that table keeps its data and this one does not.
+echo '-- TinyLog with no data file recording bytes has nothing left to consult'
+query "${WORK_DIR}/db_d" "
+    CREATE TABLE x (s Array(UInt64)) ENGINE = TinyLog;
+    INSERT INTO x SELECT [] FROM numbers(100);"
+DIR=$(table_dir "${WORK_DIR}/db_d") || exit 1
+# The same probe for the same file name while it still records bytes, so the zero below is the
+# predicate's verdict and not a name that never matches.
+query "${WORK_DIR}/db_d" "BACKUP TABLE x TO File('${WORK_DIR}/backups/d_recording')" | grep -o BACKUP_CREATED
+printf '%s\t%s\n' 'backup keeps the table data while a data file records bytes' "$(backup_holds "${WORK_DIR}/backups/d_recording" s.size0.bin)"
+RECORDING=$(fabricate_empty_data_file "${DIR}" s.size0.bin) || exit 1
+printf '%s\t%s\n' 'data files that record bytes' "${RECORDING}"
+query "${WORK_DIR}/db_d" "BACKUP TABLE x TO File('${WORK_DIR}/backups/d')" | grep -o BACKUP_CREATED
+printf '%s\t%s\n' 'backup keeps the table data' "$(backup_holds "${WORK_DIR}/backups/d" s.size0.bin)"
+
 rm -rf "${WORK_DIR}"

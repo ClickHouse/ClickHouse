@@ -12,3 +12,9 @@ backup keeps the table data	1
 data files that record bytes	1
 BACKUP_CREATED
 backup keeps the table data	1
+-- TinyLog with no data file recording bytes has nothing left to consult
+BACKUP_CREATED
+backup keeps the table data while a data file records bytes	1
+data files that record bytes	0
+BACKUP_CREATED
+backup keeps the table data	0
