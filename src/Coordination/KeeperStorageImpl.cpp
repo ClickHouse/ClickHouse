@@ -1570,9 +1570,16 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     /// from a list that turns out to be empty sends exactly that - so answer it the same way here.
     /// `processWatches` below already handles the empty range, and this runs on the raft commit
     /// thread, where an exception terminates the process.
+    ///
+    /// The success return is reserved for the true zero-subrequest case: a multi request with
+    /// subrequests but without deltas means that the markers of the preprocessing were lost, and
+    /// answering it with an empty success would silently drop every suboperation, so it goes through
+    /// the storage inconsistency path like every other request whose deltas do not match.
     if (deltas.empty())
     {
-        chassert(subrequests.empty());
+        if (!subrequests.empty())
+            onStorageInconsistency("Unexpected empty deltas for Multi request with subrequests");
+
         response->error = Coordination::Error::ZOK;
         return response;
     }
