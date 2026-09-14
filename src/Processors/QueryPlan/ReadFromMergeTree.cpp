@@ -333,6 +333,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsUInt64 read_in_order_virtual_row_block_interval;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
@@ -1016,7 +1017,11 @@ Pipe ReadFromMergeTree::readInOrder(
             pk_header = Block(std::move(pk_header_columns));
 
             if (use_virtual_row_per_block)
-                processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
+                processor->setVirtualRowConversions(
+                    virtual_row_conversion,
+                    pk_header,
+                    read_type == ReadType::InReverseOrder,
+                    context->getSettingsRef()[Setting::read_in_order_virtual_row_block_interval]);
         }
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
