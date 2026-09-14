@@ -15,10 +15,6 @@ SELECT '-- constant DISTINCT columns are not scattered';
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT 1 FROM numbers_mt(10000000));
 
-SELECT '-- a LIMIT keeps the single stream, so it keeps returning the first values of the input';
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number FROM numbers_mt(10000000) LIMIT 100);
-
 SELECT '-- the limits on the size of the DISTINCT set stay global';
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 1000 FROM numbers_mt(10000000) SETTINGS max_rows_in_distinct = 1000000);

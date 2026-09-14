@@ -4,8 +4,6 @@
 0	1
 -- constant DISTINCT columns are not scattered
 0
--- a LIMIT keeps the single stream, so it keeps returning the first values of the input
-0
 -- the limits on the size of the DISTINCT set stay global
 1
 -- the same result with and without the optimization

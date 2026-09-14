@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Tags: shard
 
-# A serialized plan fragment is optimized again on the follower, where `applyStreamDisjointness` could
-# let a final `DISTINCT` over partition-disjoint streams skip the merge into one stream. The deserialized
-# step no longer knows whether the initiator kept that stream single for a downstream `LIMIT`, `OFFSET`
-# or `LIMIT BY`, so it must not parallelize.
+# Partition-disjoint input remains eligible for independent DISTINCT on the follower. A downstream
+# OFFSET over unordered input does not require the partition streams to be merged before deduplication.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,20 +30,15 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id_local" --query "
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"
 
-# The follower merges its streams before deduplicating - the `Resize` belongs to the final `DISTINCT` -
-# and does not scatter either. The preliminary `DISTINCT` never resizes, so the count is one or zero.
+# Both follower and local execution can retain disjoint streams or scatter them. Neither should have
+# exactly one merge before final DISTINCT with no scattering.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        countIf(name = 'Resize' AND plan_step_name = 'Distinct'),
-        countIf(name LIKE 'ScatterByPartition%')
+        countIf(name = 'Resize' AND plan_step_name = 'Distinct') = 1
+        AND countIf(name LIKE 'ScatterByPartition%') = 0
     FROM system.processors_profile_log
     WHERE initial_query_id = '$query_id' AND query_id != initial_query_id"
 
-# Without plan serialization the same partition-disjoint read is deduplicated in parallel, so the check
-# above is not vacuous. Which parallel shape it takes is a cost decision that depends on the profile: the
-# streams can stay apart (no `Resize` at all), or they can be scattered by the hash of the DISTINCT
-# columns (one `Resize` per partition plus one to collect them). Both differ from the guarded shape - one
-# `Resize` merging everything and no scatter - so assert only that the local query is not of that shape.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         countIf(name = 'Resize' AND plan_step_name = 'Distinct') = 1

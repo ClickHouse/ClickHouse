@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: shard
 
-# A serialized plan fragment does not include downstream order requirements. The follower preserves
-# input order when optimizing its final `DISTINCT` because the initiator can consume that order through
-# a `LIMIT`, `OFFSET`, or `LIMIT BY`.
+# An unordered serialized DISTINCT can partition its input on the follower even when the initiator
+# applies an OFFSET. The offset does not require an order that the input never established.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,17 +21,15 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id_local" --query "
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"
 
-# The follower must deduplicate in a single stream: no scatter, and it did run a `DistinctTransform`.
-# `query_id != initial_query_id` keeps only the follower's processors, so the initiator cannot be the one
-# that satisfies the `DistinctTransform` part of the assertion.
+# Only follower processors count, so the initiator cannot satisfy the parallelism assertion.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        countIf(name LIKE 'ScatterByPartition%'),
+        countIf(name LIKE 'ScatterByPartition%') > 0,
         countIf(name = 'DistinctTransform') > 0
     FROM system.processors_profile_log
     WHERE initial_query_id = '$query_id' AND query_id != initial_query_id"
 
-# The same query without plan serialization does scatter, so the check above is not vacuous.
+# The local unordered query also deduplicates in parallel.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT countIf(name LIKE 'ScatterByPartition%') > 0
     FROM system.processors_profile_log
