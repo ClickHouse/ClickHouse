@@ -1495,9 +1495,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             if (!ie_join_description)
             {
-                /// `ConstantJoin` executes the cross product whichever `join_algorithm` is set, the conditions
-                /// become a filter over its result.
                 bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
+                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(

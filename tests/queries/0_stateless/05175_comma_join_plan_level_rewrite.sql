@@ -79,7 +79,7 @@ INSERT INTO l2 VALUES (1), (3);
 INSERT INTO l3 VALUES (3), (5);
 SELECT trimLeft(explain) FROM (
     EXPLAIN keep_logical_steps = 1, actions = 1 SELECT * FROM l1, l2, l3 WHERE l1.a = l3.a
-    SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0, explain_query_plan_default = 'legacy'
+    SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0, use_hash_table_stats_for_join_reordering = 0, explain_query_plan_default = 'legacy'
 ) WHERE explain LIKE '%Join:%';
 DROP TABLE l1;
 DROP TABLE l2;
