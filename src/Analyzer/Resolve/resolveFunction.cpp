@@ -3425,6 +3425,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 /// Replace function node with result constant node
                 constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
+
+                /// The result of a function with secret arguments is derived from them (`decrypt` yields
+                /// the plaintext), so the folded value must stay as hidden as the arguments it came from:
+                /// otherwise it shows up as the constant's value and as its action name in plan dumps.
+                if (!canDisplaySecrets(scope.context) && FunctionSecretArgumentsFinderTreeNode(function_node).getResult().hasSecrets())
+                {
+                    auto mask = scope.projection_mask_map->insert({constant_node->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                    constant_node->setMaskId(mask);
+                }
             }
         }
 
