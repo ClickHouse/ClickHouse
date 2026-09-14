@@ -653,7 +653,7 @@ void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
     {
         /// (If the log entry carries no digest, e.g. it came from a server with digests disabled,
         ///  fall back to the digest we calculated when preprocessing the batch ourselves.)
-        uint64_t new_digest = batch.digest.version == KeeperDigestVersion::NO_DIGEST ? preprocessed_digest : batch.digest.value;
+        uint64_t new_digest = batch.digest.version == KEEPER_CURRENT_DIGEST_VERSION ? batch.digest.value : preprocessed_digest;
 
         /// Publish the committed digest before popping the batch: preprocessing of the next batch
         /// (on another thread) seeds its digest from the uncommitted digest, which falls back to the
@@ -886,7 +886,12 @@ void KeeperStorage::rollbackBatch(const KeeperRequestBatch & batch, bool allow_m
     if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < batch.first_zxid))
         return;
 
-    if (uncommitted_batches.empty() || batch.first_zxid != uncommitted_batches.back().first_zxid
+    if (uncommitted_batches.empty())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback batch, but there are no preprocessed batches (rollback zxid [{}, {}]).", batch.first_zxid, batch.getLastZxid());
+    }
+    if (batch.first_zxid != uncommitted_batches.back().first_zxid
         || batch.getLastZxid() != uncommitted_batches.back().last_zxid)
     {
         throw Exception(

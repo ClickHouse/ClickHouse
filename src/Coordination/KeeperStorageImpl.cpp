@@ -1662,11 +1662,6 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
     if (!batch.ownsZxids())
         return getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
-    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
-    /// than inside the storage's prepare methods to make sure storage_mutex is not held: sleeping
-    /// under storage_mutex would stall the background work that the throttling is waiting for.
-    nodes.throttleWrite();
-
     UncommittedBatchInfo * transaction = nullptr;
     KeeperStagingTransaction batch_staging;
     int64_t commit_zxid = 0; // (for cleanup, not related to the current batch preprocessing)
@@ -1706,6 +1701,11 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
             .first_zxid = batch.first_zxid, .last_zxid = batch.getLastZxid(), .nodes_digest = current_digest, .log_idx = batch.log_idx});
         commit_zxid = zxid;
     }
+
+    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
+    /// than inside the storage's prepare methods to make sure storage_mutex is not held: sleeping
+    /// under storage_mutex would stall the background work that the throttling is waiting for.
+    nodes.throttleWrite();
 
     auto preprocess_requests = [&]
     {
