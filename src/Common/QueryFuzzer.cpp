@@ -8255,19 +8255,43 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                                                                                            : ASTConstraintDeclaration::Type::CHECK;
         fuzz(constraint->children);
     }
-    else if (auto * hypo_index = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
+    else if (auto * hypo_object = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
     {
-        fuzzTableName(*hypo_index);
-        /// CREATE/DROP HYPOTHETICAL INDEX: mutate the embedded index declaration
-        /// like a regular skipping index and toggle the IF [NOT] EXISTS flags.
-        if (hypo_index->index_decl)
-            if (auto * idx = hypo_index->index_decl->as<ASTIndexDeclaration>())
+        fuzzTableName(*hypo_object);
+        /// CREATE/DROP HYPOTHETICAL INDEX and CREATE/DROP HYPOTHETICAL PROJECTION: mutate the
+        /// embedded declaration exactly like the table-level one it mirrors, and toggle the
+        /// IF [NOT] EXISTS flags.
+        if (hypo_object->index_decl)
+            if (auto * idx = hypo_object->index_decl->as<ASTIndexDeclaration>())
                 fuzzIndexDeclaration(*idx);
+        if (hypo_object->projection_decl)
+            if (auto * proj = hypo_object->projection_decl->as<ASTProjectionDeclaration>())
+                fuzzProjectionDeclaration(*proj);
+        /// `object_kind` only selects the keyword for a DROP, so it is always free to flip there.
+        /// A CREATE also prints the matching declaration, and only one of the two is ever set,
+        /// so flipping it would make the formatter assert on the missing one.
+        if (hypo_object->kind != ASTHypotheticalObjectQuery::Create && fuzz_rand() % 20 == 0)
+            hypo_object->object_kind = hypo_object->object_kind == ASTHypotheticalObjectQuery::Index
+                ? ASTHypotheticalObjectQuery::Projection
+                : ASTHypotheticalObjectQuery::Index;
+        /// Swap a CREATE for the DROP of the same object and back. `DropAll` is left alone: it
+        /// keeps neither a name nor a declaration, so nothing could turn it back into the others.
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_not_exists = !hypo_index->if_not_exists;
+        {
+            const bool has_decl = hypo_object->object_kind == ASTHypotheticalObjectQuery::Projection
+                ? hypo_object->projection_decl != nullptr
+                : hypo_object->index_decl != nullptr;
+
+            if (hypo_object->kind == ASTHypotheticalObjectQuery::Create)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Drop;
+            else if (hypo_object->kind == ASTHypotheticalObjectQuery::Drop && has_decl)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Create;
+        }
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_exists = !hypo_index->if_exists;
-        fuzz(hypo_index->children);
+            hypo_object->if_not_exists = !hypo_object->if_not_exists;
+        if (fuzz_rand() % 20 == 0)
+            hypo_object->if_exists = !hypo_object->if_exists;
+        fuzz(hypo_object->children);
     }
     else if (dynamic_cast<ASTDataType *>(ast.get()))
     {

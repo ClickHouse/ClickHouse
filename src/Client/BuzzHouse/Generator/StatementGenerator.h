@@ -161,6 +161,12 @@ enum class IndexUsage
     HypotheticalIndex = 3,
 };
 
+enum class ProjectionUsage
+{
+    TableProjection = 1,
+    HypotheticalProjection = 2,
+};
+
 class StatementGenerator
 {
 public:
@@ -290,7 +296,8 @@ private:
         ShowStatement,
         CreatePolicy,
         SnapshotQuery,
-        CreateHypotheticalIndex
+        CreateHypotheticalIndex,
+        CreateHypotheticalProjection
     };
 
     enum class LitOp
@@ -504,6 +511,20 @@ private:
         return res;
     }
 
+    uint32_t totalHypotheticalProjections() const
+    {
+        uint32_t res = 0;
+
+        for (const auto & [_, t] : tables)
+        {
+            res += static_cast<uint32_t>(t.hypothetical_projections.size());
+        }
+        return res;
+    }
+
+    /// `max_hypotheticals` is a single budget shared by hypothetical indexes and projections
+    uint32_t totalHypotheticals() const { return totalHypotheticalIndexes() + totalHypotheticalProjections(); }
+
 public:
     template <typename T>
     std::vector<std::reference_wrapper<T>> & filterCollection(std::function<bool(T &)> func)
@@ -556,7 +577,7 @@ private:
     String addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     void addTableIndex(RandomGenerator & rg, SQLTable & t, IndexUsage usage, IndexDef * idef);
-    void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef);
+    void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionUsage usage, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, bool force = false) const;
@@ -578,6 +599,7 @@ private:
     void generateNextCreatePolicy(RandomGenerator & rg, bool row, CreatePolicy * crp);
     bool hasTable(const String & tkey) const { return tables.contains(tkey); }
     const SQLTable & lookupTable(const String & tkey) const { return tables.at(tkey); }
+    void dropHypotheticalObject(RandomGenerator & rg, SQLObject sobject, Drop * dp);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
@@ -737,6 +759,7 @@ private:
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextSnapshot(RandomGenerator & rg, SnapshotQuery * sq);
     void generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi);
+    void generateNextCreateHypotheticalProjection(RandomGenerator & rg, CreateHypotheticalProjection * hp);
     void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
@@ -898,11 +921,11 @@ public:
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
     const std::function<bool(const SQLTable &)> has_mergeable_tables
         = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
-    /// Hypothetical (WHAT-IF) indexes are only supported on MergeTree family tables whose
-    /// `StorageID` resolves to a non-nil UUID: tables in `Ordinary` and `Shared` databases
+    /// Hypothetical (WHAT-IF) indexes and projections are only supported on MergeTree family tables
+    /// whose `StorageID` resolves to a non-nil UUID: tables in `Ordinary` and `Shared` databases
     /// (including the default database on cloud runs) have none, and the interpreter rejects
     /// them with `NOT_IMPLEMENTED`
-    const std::function<bool(const SQLTable &)> attached_tables_for_create_hypothetical_index
+    const std::function<bool(const SQLTable &)> attached_tables_for_create_hypotheticals
         = [&cloud = this->supports_cloud_features](const SQLTable & t)
     {
         const bool has_table_uuid = t.db ? (!t.db->isOrdinaryDatabase() && !t.db->isSharedDatabase()) : !cloud;
@@ -911,14 +934,30 @@ public:
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_drop_hypothetical_index
         = [](const SQLTable & t) { return t.isAttached() && !t.hypothetical_indexes.empty(); };
+    const std::function<bool(const SQLTable &)> attached_tables_for_drop_hypothetical_projection
+        = [](const SQLTable & t) { return t.isAttached() && !t.hypothetical_projections.empty(); };
 
-    /// Hypothetical indexes are session scoped on the server, so they are all gone after a reconnect
     void clearHypotheticalIndexes()
     {
         for (auto & [_, t] : tables)
         {
             t.hypothetical_indexes.clear();
         }
+    }
+
+    void clearHypotheticalProjections()
+    {
+        for (auto & [_, t] : tables)
+        {
+            t.hypothetical_projections.clear();
+        }
+    }
+
+    /// Hypothetical objects are session scoped on the server, so they are all gone after a reconnect
+    void clearHypotheticals()
+    {
+        clearHypotheticalIndexes();
+        clearHypotheticalProjections();
     }
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format = [](const SQLTable & t)
