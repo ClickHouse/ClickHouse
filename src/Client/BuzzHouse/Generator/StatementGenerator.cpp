@@ -791,8 +791,9 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
     const uint32_t drop_policy = 1 * static_cast<uint32_t>(policies.size() > 3);
-    const uint32_t drop_hypothetical_index = 2 * static_cast<uint32_t>(totalHypotheticalIndexes() > 3);
-    const uint32_t drop_hypothetical_projection = 2 * static_cast<uint32_t>(totalHypotheticalProjections() > 3);
+    /// Need something to not abort
+    const uint32_t drop_hypothetical_index = 2 * static_cast<uint32_t>(totalHypotheticalIndexes() > 0);
+    const uint32_t drop_hypothetical_projection = 2 * static_cast<uint32_t>(totalHypotheticalProjections() > 0);
     std::optional<String> cluster;
 
     rg.pickWeighted(
