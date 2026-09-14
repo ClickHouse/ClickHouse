@@ -203,7 +203,7 @@ Decide se e onde usar réplicas paralelas analisando o plano da consulta, em vez
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Se true, e o JOIN puder ser executado com o algoritmo de réplicas paralelas, e todos os armazenamentos no lado direito do JOIN forem *MergeTree, será usado JOIN local em vez de GLOBAL JOIN."}]}]} />
 
-Se true, e o JOIN puder ser executado com o algoritmo de réplicas paralelas, e todos os armazenamentos no lado direito do JOIN forem *MergeTree, será usado JOIN local em vez de GLOBAL JOIN.
+Se true, e o `JOIN` puder ser executado com o algoritmo de réplicas paralelas, e cada armazenamento do lado do `JOIN` que de outra forma seria materializado em uma temporary table puder ser lido por cada réplica de forma independente, será usado `JOIN` local em vez de `GLOBAL JOIN`. Esse lado é o direito, exceto em um `RIGHT JOIN`, em que é o esquerdo e em que cada armazenamento precisa ser elegível para réplicas paralelas, e não apenas ser `*MergeTree`. Um armazenamento sob o lado materializado de um `GLOBAL JOIN` aninhado, ou sob um `GLOBAL IN`, não conta, pois o initiator materializa esses casos por conta própria.
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 

@@ -205,7 +205,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 1, recent_samples_ttl_seconds = 345600
+SETTINGS version = 2, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -352,18 +352,27 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 `id` カラムには任意の比較可能な非 Nullable 型を使用できます。`samples` および `tags` の内部テーブルで宣言される `id` の型は一致している必要があります。
 
-`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` 設定がされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、これらと同じ型を `LowCardinality` でラップしたもの、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
+`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` SETTINGがされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、これらと同じ型を `LowCardinality` でラップしたもの、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
 
 `Tuple(UInt64, LowCardinality(UUID))` のような `LowCardinality` の識別子型を使用すると、識別子は辞書エンコードされた状態で保持されます。Samples テーブルは、すべての行に完全な識別子を繰り返して格納する代わりに、ブロックごとの小さな辞書と辞書索引を格納するため、クエリが読み取るデータ量が削減されます。
 
-`id_generator` 設定では、`INNER COLUMNS` 句を使用せずに同じカスタマイズを行えます。
+`id_generator` SETTINGでは、`INNER COLUMNS` 句を使用せずに同じカスタマイズを行えます。
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SETTINGS id_generator = 'sipHash64(tags)'
 ```
 
-この設定が有効な場合、カラムの`DEFAULT`に別の式が含まれていても、`id`の生成にはこの設定が使用されます。
+このSETTINGが有効な場合、カラムの`DEFAULT`に別の式が含まれていても、`id`の生成にはこのSETTINGが使用されます。
+
+`id` カラムの型は、`INNER COLUMNS` 句の代わりに `id_type` SETTINGで指定することもできます。
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
+```
+
+`id_generator` SETTINGが指定されている場合、`id_type` SETTINGは `CREATE` 時に自動的に記録されるため、その式が想定して記述された型が定義に保持されます。
 
 ## `tags` カラム {#tags-column}
 
@@ -449,7 +458,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 外部テーブルのカラム型 (`id`、`timestamp`、`value`、および [`tags_to_columns`](#settings) に記載された `<tag_value_column>`) は、`TimeSeries` テーブルが通常内部的に生成する型と一致している必要があります (型の制約については、[Samples テーブル](#samples-table)、[Tags テーブル](#tags-table)、および [Metrics テーブル](#metrics-table) を参照してください) 。型の不一致は `CREATE` 時に報告されます。
 
-外部タグターゲットの id 生成式は、INSERT 時に次の順序で決定されます。まず [`id_generator`](#settings) 設定 (設定されている場合) 、次に外部テーブルの `id` カラムで宣言された `DEFAULT` (存在する場合) 、最後に `id` 型から導出される正規のジェネレーターです。したがって、この設定は外部テーブルで宣言された `DEFAULT` より優先されます。詳細は [The `id` column](#id-column) を参照してください。
+外部 tags テーブルの `id` カラムの型と、識別子を生成する式は、`CREATE` 時に [`id_type`](#settings) および [`id_generator`](#settings) 設定に記録されます ([バージョン](#schema-versioning) 2 以降) 。そのため `TimeSeries` テーブルの定義がそれらを保持します。たとえば `CREATE TABLE ... AS my_table` では、外部ターゲットテーブルを読み取ることなく `my_table` の定義から `id` 型を読み取ります。`id_generator` 設定が指定されていない場合は、外部テーブルの `id` カラムで宣言された `DEFAULT` (存在する場合) が設定され、それがなければ `id` 型から導出される正規のジェネレーターが設定されます。記録された式は、後で外部テーブルの `DEFAULT` が変更された場合でも `id` の生成に使用されます。詳細は [The `id` column](#id-column) を参照してください。
 
 ## 設定の変更 {#altering-settings}
 
@@ -469,13 +478,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 他の設定は、`ALTER ... MODIFY SETTING` では変更できません。大半は `CREATE` 時に内部テーブルのスキーマに組み込まれ、
 `version` 設定は `CREATE` 時に自動的に固定され、スキーマ自体を識別します ([スキーマのバージョニング](#schema-versioning) を参照) 。
 
-## 設定 {#settings}
+## SETTING {#settings}
 
-以下は、`TimeSeries` テーブルの定義時に指定できる設定の一覧です。
+以下は、`TimeSeries` テーブルの定義時に指定できるSETTINGの一覧です。
 
 | Name                                 | Type       | Default                                                       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------ | ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id_generator`                       | Expression | `id` 型に依存                                                     | タグから時系列の識別子 (フィンガープリント) を計算する式です。未設定の場合は、`id` カラムのデフォルト式が使用されます。`id` カラムのデフォルト式も未設定であれば、式は自動的に選択されます                                                                                                                                                                                                                                                                                                                                                                                           |
+| `id_type`                            | データ型       | `id` カラムに依存                                                   | ターゲットテーブルの `id` カラムの型。通常、型は内部テーブルの `INNER COLUMNS` 句、または[外部](#external-target-tables) tags テーブルで宣言されます。型が定義内に保持されない場合、すなわち tags のターゲットが外部テーブルである場合、または `id_generator` 設定が設定されている場合には、この設定は `CREATE` 時に自動的に記録されます。この設定は `TAGS INNER COLUMNS (id <type>)` の代わりに明示的に指定することもできます。`version` は 2 以上である必要があります                                                                                                                                                                                        |
+| `id_generator`                       | Expression | `id` 型に依存                                                     | タグから時系列の識別子 (フィンガープリント) を計算する式です。未設定の場合は、`id` カラムのデフォルト式が使用されます。`id` カラムのデフォルト式も未設定であれば、式は自動的に選択されます。外部 tags テーブルの場合、`version` が 2 以上であれば、この設定は `CREATE` 時に自動的に記録されます ([外部ターゲットテーブル](#external-target-tables) を参照)                                                                                                                                                                                                                                                                             |
 | `tags_to_columns`                    | Map        | {}                                                            | [tags](#tags-table) テーブルで、どのタグを個別のカラムに格納するかを指定する Map。構文: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                                                                                                                                                                          |
 | `use_all_tags_column_to_generate_id` | Bool       | false                                                         | 廃止された設定であり、何も行いません                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `store_min_time_and_max_time`        | Bool       | true                                                          | true に設定すると、テーブルは各時系列の `min_time` と `max_time` を保存します                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -486,17 +496,18 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。明示的に設定した場合、エンジン宣言のパーティションキーをオーバーライドします。いずれも設定されていない場合は、5 時間ごとに 1 パーティションが使用されます。外部 recent samples テーブルでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                  |
 | `recent_samples_index_granularity`   | UInt64     | 8192                                                          | 内部 `recent samples` テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 recent samples テーブルおよび MergeTree 以外のエンジンでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                      |
 | `tags_index_granularity`             | UInt64     | 8192                                                          | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                           |
-| `version`                            | UInt64     | 1                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
+| `version`                            | UInt64     | 2                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
 
 ## スキーマのバージョン管理 {#schema-versioning}
 
 `TimeSeries` テーブルエンジンと PromQL 実行レイヤーは現在も活発に開発されています。
 そのため、ターゲットテーブルのセットや構造は ClickHouse のバージョン間で変更される可能性があります。
-このような変更を検出できるよう、各 `TimeSeries` テーブルでは [version](#settings) 設定にバージョンを保存します。
-テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 1) であり、
-テーブルのメタデータに永続化され、`ALTER` では変更できません。この設定の導入前に作成されたテーブルは、バージョン 0 と見なされます。
-通常、この設定は `CREATE TABLE` クエリで省略します。省略した場合、テーブルには最新バージョンが設定されます。
-サーバーがそのバージョンをサポートしている場合は、明示的な `version` も指定できます。`CREATE TABLE ... AS other_table` は別のテーブルのバージョンをコピーしません。詳細は[既存のテーブルを AS としてテーブルを作成する](#create-as)を参照してください。
+このような変更を検出できるよう、各 `TimeSeries` テーブルでは [version](#settings) SETTINGにバージョンを保存します。
+テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 2) であり、
+テーブルのメタデータに永続化され、`ALTER` では変更できません。このSETTINGの導入前に作成されたテーブルは、バージョン 0 と見なされます。
+通常、このSETTINGは `CREATE TABLE` クエリで省略します。省略した場合、テーブルには最新バージョンが設定されます。
+サーバーがそのバージョンをサポートしている場合は、明示的な `version` も指定できます。その場合、テーブルはそのバージョンの定義方法に従って定義されます。例えば、
+バージョン 1 のテーブルは `id_type` SETTINGを記録しません。`CREATE TABLE ... AS other_table` は別のテーブルのバージョンをコピーしません。詳細は[既存のテーブルを AS としてテーブルを作成する](#create-as)を参照してください。
 
 サーバーは一定範囲のバージョンをサポートしており、最小バージョンは、`SELECT` による読み取り、`INSERT` による書き込み、
 Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/ja/reference/functions/table-functions/prometheusQuery)、

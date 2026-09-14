@@ -19,7 +19,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "Se cambió el método de compresión por defecto para la comunicación entre cliente\/servidor y servidor\/servidor de `LZ4` a `ZSTD` para reducir el tráfico de red."}]}]} />
 
-El códec para comprimir la comunicación entre cliente y servidor, y entre servidores, a través del protocolo nativo.
+El códec para comprimir la comunicación entre cliente y servidor, y entre servidores, a través del protocolo nativo, y la respuesta de una petición HTTP realizada con `compress=1`, que utiliza el mismo frame format.
 
 Este ajuste no se aplica al canal de exchange en streaming de las consultas distribuidas, que siempre utiliza el códec por defecto del servidor: cada frame comprimido es autodescriptivo, por lo que el receiver detecta el códec automáticamente.
 

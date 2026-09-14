@@ -697,7 +697,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 عندما تكون `n` مصفوفة من الأعداد الصحيحة، تُرجِع مصفوفة بالعناصر الموجودة في المواضع المحددة (عملية تجميع).
 وهذا مكافئ لـ `arrayMap(i -> arr[i], n)`، ولكنه يتمتع بتنفيذ منفصل أكثر كفاءة.
-تُنتج المواضع خارج الحدود القيمة الافتراضية، كما في حالة الفهرس المفرد.
+تُنتج المواضع خارج الحدود القيمة الافتراضية، كما في حالة فهرس قياسي.
 يمكن أن تكون عناصر الفهرس قابلة لأن تكون `NULL`. يُنتج الفهرس `NULL` القيمة `NULL` (ويجعل نوع عنصر النتيجة قابلاً لأن يكون `NULL`) عندما يمكن
 تغليف نوع العنصر في `Nullable`؛ أما أنواع العناصر التي لا يمكن أن تكون داخل `Nullable` (مثل `Array` و`Map`)، فيُنتج الفهرس `NULL`
 القيمة الافتراضية بدلاً من ذلك. وهذا هو السلوك نفسه لفهرس `NULL` المفرد.
@@ -710,7 +710,11 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 يوفّر العامل `[n]` الوظيفة نفسها.
 
-يمكن أن تكون الوسيطة الأولى أيضًا [QBit](/ar/reference/data-types/qbit): يُعاد بناء عنصر المتجه رقم n بالدقة الكاملة لنوع عنصر QBit، مع قراءة مستويات البت الخاصة بمجموعة stride التي تحتويه فقط.
+يمكن أن تكون الوسيطة الأولى أيضًا:
+
+* [`Map`](/ar/reference/data-types/map): يُرجِع `m['key']` القيمة المخزّنة لـ `key`، أو القيمة الافتراضية لنوع القيمة عندما يكون المفتاح غير موجود.
+* [`QBit`](/ar/reference/data-types/qbit): يُعيد `q[n]` بناء عنصر المتجه رقم n بالدقة الكاملة لنوع عنصر QBit، مع قراءة مستويات البت الخاصة بمجموعة stride التي تحتويه فقط.
+* [`JSON`](/ar/reference/data-types/newjson) أو `Nullable(JSON)`: يُرجِع `json['key']` القيمة المخزّنة في المسار `key`، الذي يجب أن يكون سلسلة ثابتة، تمامًا كما تفعل الصيغة النقطية `json.key`. وبالنسبة إلى `Nullable(JSON)` تتبع النتيجة قواعد القابلية للقيمة NULL نفسها المتبعة مع `json.key`: المسار الذي يمكنه تمثيل `NULL` (`Dynamic`، أو مسار محدد النوع يمكن تغليفه في `Nullable`) يعطي `NULL` للصفوف الخارجية ذات القيمة `NULL`، بينما يحتفظ المسار محدد النوع غير القابل لأن يكون NULL مثل `Array` أو `Map` بقيمته الافتراضية هناك. يمكن أيضًا أن يكون المفتاح من النوع الثابت `Nullable(String)`؛ ويعطي المفتاح `NULL` القيمة `NULL`. ويمكن تسلسل الوصول المتداخل: `json['a']['b']`.
 
 **الصيغة**
 
@@ -720,11 +724,11 @@ arrayElement(arr, n)
 
 **وسيطات الدالة**
 
-* `arr` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array) أو [`QBit`](/ar/reference/data-types/qbit). - `n` — موضع العنصر المراد الحصول عليه، أو مصفوفة من المواضع. يمكن أن تكون المواضع قابلة لأن تكون NULL. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
+* `arr` — القيمة المراد قراءة عنصر منها. [`Array(T)`](/ar/reference/data-types/array) أو [`Map(K, V)`](/ar/reference/data-types/map) أو [`QBit`](/ar/reference/data-types/qbit) أو [`JSON`](/ar/reference/data-types/newjson) أو `Nullable(JSON)`. - `n` — موضع العنصر المراد الحصول عليه، أو مصفوفة من المواضع. يمكن أن تكون المواضع قابلة لأن تكون NULL. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array). أما في حالة وسيطة `Map`، فمفتاح من النوع `K`؛ وفي حالة وسيطة `JSON`، مسار ثابت من النوع [`String`](/ar/reference/data-types/string).
 
 **القيمة المُعادة**
 
-عندما يكون `n` قيمة قياسية، يعيد عنصرًا من النوع `T`. وعندما يكون `n` مصفوفة، يعيد `Array(Nullable(T))` إذا كانت عناصر الفهرس قابلة لأن تكون NULL وكان يمكن تغليف `T` في `Nullable`، وإلا يعيد `Array(T)`. [`Any`](/ar/reference/data-types/index) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
+عندما يكون `n` قيمة قياسية، يعيد عنصرًا من النوع `T`. وعندما يكون `n` مصفوفة، يعيد `Array(Nullable(T))` إذا كانت عناصر الفهرس قابلة لأن تكون NULL وكان يمكن تغليف `T` في `Nullable`، وإلا يعيد `Array(T)`. وفي حالة `Map` يعيد القيمة من النوع `V`، وفي حالة `JSON` القيمة المخزَّنة عند المسار. [`Any`](/ar/reference/data-types/index) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -778,6 +782,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**الوصول إلى مفتاح Map**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**الوصول إلى JSON باستخدام الأقواس**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 أُضيف في: v1.1.0
@@ -797,6 +821,9 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 
 الفهارس السالبة مدعومة. في هذه الحالة، يُختار العنصر المقابل عند العد من النهاية. على سبيل المثال، `arr[-1]` هو آخر عنصر في المصفوفة.
 
+يمكن أن تكون الوسيطة الأولى أيضًا [`Map`](/ar/reference/data-types/map): فالمفتاح غير الموجود يُعطي `NULL` بدلًا من القيمة الافتراضية لنوع القيمة، ما دام أمكن تضمين ذلك النوع في `Nullable`.
+أما [`JSON`](/ar/reference/data-types/newjson) فغير مدعوم هنا، استخدم `arrayElement` بدلًا منه.
+
 **الصيغة**
 
 ```sql
@@ -805,11 +832,11 @@ arrayElementOrNull(arr, n)
 
 **وسيطات الدالة**
 
-* `arr` — المصفوفة المطلوب البحث فيها. [`Array(T)`](/ar/reference/data-types/array). - `n` — موضع العنصر المطلوب الحصول عليه، أو مصفوفة من المواضع. يمكن أن تقبل المواضع القيم الفارغة. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
+* `arr` — القيمة المطلوب قراءة عنصر منها. [`Array(T)`](/ar/reference/data-types/array) أو [`Map(K, V)`](/ar/reference/data-types/map). - `n` — موضع العنصر المطلوب الحصول عليه، أو مصفوفة من المواضع. يمكن أن تقبل المواضع القيم الفارغة. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array). وفي حالة وسيطة `Map`، مفتاح من النوع `K`.
 
 **القيمة المُعادة**
 
-عندما يكون `n` قيمةً قياسية، تُرجع `Nullable(T)` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `T`. عندما يكون `n` مصفوفة، تُرجع `Array(Nullable(T))` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `Array(T)`. [`Any`](/ar/reference/data-types/index) أو [`Nullable(T)`](/ar/reference/data-types/nullable) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
+عندما يكون `n` قيمةً قياسية، تُرجع `Nullable(T)` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `T`. عندما يكون `n` مصفوفة، تُرجع `Array(Nullable(T))` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `Array(T)`. وفي حالة `Map` تنطبق القاعدة نفسها على نوع القيمة `V`. [`Any`](/ar/reference/data-types/index) أو [`Nullable(T)`](/ar/reference/data-types/nullable) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -851,6 +878,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**مفتاح غير موجود في الـ Map**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

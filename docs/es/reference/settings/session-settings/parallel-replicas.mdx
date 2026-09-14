@@ -203,7 +203,7 @@ Decide si se utilizan réplicas paralelas y dónde, mediante el análisis del pl
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Si es true, y JOIN puede ejecutarse con el algoritmo de réplicas paralelas, y todos los motores de almacenamiento de la parte derecha del JOIN son *MergeTree, se usará JOIN local en lugar de GLOBAL JOIN."}]}]} />
 
-Si es true, y JOIN puede ejecutarse con el algoritmo de réplicas paralelas, y todos los motores de almacenamiento de la parte derecha del JOIN son *MergeTree, se usará JOIN local en lugar de GLOBAL JOIN.
+Si es true, y `JOIN` puede ejecutarse con el algoritmo de réplicas paralelas, y cada motor de almacenamiento de la parte del `JOIN` que de otro modo se materializaría en una tabla temporal puede ser leído por cada réplica por su cuenta, se usará `JOIN` local en lugar de `GLOBAL JOIN`. Esa parte es la derecha, salvo en un `RIGHT JOIN`, donde es la izquierda y donde cada motor de almacenamiento debe ser apto para réplicas paralelas y no simplemente `*MergeTree`. Un motor de almacenamiento situado bajo el lado materializado de un `GLOBAL JOIN` anidado, o bajo un `GLOBAL IN`, no cuenta, porque el iniciador los materializa por su cuenta.
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 

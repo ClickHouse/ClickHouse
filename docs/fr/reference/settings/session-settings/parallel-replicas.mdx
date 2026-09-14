@@ -203,7 +203,7 @@ Détermine s’il faut utiliser des répliques parallèles et à quels endroits 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Si cette option est true, que JOIN peut être exécuté avec l’algorithme des répliques parallèles et que toutes les tables de la partie droite du JOIN sont de type *MergeTree, un JOIN local est utilisé à la place de GLOBAL JOIN."}]}]} />
 
-Si cette option est true, que JOIN peut être exécuté avec l’algorithme des répliques parallèles et que toutes les tables de la partie droite du JOIN sont de type *MergeTree, un JOIN local est utilisé à la place de GLOBAL JOIN.
+Si cette option est true, que `JOIN` peut être exécuté avec l’algorithme des répliques parallèles et que chaque table de la partie du `JOIN` qui serait sinon matérialisée dans une temporary table peut être lue par chaque réplique de manière autonome, un `JOIN` local est utilisé à la place de `GLOBAL JOIN`. Cette partie est la partie droite, sauf dans le cas d’un `RIGHT JOIN`, où il s’agit de la partie gauche et où chaque table doit être éligible aux répliques parallèles, et non simplement être de type `*MergeTree`. Une table située du côté matérialisé d’un `GLOBAL JOIN` imbriqué, ou sous un `GLOBAL IN`, n’est pas prise en compte, car l’initiateur les matérialise lui-même.
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 

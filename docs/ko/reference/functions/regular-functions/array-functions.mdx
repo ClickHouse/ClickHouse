@@ -709,7 +709,11 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 연산자 `[n]`도 동일한 기능을 제공합니다.
 
-첫 번째 인수는 [QBit](/ko/reference/data-types/qbit)일 수도 있습니다. 해당 원소를 포함하는 스트라이드 그룹의 비트 평면만 읽어 QBit 원소 타입의 전체 정밀도로 n번째 벡터 원소를 재구성합니다.
+첫 번째 인수는 다음이 될 수도 있습니다:
+
+* [`Map`](/ko/reference/data-types/map): `m['key']`는 `key`에 저장된 값을 반환하며, 키가 없으면 값 타입의 기본값을 반환합니다.
+* [`QBit`](/ko/reference/data-types/qbit): `q[n]`은 해당 원소를 포함하는 스트라이드 그룹의 비트 평면만 읽어 QBit 타입의 전체 정밀도로 n번째 벡터 원소를 재구성합니다.
+* [`JSON`](/ko/reference/data-types/newjson) 또는 `Nullable(JSON)`: `json['key']`는 점 표기법 `json.key`와 정확히 동일하게 경로 `key`에 저장된 값을 반환하며, 이때 `key`는 상수 문자열이어야 합니다. `Nullable(JSON)`의 경우 결과는 `json.key`와 동일한 널 허용 규칙을 따릅니다. 즉, `NULL`을 표현할 수 있는 경로(`Dynamic`, 또는 `Nullable`로 감쌀 수 있는 타입이 지정된 경로)는 바깥쪽 `NULL` 행에 대해 `NULL`을 반환하는 반면, `Array`나 `Map`처럼 널 허용이 아닌 타입이 지정된 경로는 해당 위치에서 기본값을 유지합니다. 키는 상수 `Nullable(String)`일 수도 있으며, `NULL` 키는 `NULL`을 반환합니다. 중첩 접근은 `json['a']['b']`와 같이 연결할 수 있습니다.
 
 **구문**
 
@@ -719,11 +723,11 @@ arrayElement(arr, n)
 
 **인수**
 
-* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
+* `arr` — 원소를 읽어올 값입니다. [`Array(T)`](/ko/reference/data-types/array), [`Map(K, V)`](/ko/reference/data-types/map), [`QBit`](/ko/reference/data-types/qbit), [`JSON`](/ko/reference/data-types/newjson) 또는 `Nullable(JSON)`. - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array). `Map` 인수이면 타입 `K`의 키이고, `JSON` 인수이면 상수 [`String`](/ko/reference/data-types/string) 경로입니다.
 
 **반환 값**
 
-`n`이 스칼라이면 타입 `T`의 원소를 반환합니다. `n`이 배열이면 인덱스 원소가 널 허용이고 `T`를 `Nullable`로 감쌀 수 있는 경우 `Array(Nullable(T))`를 반환하고, 그렇지 않으면 `Array(T)`를 반환합니다. [`Any`](/ko/reference/data-types/index) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(T))`](/ko/reference/data-types/array)
+`n`이 스칼라이면 타입 `T`의 원소를 반환합니다. `n`이 배열이면 인덱스 원소가 널 허용이고 `T`를 `Nullable`로 감쌀 수 있는 경우 `Array(Nullable(T))`를 반환하고, 그렇지 않으면 `Array(T)`를 반환합니다. `Map`이면 타입 `V`의 값을, `JSON`이면 해당 경로에 저장된 값을 반환합니다. [`Any`](/ko/reference/data-types/index) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(T))`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -777,6 +781,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**맵 키 액세스**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**JSON 대괄호 액세스**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 도입 버전: v1.1.0
@@ -795,6 +819,9 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 
 음수 인덱스도 지원합니다. 이 경우 끝에서부터 센 해당 원소를 선택합니다. 예를 들어 `arr[-1]`은 배열의 마지막 원소입니다.
 
+첫 번째 인수로 [`Map`](/ko/reference/data-types/map)을 사용할 수도 있습니다. 존재하지 않는 키에 대해서는, 값 타입을 `Nullable`로 래핑할 수 있는 한 값 타입의 기본값 대신 `NULL`을 반환합니다.
+[`JSON`](/ko/reference/data-types/newjson)은 여기서 지원되지 않으며, 대신 `arrayElement`를 사용하십시오.
+
 **구문**
 
 ```sql
@@ -803,11 +830,11 @@ arrayElementOrNull(arr, n)
 
 **인수**
 
-* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
+* `arr` — 원소를 읽어올 값입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`Map(K, V)`](/ko/reference/data-types/map). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array). `Map` 인수의 경우 `K` 타입의 키입니다.
 
 **반환 값**
 
-`n`이 스칼라인 경우, `T`를 `Nullable`로 래핑할 수 있으면 `Nullable(T)`를 반환하고, 그렇지 않으면 `T`를 반환합니다. `n`이 배열인 경우, `T`를 `Nullable`로 래핑할 수 있으면 `Array(Nullable(T))`를 반환하고, 그렇지 않으면 `Array(T)`를 반환합니다. [`Any`](/ko/reference/data-types/index) 또는 [`Nullable(T)`](/ko/reference/data-types/nullable) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(T))`](/ko/reference/data-types/array)
+`n`이 스칼라인 경우, `T`를 `Nullable`로 래핑할 수 있으면 `Nullable(T)`를 반환하고, 그렇지 않으면 `T`를 반환합니다. `n`이 배열인 경우, `T`를 `Nullable`로 래핑할 수 있으면 `Array(Nullable(T))`를 반환하고, 그렇지 않으면 `Array(T)`를 반환합니다. `Map`의 경우 값 타입 `V`에 동일한 규칙이 적용됩니다. [`Any`](/ko/reference/data-types/index) 또는 [`Nullable(T)`](/ko/reference/data-types/nullable) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(T))`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -849,6 +876,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**존재하지 않는 맵 키**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

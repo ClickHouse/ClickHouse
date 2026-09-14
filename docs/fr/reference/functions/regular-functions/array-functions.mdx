@@ -689,7 +689,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 ## arrayElement {#arrayElement}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Récupère l&#39;élément du tableau fourni à l&#39;indice `n`, où `n` peut être de n&#39;importe quel type entier.
 Si l&#39;indice est en dehors des limites du tableau, la fonction renvoie une valeur par défaut (0 pour les nombres, une chaîne vide pour les chaînes de caractères, etc.),
@@ -699,7 +699,7 @@ Lorsque `n` est un tableau d&#39;entiers, renvoie un tableau contenant les élé
 Cela équivaut à `arrayMap(i -> arr[i], n)`, mais possède une implémentation distincte et plus efficace.
 Les positions hors limites produisent la valeur par défaut, comme pour un indice scalaire.
 Les éléments d&#39;indice peuvent être nullable. Un indice `NULL` produit `NULL` (et rend le type d&#39;élément du résultat nullable) lorsque le type d&#39;élément peut être
-encapsulé dans `Nullable` ; pour les types d&#39;éléments qui ne peuvent pas être contenus dans `Nullable` (comme `Array`, `Map`), un indice `NULL` produit à la place la
+encapsulé dans `Nullable` ; pour les types d&#39;éléments qui ne peuvent pas être contenus dans `Nullable` (comme `Array`, `Map`), un indice `NULL` produit à la place la
 valeur par défaut. Il s&#39;agit du même comportement que pour un indice scalaire `NULL`.
 
 <Note>
@@ -710,7 +710,11 @@ Les indices négatifs sont pris en charge. Dans ce cas, l&#39;élément correspo
 
 L&#39;opérateur `[n]` fournit la même fonctionnalité.
 
-Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le n-ième élément du vecteur est reconstruit avec la précision complète du type d&#39;élément QBit, en ne lisant que les plans de bits du groupe de stride auquel il appartient.
+Le premier argument peut également être :
+
+* un [`Map`](/fr/reference/data-types/map) : `m['key']` renvoie la valeur stockée pour `key`, ou la valeur par défaut du type de valeur lorsque la clé est absente.
+* un [`QBit`](/fr/reference/data-types/qbit) : `q[n]` reconstruit le n-ième élément du vecteur avec la pleine précision du type d&#39;élément QBit, en ne lisant que les plans de bits du groupe de stride auquel il appartient.
+* un [`JSON`](/fr/reference/data-types/newjson) ou un `Nullable(JSON)` : `json['key']` renvoie la valeur stockée au chemin `key`, qui doit être une chaîne constante, exactement comme le fait la dot syntax `json.key`. Pour un `Nullable(JSON)`, le résultat suit les mêmes règles de nullabilité que `json.key` : un chemin pouvant représenter `NULL` (`Dynamic`, ou un typed path pouvant être encapsulé dans `Nullable`) donne `NULL` pour les lignes `NULL` externes, tandis qu&#39;un typed path non nullable comme `Array` ou `Map` y conserve sa valeur par défaut. La clé peut également être un `Nullable(String)` constant ; une clé `NULL` donne `NULL`. Les accès imbriqués peuvent être chaînés : `json['a']['b']`.
 
 **Syntaxe**
 
@@ -720,11 +724,11 @@ arrayElement(arr, n)
 
 **Arguments**
 
-* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
+* `arr` — La valeur dont il faut lire un élément. [`Array(T)`](/fr/reference/data-types/array), [`Map(K, V)`](/fr/reference/data-types/map), [`QBit`](/fr/reference/data-types/qbit), [`JSON`](/fr/reference/data-types/newjson) ou `Nullable(JSON)`. - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array). Pour un argument `Map`, une clé de type `K` ; pour un argument `JSON`, un chemin constant de type [`String`](/fr/reference/data-types/string).
 
 **Valeur renvoyée**
 
-Lorsque `n` est un scalaire, renvoie l&#39;élément de type `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si les éléments d&#39;indice sont nullables et que `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. [`Any`](/fr/reference/data-types/index) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
+Lorsque `n` est un scalaire, renvoie l&#39;élément de type `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si les éléments d&#39;indice sont nullables et que `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. Pour un `Map`, renvoie la valeur de type `V` ; pour un `JSON`, la valeur stockée à ce chemin. [`Any`](/fr/reference/data-types/index) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -778,9 +782,29 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Accès par clé de Map**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**Accès par crochets JSON**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie l’élément du tableau fourni à l’indice `n`, où `n` peut être de n’importe quel type entier.
 Si l’indice est hors des limites du tableau, `NULL` est renvoyé au lieu d’une valeur par défaut,
@@ -792,10 +816,13 @@ Cela équivaut à `arrayMap(i -> arrayElementOrNull(arr, i), n)`, mais bénéfic
 Les positions hors limites et les indices `NULL` produisent des valeurs `NULL` dans le tableau résultant, suivant la même règle que pour un indice scalaire.
 
 <Note>
-  Les tableaux dans ClickHouse sont indexés à partir de 1.
+  Les tableaux dans ClickHouse sont indexés à partir de 1.
 </Note>
 
 Les indices négatifs sont pris en charge. Dans ce cas, l’élément correspondant est sélectionné en comptant depuis la fin. Par exemple, `arr[-1]` est le dernier élément du tableau.
+
+Le premier argument peut également être un [`Map`](/fr/reference/data-types/map) : une clé absente donne `NULL` au lieu de la valeur par défaut du type de valeur, à condition que ce type puisse être encapsulé dans `Nullable`.
+[`JSON`](/fr/reference/data-types/newjson) n’est pas pris en charge ici, utilisez `arrayElement` à la place.
 
 **Syntaxe**
 
@@ -805,11 +832,11 @@ arrayElementOrNull(arr, n)
 
 **Arguments**
 
-* `arr` — Le tableau dans lequel effectuer la recherche. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l’élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
+* `arr` — La valeur dans laquelle lire un élément. [`Array(T)`](/fr/reference/data-types/array) ou [`Map(K, V)`](/fr/reference/data-types/map). - `n` — Position de l’élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array). Pour un argument `Map`, une clé de type `K`.
 
 **Valeur renvoyée**
 
-Lorsque `n` est un scalaire, renvoie `Nullable(T)` si `T` peut être encapsulé dans `Nullable`, sinon `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. [`Any`](/fr/reference/data-types/index) ou [`Nullable(T)`](/fr/reference/data-types/nullable) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
+Lorsque `n` est un scalaire, renvoie `Nullable(T)` si `T` peut être encapsulé dans `Nullable`, sinon `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. Pour un `Map`, la même règle s’applique au type de valeur `V`. [`Any`](/fr/reference/data-types/index) ou [`Nullable(T)`](/fr/reference/data-types/nullable) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -851,6 +878,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**Clé de map absente**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

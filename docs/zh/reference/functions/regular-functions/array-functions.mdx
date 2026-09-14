@@ -708,7 +708,11 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 运算符 `[n]` 提供相同的功能。
 
-第一个参数也可以是 [QBit](/zh/reference/data-types/qbit)：以 QBit 元素类型的完整精度重建第 n 个向量元素时，只会读取包含该元素的 stride group 的位平面。
+第一个参数也可以是：
+
+* [`Map`](/zh/reference/data-types/map)：`m['key']` 返回 `key` 对应存储的值，当该键不存在时返回值类型的默认值。
+* [`QBit`](/zh/reference/data-types/qbit)：`q[n]` 以 QBit 元素类型的全精度重建第 n 个向量元素，只会读取包含该元素的 stride group 的位平面。
+* [`JSON`](/zh/reference/data-types/newjson) 或 `Nullable(JSON)`：`json['key']` 返回存储在路径 `key` 下的值，其中 `key` 必须是常量字符串，其行为与 dot syntax `json.key` 完全一致。对于 `Nullable(JSON)`，结果遵循与 `json.key` 相同的 Nullable 规则：可以表示 `NULL` 的路径 (`Dynamic`，或可包装为 `Nullable` 的带类型路径) 对外层 `NULL` 行返回 `NULL`，而诸如 `Array` 或 `Map` 这类不可为 Nullable 的带类型路径则在这些行保留其默认值。键也可以是常量 `Nullable(String)`；`NULL` 键会返回 `NULL`。嵌套访问可以串联：`json['a']['b']`。
 
 **语法**
 
@@ -718,11 +722,11 @@ arrayElement(arr, n)
 
 **参数**
 
-* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
+* `arr` — 要从中读取元素的值。[`Array(T)`](/zh/reference/data-types/array)、[`Map(K, V)`](/zh/reference/data-types/map)、[`QBit`](/zh/reference/data-types/qbit)、[`JSON`](/zh/reference/data-types/newjson) 或 `Nullable(JSON)`。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。对于 `Map` 参数，为类型 `K` 的键；对于 `JSON` 参数，为常量 [`String`](/zh/reference/data-types/string) 路径。
 
 **返回值**
 
-当 `n` 为标量时，返回类型为 `T` 的元素。当 `n` 为数组时，如果索引元素可以为 Nullable 且 `T` 可包装为 `Nullable`，则返回 `Array(Nullable(T))`；否则返回 `Array(T)`。[`Any`](/zh/reference/data-types/index) 或 [`Array(T)`](/zh/reference/data-types/array) 或 [`Array(Nullable(T))`](/zh/reference/data-types/array)
+当 `n` 为标量时，返回类型为 `T` 的元素。当 `n` 为数组时，如果索引元素可以为 Nullable 且 `T` 可包装为 `Nullable`，则返回 `Array(Nullable(T))`；否则返回 `Array(T)`。对于 `Map`，返回类型为 `V` 的值；对于 `JSON`，返回存储在该路径下的值。[`Any`](/zh/reference/data-types/index) 或 [`Array(T)`](/zh/reference/data-types/array) 或 [`Array(Nullable(T))`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -776,6 +780,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Map 键访问**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**JSON 方括号访问**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 引入版本：v1.1.0
@@ -794,6 +818,9 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 
 支持负索引。在这种情况下，会选择从末尾开始计数的对应元素。例如，`arr[-1]` 表示数组中的最后一个元素。
 
+第一个参数也可以是 [`Map`](/zh/reference/data-types/map)：当键不存在时，返回 `NULL` 而不是值类型的默认值，前提是该类型可以包装为 `Nullable`。
+此处不支持 [`JSON`](/zh/reference/data-types/newjson)，请改用 `arrayElement`。
+
 **语法**
 
 ```sql
@@ -802,15 +829,15 @@ arrayElementOrNull(arr, n)
 
 **参数**
 
-* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array)。- `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
+* `arr` — 要从中读取元素的值。[`Array(T)`](/zh/reference/data-types/array) 或 [`Map(K, V)`](/zh/reference/data-types/map)。- `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。对于 `Map` 参数，则为类型为 `K` 的键。
 
 **返回值**
 
-当 `n` 为标量时，若 `T` 可包装为 `Nullable`，则返回 `Nullable(T)`；否则返回 `T`。当 `n` 为数组时，若 `T` 可包装为 `Nullable`，则返回 `Array(Nullable(T))`；否则返回 `Array(T)`。[`Any`](/zh/reference/data-types/index) 或 [`Nullable(T)`](/zh/reference/data-types/nullable) 或 [`Array(T)`](/zh/reference/data-types/array) 或 [`Array(Nullable(T))`](/zh/reference/data-types/array)
+当 `n` 为标量时，若 `T` 可包装为 `Nullable`，则返回 `Nullable(T)`；否则返回 `T`。当 `n` 为数组时，若 `T` 可包装为 `Nullable`，则返回 `Array(Nullable(T))`；否则返回 `Array(T)`。对于 `Map`，同样的规则适用于值类型 `V`。[`Any`](/zh/reference/data-types/index) 或 [`Nullable(T)`](/zh/reference/data-types/nullable) 或 [`Array(T)`](/zh/reference/data-types/array) 或 [`Array(Nullable(T))`](/zh/reference/data-types/array)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)
@@ -848,6 +875,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**不存在的 map 键**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

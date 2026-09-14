@@ -199,7 +199,32 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-Caso o caminho solicitado não seja encontrado nos dados, ele será preenchido com valores `NULL`:
+A sintaxe de colchetes `json['key']` também pode ser usada para acessar caminhos JSON. O acesso aninhado é suportado por meio de encadeamento:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+A sintaxe de colchetes também funciona para `Nullable(JSON)` e retorna o mesmo valor e tipo que a
+dot syntax equivalente, seguindo as mesmas regras de nulabilidade de `json.key`: um caminho que pode representar
+`NULL` (`Dynamic`, ou um typed path que pode ser encapsulado em `Nullable`) resulta em `NULL` para uma linha `NULL`,
+enquanto um typed path não nulo, como `Array` ou `Map`, mantém seu default value nesse caso.
+
+O acesso encadeado por colchetes é achatado em um único caminho JSON quando `optimize_functions_to_subcolumns`
+está habilitado, de modo que `json['a']['b']` lê o caminho `a.b` exatamente como `json.a.b` faz: uma linha em que `a` contém
+um scalar em vez de um object não possui `a.b` e resulta em `NULL`. Sem essa optimization, o acesso externo
+é aplicado ao valor `Dynamic` de `json['a']`, e tal linha segue a
+configuração `dynamic_throw_on_type_mismatch`.
+
+Se o caminho solicitado não for encontrado nos dados, ele será preenchido com valores `NULL`:
 
 ```sql title="Query"
 SELECT json.non.existing.path FROM test;

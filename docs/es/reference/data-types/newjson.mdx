@@ -199,7 +199,32 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-Si no se encuentra la ruta solicitada en los datos, se rellenará con valores `NULL`:
+También se puede usar la sintaxis de corchetes `json['key']` para acceder a las rutas JSON. El acceso anidado se admite mediante encadenamiento:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+La sintaxis de corchetes también funciona con `Nullable(JSON)` y devuelve el mismo valor y tipo que la
+sintaxis de puntos equivalente, siguiendo las mismas reglas de nulabilidad que `json.key`: una ruta que puede representar
+`NULL` (`Dynamic`, o una ruta tipada que puede envolverse en `Nullable`) devuelve `NULL` para una fila `NULL`,
+mientras que una ruta tipada no anulable como `Array` o `Map` conserva ahí su valor predeterminado.
+
+El acceso encadenado con corchetes se aplana en una única ruta JSON cuando `optimize_functions_to_subcolumns`
+está habilitado, de modo que `json['a']['b']` lee la ruta `a.b` igual que lo hace `json.a.b`: una fila donde `a` contiene
+un escalar en lugar de un objeto no tiene `a.b` y devuelve `NULL`. Sin esa optimización, el acceso externo
+se aplica al valor `Dynamic` de `json['a']`, y dicha fila se rige por la
+configuración `dynamic_throw_on_type_mismatch`.
+
+Si la ruta solicitada no se encontró en los datos, se rellenará con valores `NULL`:
 
 ```sql title="Query"
 SELECT json.non.existing.path FROM test;
@@ -213,7 +238,7 @@ SELECT json.non.existing.path FROM test;
 └────────────────────────┘
 ```
 
-Veamos los tipos de datos de las subcolumnas devueltas:
+Comprobemos los tipos de datos de las subcolumnas devueltas:
 
 ```sql title="Query"
 SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;

@@ -709,7 +709,11 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 演算子 `[n]` でも同じ機能を使用できます。
 
-第 1 引数には [QBit](/ja/reference/data-types/qbit) も指定できます。n 番目のベクトル要素は、QBit 要素型の完全な精度で再構築され、その要素を含むストライドグループのビットプレーンのみが読み取られます。
+第 1 引数には次のものも指定できます。
+
+* [`Map`](/ja/reference/data-types/map): `m['key']` は `key` に格納された値を返します。キーが存在しない場合は値型のデフォルト値を返します。
+* [`QBit`](/ja/reference/data-types/qbit): `q[n]` は n 番目のベクトル要素を QBit 要素型の元の精度で再構築し、その要素を含むストライドグループのビットプレーンのみを読み取ります。
+* [`JSON`](/ja/reference/data-types/newjson) または `Nullable(JSON)`: `json['key']` は、パス `key` (定数文字列である必要があります) に格納された値を返します。これはドット構文 `json.key` とまったく同じ動作です。`Nullable(JSON)` の場合、結果は `json.key` と同じ NULL 許容規則に従います。つまり、`NULL` を表現できるパス (`Dynamic`、または `Nullable` でラップできる型付きパス) は外側の `NULL` 行に対して `NULL` を返し、`Array` や `Map` のような非 Nullable の型付きパスはそこでデフォルト値を保持します。キーには定数の `Nullable(String)` も指定でき、`NULL` のキーは `NULL` を返します。ネストしたアクセスはチェーンできます: `json['a']['b']`。
 
 **構文**
 
@@ -719,11 +723,11 @@ arrayElement(arr, n)
 
 **引数**
 
-* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
+* `arr` — 要素を読み取る対象の値。[`Array(T)`](/ja/reference/data-types/array)、[`Map(K, V)`](/ja/reference/data-types/map)、[`QBit`](/ja/reference/data-types/qbit)、[`JSON`](/ja/reference/data-types/newjson) または `Nullable(JSON)`. - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array). `Map` 引数の場合は型 `K` のキー、`JSON` 引数の場合は定数の [`String`](/ja/reference/data-types/string) パス。
 
 **戻り値**
 
-`n` がスカラーの場合、型 `T` の要素を返します。`n` が配列の場合、索引の要素が Nullable であり、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))` を返し、それ以外の場合は `Array(T)` を返します。[`Any`](/ja/reference/data-types/index) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
+`n` がスカラーの場合、型 `T` の要素を返します。`n` が配列の場合、索引の要素が Nullable であり、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))` を返し、それ以外の場合は `Array(T)` を返します。`Map` の場合は型 `V` の値を、`JSON` の場合はそのパスに格納されている値を返します。[`Any`](/ja/reference/data-types/index) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -777,6 +781,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Map のキーアクセス**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**JSON のブラケットアクセス**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 導入バージョン: v1.1.0
@@ -795,6 +819,9 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 
 負の索引もサポートされています。この場合は、末尾から数えた位置に対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
 
+第 1 引数には [`Map`](/ja/reference/data-types/map) を指定することもできます。存在しないキーの場合、値の型を `Nullable` でラップできる限り、その型のデフォルト値ではなく `NULL` が返されます。
+[`JSON`](/ja/reference/data-types/newjson) はここではサポートされていません。代わりに `arrayElement` を使用してください。
+
 **構文**
 
 ```sql
@@ -803,11 +830,11 @@ arrayElementOrNull(arr, n)
 
 **引数**
 
-* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array)。- `n` — 取得する要素の位置、または位置の配列。位置には `NULL` を指定できます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array)。
+* `arr` — 要素を読み取る対象の値。[`Array(T)`](/ja/reference/data-types/array) または [`Map(K, V)`](/ja/reference/data-types/map)。- `n` — 取得する要素の位置、または位置の配列。位置には `NULL` を指定できます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array)。`Map` 引数の場合は、型 `K` のキー。
 
 **戻り値**
 
-`n` がスカラー値の場合、`T` を `Nullable` でラップできる場合は `Nullable(T)`、それ以外の場合は `T` を返します。`n` が配列の場合、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))`、それ以外の場合は `Array(T)` を返します。[`Any`](/ja/reference/data-types/index) または [`Nullable(T)`](/ja/reference/data-types/nullable) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
+`n` がスカラー値の場合、`T` を `Nullable` でラップできる場合は `Nullable(T)`、それ以外の場合は `T` を返します。`n` が配列の場合、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))`、それ以外の場合は `Array(T)` を返します。`Map` の場合は、同じ規則が値の型 `V` に適用されます。[`Any`](/ja/reference/data-types/index) または [`Nullable(T)`](/ja/reference/data-types/nullable) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -831,7 +858,7 @@ SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
 3
 ```
 
-**配列の索引が範囲外**
+**配列の範囲外の索引**
 
 ```sql title=Query
 SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
@@ -849,6 +876,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**存在しない Map のキー**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

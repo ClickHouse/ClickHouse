@@ -157,7 +157,7 @@ Le type `JSON` permet de lire chaque chemin comme une sous-colonne distincte.
 Si le type du chemin demandé n&#39;est pas spécifié dans la déclaration du type JSON,
 la sous-colonne correspondante aura toujours le type [Dynamic](/fr/reference/data-types/dynamic).
 
-Par exemple :
+Par exemple :
 
 ```sql title="requête"
 CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
@@ -185,7 +185,7 @@ SELECT json.a.b, json.a.g, json.c, json.d FROM test;
 └──────────┴──────────┴─────────┴────────────┘
 ```
 
-Vous pouvez également utiliser la fonction `getSubcolumn` pour lire des sous-colonnes à partir du type JSON :
+Vous pouvez également utiliser la fonction `getSubcolumn` pour lire des sous-colonnes à partir du type JSON :
 
 ```sql title="requête"
 SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
@@ -199,7 +199,32 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-Si le chemin demandé n’a pas été trouvé dans les données, il sera complété par des valeurs `NULL` :
+La syntaxe avec crochets `json['key']` peut également être utilisée pour accéder aux chemins JSON. L&#39;accès imbriqué est pris en charge par chaînage :
+
+```sql title="requête"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="réponse"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+La syntaxe à crochets fonctionne également pour `Nullable(JSON)` et renvoie la même valeur et le même type que la
+dot syntax équivalente, en suivant les mêmes règles de nullabilité que `json.key` : un chemin pouvant représenter
+`NULL` (`Dynamic`, ou un typed path pouvant être encapsulé dans `Nullable`) donne `NULL` pour une ligne `NULL`,
+tandis qu’un typed path non nullable tel que `Array` ou `Map` y conserve sa valeur par défaut.
+
+Les accès à crochets chaînés sont aplatis en un seul chemin JSON lorsque `optimize_functions_to_subcolumns`
+est activé, de sorte que `json['a']['b']` lit le chemin `a.b` exactement comme le fait `json.a.b` : une ligne où `a` contient
+un scalaire au lieu d’un objet n’a pas de `a.b` et renvoie `NULL`. Sans cette optimisation, l’accès externe
+s’applique à la valeur `Dynamic` de `json['a']`, et une telle ligne suit alors le paramètre
+`dynamic_throw_on_type_mismatch`.
+
+Si le chemin demandé n’a pas été trouvé dans les données, il sera rempli avec des valeurs `NULL` :
 
 ```sql title="requête"
 SELECT json.non.existing.path FROM test;
@@ -213,7 +238,7 @@ SELECT json.non.existing.path FROM test;
 └────────────────────────┘
 ```
 
-Vérifions les types de données des sous-colonnes retournées :
+Vérifions les types de données des sous-colonnes retournées :
 
 ```sql title="requête"
 SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;
@@ -230,9 +255,9 @@ SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeNam
 Comme on peut le voir, pour `a.b`, le type est `UInt32`, comme nous l’avons spécifié dans la déclaration du type JSON,
 et pour toutes les autres sous-colonnes, le type est `Dynamic`.
 
-Il est également possible de lire les sous-colonnes d’un type `Dynamic` à l’aide de la syntaxe spéciale `json.some.path.:TypeName` :
+Il est également possible de lire les sous-colonnes d’un type `Dynamic` à l’aide de la syntaxe spéciale `json.some.path.:TypeName` :
 
-```sql title="Query"
+```sql title="requête"
 SELECT
     json.a.g.:Float64,
     dynamicType(json.a.g),
@@ -249,9 +274,9 @@ FROM test
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-Les sous-colonnes `Dynamic` peuvent être converties dans n’importe quel type de données. Dans ce cas, une exception sera levée si le type interne de `Dynamic` ne peut pas être converti dans le type demandé :
+Les sous-colonnes `Dynamic` peuvent être converties dans n’importe quel type de données. Dans ce cas, une exception sera levée si le type interne de `Dynamic` ne peut pas être converti dans le type demandé :
 
-```sql title="Query"
+```sql title="requête"
 SELECT json.a.g::UInt64 AS uint
 FROM test;
 ```
@@ -264,7 +289,7 @@ FROM test;
 └──────┘
 ```
 
-```sql title="Query"
+```sql title="requête"
 SELECT json.a.g::UUID AS float
 FROM test;
 ```

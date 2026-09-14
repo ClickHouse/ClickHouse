@@ -203,7 +203,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "true の場合、JOIN を並列レプリカアルゴリズムで実行でき、かつ JOIN の右側のすべてのストレージが *MergeTree であるときは、GLOBAL JOIN ではなくローカル JOIN が使用されます。"}]}]} />
 
-true の場合、JOIN を並列レプリカアルゴリズムで実行でき、かつ JOIN の右側のすべてのストレージが *MergeTree であるときは、GLOBAL JOIN ではなくローカル JOIN が使用されます。
+true の場合、`JOIN` を並列レプリカアルゴリズムで実行でき、かつ本来であれば一時テーブルにマテリアライズされる側の `JOIN` パーツのすべてのストレージを各レプリカが自力で読み取れるときは、`GLOBAL JOIN` ではなくローカル `JOIN` が使用されます。この対象となるパーツは右側ですが、`RIGHT JOIN` の場合は左側となり、その場合は各ストレージが単に `*MergeTree` であるだけでなく、並列レプリカに対応している必要があります。ネストされた `GLOBAL JOIN` のマテリアライズされる側、または `GLOBAL IN` の配下にあるストレージは対象になりません。これらはイニシエーター自身がマテリアライズするためです。
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 

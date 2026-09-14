@@ -198,7 +198,30 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-如果在数据中找不到所请求的路径，则会用 `NULL` 值填充：
+也可以使用方括号语法 `json['key']` 来访问 JSON 路径。通过链式写法支持嵌套访问：
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+方括号语法同样适用于 `Nullable(JSON)`，返回的值和类型与等价的点语法一致，并遵循与 `json.key` 相同的可空性规则：能够表示
+`NULL` 的路径 (`Dynamic`，或可被包装为 `Nullable` 的带类型路径) 在 `NULL` 行上返回 `NULL`，
+而像 `Array` 或 `Map` 这类不可为空的带类型路径在该行上则保留其默认值。
+
+当启用 `optimize_functions_to_subcolumns` 时，链式方括号访问会被展平为单个 JSON 路径，
+因此 `json['a']['b']` 会像 `json.a.b` 一样读取路径 `a.b`：若某一行中 `a` 保存的是标量而非对象，
+则该行不存在 `a.b`，结果为 `NULL`。若未启用该优化，外层访问将改为作用于 `json['a']` 的 `Dynamic` 值，
+此时该行的行为遵循 `dynamic_throw_on_type_mismatch` 设置。
+
+如果在数据中未找到所请求的路径，则会以 `NULL` 值填充：
 
 ```sql title="Query"
 SELECT json.non.existing.path FROM test;
@@ -212,7 +235,7 @@ SELECT json.non.existing.path FROM test;
 └────────────────────────┘
 ```
 
-我们来查看返回的子列的数据类型：
+让我们检查一下返回的子列的数据类型：
 
 ```sql title="Query"
 SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;

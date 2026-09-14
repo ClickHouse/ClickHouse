@@ -203,7 +203,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "true이고 JOIN을 병렬 레플리카 알고리즘으로 실행할 수 있으며, 오른쪽 JOIN 부분의 모든 스토리지가 *MergeTree인 경우 GLOBAL JOIN 대신 로컬 JOIN을 사용합니다."}]}]} />
 
-true이고 JOIN을 병렬 레플리카 알고리즘으로 실행할 수 있으며, 오른쪽 JOIN 부분의 모든 스토리지가 *MergeTree인 경우 GLOBAL JOIN 대신 로컬 JOIN을 사용합니다.
+true이고 `JOIN`을 병렬 레플리카 알고리즘으로 실행할 수 있으며, 그렇지 않으면 임시 테이블로 구체화되었을 `JOIN` 부분의 모든 스토리지를 각 레플리카가 자체적으로 읽을 수 있는 경우, `GLOBAL JOIN` 대신 로컬 `JOIN`을 사용합니다. 여기서 해당 부분은 오른쪽 부분이지만, `RIGHT JOIN`에서는 왼쪽 부분이며 이때는 모든 스토리지가 단순히 `*MergeTree`이기만 하면 되는 것이 아니라 병렬 레플리카에 적합해야 합니다. 중첩된 `GLOBAL JOIN`의 구체화되는 쪽에 있는 스토리지나 `GLOBAL IN` 아래에 있는 스토리지는 여기에 포함되지 않으며, initiator가 이를 직접 구체화하기 때문입니다.
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 

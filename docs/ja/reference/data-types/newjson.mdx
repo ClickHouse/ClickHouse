@@ -198,7 +198,25 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-要求されたパスがデータ内で見つからなかった場合は、`NULL` 値で補完されます：
+ブラケット構文 `json['key']` を使って JSON パスにアクセスすることもできます。チェーンによるネストされたアクセスもサポートされています：
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+ブラケット構文は `Nullable(JSON)` でも使用でき、同等のドット構文と同じ値および型を返します。その際、`json.key` と同じ null 許容規則に従います。つまり、`NULL` を表現できるパス (`Dynamic`、または `Nullable` でラップできる型付きパス) は `NULL` 行に対して `NULL` を返し、一方で `Array` や `Map` のような null 非許容の型付きパスは、その行ではデフォルト値を保持します。
+
+`optimize_functions_to_subcolumns` が有効な場合、連鎖したブラケットアクセスは単一の JSON パスへフラット化されるため、`json['a']['b']` は `json.a.b` と同様にパス `a.b` を読み取ります。`a` がオブジェクトではなくスカラーを保持している行には `a.b` が存在しないため、`NULL` が返されます。この最適化が行われない場合、外側のアクセスは代わりに `json['a']` の `Dynamic` 値に対して適用され、そのような行は `dynamic_throw_on_type_mismatch` 設定に従います。
+
+要求されたパスがデータ内に見つからなかった場合、そのパスは `NULL` 値で補完されます。
 
 ```sql title="Query"
 SELECT json.non.existing.path FROM test;
@@ -212,7 +230,7 @@ SELECT json.non.existing.path FROM test;
 └────────────────────────┘
 ```
 
-返されたサブカラムのデータ型を確認しましょう：
+返されたサブカラムのデータ型を確認してみましょう。
 
 ```sql title="Query"
 SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;

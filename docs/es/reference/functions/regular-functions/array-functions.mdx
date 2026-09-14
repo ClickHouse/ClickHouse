@@ -699,7 +699,7 @@ Cuando `n` es un array de enteros, devuelve un array con los elementos en las po
 Esto equivale a `arrayMap(i -> arr[i], n)`, pero cuenta con una implementación independiente y más eficiente.
 Las posiciones fuera de los límites producen el valor predeterminado, igual que para un índice escalar.
 Los elementos del índice pueden ser Nullable. Un índice `NULL` produce `NULL` (y hace que el tipo de elemento resultante sea Nullable) cuando el tipo de elemento puede
-envolverse en `Nullable`; para los tipos de elemento que no pueden estar dentro de `Nullable` (como `Array`, `Map`), un índice `NULL` produce el
+envolverse en `Nullable`; para los tipos de elemento que no pueden estar dentro de `Nullable` (como `Array`, `mapa`), un índice `NULL` produce el
 valor predeterminado en su lugar. Este es el mismo comportamiento que para un índice escalar `NULL`.
 
 <Note>
@@ -710,7 +710,11 @@ Se admiten índices negativos. En este caso, se selecciona el elemento correspon
 
 El operador `[n]` proporciona la misma funcionalidad.
 
-El primer argumento también puede ser un [QBit](/es/reference/data-types/qbit): el n-ésimo elemento del vector se reconstruye con la precisión completa del tipo de elemento de QBit, leyendo solo los planos de bits del grupo de stride que lo contiene.
+El primer argumento también puede ser:
+
+* un [`mapa`](/es/reference/data-types/map): `m['key']` devuelve el valor almacenado para `key`, o el valor predeterminado del tipo del valor cuando la clave no existe.
+* un [`QBit`](/es/reference/data-types/qbit): `q[n]` reconstruye el n-ésimo elemento del vector con la precisión completa del tipo de elemento de QBit, leyendo solo los planos de bits del grupo de stride que lo contiene.
+* un [`JSON`](/es/reference/data-types/newjson) o un `Nullable(JSON)`: `json['key']` devuelve el valor almacenado en la ruta `key`, que debe ser una cadena constante, exactamente igual que hace la dot syntax `json.key`. Para un `Nullable(JSON)`, el resultado sigue las mismas reglas de nulabilidad que `json.key`: una ruta que puede representar `NULL` (`Dynamic`, o una typed path que puede envolverse en `Nullable`) da `NULL` para las filas `NULL` externas, mientras que una typed path no nullable como `Array` o `mapa` conserva ahí su valor predeterminado. La clave también puede ser un `Nullable(String)` constante; una clave `NULL` da `NULL`. El acceso anidado puede encadenarse: `json['a']['b']`.
 
 **Sintaxis**
 
@@ -720,11 +724,11 @@ arrayElement(arr, n)
 
 **Argumentos**
 
-* `arr` — El array en el que se busca. [`Array(T)`](/es/reference/data-types/array) o [`QBit`](/es/reference/data-types/qbit). - `n` — Posición del elemento que se quiere obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array).
+* `arr` — El valor del que se lee un elemento. [`Array(T)`](/es/reference/data-types/array), [`mapa(K, V)`](/es/reference/data-types/map), [`QBit`](/es/reference/data-types/qbit), [`JSON`](/es/reference/data-types/newjson) o `Nullable(JSON)`. - `n` — Posición del elemento que se quiere obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array). Para un argumento `mapa`, una clave de tipo `K`; para un argumento `JSON`, una ruta [`String`](/es/reference/data-types/string) constante.
 
 **Valor devuelto**
 
-Cuando `n` es un escalar, devuelve el elemento de tipo `T`. Cuando `n` es un array, devuelve `Array(Nullable(T))` si los elementos del índice pueden ser Nullable y `T` puede envolverse en `Nullable`; de lo contrario, devuelve `Array(T)`. [`Any`](/es/reference/data-types/index) o [`Array(T)`](/es/reference/data-types/array) o [`Array(Nullable(T))`](/es/reference/data-types/array)
+Cuando `n` es un escalar, devuelve el elemento de tipo `T`. Cuando `n` es un array, devuelve `Array(Nullable(T))` si los elementos del índice pueden ser Nullable y `T` puede envolverse en `Nullable`; de lo contrario, devuelve `Array(T)`. Para un `mapa` devuelve el valor de tipo `V`; para un `JSON`, el valor almacenado en la ruta. [`Any`](/es/reference/data-types/index) o [`Array(T)`](/es/reference/data-types/array) o [`Array(Nullable(T))`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -778,6 +782,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Acceso por clave de mapa**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**Acceso con corchetes en JSON**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 Introducido en: v1.1.0
@@ -785,7 +809,7 @@ Introducido en: v1.1.0
 Obtiene el elemento del array proporcionado en el índice `n`, donde `n` puede ser de cualquier tipo entero.
 Si el índice queda fuera de los límites del array, se devuelve `NULL` en lugar de un valor predeterminado,
 siempre que el tipo de resultado pueda ser Nullable. Para los tipos de elementos que no son Nullable y no pueden
-incluirse dentro de `Nullable` (como `Array`, `Map`), se devuelve en su lugar el valor predeterminado del tipo de elemento.
+incluirse dentro de `Nullable` (como `Array`, `mapa`), se devuelve en su lugar el valor predeterminado del tipo de elemento.
 
 Cuando `n` es un array de enteros, devuelve un array con los elementos de las posiciones especificadas.
 Esto equivale a `arrayMap(i -> arrayElementOrNull(arr, i), n)`, pero tiene una implementación independiente y más eficiente.
@@ -797,6 +821,9 @@ Las posiciones fuera de los límites y los índices `NULL` producen valores `NUL
 
 Se admiten índices negativos. En este caso, se selecciona el elemento correspondiente contando desde el final. Por ejemplo, `arr[-1]` es el último elemento del array.
 
+El primer argumento también puede ser un [`mapa`](/es/reference/data-types/map): una clave ausente devuelve `NULL` en lugar del valor predeterminado del tipo de valor, siempre que ese tipo pueda envolverse en `Nullable`.
+[`JSON`](/es/reference/data-types/newjson) no es compatible aquí; utilice `arrayElement` en su lugar.
+
 **Sintaxis**
 
 ```sql
@@ -805,11 +832,11 @@ arrayElementOrNull(arr, n)
 
 **Argumentos**
 
-* `arr` — El array en el que buscar. [`Array(T)`](/es/reference/data-types/array). - `n` — Posición del elemento que se desea obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array).
+* `arr` — El valor del que se lee un elemento. [`Array(T)`](/es/reference/data-types/array) o [`mapa(K, V)`](/es/reference/data-types/map). - `n` — Posición del elemento que se desea obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array). Para un argumento `mapa`, una clave de tipo `K`.
 
 **Valor devuelto**
 
-Cuando `n` es un escalar, devuelve `Nullable(T)` si `T` puede envolverse en `Nullable`; de lo contrario, `T`. Cuando `n` es un array, devuelve `Array(Nullable(T))` si `T` puede envolverse en `Nullable`; de lo contrario, `Array(T)`. [`Any`](/es/reference/data-types/index) o [`Nullable(T)`](/es/reference/data-types/nullable) o [`Array(T)`](/es/reference/data-types/array) o [`Array(Nullable(T))`](/es/reference/data-types/array)
+Cuando `n` es un escalar, devuelve `Nullable(T)` si `T` puede envolverse en `Nullable`; de lo contrario, `T`. Cuando `n` es un array, devuelve `Array(Nullable(T))` si `T` puede envolverse en `Nullable`; de lo contrario, `Array(T)`. Para un `mapa` se aplica la misma regla al tipo de valor `V`. [`Any`](/es/reference/data-types/index) o [`Nullable(T)`](/es/reference/data-types/nullable) o [`Array(T)`](/es/reference/data-types/array) o [`Array(Nullable(T))`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -851,6 +878,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**Clave ausente en el mapa**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}

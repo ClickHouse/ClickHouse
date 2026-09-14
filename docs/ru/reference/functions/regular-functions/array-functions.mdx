@@ -710,7 +710,11 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 Оператор `[n]` обеспечивает ту же функциональность.
 
-Первым аргументом также может быть [QBit](/ru/reference/data-types/qbit): `n`-й элемент вектора восстанавливается с полной точностью типа элемента QBit, при этом считываются только битовые плоскости группы stride, содержащей этот элемент.
+Первым аргументом также может быть:
+
+* [`Map`](/ru/reference/data-types/map): `m['key']` возвращает значение, сохранённое для `key`, или значение по умолчанию типа значения, если ключ отсутствует.
+* [`QBit`](/ru/reference/data-types/qbit): `q[n]` восстанавливает `n`-й элемент вектора с полной точностью типа элемента QBit, при этом считываются только битовые плоскости группы stride, содержащей этот элемент.
+* [`JSON`](/ru/reference/data-types/newjson) или `Nullable(JSON)`: `json['key']` возвращает значение, сохранённое по пути `key`, который должен быть константной строкой, — точно так же, как и точечная нотация `json.key`. Для `Nullable(JSON)` результат подчиняется тем же правилам nullability, что и `json.key`: путь, способный представлять `NULL` (`Dynamic` или типизированный путь, который можно обернуть в `Nullable`), даёт `NULL` для внешних строк со значением `NULL`, тогда как ненуллируемый типизированный путь, такой как `Array` или `Map`, сохраняет там своё значение по умолчанию. Ключ также может быть константой типа `Nullable(String)`; ключ `NULL` даёт `NULL`. Вложенный доступ можно объединять в цепочку: `json['a']['b']`.
 
 **Синтаксис**
 
@@ -720,11 +724,11 @@ arrayElement(arr, n)
 
 **Аргументы**
 
-* `arr` — Массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit). - `n` — Позиция элемента, который требуется получить, или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
+* `arr` — Значение, из которого извлекается элемент. [`Array(T)`](/ru/reference/data-types/array), [`Map(K, V)`](/ru/reference/data-types/map), [`QBit`](/ru/reference/data-types/qbit), [`JSON`](/ru/reference/data-types/newjson) или `Nullable(JSON)`. - `n` — Позиция элемента, который требуется получить, или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array). Для аргумента `Map` — ключ типа `K`; для аргумента `JSON` — константный путь типа [`String`](/ru/reference/data-types/string).
 
 **Возвращаемое значение**
 
-Если `n` — скаляр, возвращает элемент типа `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если элементы индекса могут быть Nullable и `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. [`Any`](/ru/reference/data-types/index) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
+Если `n` — скаляр, возвращает элемент типа `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если элементы индекса могут быть Nullable и `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. Для `Map` возвращает значение типа `V`, для `JSON` — значение, сохранённое по указанному пути. [`Any`](/ru/reference/data-types/index) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -778,6 +782,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Доступ по ключу Map**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**Доступ к JSON через квадратные скобки**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 Добавленный в: v1.1.0
@@ -789,13 +813,16 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 
 Если `n` является массивом целых чисел, возвращает массив элементов в указанных позициях.
 Это эквивалентно `arrayMap(i -> arrayElementOrNull(arr, i), n)`, но имеет отдельную, более эффективную реализацию.
-Позиции за пределами массива и индексы `NULL` дают значения `NULL` в результирующем массиве в соответствии с тем же правилом, что и для скалярного индекса.
+Позиции за границами массива и индексы `NULL` дают значения `NULL` в результирующем массиве в соответствии с тем же правилом, что и для скалярного индекса.
 
 <Note>
   Массивы в ClickHouse индексируются с 1.
 </Note>
 
 Поддерживаются отрицательные индексы. В этом случае выбирается соответствующий элемент, отсчитываемый с конца. Например, `arr[-1]` — это последний элемент массива.
+
+Первым аргументом также может быть [`Map`](/ru/reference/data-types/map): отсутствующий ключ даёт `NULL` вместо значения по умолчанию для типа значения, если этот тип можно обернуть в `Nullable`.
+[`JSON`](/ru/reference/data-types/newjson) здесь не поддерживается, используйте вместо этого `arrayElement`.
 
 **Синтаксис**
 
@@ -805,11 +832,11 @@ arrayElementOrNull(arr, n)
 
 **Аргументы**
 
-* `arr` — массив для поиска. [`Array(T)`](/ru/reference/data-types/array). - `n` — позиция извлекаемого элемента или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
+* `arr` — значение, из которого читается элемент. [`Array(T)`](/ru/reference/data-types/array) или [`Map(K, V)`](/ru/reference/data-types/map). - `n` — позиция извлекаемого элемента или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array). Для аргумента типа `Map` — ключ типа `K`.
 
 **Возвращаемое значение**
 
-Если `n` — скаляр, возвращает `Nullable(T)`, если `T` можно обернуть в `Nullable`, в противном случае — `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. [`Any`](/ru/reference/data-types/index) или [`Nullable(T)`](/ru/reference/data-types/nullable) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
+Если `n` — скаляр, возвращает `Nullable(T)`, если `T` можно обернуть в `Nullable`, в противном случае — `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. Для `Map` то же правило применяется к типу значения `V`. [`Any`](/ru/reference/data-types/index) или [`Nullable(T)`](/ru/reference/data-types/nullable) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -851,6 +878,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**Отсутствующий ключ в Map**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}
