@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -521,10 +522,21 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
 
 bool DiskObjectStorage::isRemote() const
 {
-    for (const auto & location : cluster->getEnabledLocations())
-        if (object_storages->takePointingTo(location)->isRemote())
-            return true;
+    chassert(isDataRemote() == isMetadataRemote());
+    return isMetadataRemote();
+}
 
+bool DiskObjectStorage::isDataRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (!object_storages->takePointingTo(location)->isRemote())
+            return false;
+
+    return true;
+}
+
+bool DiskObjectStorage::isMetadataRemote() const
+{
     return metadata_storage->isRemote();
 }
 
