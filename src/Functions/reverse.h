@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+
 #include <Columns/ColumnString.h>
 #include <base/unaligned.h>
 
@@ -10,16 +12,57 @@ namespace DB
   */
 struct ReverseImpl
 {
+    static constexpr size_t max_word_path_size = 4 * sizeof(UInt64);
+
     static void reverseBytes(const UInt8 * __restrict src, UInt8 * __restrict dst, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             dst[i] = src[size - i - 1];
     }
 
+    template <typename T>
+    static void reverseBytesWord(const UInt8 * src, UInt8 * dst)
+    {
+        const T value = std::byteswap(unalignedLoad<T>(src));
+        unalignedStore<T>(dst, value);
+    }
+
     static void reverseBytes8(const UInt8 * src, UInt8 * dst)
     {
-        const UInt64 value = std::byteswap(unalignedLoad<UInt64>(src));
-        unalignedStore<UInt64>(dst, value);
+        reverseBytesWord<UInt64>(src, dst);
+    }
+
+    /// Reverse short strings with word-sized operations. If the size is not a multiple of
+    /// the word size, the first and last words overlap. The overlapping bytes are identical,
+    /// so this avoids a scalar loop without reading or writing outside the current string.
+    static void reverseBytesByWords(const UInt8 * src, UInt8 * dst, size_t size)
+    {
+        if (size < sizeof(UInt64))
+        {
+            if (size >= sizeof(UInt32))
+            {
+                reverseBytesWord<UInt32>(src + size - sizeof(UInt32), dst);
+                if (size != sizeof(UInt32))
+                    reverseBytesWord<UInt32>(src, dst + size - sizeof(UInt32));
+            }
+            else if (size >= sizeof(UInt16))
+            {
+                reverseBytesWord<UInt16>(src + size - sizeof(UInt16), dst);
+                if (size != sizeof(UInt16))
+                    reverseBytesWord<UInt16>(src, dst + size - sizeof(UInt16));
+            }
+            else if (size == 1)
+                dst[0] = src[0];
+
+            return;
+        }
+
+        size_t offset = 0;
+        for (; offset <= size - sizeof(UInt64); offset += sizeof(UInt64))
+            reverseBytes8(src + size - offset - sizeof(UInt64), dst + offset);
+
+        if (offset != size)
+            reverseBytes8(src, dst + size - sizeof(UInt64));
     }
 
     static void vector(
@@ -40,11 +83,8 @@ struct ReverseImpl
 
             if (size == sizeof(UInt64))
                 reverseBytes8(data.data() + prev_offset, res_data.data() + prev_offset);
-            else if (size < 16)
-            {
-                for (size_t j = prev_offset; j < next_offset; ++j)
-                    res_data[j] = data[next_offset + prev_offset - j - 1];
-            }
+            else if (size < max_word_path_size)
+                reverseBytesByWords(data.data() + prev_offset, res_data.data() + prev_offset, size);
             else
                 reverseBytes(data.data() + prev_offset, res_data.data() + prev_offset, size);
 
@@ -60,6 +100,12 @@ struct ReverseImpl
     {
         res_data.resize_exact(data.size());
 
+        if (n == 1)
+        {
+            memcpy(res_data.data(), data.data(), data.size());
+            return;
+        }
+
         if (n == sizeof(UInt64))
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -70,13 +116,12 @@ struct ReverseImpl
             return;
         }
 
-        if (n < 16)
+        if (n < max_word_path_size)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t offset = i * n;
-                for (size_t j = offset; j < offset + n; ++j)
-                    res_data[j] = data[offset * 2 + n - j - 1];
+                reverseBytesByWords(data.data() + offset, res_data.data() + offset, n);
             }
             return;
         }
