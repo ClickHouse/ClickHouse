@@ -173,6 +173,17 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
+bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
+{
+    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
+        return CompressionCodecFactory::isDefaultCodec(column_desc->codec);
+
+    if (const auto * virtual_desc
+        = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        return CompressionCodecFactory::isDefaultCodec(virtual_desc->codec);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 

@@ -85,12 +85,16 @@ public:
     /// TSAN very rarely reports a data race between the `slot.value` write in `tryPush` and the
     /// `slot.value` read in `tryPop`, even though the acquire/release operations on `slot.pos`
     /// make such a race impossible (the code is isomorphic to Vyukov's original implementation).
-    /// This appears to be a TSAN false positive, so we suppress it by excluding `tryPush` and
-    /// `tryPop` from instrumentation of plain memory accesses. Note that TSAN still instruments
-    /// atomic operations in such functions, so the happens-before edges through `slot.pos`
-    /// remain visible to it, and accesses to the contents of `T` in callers are still checked
-    /// correctly.
-    NO_SANITIZE_THREAD bool tryPush(T & value)
+    /// Those reports are suppressed at runtime, per instantiation, by
+    /// `__tsan_default_suppressions` in base/sanitizer_options.h. A `NO_SANITIZE_THREAD` attribute
+    /// here does not work: the reported access happens in the element type's move assignment,
+    /// which is a separate function that stays instrumented.
+    ///
+    /// The suppression lists only `tryPush`. `tryPop` writes the payload too (it moves out of
+    /// `slot.value`), but the `dequeue_pos` CAS gives one consumer sole ownership of a slot before
+    /// the move-out, so two pops never touch one payload concurrently, whatever the consumer count.
+    /// A `tryPop` entry would be dead, and would also hide heap-use-after-free through that frame.
+    bool tryPush(T & value)
     {
         chassert(mask);
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);
@@ -122,7 +126,7 @@ public:
     }
 
     /// See the comment on `tryPush` about TSAN.
-    NO_SANITIZE_THREAD bool tryPop(T & out_value)
+    bool tryPop(T & out_value)
     {
         chassert(mask);
         size_t pos = dequeue_pos.load(std::memory_order_relaxed);
@@ -161,8 +165,13 @@ public:
         return x - std::min(x, y); // max(0, x - y)
     }
 
-    /// Number of pushes ever started. Acquire-ordered: a consumer observing this value also observes
-    /// every slot published before it, so it is an exact boundary for a full drain (unlike `size`).
+    /// Number of pushes ever started. Unlike `size`, this is an exact boundary for a drain, but only
+    /// through happens-before: producers advance the counter with a relaxed CAS, so this load alone does
+    /// not synchronize with them. If a completed `tryPush` happens-before this load (e.g. the caller
+    /// requested a flush after the push, and the draining thread read that request before this call),
+    /// read-write coherence guarantees the returned value covers that push's position. Slot contents don't
+    /// need to be visible at this point: `tryPop` synchronizes with each push via acquire on the slot,
+    /// waiting out a slot whose position is taken but not yet published.
     size_t enqueuePosition() const { return enqueue_pos.load(std::memory_order_acquire); }
     /// Number of pops ever completed. Only meaningful to the (single) consumer, which owns dequeue_pos.
     size_t dequeuePosition() const { return dequeue_pos.load(std::memory_order_relaxed); }

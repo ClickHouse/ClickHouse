@@ -67,12 +67,12 @@ void registerDataTypeNested(DataTypeFactory & factory)
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
-:::tip[Avoid using dots in column names]
+<Tip title="Avoid using dots in column names">
 Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions.
 
 Avoid using dots in column names if possible.
 Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
-:::
+</Tip>
 
 Example:
 
@@ -101,7 +101,7 @@ CREATE TABLE test.visits
 
 This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-When [flatten_nested](/operations/settings/settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
+When [flatten_nested](/reference/settings/session-settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 

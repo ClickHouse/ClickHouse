@@ -40,6 +40,12 @@ public:
     void stopAsyncLoggingThreads();
     void startAsyncLoggingThreads();
 
+    /// Best-effort variant for destructors: stop and join only the asynchronous logging threads,
+    /// without shutting logging down for the synchronous path. Later destructors may still log,
+    /// and a closed asynchronous channel delivers their messages synchronously.
+    /// No-op for synchronous logging.
+    void closeAsyncLogging();
+
     virtual ~Loggers() = default;
 
     void stopLogging();

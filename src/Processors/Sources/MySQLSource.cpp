@@ -44,9 +44,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
-StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
+MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
     : max_read_mysql_row_nums(
           (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
     , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
@@ -72,21 +73,21 @@ MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
-    const StreamSettings & settings_)
+    const MySQLStreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
-    , settings{std::make_unique<StreamSettings>(settings_)}
+    , settings{std::make_unique<MySQLStreamSettings>(settings_)}
 {
     description.init(sample_block);
     initPositionMappingFromQueryResultStructure();
 }
 
 /// For descendant MySQLWithFailoverSource
-MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
+MySQLSource::MySQLSource(const Block &sample_block_, const MySQLStreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
-    , settings(std::make_unique<StreamSettings>(settings_))
+    , settings(std::make_unique<MySQLStreamSettings>(settings_))
 {
     description.init(sample_block_);
 }
@@ -96,7 +97,7 @@ MySQLWithFailoverSource::MySQLWithFailoverSource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
-    const StreamSettings & settings_)
+    const MySQLStreamSettings & settings_)
     : MySQLSource(sample_block_, settings_)
     , pool(pool_)
     , query_str(query_str_)
@@ -325,6 +326,13 @@ namespace
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
                     size_t n = value.size();
+                    /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
+                    /// eight bytes. The length comes from the wire and is not otherwise validated,
+                    /// so a malicious or broken server could overflow `val` below.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+                            n, sizeof(UInt64));
                     UInt64 val = 0UL;
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);

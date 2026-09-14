@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/clickhouse-integration
-sidebarTitle: 'ClickHouse integration'
-title: 'ClickHouse integration'
+sidebarTitle: 'ClickHouse로 동기화'
+title: 'ClickHouse로 동기화'
 description: '기본 제공되는 CDC 기능을 사용해 Postgres 데이터를 ClickHouse로 복제합니다'
 keywords: ['postgres', 'clickhouse integration', 'cdc', '복제', 'clickpipes', '데이터 동기화']
 doc_type: 'guide'
@@ -12,14 +12,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-모든 Managed Postgres 인스턴스에는 각 ClickHouse 서비스로 데이터를 복제할 수 있는 CDC 기능이 기본 제공됩니다. 이를 통해 Postgres 인스턴스의 데이터 일부 또는 전체를 ClickHouse로 옮기고, Postgres에서 발생한 데이터 변경 사항을 ClickHouse에 지속적으로 거의 실시간에 가깝게 반영할 수 있습니다. 이 기능은 내부적으로 [ClickPipes](/ko/integrations/clickpipes/home)를 기반으로 동작합니다.
+모든 ClickHouse Managed Postgres 인스턴스에는 각 ClickHouse 서비스로 데이터를 복제할 수 있는 CDC 기능이 기본 제공됩니다. 이를 통해 Postgres 인스턴스의 데이터 일부 또는 전체를 ClickHouse로 옮기고, Postgres에서 발생한 데이터 변경 사항을 ClickHouse에 지속적으로 거의 실시간에 가깝게 반영할 수 있습니다. 이 기능은 내부적으로 [ClickPipes](/ko/integrations/clickpipes/home)를 기반으로 동작합니다.
 
-이 기능에 액세스하려면 Postgres 인스턴스의 사이드바에서 **ClickHouse Integration**을 클릭하십시오.
+이 기능에 액세스하려면 Postgres 인스턴스의 사이드바에서 **Sync to ClickHouse**를 클릭하십시오.
 
-<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="사이드바에 통합 옵션이 표시된 ClickHouse integration 랜딩 페이지" size="md" border />
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="사이드바에 통합 옵션이 표시된 ClickHouse 통합 랜딩 페이지" size="md" border />
 
 <Note>
-  계속 진행하기 전에 Postgres 서비스에 ClickPipes 서비스가 액세스할 수 있는지 확인하십시오. 기본적으로는 가능하지만, IP 액세스를 제한한 경우 **ClickHouse 서비스**가 위치한 리전에 따라 [이](/ko/integrations/clickpipes/home#list-of-static-ips) 목록에 있는 일부 원본 IP의 액세스를 허용해야 할 수 있습니다.
+  계속 진행하기 전에 Postgres 서비스에 ClickPipes 서비스가 액세스할 수 있는지 확인하십시오. 기본적으로는 가능하지만, IP 액세스를 제한한 경우 **ClickHouse 서비스**가 위치한 리전에 따라 [이](/ko/integrations/clickpipes/networking/static-ips) 목록에 있는 일부 원본 IP의 액세스를 허용해야 할 수 있습니다.
 </Note>
 
 ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭하십시오.

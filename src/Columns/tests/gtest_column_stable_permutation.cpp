@@ -28,7 +28,7 @@ static void stableGetColumnPermutation(
     int nan_direction_hint,
     IColumn::Permutation & out_permutation)
 {
-    (void)(limit);
+    (void)limit;
 
     size_t size = column.size();
     out_permutation.resize(size);

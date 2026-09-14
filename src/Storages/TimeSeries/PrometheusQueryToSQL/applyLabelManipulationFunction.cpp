@@ -25,7 +25,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a label manipulation function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -119,8 +120,8 @@ bool isLabelManipulationFunction(std::string_view function_name)
 }
 
 
-SQLQueryPiece
-applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyLabelManipulationFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
 

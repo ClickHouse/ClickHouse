@@ -270,6 +270,11 @@ void ASTIdentifier::restoreTable()
 
 boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
+    /// A parameterized name is not resolvable: the rebuilt identifier below would drop the
+    /// parameter expressions and keep only their empty-string placeholders.
+    if (isParam())
+        return nullptr;
+
     if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
     if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
     return nullptr;
@@ -468,7 +473,7 @@ ASTPtr ASTTableIdentifier::getDatabase() const
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
-    auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
+    auto identifier = make_intrusive<ASTTableIdentifier>(StorageID{database_name, table_name});
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;

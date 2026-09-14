@@ -69,7 +69,7 @@ TEST(BackupDataFileNameGeneratorTest, ChecksumGeneratorWithMaxPrefixLength32)
     auto suffix = hex.substr(prefix_length);
     EXPECT_TRUE(suffix.empty());
 
-    EXPECT_TRUE(path.find('/') == std::string::npos) << "Should not contain slash";
+    EXPECT_TRUE(!path.contains('/')) << "Should not contain slash";
 }
 
 TEST(BackupDataFileNameGeneratorTest, ThrowsWhenChecksumPrefixOutOfBound)
@@ -80,7 +80,7 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsWhenChecksumPrefixOutOfBound)
     auto prefix_length = 33;
     std::string path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
 
-    EXPECT_TRUE(path.find('/') == std::string::npos) << "Should not contain slash";
+    EXPECT_TRUE(!path.contains('/')) << "Should not contain slash";
 }
 
 TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)

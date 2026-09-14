@@ -1,0 +1,63 @@
+-- Correctness of reads and merges when schema-derived part metadata (columns, serializations,
+-- columns substreams) is shared across data parts of a table.
+
+drop table if exists t_shared_meta_wide;
+drop table if exists t_shared_meta_compact;
+drop table if exists t_shared_meta_tuple;
+
+-- { echoOn }
+
+-- Wide parts with sparse serialization: parts with different sparsity must keep their own
+-- serializations while parts with the same sparsity share them.
+create table t_shared_meta_wide (key Int64, s String, n Nullable(Int64), arr Array(Int64))
+engine = MergeTree order by key
+settings min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+
+-- part 1: `s` is mostly default (sparse), part 2: `s` is dense, part 3: same sparsity as part 1.
+insert into t_shared_meta_wide select number, if(number % 100 = 0, 'x', ''), if(number % 2 = 0, NULL, number), [number] from numbers(1000);
+insert into t_shared_meta_wide select number, toString(number), number, [number, number] from numbers(1000, 1000);
+insert into t_shared_meta_wide select number, if(number % 100 = 0, 'x', ''), if(number % 2 = 0, NULL, number), [number] from numbers(2000, 1000);
+
+select name, serialization_kind from system.parts_columns where database = currentDatabase() and table = 't_shared_meta_wide' and column = 's' and active order by name;
+select count(), sum(key), countIf(s != ''), countIf(n is null), sum(length(arr)) from t_shared_meta_wide;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_shared_meta_wide';
+
+-- Mutations rewrite parts with new sparsity.
+alter table t_shared_meta_wide update s = '' where key >= 1000 and key < 2000 settings mutations_sync = 2;
+select name, serialization_kind from system.parts_columns where database = currentDatabase() and table = 't_shared_meta_wide' and column = 's' and active order by name;
+select count(), sum(key), countIf(s != ''), countIf(n is null), sum(length(arr)) from t_shared_meta_wide;
+
+optimize table t_shared_meta_wide final;
+select count(), sum(key), countIf(s != ''), countIf(n is null), sum(length(arr)) from t_shared_meta_wide;
+
+-- Compact parts (the substreams file is mandatory there when marks cover substreams).
+create table t_shared_meta_compact (key Int64, t Tuple(a UInt32, b Nullable(String)), m Map(String, UInt64))
+engine = MergeTree order by key
+settings min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+
+insert into t_shared_meta_compact select number, (number, toString(number)), map('k', number) from numbers(100);
+insert into t_shared_meta_compact select number, (number, NULL), map() from numbers(100, 100);
+
+select count(), sum(key), sum(t.a), countIf(t.b is null), sum(length(m)) from t_shared_meta_compact;
+select t.b from t_shared_meta_compact where key in (5, 105) order by key;
+
+optimize table t_shared_meta_compact final;
+select count(), sum(key), sum(t.a), countIf(t.b is null), sum(length(m)) from t_shared_meta_compact;
+
+-- Tuple elements can be sparse independently in each part while the top-level kind stack stays
+-- the same; such parts must not share serializations (the element kind stacks differ).
+create table t_shared_meta_tuple (key UInt64, t Tuple(a UInt64, b UInt64))
+engine = MergeTree order by key
+settings min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+
+insert into t_shared_meta_tuple select number, (number + 1, 0) from numbers(100);
+insert into t_shared_meta_tuple select number, (0, number + 1) from numbers(100, 100);
+
+select sum(t.a), sum(t.b) from t_shared_meta_tuple;
+select key, t from t_shared_meta_tuple where key in (5, 105) order by key;
+
+-- { echoOff }
+
+drop table t_shared_meta_wide;
+drop table t_shared_meta_compact;
+drop table t_shared_meta_tuple;

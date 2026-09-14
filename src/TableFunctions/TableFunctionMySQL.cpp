@@ -201,6 +201,20 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on t
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
+## TLS/SSL {#tls-ssl}
+
+The credentials of an encrypted connection to MySQL are passed as named collection keys (or as key-value arguments):
+
+| Parameter | Description |
+|-----------|-------------|
+| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
+| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
+| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+
+The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+
+The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
+
 ## Passing a query instead of a table name {#passing-a-query}
 
 Instead of a table name, the third argument can be a `SELECT` query that is passed to MySQL as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
@@ -215,7 +229,7 @@ This is useful to push down joins, aggregations or any other processing to MySQL
 <Note>
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table function is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when this table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand table is not checked.
 </Note>
 
 Supports multiple replicas that must be listed by `|`. For example:
@@ -230,7 +244,7 @@ or
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with the same columns as the original MySQL table.
 

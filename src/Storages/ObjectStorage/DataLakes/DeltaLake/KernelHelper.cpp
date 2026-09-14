@@ -326,6 +326,7 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
         case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
         case 5: /// StaticCredential
+        case 6: /// TokenProviderCredential
         default:
             /// Other variants are not supported yet
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,

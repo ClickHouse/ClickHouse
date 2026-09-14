@@ -126,15 +126,17 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
-    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
-    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
+    const size_t part_index = task.getInfo().part_index_in_query;
+    const auto & skip_input = read_ranges.at(part_index);
+    auto it = projection_read_ranges.find(part_index);
     static RangesInDataParts empty_parts_ranges;
     const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
-    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
+    auto & remaining_marks = part_remaining_marks.at(part_index).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
     const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
-    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
+        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -143,7 +145,7 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-        index_reader_pool->clear(task.getInfo().data_part);
+        index_reader_pool->clear(part_index);
 
     return index_read_result;
 }
@@ -275,12 +277,14 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         }
 
         auto chunk = Chunk(ordered_columns, res.row_count);
-        const auto & data_part = current_task.getInfo().data_part;
+        const auto & data_part_info = current_task.getInfo().data_part_info;
 
         if (add_part_level)
-            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
+            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part_info->getPartInfo().level));
 
-        if (reader_settings.use_query_condition_cache)
+        /// QueryConditionCache is keyed by the storage UUID, which is only available from a
+        /// concrete part; borrowed parts (stateless worker) skip it.
+        if (reader_settings.use_query_condition_cache && data_part_info->getDataPart())
         {
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
@@ -289,12 +293,13 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             if (!current_task.appliesMutationsBeforePrewhere())
             {
                 String part_name
-                    = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+                    = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
                 chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                    data_part->storage.getStorageID().uuid,
+                    /// QueryConditionCache is a coordinator feature; concrete part present here.
+                    data_part_info->getDataPart()->storage.getStorageID().uuid,
                     part_name,
-                    data_part->index_granularity->getMarksCount(),
-                    data_part->index_granularity->hasFinalMark(),
+                    data_part_info->getIndexGranularity().getMarksCount(),
+                    data_part_info->getIndexGranularity().hasFinalMark(),
                     res.read_mark_ranges));
             }
 
@@ -345,8 +350,8 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     if (!virtual_row_conversions || read_mark_ranges.empty())
         return {};
 
-    const auto & data_part = current_task.getInfo().data_part;
-    const auto & index = data_part->getIndex();
+    const auto & data_part_info = current_task.getInfo().data_part_info;
+    const auto & index = data_part_info->getIndexPtr();
 
     /// Forward order: the source will next produce data starting at back().end.
     /// Reverse order: MergeTreeInReverseOrderSelectAlgorithm returns chunks in reverse.
@@ -381,7 +386,7 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
         empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
 
     Chunk chunk(std::move(empty_columns), 0);
-    auto part_level = data_part->info.level;
+    auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
 
     return {std::move(chunk), 0, 0, false, {}};
@@ -413,7 +418,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
                     && !task->readersChainCanSkipMarksBeforePrewhere()
                     && !task->appliesMutationsBeforePrewhere()
-                    && !row_level_filter)
+                    && !row_level_filter
+                    /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
+                    && task->getInfo().data_part_info->getDataPart())
                 {
                     for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
@@ -423,19 +430,20 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 continue;
 
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
+                            const auto & data_part_info = task->getInfo().data_part_info;
 
-                            String part_name = data_part->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                : data_part->name;
+                            String part_name = data_part_info->isProjectionPart()
+                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                                : data_part_info->getPartName();
                             query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
+                                /// QueryConditionCache is a coordinator feature; concrete part present here.
+                                data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
                                 output->getHash(),
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
+                                data_part_info->getIndexGranularity().getMarksCount(),
+                                data_part_info->getIndexGranularity().hasFinalMark());
 
                             break;
                         }
@@ -448,9 +456,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task)
                 break;
 
-            if (storage_id.empty())
+            /// QueryConditionCache needs the concrete part's storage id; skip for borrowed parts.
+            if (storage_id.empty() && task->getInfo().data_part_info->getDataPart())
             {
-                storage_id = task->getInfo().data_part->storage.getStorageID();
+                storage_id = task->getInfo().data_part_info->getDataPart()->storage.getStorageID();
                 prewhere_step_offset = task->getInfo().mutation_steps.size();
             }
         }
