@@ -5064,6 +5064,17 @@ def test_histogram_quantile():
         [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
     )
 
+    # Keep the previous SQL lowering available for compatibility with older servers.
+    assert tsv_close_to(
+        node.query(
+            "SELECT * FROM prometheusQuery("
+            "prometheus, "
+            "'histogram_quantile(0.5, http_request_duration_seconds_bucket)', "
+            "300) SETTINGS compatibility = '26.8'"
+        ),
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
     # phi=0.25 -> target rank = 15, falls inside bucket (0.1, 0.5]. Linear interpolation:
     #   0.1 + (0.5 - 0.1) * (15 - 10) / (30 - 10) = 0.1 + 0.4 * 0.25 = 0.2.
     do_query_test(

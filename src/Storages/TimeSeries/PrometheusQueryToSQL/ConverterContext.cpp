@@ -16,6 +16,7 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     , timestamp_scale(tryGetDecimalScale(*timestamp_data_type).value_or(0))
     , scalar_data_type(settings_.scalar_data_type)
     , time_series_version(settings_.time_series_version)
+    , use_quantile_prometheus_histogram_array(settings_.use_quantile_prometheus_histogram_array)
     , node_range_getter(promql_tree_, settings_)
     , result_type(getResultType(*promql_tree_, settings_))
 {

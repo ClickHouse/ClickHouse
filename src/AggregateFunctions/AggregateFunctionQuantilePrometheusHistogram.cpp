@@ -652,7 +652,7 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
     FunctionDocumentation documentation_quantilePrometheusHistogram = {description_quantilePrometheusHistogram, syntax_quantilePrometheusHistogram, arguments_quantilePrometheusHistogram, parameters_quantilePrometheusHistogram, returned_value_quantilePrometheusHistogram, examples_quantilePrometheusHistogram, introduced_in_quantilePrometheusHistogram, category_quantilePrometheusHistogram};
 
     factory.registerFunction(NameQuantilePrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>, documentation_quantilePrometheusHistogram});
-    factory.registerFunction(NameQuantilePrometheusHistogramArray::name, {createAggregateFunctionQuantilePrometheusHistogramArray, FunctionDocumentation::INTERNAL_FUNCTION_DOCS});
+    factory.registerFunction(NameQuantilePrometheusHistogramArray::name, {createAggregateFunctionQuantilePrometheusHistogramArray, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, properties});
 
     FunctionDocumentation::Description description_quantilesPrometheusHistogram = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a histogram using linear interpolation at different levels simultaneously, taking into account the cumulative value and upper bounds of each histogram bucket.

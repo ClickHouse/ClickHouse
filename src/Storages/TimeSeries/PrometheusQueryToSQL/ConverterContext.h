@@ -22,6 +22,7 @@ struct ConverterContext
     /// The version of the TimeSeries table.
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 
+    const bool use_quantile_prometheus_histogram_array;
     const NodeEvaluationRangeGetter node_range_getter;
     const ResultType result_type;
     SQLSubqueries subqueries;

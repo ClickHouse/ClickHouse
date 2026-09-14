@@ -153,8 +153,6 @@ SQLQueryPiece applyHistogramQuantile(
         }
         else
         {
-            /// The histogram-specific array aggregate consumes the scalar `le` once per input
-            /// series and keeps one cumulative-value vector per bucket bound.
             auto le_expr = makeASTFunction(
                 "ifNull",
                 makeASTFunction("toFloat64OrNull",
@@ -163,11 +161,33 @@ SQLQueryPiece applyHistogramQuantile(
                         make_intrusive<ASTLiteral>("le"))),
                 make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()));
 
-            quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantilePrometheusHistogramArray",
-                    std::move(le_expr),
-                    make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                make_intrusive<ASTLiteral>(phi));
+            if (context.use_quantile_prometheus_histogram_array)
+            {
+                /// The histogram-specific array aggregate consumes the scalar `le` once per input
+                /// series and keeps one cumulative-value vector per bucket bound.
+                quantile_expr = addParametersToAggregateFunction(
+                    makeASTFunction("quantilePrometheusHistogramArray",
+                        std::move(le_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    make_intrusive<ASTLiteral>(phi));
+            }
+            else
+            {
+                /// Keep the previous lowering for compatibility with servers before 26.9.
+                auto le_array_expr = makeASTFunction(
+                    "arrayResize",
+                    makeASTFunction("CAST",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>("Array(Float64)")),
+                    makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    std::move(le_expr));
+
+                quantile_expr = addParametersToAggregateFunction(
+                    makeASTFunction("quantilePrometheusHistogramForEach",
+                        std::move(le_array_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    make_intrusive<ASTLiteral>(phi));
+            }
         }
 
         quantile_expr->setAlias(ColumnNames::Values);
