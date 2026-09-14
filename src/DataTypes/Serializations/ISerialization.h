@@ -465,6 +465,10 @@ public:
         /// Used only in MergeTree for Object shared data serialization.
         StreamMarkGetter stream_mark_getter;
 
+        /// Minimum compressed block size. Some serializations use it to decide when to start a new
+        /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
+        size_t min_compress_block_size = 0;
+
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
