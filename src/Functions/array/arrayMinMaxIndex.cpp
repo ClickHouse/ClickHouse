@@ -200,6 +200,14 @@ constexpr size_t small_tournament_limit = 48;
 constexpr size_t medium_two_pass_limit = 256;
 constexpr size_t record_block_limit_64_bit_integer = 16384;
 
+template <typename T>
+constexpr size_t mediumTwoPassMinSize()
+{
+    if constexpr (std::is_integral_v<T> && (sizeof(T) == 2 || sizeof(T) == 4))
+        return small_tournament_limit;
+    return 64;
+}
+
 static bool useAVX2()
 {
 #if USE_MULTITARGET_CODE
@@ -484,8 +492,8 @@ static bool executeWideNumeric(const ColumnPtr & mapped, const ColumnArray::Offs
     {
         const size_t end = offsets[row];
         const size_t size = end - begin;
-        result[row] = size == 0
-            ? 0
+        result[row] = size <= 1
+            ? static_cast<UInt32>(size)
             : static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
         begin = end;
     }
@@ -512,11 +520,13 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
         const size_t end = offsets[row];
         const size_t size = end - begin;
 
-        if (size == 0)
+        constexpr size_t medium_two_pass_min_size = mediumTwoPassMinSize<Element>();
+
+        if (size <= 1)
         {
-            result[row] = 0;
+            result[row] = static_cast<UInt32>(size);
         }
-        else if (size <= medium_two_pass_limit && size > 64 && use_simd)
+        else if (size <= medium_two_pass_limit && size > medium_two_pass_min_size && use_simd)
         {
             std::array<Element, 4> extrema{};
             std::array<const Element *, 4> row_data{};
@@ -528,7 +538,7 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
             {
                 const size_t tile_end = offsets[row + tile_rows];
                 const size_t tile_size = tile_end - tile_begin;
-                if (tile_size <= 64 || tile_size > medium_two_pass_limit)
+                if (tile_size <= medium_two_pass_min_size || tile_size > medium_two_pass_limit)
                     break;
 
                 row_data[tile_rows] = data + tile_begin;
