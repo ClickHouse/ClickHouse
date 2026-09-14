@@ -1,8 +1,9 @@
-<test run_all_queries="1">
+<test run_all_queries="1" profile_all_queries="1">
     <!-- Prototype smoke test: Iceberg writes and reads over the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py), via the perf_s3 named collection. -->
     <!-- The infrastructure keys off content, not the name: referencing perf_s3 triggers provisioning in the perf job and the skip in PGO/BOLT profile collection. -->
     <!-- The fixed literal path cannot collide across the comparison (each server's perf_s3 points at its own namespace); drop + iceberg_delete_data_on_drop cleans reruns. -->
     <!-- run_all_queries: a smoke test must run every query regardless of the sampling policy. -->
+    <!-- profile_all_queries: always produce flamegraphs; otherwise only queries with a significant diff are profiled. -->
     <!-- TODO: replace with iceberg_suite_s3_{read,write,rw_features,tpch} twins of the local suites, renamed to iceberg_suite_local_* (renames reset CIDB history keyed on test names). -->
 
     <settings>
