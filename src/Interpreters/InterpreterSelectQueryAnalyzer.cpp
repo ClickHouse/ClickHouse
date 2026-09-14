@@ -441,40 +441,6 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
-/// The pre-registration write-back of a fallback decision: walks this interpreter's query tree and
-/// clears `make_distributed_plan` on every QueryNode / UnionNode context. Kept for experiments, see
-/// `applyDistributedPlanFallbackIfNeeded`.
-static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
-{
-    std::vector<IQueryTreeNode *> stack;
-    stack.push_back(query_tree.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-
-        ContextMutablePtr node_context;
-        if (auto * query_node = node->as<QueryNode>())
-            node_context = query_node->getMutableContext();
-        else if (auto * union_node = node->as<UnionNode>())
-            node_context = union_node->getMutableContext();
-
-        if (node_context)
-        {
-            LOG_TRACE(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "DEBUGGING>>>> tree walk writes make_distributed_plan = 0 into query-tree node context {} (was {})",
-                fmt::ptr(node_context.get()),
-                node_context->getSettingsRef()[Setting::make_distributed_plan].value);
-            node_context->setSetting("make_distributed_plan", false);
-        }
-
-        for (const auto & child : node->getChildren())
-            if (child)
-                stack.push_back(child.get());
-    }
-}
-
 void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
 {
     if (!context->getSettingsRef()[Setting::make_distributed_plan])
@@ -489,11 +455,7 @@ void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
     query_plan.addDistributedPlanDecisionContext(context);
 
     QueryPlanOptimizationSettings probe_settings(context);
-    if (!query_plan.applyDistributedPlanFallbackToLocal(probe_settings))
-        return;
-
-    context->setSetting("make_distributed_plan", false);
-    disableDistributedPlanInQueryTreeContexts(query_tree);
+    query_plan.applyDistributedPlanFallbackToLocal(probe_settings);
 }
 
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
