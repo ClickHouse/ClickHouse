@@ -934,14 +934,17 @@ void optimizeJSONArrayElementChain(
     /// for JSON(a JSON(b UInt32)) or JSON(m Map(String, UInt32))), its nested data is stored in the
     /// typed path's own subcolumns, not under the parent's flat combined subcolumn `@a.b`. Refuse flattening.
     const auto & typed_paths = data_type_object.getTypedPaths();
-    String prefix;
-    for (size_t i = 0; i + 1 < keys.size(); ++i)
+    if (!typed_paths.empty())
     {
-        if (i > 0)
-            prefix += ".";
-        prefix += keys[i];
-        if (typed_paths.contains(prefix))
-            return;
+        String prefix;
+        for (size_t i = 0; i + 1 < keys.size(); ++i)
+        {
+            if (i > 0)
+                prefix += ".";
+            prefix += keys[i];
+            if (typed_paths.contains(prefix))
+                return;
+        }
     }
 
     /// Build subcolumn name: @`key1`.key2.key3...
