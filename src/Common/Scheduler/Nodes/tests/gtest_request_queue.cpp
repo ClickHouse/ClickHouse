@@ -252,6 +252,26 @@ TEST(RequestQueue, FairCancelRollsBackProjectedVruntime)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{9, 2, 3}));
 }
 
+/// fair: shrinking `max_waiting_queries` evicts the worst waiting request via popWorst(); like a
+/// cancellation, that request never runs, so its push-time vruntime projection must be rolled back —
+/// otherwise the query is billed for evicted work and its later requests are delayed. `B` keeps the
+/// queue non-empty so the busy-period rollover does not mask the effect.
+TEST(RequestQueue, FairQueueLimitEvictionRollsBackProjectedVruntime)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    f.enqueue(9, b, 1);               // B1 keeps the queue non-empty (no busy-period rollover)
+    f.enqueue(2, a, 100);             // A1 projects A's vruntime to 100 (worst key → evicted first)
+    f.queue->updateQueueLimit(1);     // total 2 → evict the single worst (A1) via popWorst()
+    f.queue->updateQueueLimit(100);   // restore headroom so the follow-up requests can enqueue
+    f.enqueue(3, a, 1);               // A2: with the eviction rollback, competes from ~0, not from 100
+    f.enqueue(4, b, 1);               // B2
+    // With rollback A2 is not saddled with the evicted A1's debt → {9, 3, 4}; without it A2 starts at
+    // 100 and is served last → {9, 4, 3}.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{9, 3, 4}));
+}
+
 /// fair, unequal weights: the heavier query gets a larger share.
 TEST(RequestQueue, FairWeighted)
 {

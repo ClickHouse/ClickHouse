@@ -182,14 +182,7 @@ public:
         if (!request->scheduling_hook.is_linked())
             return false;
         requests.erase(requests.iterator_to(*request));
-        // Cancellation: undo the virtual runtime this request projected onto its query at push, so the
-        // query is not billed for service it never received (which would delay its future requests).
-        // This is exact for the query's most recent projection (the common case — one pending request
-        // cancelled). A non-tail cancel does not re-key the query's already-queued later requests, so
-        // they keep their higher keys while a subsequent request of the same query is keyed from the
-        // lowered runtime and may run ahead of them — a bounded, within-query reordering. (The drained
-        // finish-correction folded into the projection is not restored either; kept simple.)
-        request->scheduling.state->vruntime -= request->scheduling.vruntime_increment;
+        rollbackProjection(request); // cancellation: the request will not run
         return true;
     }
 
@@ -200,6 +193,7 @@ public:
         auto it = std::prev(requests.end());
         ResourceRequest * request = &*it;
         requests.erase(it);
+        rollbackProjection(request); // eviction (`max_waiting_queries` shrink): the request will not run
         return request;
     }
 
@@ -216,6 +210,19 @@ public:
     bool empty() const override { return requests.empty(); }
 
 private:
+    /// Undo the virtual runtime a request projected onto its query at push(), for a request that will
+    /// not run (cancelled, or evicted by a `max_waiting_queries` shrink), so the query is not billed
+    /// for service it never received (which would delay its future requests). Exact for the query's
+    /// most recent projection (the common case — one pending request removed). A non-tail removal does
+    /// not re-key the query's already-queued later requests, so they keep their higher keys while a
+    /// subsequent request of the same query is keyed from the lowered runtime and may run ahead of them
+    /// — a bounded, within-query reordering. (The drained finish-correction folded into the projection
+    /// is not restored either; kept simple.)
+    static void rollbackProjection(ResourceRequest * request)
+    {
+        request->scheduling.state->vruntime -= request->scheduling.vruntime_increment;
+    }
+
     /// Fair effective weight: the query's `weight`, lowered once by `weight_lowering_factor` the
     /// first time it crosses any configured threshold (thresholds do not combine — the first to trip
     /// applies the full lowering). Lowering is a one-way latch (`weight_lowered`): the cached
