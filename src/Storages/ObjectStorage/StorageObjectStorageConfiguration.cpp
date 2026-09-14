@@ -56,6 +56,25 @@ std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfiguration
             return std::nullopt;
     }
 
+    /// Multi-location disks keep the backend object storage settings in per-location
+    /// subsections. The table's storage is a copy of the local location's backend
+    /// (see `DiskObjectStorage::getObjectStorage`), so pick the location marked `local`.
+    if (config.has(prefix + ".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(prefix + ".locations", locations);
+        if (locations.empty())
+            return std::nullopt;
+
+        for (const auto & location : locations)
+        {
+            if (config.getBool(prefix + ".locations." + location + ".local", false))
+                return prefix + ".locations." + location;
+        }
+
+        return prefix + ".locations." + locations.front();
+    }
+
     return prefix;
 }
 

@@ -252,3 +252,42 @@ def test_disk_resource_applies_to_table(started_cluster):
 
     node.query("DROP TABLE t_ice5 SYNC")
     node.query("DROP TABLE t_ice6 SYNC")
+
+
+def test_disk_config_change_propagates_through_locations_disk(started_cluster):
+    config_path = "/etc/clickhouse-server/config.d/storage_conf.xml"
+
+    node.query("DROP TABLE IF EXISTS t_ice7 SYNC")
+    node.query(
+        "CREATE TABLE t_ice7 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl7') "
+        "SETTINGS disk = 's3_locations_repro'"
+    )
+    node.query(
+        "INSERT INTO t_ice7 VALUES (1)", settings={"allow_insert_into_iceberg": 1}
+    )
+    assert node.query("SELECT count() FROM t_ice7").strip() == "1"
+
+    try:
+        node.replace_in_config(
+            config_path, "ClickHouse_Minio_P@ssw0rd", "broken_secret"
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # The credentials change must be read from the local location's subsection
+        # (`storage_configuration.disks.s3_locations_repro.locations.main`), not from the
+        # parent disk section, which holds no S3 settings.
+        error = node.query_and_get_error("SELECT count() FROM t_ice7")
+        assert (
+            "S3_ERROR" in error
+            or "Access Denied" in error
+            or "SignatureDoesNotMatch" in error
+        )
+    finally:
+        node.replace_in_config(
+            config_path, "broken_secret", "ClickHouse_Minio_P@ssw0rd"
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    assert node.query("SELECT count() FROM t_ice7").strip() == "1"
+
+    node.query("DROP TABLE t_ice7 SYNC")
