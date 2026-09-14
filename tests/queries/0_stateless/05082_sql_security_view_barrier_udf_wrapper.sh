@@ -4,12 +4,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `StorageView::canHideRows` classifies the stored view AST before SQL user-defined functions are
-# expanded (`UserDefinedSQLFunctionVisitor` on the legacy path, `resolveFunction` on the analyzer
-# path). A `SQL SECURITY DEFINER` / `NONE` view whose only row-hiding construct sits behind a UDF
-# wrapper - `CREATE FUNCTION f AS (a) -> arrayJoin(a)` - used to be classified as projection-only
-# and stayed on the fast path, where the invoker's predicate is evaluated on rows the view hides.
-# The classifier now descends into SQL UDF bodies, recursively.
+# A `SQL SECURITY DEFINER` / `NONE` view whose only row-hiding construct sits behind a SQL
+# user-defined function - `CREATE FUNCTION f AS (a) -> arrayJoin(a)` - must be a barrier like the
+# view spelling `arrayJoin(a)` directly: on the fast path the invoker's predicate would be evaluated
+# on rows the view hides. `CREATE VIEW` stores the view with its SQL UDFs already substituted, and
+# `StorageView::canHideRows` descends into SQL UDF bodies as defense in depth; this test pins the
+# end-to-end guarantee whichever layer provides it.
 #
 # SQL user-defined functions are server-global, so their names carry the test database: concurrent
 # runs of this test would otherwise drop each other's functions.

@@ -186,31 +186,31 @@ bool markSecurityBarriers(QueryPlan::Node * node)
     return marked;
 }
 
-/// The row-hiding carriers that live in expressions rather than in a clause of the `SELECT`:
-/// an aggregation without `GROUP BY` collapses all rows into one, and the `arrayJoin` function
-/// (with its case-insensitive alias `unnest`) is the expression-level twin of the `ARRAY JOIN`
-/// clause - it drops the rows whose array is empty and multiplies the rest, and it never shows
-/// up in `arrayJoinExpressionList`. For the purpose of `StorageView::canHideRows` both hide rows
-/// just like a filter does.
+/// Walks `ast` and reports whether `predicate` holds for any node visited, looking through SQL
+/// user-defined functions: `CREATE FUNCTION f AS (a) -> arrayJoin(a)`, `(x) -> sum(x)`,
+/// `(x) -> x IN (SELECT ...)` may wrap any construct a classifier of this file looks for.
 ///
-/// A SQL user-defined function may wrap either carrier: `CREATE FUNCTION f AS (a) -> arrayJoin(a)`.
-/// Both callers of `canHideRows` classify the stored view AST before SQL UDFs are expanded
-/// (`UserDefinedSQLFunctionVisitor` in `TreeRewriter`, `resolveFunction` on the analyzer path),
-/// so the bodies are inspected here, recursively, and any chain that cannot be followed - a
-/// recursive definition, an implausibly deep nesting, a body that is not a SQL lambda - fails
-/// closed. Subqueries have their own scope: a carrier inside one does not change the rows of the
-/// enclosing query, and `canHideRows` descends into `FROM` subqueries separately.
-bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast, std::unordered_set<String> & udfs_in_progress, size_t depth)
+/// A view defined through `CREATE VIEW` or `ALTER TABLE ... MODIFY QUERY` is stored with its SQL
+/// UDFs already substituted (`UserDefinedSQLFunctionVisitor` in `InterpreterCreateQuery` and
+/// `InterpreterAlterQuery`), so the classifiers normally never meet one. The descent is defense in
+/// depth for a stored query that did not pass through those interpreters - metadata written before
+/// the substitution existed, or edited by hand - and costs nothing otherwise. Any chain that cannot
+/// be followed - a recursive definition, an implausibly deep nesting, a body that is not a SQL
+/// lambda - counts as a match: every caller uses a match to refuse an optimization, so this is the
+/// fail-closed direction.
+///
+/// With `descend_into_subqueries = false` the nodes of `ASTSubquery` / `ASTSelectQuery` children
+/// are skipped: a subquery has its own scope, and `StorageView::canHideRows` descends into `FROM`
+/// subqueries separately.
+template <typename Predicate>
+bool containsThroughSQLUserDefinedFunctions(
+    const IAST & ast, const Predicate & predicate, bool descend_into_subqueries, std::unordered_set<String> & udfs_in_progress, size_t depth)
 {
+    if (predicate(ast))
+        return true;
+
     if (const auto * function = ast.as<ASTFunction>())
     {
-        if (!function->isWindowFunction() && AggregateUtils::isAggregateFunction(*function))
-            return true;
-
-        const auto name = Poco::toLower(function->name);
-        if (name == "arrayjoin" || name == "unnest")
-            return true;
-
         if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
         {
             if (depth >= 16 || udfs_in_progress.contains(function->name))
@@ -227,27 +227,53 @@ bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast, std::unordered_set<
                 return true;
 
             udfs_in_progress.insert(function->name);
-            bool body_hides_rows = hasRowHidingFunctionOutsideSubqueries(*lambda_arguments[1], udfs_in_progress, depth + 1);
+            bool body_matches = containsThroughSQLUserDefinedFunctions(
+                *lambda_arguments[1], predicate, descend_into_subqueries, udfs_in_progress, depth + 1);
             udfs_in_progress.erase(function->name);
-            if (body_hides_rows)
+            if (body_matches)
                 return true;
         }
     }
 
     for (const auto & child : ast.children)
     {
-        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
+        if (!descend_into_subqueries && (child->as<ASTSubquery>() || child->as<ASTSelectQuery>()))
             continue;
-        if (hasRowHidingFunctionOutsideSubqueries(*child, udfs_in_progress, depth))
+        if (containsThroughSQLUserDefinedFunctions(*child, predicate, descend_into_subqueries, udfs_in_progress, depth))
             return true;
     }
     return false;
 }
 
-bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast)
+template <typename Predicate>
+bool containsThroughSQLUserDefinedFunctions(const IAST & ast, const Predicate & predicate, bool descend_into_subqueries)
 {
     std::unordered_set<String> udfs_in_progress;
-    return hasRowHidingFunctionOutsideSubqueries(ast, udfs_in_progress, 0);
+    return containsThroughSQLUserDefinedFunctions(ast, predicate, descend_into_subqueries, udfs_in_progress, 0);
+}
+
+/// The row-hiding carriers that live in expressions rather than in a clause of the `SELECT`:
+/// an aggregation without `GROUP BY` collapses all rows into one, and the `arrayJoin` function
+/// (with its case-insensitive alias `unnest`) is the expression-level twin of the `ARRAY JOIN`
+/// clause - it drops the rows whose array is empty and multiplies the rest, and it never shows
+/// up in `arrayJoinExpressionList`. For the purpose of `StorageView::canHideRows` both hide rows
+/// just like a filter does. Subqueries have their own scope: a carrier inside one does not change
+/// the rows of the enclosing query.
+bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast)
+{
+    return containsThroughSQLUserDefinedFunctions(
+        ast,
+        [](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            if (!function)
+                return false;
+            if (!function->isWindowFunction() && AggregateUtils::isAggregateFunction(*function))
+                return true;
+            const auto name = Poco::toLower(function->name);
+            return name == "arrayjoin" || name == "unnest";
+        },
+        /*descend_into_subqueries=*/ false);
 }
 
 bool isNullableOrLcNullable(DataTypePtr type)
@@ -296,76 +322,51 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
+/// The three classifiers below serve `tryGetTrivialViewUnderlyingStorage`. They look through
+/// SQL user-defined functions like `hasRowHidingFunctionOutsideSubqueries` does: a view body such
+/// as `SELECT f(x) FROM dist` with `CREATE FUNCTION f AS (x) -> sum(x)` aggregates just like
+/// `SELECT sum(x) FROM dist`, and shipping the whole outer query to the shards would count one
+/// aggregate row per shard instead of one in total if such a body were ever classified as trivial.
+
+/// Returns true if the expression contains a subquery anywhere in its tree.
 bool hasSubquery(const ASTPtr & expr)
 {
     if (!expr)
-    {
         return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubquery(child))
-        {
-            return true;
-        }
-    }
-    return false;
+    return containsThroughSQLUserDefinedFunctions(
+        *expr, [](const IAST & node) { return node.as<ASTSubquery>() != nullptr; }, /*descend_into_subqueries=*/ true);
 }
 
 /// Returns true if the expression contains an aggregate function anywhere in its tree.
 bool hasAggregate(const ASTPtr & expr)
 {
     if (!expr)
-    {
         return false;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+    return containsThroughSQLUserDefinedFunctions(
+        *expr,
+        [](const IAST & node)
         {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasAggregate(child))
-        {
-            return true;
-        }
-    }
-    return false;
+            const auto * func = node.as<ASTFunction>();
+            return func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name);
+        },
+        /*descend_into_subqueries=*/ true);
 }
 
 /// Returns true if the expression contains a scalar subquery or a window function anywhere in its tree.
 bool hasSubqueryOrWindow(const ASTPtr & expr)
 {
     if (!expr)
-    {
         return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (!func->window_name.empty() || func->window_definition)
+    return containsThroughSQLUserDefinedFunctions(
+        *expr,
+        [](const IAST & node)
         {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubqueryOrWindow(child))
-        {
-            return true;
-        }
-    }
-    return false;
+            if (node.as<ASTSubquery>())
+                return true;
+            const auto * func = node.as<ASTFunction>();
+            return func && (!func->window_name.empty() || func->window_definition);
+        },
+        /*descend_into_subqueries=*/ true);
 }
 
 /// Returns the underlying storage if the view's inner query is "trivial":
