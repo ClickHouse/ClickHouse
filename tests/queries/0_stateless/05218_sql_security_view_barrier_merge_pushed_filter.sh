@@ -54,10 +54,18 @@ done
 echo "===== the invoker's predicate stays out of the source read of the barrier views ====="
 # The view's own `WHERE` is pushed into the `Merge` child plan and becomes its PREWHERE; the outer
 # predicate may join it only for the INVOKER twin, which is what makes this oracle non-vacuous.
+# The control depends on the prewhere optimizations being on, and the test harness randomizes them:
+# without `query_plan_merge_filters` the two predicates stay separate steps and only the view's own
+# one moves; without `optimize_move_to_prewhere` / `query_plan_optimize_prewhere` nothing moves at
+# all; `enable_multiple_prewhere_read_steps` splits the moved conjunction into several
+# `Prewhere filter column` lines. Pin them, and report whether the predicate got there at all rather
+# than how many lines mention it.
 for view in owned_merge_definer owned_merge_none owned_merge_invoker; do
     for analyzer in 1 0; do
         pushed=$(${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$analyzer" --enable_parallel_replicas 0 \
-            --query "SELECT countIf(explain LIKE '%Prewhere filter column%' AND explain LIKE '%key%')
+            --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1 --query_plan_merge_filters 1 \
+            --enable_multiple_prewhere_read_steps 0 \
+            --query "SELECT countIf(explain LIKE '%Prewhere filter column%' AND explain LIKE '%key%') > 0
                      FROM (EXPLAIN actions = 1 SELECT count() FROM $db.$view WHERE key = 99999)")
         echo -e "$view (enable_analyzer = $analyzer)\tthe invoker's predicate in PREWHERE: $pushed"
     done
