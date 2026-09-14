@@ -1122,7 +1122,6 @@ In the example below replica `example01-1` has the highest priority:
     <where>id=10</where>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </postgresql>
-</source>
 ```
 
 ## Usage example {#usage-example}

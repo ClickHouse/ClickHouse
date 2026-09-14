@@ -890,6 +890,8 @@ DEFERRABLE_STORAGE_CLASSES = (
     "StorageSetOrJoinBase",
     "StorageSet",
     "StorageJoin",
+    "StorageSharedSet",
+    "StorageSharedJoin",
     "StorageEmbeddedRocksDB",
     "IKeyValueEntity",
     "IStorageURLBase",
