@@ -8,8 +8,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # so a query reading `_headers` must not take the count shortcut. The `hit` query is the control: it
 # shows the cached row count IS servable for this URI, so a declined lookup is a decision and not an
 # empty cache. All three statements carry the same settings so they share one schema-cache key.
+# `optimize_trivial_count_query = 0` alone stops `count()` from reaching the row-count lookup, which
+# would make the control read as a declined one, so pin it with the rest of the shortcut settings.
 
-SET="optimize_count_from_files = 1, use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0"
+SET="optimize_count_from_files = 1, use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0, optimize_trivial_count_query = 1"
 URI="http://127.0.0.1:8123/?query=select+5212&user=default"
 
 WARM="${CLICKHOUSE_TEST_UNIQUE_NAME}_warm"
