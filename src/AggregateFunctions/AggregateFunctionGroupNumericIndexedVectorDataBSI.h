@@ -701,11 +701,12 @@ public:
         res.zero_indexes->rb_and(bm);
     }
 
-    /// Records an explicit zero for every index present in only one of the operands.
-    /// The general `pointwiseRawBinaryOperate` multiply path treats a missing value as zero, so
-    /// such indexes become explicit zeros in its result. The all-ones fast path uses `andBitmap`,
-    /// which keeps only the intersection; this restores the dropped indexes as zeros so the fast
-    /// path stays equivalent to the general path. `res` already holds the (non-zero) products.
+    /// Records an explicit zero for every index the result carries without a non-zero value. Both
+    /// operands keep all of their indexes: `pointwiseRawBinaryOperate` computes only the intersection
+    /// of the non-zero indexes and treats a missing value as zero, while the all-ones fast path uses
+    /// `andBitmap`, which keeps only the intersection. So the indexes left over, together with those
+    /// whose result came out as zero, are explicit zeros - the rule `pointwiseAddInplace` applies as
+    /// well. `res` already holds the (non-zero) results.
     static void addUnionZeroIndexes(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         auto result_zero_indexes = lhs.getAllIndex();
@@ -1186,12 +1187,11 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-        /// zero indexes;
-        res.zero_indexes = std::make_shared<Roaring>();
-        res.zero_indexes->rb_or(*lhs_non_zero_indexes);
-        res.zero_indexes->rb_xor(*rhs_non_zero_indexes);
-        res.zero_indexes->rb_or(*lhs.zero_indexes);
-        res.zero_indexes->rb_or(*rhs.zero_indexes);
+        /// Deriving the zero indexes from the result, rather than from the indexes the operands
+        /// disagree on, also keeps an index whose result came out as zero - `1 / 2` in an integer
+        /// type, or `UInt8(128) * 2`, which wraps around. Such an index is present with a value of
+        /// zero, and dropping it made it indistinguishable from an index that was never there.
+        addUnionZeroIndexes(lhs, rhs, res);
     }
 
     /** Performs pointwise multiplication and division of the original vector and a scalar.
@@ -1257,7 +1257,13 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-        res.zero_indexes->merge(*lhs.zero_indexes);
+
+        /// Every index of `lhs` is still present in the result, so the ones whose result came out as
+        /// zero - `1 / 2` in an integer type, or `UInt8(128) * 2`, which wraps around - are explicit
+        /// zeros and not indexes that dropped out.
+        auto result_zero_indexes = lhs.getAllIndex();
+        result_zero_indexes->rb_andnot(*res.getAllNonZeroIndex());
+        res.zero_indexes = result_zero_indexes;
     }
 
     /** Performs pointwise multiplication of two original vectors.
