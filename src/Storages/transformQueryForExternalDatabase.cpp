@@ -967,24 +967,40 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         /// joined sources exactly as `transformQueryForExternalDatabase` does before checking whether a filter
         /// remains for this source. A filter on a different table is evaluated outside this source and must not
         /// make a query-backed external table fail under `external_table_strict_query`.
+        ///
+        /// The pruning drops a subtree not only when it is foreign, but also when a predicate on this source
+        /// shares it with a foreign child (`id IN (SELECT ... FROM other)`, `id = 1 OR other.flag`,
+        /// `NOT (id = 1 AND other.flag)`): such a predicate cannot be pushed down, so it stays a local filter
+        /// over the source's rows - exactly what strict mode forbids. Like the table-backed path
+        /// (`transformQueryForExternalDatabaseImpl`), remember before pruning whether the dropped clause
+        /// mentioned a column of this source, otherwise the check below would see no filter at all.
         auto & select = clone_query->as<ASTSelectQuery &>();
-        if (select.where())
+        const auto source_columns = getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns);
+        bool dropped_filter_on_source = false;
+        auto prune = [&](ASTPtr & clause)
         {
-            auto & where = select.refWhere();
-            auto where_result = removeUnknownSubexpressionsFromWhere(
-                where, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
-            if (!where_result.keep)
-                where.reset();
-        }
+            if (!clause)
+                return;
 
+            const bool clause_filters_on_source = containsSourceColumn(clause, source_columns);
+            if (!removeUnknownSubexpressionsFromWhere(clause, source_columns).keep)
+            {
+                dropped_filter_on_source |= clause_filters_on_source;
+                clause.reset();
+            }
+        };
+
+        if (select.where())
+            prune(select.refWhere());
         if (select.prewhere())
-        {
-            auto & prewhere = select.refPrewhere();
-            auto prewhere_result = removeUnknownSubexpressionsFromWhere(
-                prewhere, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
-            if (!prewhere_result.keep)
-                prewhere.reset();
-        }
+            prune(select.refPrewhere());
+
+        if (dropped_filter_on_source)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "The query contains a filter that cannot be pushed down to the external database, because the data "
+                "source is a query passed to it as is (and external_table_strict_query=true). Move the filter inside "
+                "the passed query, or disable external_table_strict_query.");
     }
     else
         return;
