@@ -1093,6 +1093,8 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
+
     if (is_removed)
         return;
 
@@ -1833,14 +1835,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
-
-    /// UNIQUE KEY per-part SST. Enumerated based on the part's own on-disk
-    /// presence (a part property), not table metadata, so `MergeTreeData::backupParts`
-    /// and `DataPartsExchange::sendPart` transfer it — both build the transferred
-    /// file set from `checksums ∪ getFileNamesWithoutChecksums()`, not by globbing
-    /// the part directory.
-    if (getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
-        result.emplace(SSTIndexWriter::FILE_NAME);
 
     return result;
 }

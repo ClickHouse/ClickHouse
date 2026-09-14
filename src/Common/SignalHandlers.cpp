@@ -775,7 +775,7 @@ try
         ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
-            String changed_settings = query_context->getSettingsRef().toString();
+            String changed_settings = query_context->getSettingsRef().toString(/* show_secrets */ false);
 
             if (changed_settings.empty())
                 LOG_FATAL(log, "No settings were changed");
