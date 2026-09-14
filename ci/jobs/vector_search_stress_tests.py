@@ -81,20 +81,16 @@ SEARCH_METHOD_INDEX = "vector_similarity_index"
 SEARCH_METHOD_QUANTIZED_CODEC = "quantized_codec"
 SEARCH_METHOD_QBIT = "qbit"
 
-# Seed of the rotation shared by the stored `QBit(Int8)` codes and the query vector
+# Seed of the rotation shared by the stored QBit(Int8) codes and the query vector
 QBIT_ROTATION_SEED = 0
 
-
 def rotate_for_qbit(expression, dimension):
-    """Unit-norm, rotate, scale to unit variance - the space quantizeBFloat16ToInt8 expects."""
     rotated = f"randomHadamardTransform(L2Normalize(CAST({expression} AS Array(Float32))), {QBIT_ROTATION_SEED})"
     return f"arrayMap(x -> x * sqrt({dimension}), {rotated})"
 
 
 def quantize_for_qbit(expression, dimension, stride=None):
     codes = f"quantizeBFloat16ToInt8(CAST({rotate_for_qbit(expression, dimension)} AS Array(BFloat16)))"
-    # A stride splits the dimensions into `dimension / stride` groups, each in its own stream, so a search over
-    # only the leading dimensions reads only the groups it needs.
     qbit_type = f"QBit(Int8, {dimension})" if stride is None else f"QBit(Int8, {dimension}, {stride})"
     return f"CAST({codes} AS {qbit_type})"
 
@@ -181,7 +177,7 @@ dataset_laion_5b_mini_for_quick_test = {
     DIMENSION: 768,
 }
 
-# 10 million LAION vectors, searched over the `rabitq` quantized codes instead of a vector similarity index
+# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index
 dataset_laion_5b_10m_quantized_rabitq = {
     TABLE: "laion_10m_rabitq",
     S3_URLS: [
@@ -198,7 +194,7 @@ dataset_laion_5b_10m_quantized_rabitq = {
     DIMENSION: 768,
 }
 
-# Same, with the 2 bits per coordinate `turboquant` codes instead of the 1 bit `rabitq` ones
+# Same LAION 10m, with the 2 bits per coordinate `urboquant codes
 dataset_laion_5b_10m_quantized_turboquant = {
     TABLE: "laion_10m_turboquant",
     S3_URLS: [
@@ -215,7 +211,7 @@ dataset_laion_5b_10m_quantized_turboquant = {
     DIMENSION: 768,
 }
 
-# 10 million LAION vectors, searched over a `QBit(Int8)` companion column at a query-time precision
+# 10 million LAION vectors, searched using a QBit(Int8) column type
 dataset_laion_5b_10m_qbit_int8 = {
     TABLE: "laion_10m_qbit",
     S3_URLS: [
@@ -236,7 +232,7 @@ dataset_laion_5b_10m_qbit_int8 = {
     DIMENSION: 768,
 }
 
-# Same `QBit(Int8)` codes, but split into 4 stride groups of 192 dimensions, each stored in its own stream, so a
+# Same QBit(Int8) codes, but split into 4 stride groups of 192 dimensions, each stored in its own stream, so a
 # search over only the leading 192 dimensions reads a quarter of the planes (Matryoshka-style prefix search)
 dataset_laion_5b_10m_qbit_int8_strided = {
     TABLE: "laion_10m_qbit_strided",
@@ -338,8 +334,6 @@ test_params_laion_5b_10m_quantized_rabitq = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
     SESSION_SETTINGS: "enable_quantized_codec = 1",
-    # A multiplier of 1 shortlists exactly k codes, so rescoring cannot change the result set,
-    # larger multipliers shortlist more codes and rescore them against the full-precision vectors
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
@@ -1220,11 +1214,11 @@ def install_clickhouse():
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-    # (
-    #     "Test using the laion dataset",
-    #     dataset_laion_5b_mini_for_quick_test,
-    #     test_params_laion_5b_1m,
-    # ),
+    (
+        "Test using the laion dataset",
+        dataset_laion_5b_mini_for_quick_test,
+        test_params_laion_5b_1m,
+    ),
     (
         "Test using the laion dataset with the rabitq quantized codec",
         dataset_laion_5b_10m_quantized_rabitq,
@@ -1245,16 +1239,16 @@ TESTS_TO_RUN = [
         dataset_laion_5b_10m_qbit_int8_strided,
         test_params_laion_5b_10m_qbit_int8_strided,
     ),
-    # (
-    #     "Test using the hackernews dataset",
-    #     dataset_hackernews_openai,
-    #     test_params_hackernews_10m,
-    # ),
-    # (
-    #     "Test using the cohere wiki dataset",
-    #     dataset_cohere_wiki_20m,
-    #     test_params_cohere_wiki_20m,
-    # ),
+    (
+        "Test using the hackernews dataset",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m,
+    ),
+    (
+        "Test using the cohere wiki dataset",
+        dataset_cohere_wiki_20m,
+        test_params_cohere_wiki_20m,
+    ),
 ]
 
 
