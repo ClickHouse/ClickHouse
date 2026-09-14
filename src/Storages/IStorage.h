@@ -51,9 +51,6 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-class RefreshCursorStore;
-using RefreshCursorStorePtr = std::shared_ptr<RefreshCursorStore>;
-
 class QueryPipeline;
 
 class IStoragePolicy;
@@ -216,8 +213,6 @@ public:
     /// the view from it (see InterpreterCreateQuery). True for the MergeTree family, which retains the
     /// pinned data parts for the lifetime of the snapshot.
     virtual bool supportsPinnedSnapshot() const { return false; }
-
-    virtual RefreshCursorStorePtr getRefreshCursorStore() { return nullptr; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.

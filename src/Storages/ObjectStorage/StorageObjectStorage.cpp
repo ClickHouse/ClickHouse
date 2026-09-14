@@ -35,6 +35,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -472,15 +473,25 @@ configuration->update(object_storage, query_context);
     return configuration->getExternalMetadata();
 }
 
-RefreshCursorStorePtr StorageObjectStorage::getRefreshCursorStore()
+bool StorageObjectStorage::isTransactionalRefreshTarget()
 {
     /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
     if (!isIcebergStorage())
-        return nullptr;
+        return false;
     if (catalog && !catalog->isTransactional())
+        return false;
+    return true;
+}
+
+CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_context)
+{
+    auto metadata = getExternalMetadata(query_context);
+    if (!metadata)
         return nullptr;
-    return std::make_shared<DataLakeRefreshCursorStore>(
-        std::static_pointer_cast<StorageObjectStorage>(shared_from_this()));
+    auto stored = metadata->getRefreshCursor(query_context);
+    if (!stored || stored->empty())
+        return nullptr;
+    return deserializeCursorTree(refreshCursorFromStorage(*stored));
 }
 
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)

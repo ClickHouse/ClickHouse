@@ -1,8 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
@@ -42,22 +39,6 @@ String refreshCursorFromStorage(const String & stored)
     for (size_t i = 0; i + 1 < stored.size(); i += 2)
         out.push_back(static_cast<char>(unhex2(stored.data() + i)));
     return out;
-}
-
-DataLakeRefreshCursorStore::DataLakeRefreshCursorStore(std::shared_ptr<StorageObjectStorage> storage_)
-    : storage(std::move(storage_))
-{
-}
-
-CursorTreeNodePtr DataLakeRefreshCursorStore::load(ContextPtr context)
-{
-    auto metadata = storage->getExternalMetadata(context);
-    if (!metadata)
-        return nullptr;
-    auto stored = metadata->getRefreshCursor(context);
-    if (!stored || stored->empty())
-        return nullptr;
-    return deserializeCursorTree(refreshCursorFromStorage(*stored));
 }
 
 }

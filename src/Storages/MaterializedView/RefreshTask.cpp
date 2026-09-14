@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
-#include <Storages/MaterializedView/RefreshCursorStore.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Streaming/CursorTree.h>
 #include <IO/WriteBufferFromString.h>
@@ -1329,10 +1329,11 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// A transactional target (e.g. Iceberg) keeps the cursor with its data and provides a store to
             /// read it back; otherwise resume from the cursor persisted in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
-            if (auto cursor_store = view->getTargetTable()->getRefreshCursorStore(); cursor_store && cursor_store->isTransactional())
+            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(view->getTargetTable().get());
+                object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;
-                stream_cursor = cursor_store->load(refresh_context);
+                stream_cursor = object_storage->loadRefreshCursor(refresh_context);
             }
 
             auto cursor = std::make_shared<StreamingCursor>();
