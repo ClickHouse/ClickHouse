@@ -88,6 +88,24 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
 }
 
 /// Declared in the header, where the contract is documented.
+void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t recorded_size, const std::filesystem::path & path)
+{
+    /// Not named, not measured: the object storage does not pin (see `pinToTheGenerationThatIsThereNow`).
+    if (generation.etag.empty())
+        return;
+
+    if (generation.bytes_size != recorded_size)
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_DURING_READ,
+            "Blob {} of the file '{}' is {} bytes long, while the metadata of the file records {} bytes: the blob "
+            "was written over since the file was recorded, and the generation that is there now is not the file",
+            generation.remote_path,
+            path.string(),
+            generation.bytes_size,
+            recorded_size);
+}
+
+/// Declared in the header, where the contract is documented.
 bool restoreTheSavedBlobWithoutWritingOver(
     IObjectStorage & object_storage,
     const std::filesystem::path & remote_tmp_path,
@@ -609,7 +627,16 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
 
-    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+    /// The copy is pinned to the generation of the source named here, and the file is recorded at
+    /// `path_to` with the metadata of `path_from`, so that generation has to be the one the metadata
+    /// describes: a blob of another size was written over the file out of band, and a link recorded
+    /// with the size of the old generation would be read short of its end from then on. Such a link
+    /// is refused before anything is written (see `refuseAGenerationOfAnotherSize`).
+    const FileRemoteInfo file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
+    refuseAGenerationOfAnotherSize(source, file_from_remote_info.bytes_size, path_from);
+
+    object_storage->copyObject(source, StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
 
     /// The destination blob is there from now on, so `undo` has to take it back out - and only it:
     /// the generation that was just written is named here, so that the delete in `undo` is pinned
@@ -634,7 +661,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
             path_to.string(),
             remote_path_to.string());
 
-    fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
+    fs_tree->recordFile(path_to, file_from_remote_info);
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
@@ -743,6 +770,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
+    /// Every request that touches the blob of the source - the copy aside, the copy to the
+    /// destination and the delete - is pinned to the generation named here, so the move carries
+    /// one generation of the file and deletes exactly the one it carried. It is named before
+    /// anything is written, because the file is recorded at `path_to` with the metadata of
+    /// `path_from`, and the generation has to be the one that metadata describes: a blob of
+    /// another size was written over the file out of band, and a file recorded with the size of
+    /// the old generation would be read short of its end from then on. Such a move is refused
+    /// here, with nothing to undo yet (see `refuseAGenerationOfAnotherSize`).
+    source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
+    refuseAGenerationOfAnotherSize(source, file_from_remote_info->bytes_size, path_from);
+
     if (fs_tree->existsFile(path_to))
     {
         if (!replaceable)
@@ -790,11 +828,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
-        /// Every request that touches the blob of the source - the copy aside, the copy to the
-        /// destination and the delete - is pinned to the generation named here, so the move carries
-        /// one generation of the file and deletes exactly the one it carried.
-        source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
-
+        /// The copy aside is pinned to the generation of the source named above.
         object_storage->copyObject(
             /*object_from=*/source,
             /*object_to=*/StoredObject(tmp_remote_path_from),

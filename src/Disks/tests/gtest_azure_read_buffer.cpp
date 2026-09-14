@@ -3104,6 +3104,59 @@ TEST(AzurePlainRewritableMove, ASourceWithoutAnETagIsRefused)
     ASSERT_TRUE(outcome.deleted_generations.empty());
 }
 
+/// The metadata of the disk records the file as 100 bytes long and the blob at the key is 100 bytes
+/// long: the generation the `HEAD` names is the one the metadata describes, and the move goes on.
+TEST(AzurePlainRewritableMove, AGenerationOfTheRecordedSizePasses)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    const DB::StoredObject source = DB::pinToTheGenerationThatIsThereNow(*object_storage, "blob");
+    ASSERT_EQ(source.etag, ETagBehaviour::first_generation);
+    ASSERT_EQ(source.bytes_size, static_cast<size_t>(100));
+    ASSERT_NO_THROW(DB::refuseAGenerationOfAnotherSize(source, /* recorded_size */ 100, "dir/file"));
+}
+
+/// Somebody wrote a 100-byte blob over a file the metadata records as 40 bytes long, before the
+/// move ran. The move would copy the 100-byte generation and record the target as 40 bytes long, and
+/// every later read of the target would stop 60 bytes short of its end. It is refused before the
+/// copy, so nothing is copied and nothing is deleted.
+TEST(AzurePlainRewritableMove, AGenerationOfAnotherSizeIsRefusedBeforeTheCopy)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    std::optional<int> error_code;
+    try
+    {
+        const DB::StoredObject source = DB::pinToTheGenerationThatIsThereNow(*object_storage, "blob");
+        DB::refuseAGenerationOfAnotherSize(source, /* recorded_size */ 40, "dir/file");
+        object_storage->copyObject(source, DB::StoredObject("moved/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+        object_storage->removeObjectIfExists(source);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    ASSERT_TRUE(transport->uploadedData().empty());
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+}
+
+/// An object storage that does not pin names no generation and measures nothing, so a bare key
+/// passes whatever size the metadata records: the check is about the generation that was named, not
+/// a substitute for one.
+TEST(AzurePlainRewritableMove, AnUnnamedGenerationIsNotMeasured)
+{
+    ASSERT_NO_THROW(DB::refuseAGenerationOfAnotherSize(DB::StoredObject("blob"), /* recorded_size */ 40, "dir/file"));
+}
+
 /// Rolling back a `plain_rewritable` operation after its remote delete succeeded. The key is free
 /// by then, so another writer can recreate it, and the blob it puts there is a generation this
 /// transaction has never seen. The restore may not write over that blob - and asking whether the

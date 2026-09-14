@@ -33,6 +33,16 @@ namespace DB
 /// `HEAD` is a generation this operation has never named.
 StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
+/// A generation named by `pinToTheGenerationThatIsThereNow` carries its size, and the metadata of a
+/// `plain_rewritable` disk records a size for the file - the one the file was written with, or the
+/// one the listing reported when the tree was rebuilt. A move or a hard link records the target with
+/// that size, so the generation it copies has to be the one the size describes: a blob of another
+/// size is a generation written over the file out of band, and a target recorded with the old size
+/// would be read short of its end (or past it) from then on. Refuses such a generation with
+/// `FILE_CHANGED_DURING_READ`, before anything is written. A generation that is not named (an object
+/// storage that does not pin, see above) is not measured either, and passes.
+void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t recorded_size, const std::filesystem::path & path);
+
 /// Names the generation of a blob that was just written, so that a rollback that takes it back out
 /// is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
 /// generation that somebody else has written since. The `HEAD` runs right after the write, so the
