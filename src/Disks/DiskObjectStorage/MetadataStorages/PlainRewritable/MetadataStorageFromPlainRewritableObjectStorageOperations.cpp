@@ -204,12 +204,6 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleD
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
     writeString(to.string(), buffer);
-
-    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", from, to);
-    });
-
     buffer.finalize();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Updated '{}' to '{}'", from, to);
@@ -244,6 +238,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
         }
 
         auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
+
+        /// Injected on the forward pass only. `rewriteSingleDirectory` is also how the reversal puts a marker back,
+        /// and a fault that never stops firing there cannot be retried to an end.
+        fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+        {
+            throw Exception(
+                ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
+        });
 
         rewriteSingleDirectory(sub_path_from, sub_path_to, *write_buf);
     }
