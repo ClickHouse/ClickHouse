@@ -725,7 +725,7 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_text_index_scoring, false, R"(
+    DECLARE(Bool, allow_experimental_text_index_scoring, true, R"(
 Allow creating text indexes with the experimental `enable_scoring` argument
 which stores term frequencies and document lengths to support BM25 relevance scoring.
 )", EXPERIMENTAL) \

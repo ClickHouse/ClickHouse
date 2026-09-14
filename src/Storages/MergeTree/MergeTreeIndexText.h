@@ -691,7 +691,7 @@ private:
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
-    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read);
+    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;

@@ -2108,7 +2108,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else if (isMap(index_column.type) && tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
-        addDocumentsFromMap(preprocessed_column, offset, rows_read);
+        addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
     else
     {
@@ -2161,7 +2161,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     }
 }
 
-void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read)
+void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
 {
     const auto & column_map = assert_cast<const ColumnMap &>(*column);
     const auto & column_offsets = column_map.getNestedColumn().getOffsets();
@@ -2187,7 +2187,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
             const bool is_rest = !keys_in_row.insert(key).second;
 
             KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
-            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
         }
 
         granule_builder.incrementCurrentRow();
