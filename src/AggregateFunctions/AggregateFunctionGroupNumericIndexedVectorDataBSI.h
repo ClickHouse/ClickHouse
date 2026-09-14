@@ -1312,7 +1312,13 @@ public:
     {
         if (rhs.allValuesEqualOne())
         {
-            res.deepCopyFrom(lhs);
+            /// Dividing by one is the identity, but only where `rhs` actually holds a one: a missing
+            /// divisor behaves as a zero and the general path then gives zero, so copying `lhs` whole
+            /// answered with its own value on those indexes. Keep `lhs` on the indexes `rhs` carries
+            /// and record the rest as explicit zeros, the way the all-ones fast path of
+            /// `pointwiseMultiply` just above does.
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
