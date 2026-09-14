@@ -33,14 +33,12 @@ public:
     std::string getName() const override { return name; }
 
     /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    /// A persisted definition would also resolve the source table under the global context or the engine credentials.
     bool canBeUsedToCreateTable() const override { return false; }
+    bool dependsOnCurrentUserGrants() const override { return true; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-
-    /// A persisted definition would resolve the source table under the global context or the engine credentials.
-    bool canBeUsedToCreateTable() const override { return false; }
-    bool dependsOnCurrentUserGrants() const override { return true; }
 
 private:
     StoragePtr executeImpl(
