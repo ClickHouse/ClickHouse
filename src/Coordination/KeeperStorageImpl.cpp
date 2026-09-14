@@ -1532,15 +1532,16 @@ static Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
+/// Cuts the deltas of the next subrequest, up to its `SubDeltaEnd` marker, off the front of `deltas`
+/// and drops the marker. `preprocess` appends the marker after every subrequest, so a range without
+/// it does not match the request that is being processed: the markers were lost, and stepping past
+/// the end of the range to look for them is undefined behavior. This runs on the raft commit and
+/// replay threads, so treat it like every other mismatch between a request and its deltas.
 static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & deltas)
 {
-    auto it = deltas.begin();
-
-    for (; it != deltas.end(); ++it)
-    {
-        if (std::holds_alternative<SubDeltaEnd>(it->operation))
-            break;
-    }
+    auto it = std::ranges::find_if(deltas, [](const auto & delta) { return std::holds_alternative<SubDeltaEnd>(delta.operation); });
+    if (it == deltas.end())
+        onStorageInconsistency("Missing SubDeltaEnd marker for a Multi subrequest");
 
     KeeperStorage::DeltaRange result{deltas.begin(), it};
     ++it;
@@ -1608,6 +1609,12 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
+
+    /// Every delta of the transaction belongs to one of the subrequests above. Deltas left after the
+    /// last marker belong to no subrequest: they are already applied to the storage, and no response
+    /// would account for them, so they cannot be silently ignored either.
+    if (!deltas.empty())
+        onStorageInconsistency("Unexpected deltas after the last subrequest of a Multi request");
 
     response->error = Coordination::Error::ZOK;
     return response;
