@@ -264,3 +264,6 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PARTITIO
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 IN (SELECT 1)'), '"type":"Subquery"', '"type":"Subquery","cte_name":"src","recursive_with":true'));
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 IN (SELECT 1)'), '"type":"Subquery"', '"type":"Subquery","recursive_with":true')); -- { serverError BAD_ARGUMENTS }
+-- A `cte_name` subquery prints as a bare identifier, but the query tree is still built from `children[0]`, so
+-- the name is not a body-free shorthand:
+SELECT formatQueryFromJSON('{"type":"Subquery","cte_name":"src"}'); -- { serverError BAD_ARGUMENTS }

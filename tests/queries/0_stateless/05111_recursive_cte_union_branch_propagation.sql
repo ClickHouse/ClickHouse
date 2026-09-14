@@ -60,8 +60,8 @@ SELECT * FROM
 )
 ORDER BY s;
 
--- The stored definition is asserted as text rather than by reading the view back: the read-back value
--- additionally depends on ApplyWithSubqueryVisitor, which does not consult `recursive_with` at all.
+-- The stored definition is asserted as text rather than by reading the view back: on a read the enclosing
+-- plain `src` is substituted into the recursive member's own self-reference, so the view returns 1, not 6.
 SELECT 'RECURSIVE survives in a stored view definition';
 DROP VIEW IF EXISTS v_05111;
 CREATE VIEW v_05111 AS
