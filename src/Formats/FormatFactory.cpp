@@ -1133,6 +1133,18 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
 }
 
+bool FormatFactory::checkIfFormatIsRandomAccessInput(
+    const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const bool seekable_read
+        = format_settings_ ? format_settings_->seekable_read : context->getSettingsRef()[Setting::input_format_allow_seeks];
+    if (!seekable_read)
+        return false;
+
+    const auto & target = getCreators(name);
+    return target.random_access_input_creator || target.random_access_input_creator_with_metadata;
+}
+
 void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)
 {
     auto & target = getOrCreateCreators(name).prewhere_support_checker;
