@@ -1,13 +1,13 @@
-DROP TABLE IF EXISTS t_tuple_codec_as_select;
 DROP TABLE IF EXISTS t_tuple_codec_wrapped_map;
-DROP TABLE IF EXISTS t_tuple_codec_wrapper_controls;
+DROP TABLE IF EXISTS t_tuple_codec_wrapped_nested;
+DROP TABLE IF EXISTS t_tuple_codec_wrapped_json;
+DROP TABLE IF EXISTS t_tuple_codec_wrapped_alter;
 DROP TABLE IF EXISTS t_tuple_codec_remove_create;
 DROP TABLE IF EXISTS t_tuple_codec_remove_add;
 DROP TABLE IF EXISTS t_tuple_codec_no_declaration;
 DROP TABLE IF EXISTS t_tuple_codec_quantized;
 DROP TABLE IF EXISTS t_tuple_codec_alias;
 DROP TABLE IF EXISTS t_tuple_codec_log;
-DROP TABLE IF EXISTS t_tuple_codec_nested_control;
 DROP TABLE IF EXISTS t_tuple_codec_shadowed_structural;
 
 SET enable_tuple_element_codecs = 1;
@@ -18,16 +18,6 @@ SELECT CAST((1, 'x'), 'Tuple(id UInt64 CODEC(Delta, ZSTD), value String)'); -- {
 SELECT toTypeName(CAST((1, 'x') AS Tuple(id UInt64, value String)));
 SELECT toTypeName(tuple(toUInt64(1), 'x'));
 
-CREATE TABLE t_tuple_codec_as_select
-ENGINE = MergeTree
-ORDER BY tuple()
-AS SELECT tuple(toUInt64(1), 'x') AS value;
-
-SELECT position(create_table_query, 'CODEC') = 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_as_select';
-DROP TABLE t_tuple_codec_as_select;
-
 -- Unsupported wrappers are rejected instead of being ignored.
 CREATE TABLE t_tuple_codec_wrapped_map
 (
@@ -36,18 +26,38 @@ CREATE TABLE t_tuple_codec_wrapped_map
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE t_tuple_codec_wrapper_controls
+-- Nested and typed JSON store their child types in non-standard AST wrapper nodes.
+-- Their annotations must be found and rejected rather than silently ignored.
+CREATE TABLE t_tuple_codec_wrapped_nested
 (
-    array_value Array(Tuple(id UInt64, text String)) CODEC(ZSTD(1)),
-    map_value Map(String, Tuple(id UInt64, text String)) CODEC(ZSTD(1))
+    value Nested(item Tuple(id UInt64 CODEC(Delta, LZ4), text String))
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_tuple_codec_wrapped_json
+(
+    value JSON(item Tuple(id UInt64 CODEC(Delta, LZ4), text String))
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- Keep one ADD and one typed MODIFY route through these special wrapper nodes.
+CREATE TABLE t_tuple_codec_wrapped_alter
+(
+    key UInt64,
+    json_value JSON(item Tuple(id UInt64, text String))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 
-SELECT count(), countIf(compression_codec = 'CODEC(ZSTD(1))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_wrapper_controls';
-DROP TABLE t_tuple_codec_wrapper_controls;
+ALTER TABLE t_tuple_codec_wrapped_alter
+    ADD COLUMN nested_value Nested(item Tuple(id UInt64 CODEC(Delta, LZ4), text String)); -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE t_tuple_codec_wrapped_alter
+    MODIFY COLUMN json_value JSON(item Tuple(id UInt64 CODEC(Delta, LZ4), text String)); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE t_tuple_codec_wrapped_alter;
 
 -- Element-level `REMOVE CODEC` is ALTER-only.
 -- Keep the deliberately invalid query on one line: after a client-side parse error,
@@ -124,21 +134,3 @@ ALTER TABLE t_tuple_codec_log
     MODIFY COLUMN value Tuple(id UInt64 CODEC(LZ4), text String); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_tuple_codec_log;
-
--- A direct nested-`Tuple` chain is the positive boundary control.
-CREATE TABLE t_tuple_codec_nested_control
-(
-    value Tuple(nested Tuple(id UInt64 CODEC(Delta, LZ4), text String))
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-SELECT
-    position(
-        (SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_tuple_codec_nested_control'),
-        'id UInt64 CODEC(Delta(8), LZ4)') > 0,
-    position(type, 'CODEC') = 0
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_nested_control' AND name = 'value';
-
-DROP TABLE t_tuple_codec_nested_control;

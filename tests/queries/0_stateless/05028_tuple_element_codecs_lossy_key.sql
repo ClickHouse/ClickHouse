@@ -4,9 +4,22 @@
 DROP TABLE IF EXISTS t_tuple_codec_lossy_sorting_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_partition_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_non_key_sibling;
+DROP TABLE IF EXISTS t_tuple_codec_lossy_map_element;
 
 SET enable_sz3_codec = 1;
 SET enable_tuple_element_codecs = 1;
+
+-- Per-stream validation must retain the logical route into Map. Its Float64 leaves
+-- are valid SZ3 inputs individually, but lossy compression could change Map keys.
+CREATE TABLE t_tuple_codec_lossy_map_element
+(
+    x Tuple(
+        m Map(Float64, Float64)
+            CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 -- A lossy codec on the selected Tuple element would make the stored key value
 -- disagree with primary/min-max metadata computed before compression.

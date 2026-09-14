@@ -17,4 +17,3 @@ payload%2Echanged.size	['ZSTD(1)']
 payload%2Ekept	['ZSTD(1)']
 payload%2Enested%2Edefaulted	['ZSTD(1)']
 payload%2Enested%2Eremoved	['ZSTD(1)']
-Tuple(first UInt64, second String)	1

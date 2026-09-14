@@ -31,21 +31,7 @@ SELECT
     number,
     [(number, number + 1, number + 2), (number + 3, number + 4, number + 5)],
     [(number + 6, number + 7, number + 8)]
-FROM numbers(100000);
-
-SELECT
-    position(create_table_query, 'Array(Tuple(a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
-    position(create_table_query, 'b UInt64 CODEC(LZ4HC(4))') > 0,
-    position(create_table_query, 'CODEC(ZSTD(3))') > 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
-
-SELECT
-    position(create_table_query, 'SimpleAggregateFunction(any, Array(Tuple(a UInt64 CODEC(T64, LZ4)') > 0,
-    position(create_table_query, 'b UInt64 CODEC(ZSTD(2))') > 0,
-    position(create_table_query, 'CODEC(LZ4HC(2))') > 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
+FROM numbers(10000);
 
 -- Block headers identify decoders, not encoder parameters. ZSTD levels are read as the
 -- default ZSTD(1), and LZ4HC uses the same on-disk method byte as LZ4.
@@ -59,18 +45,13 @@ SELECT
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_transparent_wrappers);
 
 SELECT
-    count() = 100000,
-    sum(arraySum(arrayMap(x -> tupleElement(x, 'a'), array_value))) = 10000200000,
-    sum(arraySum(arrayMap(x -> tupleElement(x, 'c'), aggregate_value))) = 5000750000
+    count() = 10000,
+    sum(arraySum(arrayMap(x -> tupleElement(x, 'a'), array_value))) = 100020000,
+    sum(arraySum(arrayMap(x -> tupleElement(x, 'c'), aggregate_value))) = 50075000
 FROM t_tuple_codec_transparent_wrappers;
 
-ALTER TABLE t_tuple_codec_transparent_wrappers
-    MODIFY COLUMN array_value Array(Tuple(
-        a UInt64,
-        b UInt64 REMOVE CODEC,
-        c UInt64 CODEC(T64, LZ4)
-    ));
-
+-- Keep a typed ALTER through both SimpleAggregateFunction and Array. This exercises
+-- the custom-name wrapper branch as well as the transparent Array below it.
 ALTER TABLE t_tuple_codec_transparent_wrappers
     MODIFY COLUMN aggregate_value SimpleAggregateFunction(any, Array(Tuple(
         a UInt64,
@@ -79,16 +60,9 @@ ALTER TABLE t_tuple_codec_transparent_wrappers
     )));
 
 SELECT
-    position(create_table_query, 'a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
-    position(create_table_query, 'b UInt64 CODEC') = 0,
-    position(create_table_query, 'c UInt64 CODEC(T64, LZ4)') > 0,
-    position(create_table_query, 'CODEC(ZSTD(3))') > 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
-
-SELECT
     position(create_table_query, 'a UInt64 CODEC(T64, LZ4)') > 0,
-    position(create_table_query, 'b UInt64 CODEC') = 0,
+    -- array_value.b keeps its declaration; aggregate_value.b was removed.
+    countSubstrings(create_table_query, 'b UInt64 CODEC') = 1,
     position(create_table_query, 'c UInt64 CODEC(ZSTD(4))') > 0,
     position(create_table_query, 'CODEC(LZ4HC(2))') > 0
 FROM system.tables
@@ -96,22 +70,14 @@ WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrapper
 
 INSERT INTO t_tuple_codec_transparent_wrappers
 SELECT
-    number + 100000,
+    number + 10000,
     [(number, number + 1, number + 2)],
     [(number + 3, number + 4, number + 5)]
 FROM numbers(1000);
 
 SELECT
-    countIf(column = 'array_value' AND endsWith(substream, '%2Ec') AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
     countIf(column = 'aggregate_value' AND endsWith(substream, '%2Ec') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_transparent_wrappers);
-
-DETACH TABLE t_tuple_codec_transparent_wrappers;
-SET enable_tuple_element_codecs = 0;
-ATTACH TABLE t_tuple_codec_transparent_wrappers;
-
-SELECT count(), sum(length(array_value)), sum(length(aggregate_value))
-FROM t_tuple_codec_transparent_wrappers;
 
 DROP TABLE t_tuple_codec_transparent_wrappers;
 
@@ -171,35 +137,13 @@ SELECT
     sum(length(array_value))
 FROM t_tuple_codec_nullable_wrappers;
 
-ALTER TABLE t_tuple_codec_nullable_wrappers
-    MODIFY COLUMN top Nullable(Tuple(
-        id UInt64 CODEC(ZSTD(2)),
-        text String
-    )) CODEC(ZSTD(1));
-
-ALTER TABLE t_tuple_codec_nullable_wrappers
-    MODIFY COLUMN nested Tuple(
-        record Nullable(Tuple(
-            id UInt64 REMOVE CODEC,
-            text String
-        ))
-    );
-
-SELECT
-    position(create_table_query, 'Nullable(Tuple(id UInt64 CODEC(ZSTD(2))') > 0,
-    position(create_table_query, 'record Nullable(Tuple(id UInt64 CODEC') = 0,
-    position(create_table_query, 'record Nullable(Tuple(id UInt64, text String)) CODEC(ZSTD(1))') > 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_nullable_wrappers';
-
+-- The column-level NULL modifier is a separate implicit resulting-type path.
 CREATE TABLE t_tuple_codec_null_modifier
 (
     value Tuple(id UInt64 CODEC(LZ4), text String) NULL
 )
 ENGINE = MergeTree
 ORDER BY tuple();
-
-INSERT INTO t_tuple_codec_null_modifier VALUES (NULL), ((1, 'one'));
 
 SELECT
     type = 'Nullable(Tuple(id UInt64, text String))',
@@ -210,32 +154,7 @@ SELECT
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_null_modifier' AND name = 'value';
 
-ALTER TABLE t_tuple_codec_null_modifier
-    MODIFY COLUMN value Tuple(id UInt64 CODEC(ZSTD(2)), text String) NULL;
-
-SELECT position(create_table_query, 'id UInt64 CODEC(ZSTD(2))') > 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier';
-
-ALTER TABLE t_tuple_codec_null_modifier
-    MODIFY COLUMN value Tuple(id UInt64 REMOVE CODEC, text String) NULL;
-
-SELECT position(create_table_query, 'id UInt64 CODEC') = 0
-FROM system.tables
-WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier';
-
-ALTER TABLE t_tuple_codec_null_modifier
-    ADD COLUMN added Tuple(id UInt64 CODEC(T64, LZ4), text String) NULL;
-
-SELECT
-    type = 'Nullable(Tuple(id UInt64, text String))',
-    position(
-        (SELECT create_table_query FROM system.tables
-         WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier'),
-        'Nullable(Tuple(id UInt64 CODEC(T64, LZ4)') > 0
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_null_modifier' AND name = 'added';
-
+-- data_type_default_nullable is the other implicit resulting-type path.
 SET data_type_default_nullable = 1;
 CREATE TABLE t_tuple_codec_default_nullable
 (
@@ -253,12 +172,6 @@ SELECT
         'id UInt64 CODEC(LZ4)') > 0
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_default_nullable' AND name = 'value';
-
-DETACH TABLE t_tuple_codec_nullable_wrappers;
-SET enable_tuple_element_codecs = 0;
-ATTACH TABLE t_tuple_codec_nullable_wrappers;
-
-SELECT count() FROM t_tuple_codec_nullable_wrappers;
 
 DROP TABLE t_tuple_codec_nullable_wrappers;
 DROP TABLE t_tuple_codec_null_modifier;

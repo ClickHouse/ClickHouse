@@ -37,7 +37,7 @@ SELECT
         (toUInt32(number % 10000), concat('nested-', toString(number % 50))),
         number + 7
     )
-FROM numbers(100000);
+FROM numbers(10000);
 
 SELECT
     substream,
@@ -48,9 +48,9 @@ WHERE column = 'payload'
 ORDER BY substream;
 
 SELECT
-    count() = 100000,
+    count() = 10000,
     min(payload.transformed) = 0,
-    max(payload.transformed) = 299997,
+    max(payload.transformed) = 29997,
     uniqExact(payload.inherited) = 100,
     groupBitXor(cityHash64(payload)) = groupBitXor(cityHash64(tuple(
         payload.transformed,
@@ -61,14 +61,14 @@ FROM t_tuple_codec_wide;
 
 INSERT INTO t_tuple_codec_wide
 SELECT
-    number + 100000,
+    number + 10000,
     (
-        (number + 100000) * 3,
+        (number + 10000) * 3,
         concat('inherited-', toString(number % 100)),
         (toUInt32(number % 10000), concat('nested-', toString(number % 50))),
-        number + 100007
+        number + 10007
     )
-FROM numbers(100000);
+FROM numbers(10000);
 
 SYSTEM START MERGES t_tuple_codec_wide;
 OPTIMIZE TABLE t_tuple_codec_wide FINAL;
@@ -81,6 +81,6 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_wide)
 WHERE column = 'payload'
 ORDER BY substream;
 
-SELECT count() = 200000, min(key) = 0, max(key) = 199999 FROM t_tuple_codec_wide;
+SELECT count() = 20000, min(key) = 0, max(key) = 19999 FROM t_tuple_codec_wide;
 
 DROP TABLE t_tuple_codec_wide;

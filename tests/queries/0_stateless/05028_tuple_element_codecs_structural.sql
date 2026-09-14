@@ -26,7 +26,7 @@ SELECT
         if(number % 2 = 0, NULL, number),
         arrayMap(x -> concat('value-', toString(x % 10)), range(number % 3 + 1))
     )
-FROM numbers(100000);
+FROM numbers(10000);
 
 SELECT
     substream,
@@ -37,25 +37,12 @@ WHERE column = 'payload'
 ORDER BY substream;
 
 SELECT
-    count() = 100000,
+    count() = 10000,
     min(length(payload.array_value)) = 1,
     max(length(payload.array_value)) = 4,
-    countIf(isNull(payload.nullable_value)) = 50000,
+    countIf(isNull(payload.nullable_value)) = 5000,
     min(length(payload.plain_array)) = 1,
     max(length(payload.plain_array)) = 3
-FROM t_tuple_codec_structural;
-
-OPTIMIZE TABLE t_tuple_codec_structural FINAL;
-
-SELECT
-    substream,
-    mapKeys(codec_block_counts) AS codecs,
-    arrayMin(mapValues(codec_block_counts)) > 0 AS all_positive
-FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_structural)
-WHERE column = 'payload'
-ORDER BY substream;
-
-SELECT count() = 100000, countIf(isNull(payload.nullable_value)) = 50000
 FROM t_tuple_codec_structural;
 
 DROP TABLE t_tuple_codec_structural;

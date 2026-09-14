@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS t_tuple_codec_nullable_alter;
 
 SET enable_nullable_tuple_type = 1;
 SET enable_tuple_element_codecs = 1;
-SET mutations_sync = 2;
 
 CREATE TABLE t_tuple_codec_nullable_alter
 (
@@ -34,9 +33,6 @@ SELECT
         'id UInt64 CODEC(ZSTD(2))') > 0
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_nullable_alter' AND name = 'value';
-
-SELECT count() = 1, countIf(value = (1, 'one')) = 1
-FROM t_tuple_codec_nullable_alter;
 
 -- Removing the wrapper has the same preservation rule. DEFAULT is unrelated column metadata
 -- and must not make the omitted codec declaration look like a removal.

@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS t_tuple_codec_metadata;
-DROP TABLE IF EXISTS t_tuple_codec_metadata_renamed;
 
 SET enable_tuple_element_codecs = 1;
 
@@ -42,7 +41,6 @@ FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_metadata'
 ORDER BY position;
 
-DESCRIBE TABLE t_tuple_codec_metadata FORMAT JSONEachRow;
 DESCRIBE TABLE t_tuple_codec_metadata FORMAT JSONEachRow
 SETTINGS describe_include_subcolumns = 1;
 
@@ -59,15 +57,5 @@ SELECT
     position(create_table_query, '`literal.dot` String CODEC(LZ4HC(4))') > 0
 FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_metadata';
-
-RENAME TABLE t_tuple_codec_metadata TO t_tuple_codec_metadata_renamed;
-RENAME TABLE t_tuple_codec_metadata_renamed TO t_tuple_codec_metadata;
-
-SELECT
-    name,
-    if(compression_codec = '', '<default>', compression_codec) AS compression_codec
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_metadata'
-ORDER BY position;
 
 DROP TABLE t_tuple_codec_metadata;

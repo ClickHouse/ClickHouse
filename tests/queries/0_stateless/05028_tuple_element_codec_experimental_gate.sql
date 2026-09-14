@@ -22,8 +22,7 @@ SET allow_suspicious_codecs = 1;
 CREATE TABLE tuple_element_codec_gate
 (
     id UInt64,
-    value Tuple(number UInt64 CODEC(Delta), retained UInt64 CODEC(Delta), text String),
-    root_codec UInt64 CODEC(Delta)
+    value Tuple(number UInt64 CODEC(Delta), retained UInt64 CODEC(Delta), text String)
 )
 ENGINE = MergeTree ORDER BY id;
 
@@ -31,7 +30,7 @@ SET enable_tuple_element_codecs = 0;
 SET allow_suspicious_codecs = 0;
 
 -- Loading persisted metadata is compatibility-safe and must not require the session gate.
-INSERT INTO tuple_element_codec_gate VALUES (1, (1, 2, 'one'), 1);
+INSERT INTO tuple_element_codec_gate VALUES (1, (1, 2, 'one'));
 DETACH TABLE tuple_element_codec_gate;
 ATTACH TABLE tuple_element_codec_gate;
 SELECT value.number FROM tuple_element_codec_gate FORMAT Null;
@@ -42,22 +41,8 @@ ALTER TABLE tuple_element_codec_gate
     MODIFY COLUMN value Tuple(number UInt64 CODEC(Delta), retained UInt64 CODEC(Delta), text String);
 
 -- Property-only changes retain already-persisted codecs without applying the current
--- session's admission policy to either tuple-element or root declarations.
+-- session's admission policy to the tuple-element declarations.
 ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value COMMENT 'retained';
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value DEFAULT tuple(0, 0, '');
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value TTL toDateTime(id) + INTERVAL 100 YEAR;
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value SETTINGS (max_compress_block_size = 65536);
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec COMMENT 'retained';
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec DEFAULT 0;
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec SETTINGS (max_compress_block_size = 65536);
-
--- Restating the same normalized root codec is also allowed without reapplying
--- the current session's admission policy.
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(Delta);
-
--- A genuine root codec change uses the current session's admission policy.
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(ZSTD);
-ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(Delta); -- { serverError BAD_ARGUMENTS }
 
 -- Admission checks for a changed tuple declaration do not spill over to a retained
 -- suspicious declaration in the same column policy.

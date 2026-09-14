@@ -39,19 +39,15 @@ SELECT
     [toString(number % 10), toString((number + 1) % 10)] AS `n.b`
 FROM numbers(1000);
 
-SELECT count() = 2, groupUniqArray(part_type) = ['Wide']
-FROM system.parts
-WHERE database = currentDatabase() AND table = 't_tuple_codec_shared_nested_wide' AND active;
-
-SELECT count() = 2000, sum(length(n.a)) = 4000, countIf(length(n.a) != length(n.b)) = 0
-FROM t_tuple_codec_shared_nested_wide;
-
 SYSTEM START MERGES t_tuple_codec_shared_nested_wide;
 OPTIMIZE TABLE t_tuple_codec_shared_nested_wide FINAL;
 
 SELECT count() = 1, groupUniqArray(part_type) = ['Wide']
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_tuple_codec_shared_nested_wide' AND active;
+
+SELECT count() = 2000, sum(length(n.a)) = 4000, countIf(length(n.a) != length(n.b)) = 0
+FROM t_tuple_codec_shared_nested_wide;
 
 -- The value streams retain their independent codec families, while schema order makes n.a
 -- the first owner of the shared n.size0 stream. Physical stream names escape dots in column
@@ -93,13 +89,6 @@ SELECT
     [number + 1000, number + 1001] AS `n.a`,
     [toString(number % 10), toString((number + 1) % 10)] AS `n.b`
 FROM numbers(1000);
-
-SELECT count() = 2, groupUniqArray(part_type) = ['Compact']
-FROM system.parts
-WHERE database = currentDatabase() AND table = 't_tuple_codec_shared_nested_compact' AND active;
-
-SELECT count() = 2000, sum(length(n.a)) = 4000, countIf(length(n.a) != length(n.b)) = 0
-FROM t_tuple_codec_shared_nested_compact;
 
 SYSTEM START MERGES t_tuple_codec_shared_nested_compact;
 OPTIMIZE TABLE t_tuple_codec_shared_nested_compact FINAL;

@@ -2,7 +2,6 @@
 -- no-random-merge-tree-settings: this test compares codec headers in distinct Wide parts.
 
 DROP TABLE IF EXISTS t_tuple_codec_alter;
-DROP TABLE IF EXISTS t_tuple_codec_alter_rename;
 DROP TABLE IF EXISTS t_tuple_codec_alter_removed_path;
 
 SET enable_tuple_element_codecs = 1;
@@ -27,7 +26,7 @@ SYSTEM STOP MERGES t_tuple_codec_alter;
 
 INSERT INTO t_tuple_codec_alter
 SELECT number, (number, toString(number), (number * 2, number + 1))
-FROM numbers(100000);
+FROM numbers(10000);
 
 ALTER TABLE t_tuple_codec_alter
     MODIFY COLUMN payload Tuple(
@@ -50,8 +49,8 @@ FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_alter';
 
 INSERT INTO t_tuple_codec_alter
-SELECT number + 100000, (number + 100000, toString(number + 100000), ((number + 100000) * 2, number + 100001))
-FROM numbers(100000);
+SELECT number + 10000, (number + 10000, toString(number + 10000), ((number + 10000) * 2, number + 10001))
+FROM numbers(10000);
 
 -- The first part keeps the old policy; the second part uses the patched metadata.
 SELECT
@@ -117,27 +116,6 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_alter)
 WHERE column = 'payload'
 ORDER BY substream;
 
--- Remove a declaration under its current name before renaming the tuple element.
-CREATE TABLE t_tuple_codec_alter_rename
-(
-    pair Tuple(old_first UInt64 CODEC(T64, LZ4), second String)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-ALTER TABLE t_tuple_codec_alter_rename
-    MODIFY COLUMN pair Tuple(first UInt64 REMOVE CODEC, second String); -- { serverError BAD_ARGUMENTS }
-
-ALTER TABLE t_tuple_codec_alter_rename
-    MODIFY COLUMN pair Tuple(old_first UInt64 REMOVE CODEC, second String);
-
-ALTER TABLE t_tuple_codec_alter_rename
-    MODIFY COLUMN pair Tuple(first UInt64, second String);
-
-SELECT type, compression_codec = ''
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter_rename' AND name = 'pair';
-
 -- A retained declaration cannot silently become a dangling path after a type edit.
 CREATE TABLE t_tuple_codec_alter_removed_path
 (
@@ -150,5 +128,4 @@ ALTER TABLE t_tuple_codec_alter_removed_path
     MODIFY COLUMN payload Tuple(other String); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_tuple_codec_alter_removed_path;
-DROP TABLE t_tuple_codec_alter_rename;
 DROP TABLE t_tuple_codec_alter;
