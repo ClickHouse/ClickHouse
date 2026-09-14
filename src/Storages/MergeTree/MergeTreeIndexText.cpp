@@ -1245,15 +1245,6 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
     {
         writeVarUInt(header.scoring_stats.num_docs, ostr);
         writeVarUInt(header.scoring_stats.sum_doc_length, ostr);
-        writeVarUInt(header.scoring_stats.doc_lengths_segment_size, ostr);
-        writeVarUInt(header.scoring_stats.doc_lengths_segment_offsets.size(), ostr);
-
-        UInt64 prev = 0;
-        for (UInt64 off : header.scoring_stats.doc_lengths_segment_offsets)
-        {
-            writeVarUInt(off - prev, ostr);
-            prev = off;
-        }
     }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
@@ -1332,25 +1323,6 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
     TextIndexHeader header = deserializeHeaderPrefix(istr);
-
-    if (header.has_scoring)
-    {
-        readVarUInt(header.scoring_stats.doc_lengths_segment_size, istr);
-
-        UInt64 num_segments = 0;
-        readVarUInt(num_segments, istr);
-
-        header.scoring_stats.doc_lengths_segment_offsets.resize(num_segments);
-        UInt64 offset = 0;
-
-        for (UInt64 i = 0; i < num_segments; ++i)
-        {
-            UInt64 delta = 0;
-            readVarUInt(delta, istr);
-            offset += delta;
-            header.scoring_stats.doc_lengths_segment_offsets[i] = offset;
-        }
-    }
 
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
@@ -1605,29 +1577,16 @@ static DictionarySparseIndex serializeTokensAndPostings(
     return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
 
-/// Writes the per-row `SmallFloat` document-length bytes to the `.dl` substream
-/// in segments  and returns the compressed-stream byte offset of each segment start.
-static VectorWithMemoryTracking<UInt64> serializeDocumentLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams)
+/// Appends the per-row `SmallFloat` document-length bytes of the granule to the `.dl` substream.
+/// The stream is not compressed and holds one byte per row of the part; the writer gives it the
+/// marks of the part, so scoring reads it like a column.
+static void serializeDocumentLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams)
 {
     auto * doc_lengths_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
     if (!doc_lengths_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index with BM25 scoring is missing its document-lengths (.dl) stream");
 
-    VectorWithMemoryTracking<UInt64> segment_offsets;
-    const size_t num_rows = doc_lengths.size();
-
-    for (size_t seg_start = 0; seg_start < num_rows; seg_start += ScoringStats::DOC_LENGTHS_SEGMENT_SIZE)
-    {
-        doc_lengths_stream->compressed_hashing.next();
-        auto mark = doc_lengths_stream->getCurrentMark();
-        chassert(mark.offset_in_decompressed_block == 0);
-        segment_offsets.push_back(mark.offset_in_compressed_file);
-
-        const size_t seg_len = std::min<size_t>(ScoringStats::DOC_LENGTHS_SEGMENT_SIZE, num_rows - seg_start);
-        doc_lengths_stream->compressed_hashing.write(reinterpret_cast<const char *>(doc_lengths.data() + seg_start), seg_len);
-    }
-
-    return segment_offsets;
+    doc_lengths_stream->plain_hashing.write(reinterpret_cast<const char *>(doc_lengths.data()), doc_lengths.size());
 }
 
 void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
@@ -1683,17 +1642,8 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
 
     if (params.enable_scoring)
     {
-        /// Write the doc lengths and record the compressed-stream byte offset of each `.dl` segment start in the
-        /// header, so scoring can seek to and decompress only the segment holding a doc instead of the whole array.
-        auto doc_lengths_segment_offsets = serializeDocumentLengths(*context.doc_lengths, streams);
-
-        scoring_stats =
-        {
-            .num_docs = num_docs,
-            .sum_doc_length = sum_doc_length,
-            .doc_lengths_segment_size = ScoringStats::DOC_LENGTHS_SEGMENT_SIZE,
-            .doc_lengths_segment_offsets = std::move(doc_lengths_segment_offsets),
-        };
+        serializeDocumentLengths(*context.doc_lengths, streams);
+        scoring_stats = {.num_docs = num_docs, .sum_doc_length = sum_doc_length};
     }
 
     TextIndexHeader header

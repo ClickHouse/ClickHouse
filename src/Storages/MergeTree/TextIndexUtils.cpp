@@ -20,6 +20,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
 #include <array>
 #include <bit>
@@ -145,8 +146,12 @@ makeOutputStreams(
 
 void writeMarks(MergeTreeIndexOutputStreams & streams, bool can_use_adaptive_granularity)
 {
-    for (const auto & [_, stream] : streams)
+    for (const auto & [type, stream] : streams)
     {
+        /// Per-row substreams get the marks of the part once their bytes are written.
+        if (MergeTreeIndexSubstream::isPerRow(type))
+            continue;
+
         auto & marks_out = stream->compress_marks ? stream->marks_compressed_hashing : stream->marks_hashing;
 
         writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
@@ -441,6 +446,7 @@ private:
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
+    MergeTreeIndexGranularityPtr index_granularity_,
     size_t num_rows_,
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
@@ -449,6 +455,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     bool need_fsync_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
+    , index_granularity(std::move(index_granularity_))
     , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
@@ -1308,26 +1315,19 @@ void MergeTextIndexesTask::finalize()
         if (!doc_lengths_stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merged text index with BM25 scoring is missing its document-lengths (.dl) output stream");
 
-        const size_t num_doc_length_rows = merged_doc_lengths.size();
-        VectorWithMemoryTracking<UInt64> doc_lengths_segment_offsets;
+        /// One uncompressed byte per row; the marks of the merged part make it readable like a column.
+        doc_lengths_stream->plain_hashing.write(reinterpret_cast<const char *>(merged_doc_lengths.data()), merged_doc_lengths.size());
 
-        for (size_t seg_start = 0; seg_start < num_doc_length_rows; seg_start += ScoringStats::DOC_LENGTHS_SEGMENT_SIZE)
+        if (!merged_doc_lengths.empty())
         {
-            doc_lengths_stream->compressed_hashing.next();
-            auto mark = doc_lengths_stream->getCurrentMark();
-            chassert(mark.offset_in_decompressed_block == 0);
-            doc_lengths_segment_offsets.push_back(mark.offset_in_compressed_file);
-
-            const size_t seg_len = std::min<size_t>(ScoringStats::DOC_LENGTHS_SEGMENT_SIZE, num_doc_length_rows - seg_start);
-            doc_lengths_stream->compressed_hashing.write(reinterpret_cast<const char *>(merged_doc_lengths.data() + seg_start), seg_len);
+            chassert(new_data_part && index_granularity);
+            writePerRowSubstreamMarks(*doc_lengths_stream, *index_granularity, new_data_part->index_granularity_info.mark_type.adaptive);
         }
 
         scoring_stats = ScoringStats
         {
             .num_docs = num_rows,
             .sum_doc_length = merged_sum_doc_length,
-            .doc_lengths_segment_size = ScoringStats::DOC_LENGTHS_SEGMENT_SIZE,
-            .doc_lengths_segment_offsets = std::move(doc_lengths_segment_offsets),
         };
     }
 

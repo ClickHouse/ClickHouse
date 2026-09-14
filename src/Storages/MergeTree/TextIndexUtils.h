@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
@@ -86,6 +87,7 @@ public:
     MergeTextIndexesTask(
         std::vector<TextIndexSegment> segments,
         MergeTreeMutableDataPartPtr new_data_part_,
+        MergeTreeIndexGranularityPtr index_granularity_,
         size_t num_rows_,
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
@@ -164,6 +166,8 @@ private:
 
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
+    /// Granularity of the part being written, taken from its writer: the part itself gets it only on finalize.
+    MergeTreeIndexGranularityPtr index_granularity;
     size_t num_rows;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;

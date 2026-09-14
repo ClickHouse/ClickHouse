@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/BM25State.h>
@@ -50,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
+    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -442,7 +445,9 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
     const auto & scoring_stats = granule->getScoringStats();
 
     /// The pool pre-pass has already rejected parts without scoring data; keep a defensive check.
-    if (granule->getSerializationVersion() < MergeTreeTextIndexSerializationVersion::V3_WithScoring || !scoring_stats.hasSegmentedDocLengths())
+    auto index_format = index.index->getDeserializedFormat(*getDataPart(), index.index->getFileName());
+    if (granule->getSerializationVersion() < MergeTreeTextIndexSerializationVersion::V3_WithScoring
+        || !index_format.hasSubstream(MergeTreeIndexSubstream::Type::TextIndexDocLengths))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot fill '{}': the text index '{}' in part '{}' was written without BM25 scoring data. "
@@ -466,7 +471,10 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
                 index.index->index.name, BM25ScoreColumn::name);
         }
 
-        score_doc_lengths = std::make_shared<DocLengthsCursor>(makeTextIndexStream(*doc_lengths_substream), scoring_stats);
+        score_doc_lengths = std::make_unique<DocLengthsReader>(
+            makeDocLengthsStream(*doc_lengths_substream),
+            data_part_info_for_read->getIndexGranularity(),
+            scoring_stats.num_docs);
     }
 
     if (!postings_serialization.has_value())
@@ -555,7 +563,7 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
     std::ranges::sort(score_cursors, {}, &ScoreCursor::cardinality);
 }
 
-void MergeTreeReaderTextIndex::fillColumnScores(IColumn & column, size_t row_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumnScores(IColumn & column, size_t from_mark, size_t row_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnFloat32 &>(column).getData();
     size_t old_size = column_data.size();
@@ -574,7 +582,7 @@ void MergeTreeReaderTextIndex::fillColumnScores(IColumn & column, size_t row_off
     if (intersect && !score_all_tokens_present)
         return;
 
-    score_doc_lengths->ensureRange(row_offset, num_rows);
+    score_doc_lengths->readRows(from_mark, row_offset, num_rows);
 
     if (intersect)
         scoreCursorsIntersection(data, score_cursors, row_offset, num_rows);
@@ -697,7 +705,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
             if (!search_query)
             {
-                fillColumnScores(column_mutable, from_row, rows_to_read);
+                fillColumnScores(column_mutable, from_mark, from_row, rows_to_read);
             }
             else if (is_always_true[i])
             {
@@ -765,6 +773,52 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexSt
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
+}
+
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeDocLengthsStream(const MergeTreeIndexSubstream & substream) const
+{
+    /// The `.dl` substream has the marks of the part, so it is read like a column: only the granules
+    /// of `all_mark_ranges`, through a buffer sized to the largest of them.
+    auto stream_name = index.index->getFileName() + substream.suffix;
+    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, data_part_info_for_read->getChecksums());
+    if (!actual_stream_name)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + substream.extension);
+
+    auto context = data_part_info_for_read->getContext();
+    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    const auto & index_granularity_info = data_part_info_for_read->getIndexGranularityInfo();
+    /// The substream has no final mark (see `writePerRowSubstreamMarks`).
+    size_t marks_count = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
+
+    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+        data_part_info_for_read,
+        mark_cache,
+        index_granularity_info.getMarksFilePath(*actual_stream_name),
+        marks_count,
+        index_granularity_info,
+        settings.save_marks_in_cache,
+        settings.read_settings,
+        load_marks_threadpool,
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
+
+    marks_loader->startAsyncLoad();
+
+    auto stream = std::make_unique<MergeTreeReaderStreamSingleColumn>(
+        data_part_info_for_read->getDataPartStorage(),
+        *actual_stream_name,
+        substream.extension,
+        marks_count,
+        all_mark_ranges,
+        MergeTreeIndexReader::patchSettings(settings, substream.type),
+        uncompressed_cache,
+        data_part_info_for_read->getFileSizeOrZero(*actual_stream_name + substream.extension),
+        std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+
+    stream->adjustRightMark(last_mark_to_read);
+    return stream;
 }
 
 std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t mark) const

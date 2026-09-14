@@ -142,7 +142,8 @@ void BM25GlobalStatsBuilder::addPart(const DataPartPtr & part, const MergeTreeRe
     }
 
     const auto & scoring_stats = granule->getScoringStats();
-    if (granule->getSerializationVersion() < MergeTreeTextIndexSerializationVersion::V3_WithScoring || !scoring_stats.hasSegmentedDocLengths())
+    if (granule->getSerializationVersion() < MergeTreeTextIndexSerializationVersion::V3_WithScoring
+        || !index_format.hasSubstream(MergeTreeIndexSubstream::Type::TextIndexDocLengths))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot compute text score: the text index '{}' in part '{}' was written without scoring data. "

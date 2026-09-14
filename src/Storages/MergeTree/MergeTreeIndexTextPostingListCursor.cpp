@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/BM25Kernel.h>
@@ -549,25 +550,28 @@ void PostingListCursor::next()
     }
 }
 
-DocLengthsCursor::DocLengthsCursor(std::unique_ptr<MergeTreeReaderStream> stream_, const ScoringStats & scoring_stats)
+DocLengthsReader::DocLengthsReader(
+    std::unique_ptr<MergeTreeReaderStream> stream_,
+    const MergeTreeIndexGranularity & index_granularity_,
+    size_t num_docs_)
     : stream(std::move(stream_))
-    , num_docs(static_cast<UInt32>(scoring_stats.num_docs))
-    , segment_size(scoring_stats.doc_lengths_segment_size)
-    , segment_offsets(scoring_stats.doc_lengths_segment_offsets)
+    , index_granularity(&index_granularity_)
+    , num_docs(static_cast<UInt32>(num_docs_))
 {
-    chassert(segment_size > 0);
 }
 
-DocLengthsCursor::DocLengthsCursor(PaddedPODArray<UInt8> bytes_)
+DocLengthsReader::DocLengthsReader(PaddedPODArray<UInt8> bytes_)
     : num_docs(static_cast<UInt32>(bytes_.size()))
-    , segment_size(std::max<UInt64>(1, bytes_.size()))
+    , bytes(std::move(bytes_))
+    , rows_begin(0)
+    , rows_end(num_docs)
+    , is_positioned(true)
 {
-    resident_segments.push_back(DocLengthsSegment{.index = 0, .bytes = std::move(bytes_)});
 }
 
-DocLengthsCursor::~DocLengthsCursor() = default;
+DocLengthsReader::~DocLengthsReader() = default;
 
-void DocLengthsCursor::ensureRange(size_t row_offset, size_t num_rows)
+void DocLengthsReader::readRows(size_t from_mark, size_t row_offset, size_t num_rows)
 {
     if (num_rows == 0)
         return;
@@ -575,77 +579,33 @@ void DocLengthsCursor::ensureRange(size_t row_offset, size_t num_rows)
     if (row_offset + num_rows > num_docs)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Rows [{}, {}) are out of range for DocLengthsCursor with {} docs",
+            "Rows [{}, {}) are out of range for DocLengthsReader with {} docs",
             row_offset, row_offset + num_rows, num_docs);
     }
 
-    /// Covering segments of the request.
-    const UInt64 first_segment = row_offset / segment_size;
-    const UInt64 last_segment = (row_offset + num_rows - 1) / segment_size;
-
-    if (!resident_segments.empty()
-        && first_segment >= first_resident_segment
-        && last_segment < first_resident_segment + resident_segments.size())
+    /// The in-memory variant holds the whole part.
+    if (!stream)
         return;
 
-    chassert(stream);
-    chassert(last_segment < segment_offsets.size());
-
-    /// Drop the segments that fell behind the request.
-    if (first_segment < first_resident_segment)
-        resident_segments.clear();
-    else
-        std::erase_if(resident_segments, [&](const auto & segment) { return segment.index < first_segment; });
-
-    /// The missing segments are one suffix run: adjacent segments are contiguous in the decompressed stream.
-    const UInt64 first_missing_segment = resident_segments.empty() ? first_segment : resident_segments.back().index + 1;
-    chassert(first_missing_segment <= last_segment);
-
-    /// Real filesystem seek is triggered only if the gap from the previous position is large enough.
-    stream->seekToMark(MarkInCompressedFile{.offset_in_compressed_file = segment_offsets[first_missing_segment], .offset_in_decompressed_block = 0});
-    auto * data_buffer = stream->getDataBuffer();
-
-    for (UInt64 segment_idx = first_missing_segment; segment_idx <= last_segment; ++segment_idx)
+    /// A read step may resume in the middle of a granule, so a gap is closed by seeking
+    /// to the granule's mark and skipping the rows before `row_offset`.
+    if (!is_positioned || row_offset != rows_end)
     {
-        auto & segment = resident_segments.emplace_back();
-        segment.index = segment_idx;
-        segment.bytes.resize(std::min<UInt64>(segment_size, num_docs - segment_idx * segment_size));
-        data_buffer->readStrict(reinterpret_cast<char *>(segment.bytes.data()), segment.bytes.size());
+        stream->seekToMark(from_mark);
+        stream->getDataBuffer()->ignore(row_offset - index_granularity->getMarkStartingRow(from_mark));
+        is_positioned = true;
     }
 
-    first_resident_segment = resident_segments.front().index;
-    cached_segment_begin = 0;
-    cached_segment_end = 0;
-}
-
-UInt8 DocLengthsCursor::getByte(UInt32 doc_id) const
-{
-    if (doc_id < cached_segment_begin || doc_id >= cached_segment_end)
-        updateCachedSegment(doc_id);
-
-    return cached_segment_bytes[doc_id - cached_segment_begin];
-}
-
-void DocLengthsCursor::updateCachedSegment(UInt32 doc_id) const
-{
-    const UInt64 segment_index = doc_id / segment_size;
-    chassert(segment_index >= first_resident_segment);
-
-    const size_t segment_pos = segment_index - first_resident_segment;
-    chassert(segment_pos < resident_segments.size());
-
-    const auto & bytes = resident_segments[segment_pos].bytes;
-    chassert(doc_id - segment_index * segment_size < bytes.size());
-
-    cached_segment_begin = static_cast<UInt32>(segment_index * segment_size);
-    cached_segment_end = static_cast<UInt32>(segment_index * segment_size + bytes.size());
-    cached_segment_bytes = bytes.data();
+    bytes.resize(num_rows);
+    stream->getDataBuffer()->readStrict(reinterpret_cast<char *>(bytes.data()), num_rows);
+    rows_begin = row_offset;
+    rows_end = row_offset + num_rows;
 }
 
 PostingListScoringCursor::PostingListScoringCursor(
     MergeTreeReaderStream & stream_,
     const TokenPostingsInfo & info_,
-    const DocLengthsCursor * doc_lengths_,
+    const DocLengthsReader * doc_lengths_,
     TextIndexPostingsCache * postings_cache_,
     const String & index_id_for_cache_)
     : PostingListCursor(stream_, info_, postings_cache_, index_id_for_cache_)
@@ -654,7 +614,7 @@ PostingListScoringCursor::PostingListScoringCursor(
     chassert(doc_lengths);
 }
 
-PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsCursor * doc_lengths_)
+PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsReader * doc_lengths_)
     : PostingListCursor(PaddedPODArrayPtr(scoring_postings_, &scoring_postings_->row_ids))
     , doc_lengths(doc_lengths_)
     , embedded_scoring_postings(std::move(scoring_postings_))

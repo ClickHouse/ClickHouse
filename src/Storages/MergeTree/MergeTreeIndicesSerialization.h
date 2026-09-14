@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -54,7 +56,20 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// Document lengths are `SmallFloat` bytes, which LZ4 expands rather than compresses
+        /// (measured ratio 1.0039 on 24.1M rows), so they are written raw as well.
+        return type != Type::TextIndexPostings
+            && type != Type::TextIndexPositions
+            && type != Type::TextIndexDocLengths;
+    }
+
+    /// A per-row substream holds exactly one uncompressed byte per row of the part (the document
+    /// lengths). Its marks are the marks of the part, one per granule, like those of a column, so the
+    /// substream is read with the regular marks-based stream; the writer derives the marks from the
+    /// index granularity instead of writing one mark per index granule.
+    static bool isPerRow(Type type)
+    {
+        return type == Type::TextIndexDocLengths;
     }
 };
 
@@ -67,10 +82,21 @@ struct MergeTreeIndexFormat
     MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
+
+    bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    {
+        return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
+    }
 };
 
 using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
+
+class MergeTreeIndexGranularity;
+
+/// Writes the marks of a per-row index substream (see `MergeTreeIndexSubstream::isPerRow`): one mark
+/// per granule of the part at the granule's starting row. Call it once all bytes of the stream are written.
+void writePerRowSubstreamMarks(MergeTreeWriterStream & stream, const MergeTreeIndexGranularity & index_granularity, bool can_use_adaptive_granularity);
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
 using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexReaderStream *>;

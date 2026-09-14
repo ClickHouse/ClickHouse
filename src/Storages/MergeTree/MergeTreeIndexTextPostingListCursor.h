@@ -19,6 +19,7 @@ struct TokenPostingsInfo;
 class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
+class MergeTreeIndexGranularity;
 struct ScoringStats;
 struct ScoringPostings;
 
@@ -176,53 +177,49 @@ protected:
     EventsCounters counters;
 };
 
-/// Per-part cursor over doc-lengths norms of BM25 scoring.
-/// Lazily reads segmented .dl stream of the text index.
-class DocLengthsCursor
+/// Document lengths (`SmallFloat` bytes, one per row) of a part for BM25 scoring.
+///
+/// The `.dl` substream is read like a plain UInt8 column: it has one mark per granule of the part,
+/// and `readRows` loads exactly the rows of the current read step, from which `getByte` serves the
+/// scoring cursors. Nothing is cached across steps or queries: the reads are exact, and the page
+/// cache (or the filesystem cache) serves repeated queries as for any column.
+class DocLengthsReader
 {
 public:
-    DocLengthsCursor(std::unique_ptr<MergeTreeReaderStream> stream_, const ScoringStats & scoring_stats);
+    /// Reads the `.dl` substream of a part.
+    DocLengthsReader(std::unique_ptr<MergeTreeReaderStream> stream_, const MergeTreeIndexGranularity & index_granularity_, size_t num_docs_);
 
-    explicit DocLengthsCursor(PaddedPODArray<UInt8> bytes_);
-    ~DocLengthsCursor();
+    /// Holds the doc lengths of a whole part in memory (index build and tests).
+    explicit DocLengthsReader(PaddedPODArray<UInt8> bytes_);
+    ~DocLengthsReader();
 
     UInt32 numDocs() const { return num_docs; }
 
-    /// Make the doc ids [row_offset, row_offset + num_rows) resident.
-    /// Reads the missing covering `.dl` segments in one pass if needed.
-    void ensureRange(size_t row_offset, size_t num_rows);
+    /// Loads the doc lengths of rows [row_offset, row_offset + num_rows), which start in granule `from_mark`.
+    /// Consecutive calls read the stream sequentially; a gap seeks to the granule of `from_mark`.
+    void readRows(size_t from_mark, size_t row_offset, size_t num_rows);
 
-    /// Returns the `SmallFloat` doc-length byte for the given doc id.
-    /// Precondition: `doc_id` lies within the range made resident by the last `ensureRange`.
-    UInt8 getByte(UInt32 doc_id) const;
+    /// Returns the `SmallFloat` doc-length byte of a row loaded by the last `readRows`.
+    UInt8 getByte(UInt32 doc_id) const
+    {
+        chassert(doc_id >= rows_begin && doc_id < rows_end);
+        return bytes[doc_id - rows_begin];
+    }
 
 private:
-    /// One decompressed, resident segment of the `.dl` stream.
-    struct DocLengthsSegment
-    {
-        UInt64 index = 0;
-        PaddedPODArray<UInt8> bytes;
-    };
-
-    void updateCachedSegment(UInt32 doc_id) const;
-
     std::unique_ptr<MergeTreeReaderStream> stream;
+    const MergeTreeIndexGranularity * index_granularity = nullptr;
     UInt32 num_docs;
-    UInt64 segment_size;
-    VectorWithMemoryTracking<UInt64> segment_offsets;
 
-    /// Resident segments: one contiguous ascending run covering the last `ensureRange` request.
-    /// The in-memory cursor is one fully resident segment for its whole lifetime.
-    UInt64 first_resident_segment = 0;
-    std::vector<DocLengthsSegment> resident_segments;
-
-    /// Doc-id bounds and data of the segment holding the last `getByte` request.
-    mutable UInt32 cached_segment_begin = 0;
-    mutable UInt32 cached_segment_end = 0;
-    mutable const UInt8 * cached_segment_bytes = nullptr;
+    /// Rows loaded by the last `readRows` (all rows of the part for the in-memory variant).
+    PaddedPODArray<UInt8> bytes;
+    size_t rows_begin = 0;
+    size_t rows_end = 0;
+    /// False until the first read positions the stream.
+    bool is_positioned = false;
 };
 
-using DocLengthsCursorPtr = std::shared_ptr<DocLengthsCursor>;
+using DocLengthsReaderPtr = std::shared_ptr<DocLengthsReader>;
 
 /// Scoring extension of `PostingListCursor`: also decodes per-block term frequencies and exposes
 /// the per-block / per-segment block-max upper-bound (UB) inputs for BM25 pruning (WAND / MaxScore).
@@ -233,12 +230,12 @@ public:
     PostingListScoringCursor(
         MergeTreeReaderStream & stream_,
         const TokenPostingsInfo & info_,
-        const DocLengthsCursor * doc_lengths_,
+        const DocLengthsReader * doc_lengths_,
         TextIndexPostingsCache * postings_cache_ = nullptr,
         const String & index_id_for_cache_ = {});
 
     /// Embedded cursor over already-decoded flat postings.
-    PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsCursor * doc_lengths_);
+    PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsReader * doc_lengths_);
 
     /// Exact term frequency of the current row.
     UInt32 termFrequency() const;
@@ -272,7 +269,7 @@ protected:
 
 private:
     /// Per-granule `SmallFloat` doc-length cursor, queried by the granule-local row id.
-    const DocLengthsCursor * doc_lengths = nullptr;
+    const DocLengthsReader * doc_lengths = nullptr;
 
     /// Term frequencies of the current packed block, parallel to `decoded_values`.
     alignas(16) UInt32 decoded_tfs[BLOCK_SIZE]{};

@@ -3758,8 +3758,6 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringFlag)
         header.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
         header.scoring_stats.num_docs = 100;
         header.scoring_stats.sum_doc_length = 4000;
-        header.scoring_stats.doc_lengths_segment_size = ScoringStats::DOC_LENGTHS_SEGMENT_SIZE;
-        header.scoring_stats.doc_lengths_segment_offsets = {10, 200, 3000};
         return header;
     };
 
@@ -3773,8 +3771,6 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringFlag)
     EXPECT_TRUE(scoring_data.has_scoring);
     EXPECT_EQ(scoring_data.scoring_stats.num_docs, 100u);
     EXPECT_EQ(scoring_data.scoring_stats.sum_doc_length, 4000u);
-    EXPECT_EQ(scoring_data.scoring_stats.doc_lengths_segment_size, ScoringStats::DOC_LENGTHS_SEGMENT_SIZE);
-    EXPECT_EQ(scoring_data.scoring_stats.doc_lengths_segment_offsets, (VectorWithMemoryTracking<UInt64>{10, 200, 3000}));
     EXPECT_EQ(scoring_data.sparse_index.getToken(0), "delta");
 
     /// Without the flag the scoring payload is not written at all, so it reads back at its defaults.
@@ -3790,8 +3786,6 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringFlag)
     EXPECT_FALSE(no_scoring_data.has_scoring);
     EXPECT_EQ(no_scoring_data.scoring_stats.num_docs, 0u);
     EXPECT_EQ(no_scoring_data.scoring_stats.sum_doc_length, 0u);
-    EXPECT_EQ(no_scoring_data.scoring_stats.doc_lengths_segment_size, 0u);
-    EXPECT_TRUE(no_scoring_data.scoring_stats.doc_lengths_segment_offsets.empty());
     EXPECT_EQ(no_scoring_data.sparse_index.getToken(0), "delta");
 }
 

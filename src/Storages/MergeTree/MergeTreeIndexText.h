@@ -393,20 +393,14 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 
 /// Per-part statistics required for BM25 scoring.
+/// The per-row document lengths live in the `.dl` substream: one `SmallFloat` byte per row,
+/// uncompressed, with the marks of the part (see `MergeTreeIndexSubstream::isPerRow`).
 struct ScoringStats
 {
-    /// Rows per `.dl` segment when writing a `V3_WithScoring` index.
-    static constexpr UInt64 DOC_LENGTHS_SEGMENT_SIZE = 128 * 1024;
-
     /// Total number of documents in the data part.
     UInt64 num_docs = 0;
     /// Total sum of document lengths in the data part.
     UInt64 sum_doc_length = 0;
-    /// Segment size and offsets of the document lengths in the `.dl` substream.
-    UInt64 doc_lengths_segment_size = 0;
-    VectorWithMemoryTracking<UInt64> doc_lengths_segment_offsets;
-
-    bool hasSegmentedDocLengths() const { return !doc_lengths_segment_offsets.empty(); }
 };
 
 struct TextIndexHeader

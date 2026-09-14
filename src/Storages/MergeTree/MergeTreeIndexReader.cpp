@@ -103,6 +103,10 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
+        /// Per-row substreams carry the marks of the part, not of the index, and index analysis never reads them.
+        if (MergeTreeIndexSubstream::isPerRow(substream.type))
+            continue;
+
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 
