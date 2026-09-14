@@ -137,10 +137,9 @@ CREATE TABLE t_05136_merge3 (a UInt64, b Bool)
     ENGINE = Merge(currentDatabase(), 't_05136_lc3');
 SELECT count() FROM t_05136_merge3 WHERE toLowCardinality(b) > toNullable(toLowCardinality(false));
 
--- Opposite direction on the same path: here the chain's running type is the plain key type while the
--- next function was resolved against a LowCardinality argument type, so building the const column on
--- the running type is also a bad cast (ColumnVector<char8_t> to ColumnLowCardinality). The running
--- type advances to each function's own result type, which is what keeps the two in step.
+-- Opposite direction on the same path: the interior `toLowCardinality` makes the chain's running type
+-- LowCardinality while the key type is plain, so normalizing anything past the chain's seed here would
+-- hand the outer cast wrapper a plain column and fail (ColumnVector<char8_t> to ColumnLowCardinality).
 SELECT count() FROM t_05136_merge3 WHERE CAST(toLowCardinality(b), 'UInt64') > 0;
 SELECT count() FROM t_05136_merge3 WHERE CAST(CAST(b, 'LowCardinality(UInt8)'), 'UInt64') > 0;
 -- Both counts above are also what a declined chain would return, so assert that these two explicit-field
@@ -165,10 +164,9 @@ SELECT countIf(extract(explain, 'Granules: ([0-9]+)/[0-9]+')::UInt64
 DROP TABLE t_05136_lc3;
 DROP TABLE t_05136_merge3;
 
--- Same both-direction mismatch on the DENSE cached-column path: normal WHERE pruning builds
--- block-backed FieldRefs, so a two-link chain whose intermediate result type is LowCardinality reaches
--- `applyFunction`'s cache-miss branch. Only the chain's input is normalized there, and each interior
--- link receives the argument type it was built for, or the wrapper rejects the column with a Bad cast.
+-- Same chain shape on the cached-column path (block-backed FieldRefs rather than explicit fields):
+-- normal WHERE pruning reaches `applyFunction`'s cache-miss branch, where only the chain's input is
+-- normalized, so each interior link keeps the representation it was resolved against.
 DROP TABLE IF EXISTS t_05136_lc4;
 DROP TABLE IF EXISTS t_05136_merge4;
 CREATE TABLE t_05136_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree ORDER BY k
