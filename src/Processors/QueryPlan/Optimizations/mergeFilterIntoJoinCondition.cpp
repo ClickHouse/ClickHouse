@@ -18,7 +18,6 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
-#include <Interpreters/TableJoin.h>
 
 #include <Planner/Utils.h>
 
@@ -283,7 +282,6 @@ ExtractedJoinConditions extractActionsForJoinCondition(
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
     const bool allow_dynamic_type_in_join_keys,
-    const bool allow_hyperedges,
     const bool filter_column_is_kept
 )
 {
@@ -349,8 +347,8 @@ ExtractedJoinConditions extractActionsForJoinCondition(
             /// An equality whose sides mix the two inputs (e.g. `t1.a + t2.b = t4.d + t5.e` over a comma join
             /// of five tables) is no key of this join, but once the inner joins are flattened into one query
             /// graph it connects the relations of the two sides, so the join order optimizer can place a join
-            /// where it does become a key. Until then it is a residual condition, which needs a hash join.
-            bool is_hyperedge = allow_hyperedges && !is_join_key
+            /// where it does become a key. Until then it is a residual condition of the cross product.
+            bool is_hyperedge = !is_join_key
                 && getExpressionSide(conjunct, left_stream_allowed_nodes, right_stream_allowed_nodes) == ExpressionSide::BOTH;
 
             if (is_join_key || is_hyperedge)
@@ -484,11 +482,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto left_stream_available_columns = get_available_columns(*left_stream_header);
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
-    const auto & join_settings = join_step->getJoinSettings();
-    const bool allow_dynamic_type_in_join_keys = join_settings.allow_dynamic_type_in_join_keys;
-    /// A hyperedge that no reordering turns into a key leaves a join without keys, and only the hash join
-    /// executes one as a cross product with a residual filter (see `can_convert_to_cross` in `JoinStepLogical`).
-    const bool allow_hyperedges = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
+    const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
 
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter, new_filter_column_name, new_filter_column_is_output] = extractActionsForJoinCondition(
@@ -497,7 +491,6 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         left_stream_available_columns,
         right_stream_available_columns,
         allow_dynamic_type_in_join_keys,
-        allow_hyperedges,
         /*filter_column_is_kept=*/ !filter_step->removesFilterColumn());
 
     if (equality_predicates.empty())

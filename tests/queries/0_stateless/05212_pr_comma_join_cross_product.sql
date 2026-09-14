@@ -1,5 +1,5 @@
--- A comma join is admitted to parallel replicas like an `INNER` join: the query plan gives it keys from
--- `WHERE`, and a comma join left as a cross product still concatenates correctly from the split left side.
+-- A cross join, comma or explicit, is admitted to parallel replicas like an `INNER` join: the query plan
+-- gives it keys from `WHERE`, and a cross product concatenates correctly from the split left side.
 
 DROP TABLE IF EXISTS t1 SYNC;
 DROP TABLE IF EXISTS t2 SYNC;
@@ -31,6 +31,14 @@ SELECT count() FROM t1, t2, t3 WHERE t1.c = t2.c;
 SELECT count() FROM t1, t2, t3 WHERE t1.c = t2.c SETTINGS enable_parallel_replicas = 0;
 SELECT count() FROM t1, t2, t3;
 SELECT count() FROM t1, t2, t3 SETTINGS enable_parallel_replicas = 0;
+
+SELECT '-- explicit CROSS JOIN after a JOIN, https://github.com/ClickHouse/ClickHouse/issues/74337';
+SELECT * FROM t1 JOIN t1 AS t2 USING (c) CROSS JOIN t3 ORDER BY ALL;
+SELECT * FROM t1 JOIN t1 AS t2 USING (c) CROSS JOIN t3 ORDER BY ALL SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t1 JOIN t1 AS t2 USING (c) CROSS JOIN t3 CROSS JOIN t3 AS t4;
+SELECT count() FROM t1 JOIN t1 AS t2 USING (c) CROSS JOIN t3 CROSS JOIN t3 AS t4 SETTINGS enable_parallel_replicas = 0;
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0 FROM (
+    EXPLAIN SELECT * FROM t1 CROSS JOIN t2 WHERE t1.c = t2.c ORDER BY ALL);
 
 DROP TABLE t1 SYNC;
 DROP TABLE t2 SYNC;

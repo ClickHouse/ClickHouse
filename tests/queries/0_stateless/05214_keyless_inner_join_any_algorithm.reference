@@ -1,0 +1,8 @@
+-- keyless ON condition
+1	2	5	6
+3	4	3	4
+-- hyperedge of a comma join, the reordering makes it a key
+0	2
+-- the same with the hash join
+1	2	5	6
+3	4	3	4

@@ -31,7 +31,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <algorithm>
-#include <array>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -3680,44 +3679,32 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
     }
 
-    /// A conjunct over the keys of one side is copied to the other side with the keys substituted by their
-    /// equivalents there. Two keys equivalent to the same opposite key (`t1.k = t2.k` under `t1.k = t3.k AND
-    /// t2.k = t3.k`) turn that copy into `t3.k = t3.k`: it holds for every row the join keeps, but the statistics
-    /// price it as a real predicate, so the copy is dropped. The conjunct itself stays on the side where it
-    /// is not substituted; when both copies are substituted away (`WHERE` restating a null-safe join key) they
-    /// are kept, since `k = k` is what rejects the NULL matches there.
-    auto becomes_trivially_true = [](const Node * conjunct, const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
+    /// `t1.k = t2.k` above a join on `t1.k = t3.k AND t2.k = t3.k` is copied to the `t3` side as `t3.k = t3.k`. The
+    /// copy holds for every row the join keeps, but the statistics take it for a real predicate and misjudge the
+    /// join order. The conjunct itself stays on its own side, so such a copy is simply not made.
+    auto is_trivial_copy = [](const Node * conjunct, const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
         if (conjunct->type != ActionType::FUNCTION || conjunct->children.size() != 2 || conjunct->function_base->getName() != "equals")
             return false;
 
-        bool replaced = false;
-        std::array<std::string_view, 2> names;
-        for (size_t i = 0; i < 2; ++i)
+        auto replaced_name = [&](const Node * child) -> std::string_view
         {
-            const auto * child = conjunct->children[i];
-            if (auto it = columns_to_replace.find(child->result_name); it != columns_to_replace.end())
-            {
-                names[i] = it->second.name;
-                replaced = true;
-            }
-            else if (child->type == ActionType::INPUT)
-                names[i] = child->result_name;
-            else
-                return false;
-        }
-        return replaced && names[0] == names[1];
+            auto it = columns_to_replace.find(child->result_name);
+            return it == columns_to_replace.end() ? std::string_view(child->result_name) : std::string_view(it->second.name);
+        };
+        return replaced_name(conjunct->children[0]) == replaced_name(conjunct->children[1]);
     };
 
-    auto is_redundant_copy = [&](const Node * conjunct, bool for_left_stream)
+    std::erase_if(right_stream_allowed_conjunctions, [&](const Node * conjunct)
     {
-        bool left_trivial = becomes_trivially_true(conjunct, equivalent_right_stream_column_to_left_stream_column);
-        bool right_trivial = becomes_trivially_true(conjunct, equivalent_left_stream_column_to_right_stream_column);
-        return for_left_stream ? left_trivial && !right_trivial : right_trivial && !left_trivial;
-    };
-
-    std::erase_if(left_stream_allowed_conjunctions, [&](const Node * conjunct) { return is_redundant_copy(conjunct, true); });
-    std::erase_if(right_stream_allowed_conjunctions, [&](const Node * conjunct) { return is_redundant_copy(conjunct, false); });
+        return left_stream_allowed_conjunctions_set.contains(conjunct)
+            && is_trivial_copy(conjunct, equivalent_left_stream_column_to_right_stream_column);
+    });
+    std::erase_if(left_stream_allowed_conjunctions, [&](const Node * conjunct)
+    {
+        return right_stream_allowed_conjunctions_set.contains(conjunct)
+            && is_trivial_copy(conjunct, equivalent_right_stream_column_to_left_stream_column);
+    });
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());

@@ -1605,8 +1605,9 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 
     const auto join_kind = join_node->getKind();
     const auto join_strictness = join_node->getStrictness();
-    /// A comma join behaves like `INNER ALL`: its keys come from `WHERE` in the query plan.
-    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left || join_kind == JoinKind::Comma)
+    /// A cross join coordinates its left side like `INNER ALL`: the parts of the product concatenate
+    /// correctly, and the query plan turns it into `INNER` where `WHERE` has the keys.
+    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left || isCrossOrComma(join_kind))
     {
         // check that left table expression can be used for parallel replicas
         if (left_table)
@@ -3402,7 +3403,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_right_join_with_remote_table = false;
     int first_join_pos = -1;
     int last_right_join_pos = -1;
-    bool is_cross_join = false;
     bool has_global_join_preserving_broadcast_rows = false;
     /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
     /// join of an n-way tree must be tracked here. Set for JOIN/ARRAY_JOIN, read only in the JOIN branch.
@@ -3431,11 +3431,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             if (join_kind == JoinKind::Full)
                 is_full_join = true;
-
-            /// A comma join is like `INNER` here: it gets its keys from `WHERE` in the query plan, and a cross
-            /// product left over is kept local by `applyParallelReplicas` and `findParallelReplicasQuery`.
-            if (join_kind == JoinKind::Cross)
-                is_cross_join = true;
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
@@ -3470,16 +3465,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// That happens even to a join deciding each left row on its own, such as `INNER ASOF`. Under
             /// `LEFT` every strictness is admitted, which is the point of the kind exemption; outside it this
             /// stays a whitelist, so a future `JoinStrictness` is fail-closed.
-            /// `GLOBAL`/`CROSS`, and a misplaced `RIGHT`, remain the business of the disjuncts
-            /// below, which is why `ALL` is still admitted for those kinds here.
+            /// `GLOBAL`, and a misplaced `RIGHT`, remain the business of the disjuncts below, which is
+            /// why `ALL` is still admitted for those kinds here.
             /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
             /// pairs rows by position, and `FULL` emits unmatched right rows, which each replica
             /// would decide from its own slice of the left side.
-            /// A comma join carries no strictness of its own and is decided per left row like `INNER ALL`.
+            /// A cross join carries no strictness of its own and is decided per left row like `INNER ALL`.
             if (is_non_leftmost_join_tree_node
                 && (join_kind == JoinKind::Paste
                     || join_kind == JoinKind::Full
-                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left && join_kind != JoinKind::Comma)))
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left && !isCrossOrComma(join_kind))))
                 has_unsafe_non_leftmost_join = true;
 
             continue;
@@ -3495,8 +3490,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (first_join_pos >= 0 && last_right_join_pos >= 0 && first_join_pos < last_right_join_pos)
             return true;
 
-        /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
-        if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+        /// for n-way join with FULL JOIN or GLOBAL JOINS
+        if (joins_count > 1 && (is_full_join || is_global_join))
             return true;
 
         /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
