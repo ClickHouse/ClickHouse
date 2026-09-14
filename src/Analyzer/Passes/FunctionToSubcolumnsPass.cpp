@@ -559,9 +559,11 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 {
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
+    /// No case-insensitive check here: only the file and object storage readers bind column names up to
+    /// case, and storageAllowsTransformer never lets a Map rewrite reach them. On every storage that gets
+    /// here name resolution is case-sensitive, so a top-level `M.keys` cannot shadow `m.keys`.
     NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
         return false;
 
@@ -674,9 +676,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
+            /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
             NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
