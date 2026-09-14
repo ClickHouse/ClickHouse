@@ -2479,6 +2479,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 "Database {} is an Overlay facade (read-only). Run ATTACH TABLE in an underlying database",
                 backQuoteIfNeed(create.getDatabase()));
 
+    /// Only `CREATE TABLE` is delegated to a source database (see below). A view or a dictionary
+    /// created through the facade would otherwise be created in that source as well, which the
+    /// facade's contract does not allow: every other definition happens in an underlying database.
+    /// The rejection comes first, before any probe of the facade or its sources, for the same
+    /// reason as the checks below. (A materialized view whose `TO` target is reached through a
+    /// facade lives in the database that owns the view and is unaffected.)
+    if (create.isView() || create.is_dictionary)
+        if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). Run CREATE {} in an underlying database",
+                backQuoteIfNeed(create.getDatabase()),
+                create.is_dictionary ? "DICTIONARY" : "VIEW");
+
     /// A read-only `Overlay` facade with no writable source database cannot receive a table at all,
     /// so reject that up front too, before any probe of the facade or its sources: the facade-wide
     /// existence check below walks the sources, so its answer (`TABLE_ALREADY_EXISTS`, a silent
@@ -2513,7 +2527,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {} ON {}.{} in the "
                 "underlying source database of this Overlay facade",
                 getContext()->getUserName(),
-                toString(create.is_dictionary ? AccessType::CREATE_DICTIONARY : (create.isView() ? AccessType::CREATE_VIEW : AccessType::CREATE_TABLE)),
+                toString(AccessType::CREATE_TABLE),
                 backQuote(facade_name),
                 backQuote(create.getTable()));
     }
