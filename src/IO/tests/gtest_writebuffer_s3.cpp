@@ -23,11 +23,8 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 
-#include <array>
-
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
-#include <IO/S3/Requests.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
@@ -42,7 +39,6 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
 
 
@@ -56,19 +52,12 @@ namespace Setting
     extern const SettingsUInt64 s3_max_upload_part_size;
     extern const SettingsUInt64 s3_min_upload_part_size;
     extern const SettingsUInt64 s3_strict_upload_part_size;
-    extern const SettingsString s3_upload_checksum_algorithm;
     extern const SettingsUInt64 s3_upload_part_size_multiply_factor;
     extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
 }
 
-namespace S3RequestSetting
-{
-    extern const S3RequestSettingsString upload_checksum_algorithm;
-}
-
 namespace ErrorCodes
 {
-    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
 }
@@ -102,25 +91,18 @@ public:
     using MPU_ID = std::string;
     using MPUPartsInProgress = std::map<ETag, Data>;
     using MPUParts = std::vector<Data>;
-    using Metadata = std::map<std::string, std::string>;
 
 
     std::map<Key, Data> objects;
-    /// Custom object metadata (`x-amz-meta-*`), stored alongside the object and served by HeadObject.
-    std::map<Key, Metadata> object_metadata;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
-    /// Metadata of an in-flight upload, carried from CreateMultipartUpload onto the completed object
-    /// the way real S3 does -- that is what makes a HEAD after completion see it.
-    std::map<MPU_ID, Metadata> multiPartUploadMetadata;
     std::vector<std::pair<MPU_ID, MPUParts>> CompletedPartUploads;
 
     Sequencer sequencer;
 
-    std::string CreateMPU(const Metadata & metadata = {})
+    std::string CreateMPU()
     {
         auto id = sequencer.next_id();
         multiPartUploads.emplace(id, MPUPartsInProgress{});
-        multiPartUploadMetadata.emplace(id, metadata);
         return id;
     }
 
@@ -132,10 +114,9 @@ public:
         return etag;
     }
 
-    void PutObject(const std::string & key, const std::string & data, const Metadata & metadata = {})
+    void PutObject(const std::string & key, const std::string & data)
     {
         objects[key] = data;
-        object_metadata[key] = metadata;
     }
 
     void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
@@ -155,16 +136,12 @@ public:
 
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
-        if (auto it = multiPartUploadMetadata.find(upload_id); it != multiPartUploadMetadata.end())
-            object_metadata[key] = it->second;
         multiPartUploads.erase(upload_id);
-        multiPartUploadMetadata.erase(upload_id);
     }
 
     void AbortMPU(const std::string & upload_id)
     {
         multiPartUploads.erase(upload_id);
-        multiPartUploadMetadata.erase(upload_id);
     }
 
 
@@ -265,42 +242,30 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    /// `DB::S3::Client` derives the provider from the endpoint, so a test that depends on the provider
-    /// selects it by passing an endpoint here. The default is empty, which deduces `ProviderType::UNKNOWN`.
-    static constexpr std::string_view gcs_endpoint = "https://storage.googleapis.com";
-
-    explicit Client(
-        std::shared_ptr<S3MemStrore> mock_s3_store,
-        bool disable_checksum = false,
-        bool is_s3express_bucket = false,
-        std::string_view endpoint = {})
+    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(endpoint),
+            GetClientConfiguration(),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
-                .disable_checksum = disable_checksum,
+                .disable_checksum = false,
                 .gcs_issue_compose_request = false,
-                .is_s3express_bucket = is_s3express_bucket,
+                .is_s3express_bucket = false,
             })
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(
-        String bucket = "mock-s3-bucket",
-        bool disable_checksum = false,
-        bool is_s3express_bucket = false,
-        std::string_view endpoint = {})
+    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket")
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, disable_checksum, is_s3express_bucket, endpoint);
+        return std::make_shared<Client>(s3store);
     }
 
-    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(std::string_view endpoint = {})
+    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
     {
         DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -319,8 +284,6 @@ struct Client : DB::S3::Client
         /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
         /// aborts every request in debug/sanitizer builds.
         configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
-        if (!endpoint.empty())
-            configuration.endpointOverride = String(endpoint);
         return configuration;
     }
 
@@ -343,10 +306,7 @@ struct Client : DB::S3::Client
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
         const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-        bStore.PutObject(request.GetKey(), data, metadata);
+        bStore.PutObject(request.GetKey(), data);
         counters.writtenSize += data.length();
 
         Aws::S3::Model::PutObjectOutcome outcome;
@@ -398,13 +358,6 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
-        if (auto it = bStore.object_metadata.find(request.GetKey()); it != bStore.object_metadata.end())
-        {
-            Aws::Map<Aws::String, Aws::String> metadata;
-            for (const auto & [name, value] : it->second)
-                metadata[name] = value;
-            result.SetMetadata(std::move(metadata));
-        }
         return result;
     }
 
@@ -421,10 +374,7 @@ struct Client : DB::S3::Client
         }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-        auto mpu_id = bStore.CreateMPU(metadata);
+        auto mpu_id = bStore.CreateMPU();
 
         Aws::S3::Model::CreateMultipartUploadResult result;
         result.SetUploadId(mpu_id.c_str());
@@ -585,51 +535,6 @@ struct UploadPartFailIngection: InjectionModel
     }
 };
 
-struct ChecksumRecordingInjection : InjectionModel
-{
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
-    {
-        put_object_algorithm = request.GetChecksumAlgorithm();
-        put_object_request_checksum_required = request.RequestChecksumRequired();
-        put_object_should_compute_content_md5 = request.ShouldComputeContentMd5();
-        return std::nullopt;
-    }
-
-    std::optional<Aws::S3::Model::CreateMultipartUploadOutcome> call(const Aws::S3::Model::CreateMultipartUploadRequest & request) override
-    {
-        create_multipart_upload_algorithm = request.GetChecksumAlgorithm();
-        return std::nullopt;
-    }
-
-    std::optional<Aws::S3::Model::UploadPartOutcome> call(const Aws::S3::Model::UploadPartRequest & request) override
-    {
-        upload_part_algorithms.push_back(request.GetChecksumAlgorithm());
-        upload_part_crc32_checksums.push_back(request.GetChecksumCRC32());
-        upload_part_sha256_checksums.push_back(request.GetChecksumSHA256());
-        return std::nullopt;
-    }
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
-    {
-        for (const auto & part : request.GetMultipartUpload().GetParts())
-        {
-            complete_part_crc32_checksums.push_back(part.GetChecksumCRC32());
-            complete_part_sha256_checksums.push_back(part.GetChecksumSHA256());
-        }
-        return std::nullopt;
-    }
-
-    Aws::S3::Model::ChecksumAlgorithm put_object_algorithm = Aws::S3::Model::ChecksumAlgorithm::NOT_SET;
-    bool put_object_request_checksum_required = false;
-    bool put_object_should_compute_content_md5 = true;
-    Aws::S3::Model::ChecksumAlgorithm create_multipart_upload_algorithm = Aws::S3::Model::ChecksumAlgorithm::NOT_SET;
-    std::vector<Aws::S3::Model::ChecksumAlgorithm> upload_part_algorithms;
-    std::vector<String> upload_part_crc32_checksums;
-    std::vector<String> upload_part_sha256_checksums;
-    std::vector<String> complete_part_crc32_checksums;
-    std::vector<String> complete_part_sha256_checksums;
-};
-
 /// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
 /// eventual-consistency error, then lets the real mock store handle the rest. The AWS SDK cannot map
 /// <Code>InvalidPart</Code> to a typed model error, so it produces UNKNOWN as the error type and keeps
@@ -653,179 +558,6 @@ struct CompleteMPUInvalidPartOnceIngection : InjectionModel
 
     size_t fail_times;
     size_t calls = 0;
-};
-
-/// `PreconditionFailed` as the SDK actually produces it: 412 carries an <Code>PreconditionFailed</Code>
-/// that has no typed S3 model error, so AWSErrorMarshaller yields UNKNOWN and keeps the raw code in the
-/// exception name only -- the shape WriteBufferFromS3 must recognise.
-inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedError()
-{
-    return Aws::Client::AWSError<Aws::Client::CoreErrors>(
-        Aws::Client::CoreErrors::UNKNOWN,
-        "PreconditionFailed",
-        "At least one of the pre-conditions you specified did not hold",
-        false);
-}
-
-/// Replays the lost-response scenario for a conditional (`If-None-Match: *`) PutObject: the first
-/// attempt lands the object server-side but its response is lost, reported as the bogus MinIO
-/// NO_SUCH_KEY that WriteBufferFromS3 retries; the replay then sees the object it just wrote and gets
-/// 412. Records the metadata of every request so a test can assert what was stamped.
-struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
-{
-    PutObjectLostResponseThenPreconditionFailed(std::shared_ptr<S3MemStrore> store_, bool store_first_attempt_)
-        : store(std::move(store_)), store_first_attempt(store_first_attempt_) {}
-
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-        seen_metadata.push_back(metadata);
-
-        if (calls++ > 0)
-            return makePreconditionFailedError();
-
-        if (store_first_attempt)
-        {
-            const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
-            store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), data, metadata);
-        }
-
-        return Aws::Client::AWSError<Aws::S3::S3Errors>(
-            Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "The specified key does not exist.", false);
-    }
-
-    std::shared_ptr<S3MemStrore> store;
-    bool store_first_attempt;
-    size_t calls = 0;
-    std::vector<BucketMemStore::Metadata> seen_metadata;
-};
-
-/// Every PutObject attempt fails with 412 -- a genuinely pre-existing object, written by somebody
-/// else. Records the metadata and the `If-None-Match` of every request; this injection serves both
-/// the conditional and the unconditional arms, so each asserts the header it expects.
-struct PutObjectPreconditionFailedInjection : InjectionModel
-{
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
-    {
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-        seen_metadata.push_back(metadata);
-        seen_if_none_match.push_back(request.GetIfNoneMatch());
-        return makePreconditionFailedError();
-    }
-
-    std::vector<BucketMemStore::Metadata> seen_metadata;
-    std::vector<std::string> seen_if_none_match;
-};
-
-/// A conditional PutObject that gets 412 while the HEAD used to verify the write token also fails.
-/// The write must report the original 412, never succeed on an unverifiable object.
-struct PutObjectPreconditionFailedAndHeadFailsInjection : InjectionModel
-{
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-        return makePreconditionFailedError();
-    }
-
-    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & /*request*/) override
-    {
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(
-            Aws::Client::CoreErrors::VALIDATION, "FailInjection", "HeadObjectFailIngection", false);
-    }
-};
-
-/// Replays the lost-response scenario for a conditional CompleteMultipartUpload: the first attempt
-/// completes the upload server-side but its response is lost (reported as the MinIO NO_SUCH_KEY that
-/// WriteBufferFromS3 retries), so the replay sees the object it just wrote and gets 412.
-struct CompleteMPULostResponseThenPreconditionFailed : InjectionModel
-{
-    explicit CompleteMPULostResponseThenPreconditionFailed(std::shared_ptr<S3MemStrore> store_)
-        : store(std::move(store_)) {}
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
-        const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-
-        if (calls++ > 0)
-            return makePreconditionFailedError();
-
-        std::vector<std::string> etags;
-        for (const auto & part : request.GetMultipartUpload().GetParts())
-            etags.push_back(part.GetETag());
-        store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
-
-        return Aws::Client::AWSError<Aws::S3::S3Errors>(
-            Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "The specified key does not exist.", false);
-    }
-
-    std::shared_ptr<S3MemStrore> store;
-    size_t calls = 0;
-};
-
-/// Every conditional CompleteMultipartUpload attempt fails with 412 -- a genuinely pre-existing
-/// object. Records the metadata CreateMultipartUpload stamped so a test can assert the token.
-struct CompleteMPUPreconditionFailedInjection : InjectionModel
-{
-    std::optional<Aws::S3::Model::CreateMultipartUploadOutcome> call(
-        const Aws::S3::Model::CreateMultipartUploadRequest & request) override
-    {
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-        seen_create_metadata.push_back(metadata);
-        return std::nullopt;
-    }
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
-        const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-        return makePreconditionFailedError();
-    }
-
-    std::vector<BucketMemStore::Metadata> seen_create_metadata;
-};
-
-/// Reports `NO_SUCH_UPLOAD` on every CompleteMultipartUpload, optionally completing the upload
-/// server-side first -- the shape of an upload id the server has already consumed. Records the
-/// `If-None-Match` of every attempt because this injection serves conditional and unconditional arms.
-struct CompleteMPUNoSuchUploadInjection : InjectionModel
-{
-    CompleteMPUNoSuchUploadInjection(std::shared_ptr<S3MemStrore> store_, bool complete_first_attempt_)
-        : store(std::move(store_)), complete_first_attempt(complete_first_attempt_) {}
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
-        const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
-    {
-        seen_if_none_match.push_back(request.GetIfNoneMatch());
-
-        if (complete_first_attempt && calls == 0)
-        {
-            std::vector<std::string> etags;
-            for (const auto & part : request.GetMultipartUpload().GetParts())
-                etags.push_back(part.GetETag());
-            store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
-        }
-        ++calls;
-
-        return Aws::Client::AWSError<Aws::S3::S3Errors>(
-            Aws::S3::S3Errors::NO_SUCH_UPLOAD,
-            "NoSuchUpload",
-            "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.",
-            false);
-    }
-
-    std::shared_ptr<S3MemStrore> store;
-    bool complete_first_attempt;
-    size_t calls = 0;
-    std::vector<std::string> seen_if_none_match;
 };
 
 struct BaseSyncPolicy
@@ -923,10 +655,7 @@ public:
         return *async_policy;
     }
 
-    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(
-        String file_name = "file",
-        const WriteSettings & write_settings = {},
-        std::optional<ObjectAttributes> object_metadata = std::nullopt)
+    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
         S3::S3RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
@@ -942,25 +671,8 @@ public:
                     DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
                     nullptr,
-                    std::move(object_metadata),
-                    getAsyncPolicy().getScheduler(),
-                    write_settings);
-    }
-
-    /// The Iceberg conditional create-if-absent write: `If-None-Match: *`.
-    static WriteSettings conditionalCreateWriteSettings()
-    {
-        WriteSettings write_settings;
-        write_settings.object_storage_write_if_none_match = "*";
-        return write_settings;
-    }
-
-    /// The Iceberg conditional replace-this-version write: `If-Match: <etag>`, no token minted.
-    static WriteSettings conditionalReplaceWriteSettings()
-    {
-        WriteSettings write_settings;
-        write_settings.object_storage_write_if_match = "some-etag";
-        return write_settings;
+                    std::nullopt,
+                    getAsyncPolicy().getScheduler());
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)
@@ -1197,432 +909,6 @@ TEST_P(SyncAsync, ExceptionOnCreateMPU) {
       }, DB::S3Exception);
 }
 
-TEST_P(SyncAsync, UploadChecksumAlgorithmSHA256Multipart)
-{
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("checksum_sha256_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::SHA256));
-    ASSERT_EQ(injection->upload_part_sha256_checksums, injection->complete_part_sha256_checksums);
-    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::Not(testing::IsEmpty())));
-}
-
-TEST_P(SyncAsync, UploadChecksumAlgorithmCRC32Singlepart)
-{
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
-
-    auto buffer = getWriteBuffer("checksum_crc32_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->put_object_algorithm);
-}
-
-TEST_F(WBS3Test, CopyDataUploadChecksumAlgorithmCRC32Multipart)
-{
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    const String data(10, 'a');
-    CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
-    {
-        return std::make_unique<ReadBufferFromString>(data);
-    };
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
-
-    copyDataToS3File(
-        create_read_buffer,
-        0,
-        data.size(),
-        client,
-        bucket,
-        "copy_checksum_crc32_multipart",
-        request_settings,
-        nullptr,
-        getAsyncPolicy().getScheduler(),
-        std::nullopt);
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
-    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
-    ASSERT_EQ(data, client->store->GetBucketStore(bucket).objects["copy_checksum_crc32_multipart"]);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
-{
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "crc32";
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-
-    ASSERT_EQ("CRC32", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
-
-    /// `MD5` normalizes to upper case. The FIPS rejection is a runtime check, not a validation one.
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "md5";
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
-
-    EXPECT_THROW({
-        try
-        {
-            request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("only supports MD5, CRC32, SHA256"));
-            throw;
-        }
-    }, DB::Exception);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
-{
-    using Algorithm = S3::RequestChecksum::Algorithm;
-
-    /// Default-constructed settings leave upload_checksum_algorithm empty.
-    S3::S3RequestSettings request_settings;
-    const bool fips = DB::OpenSSLInitializer::instance().isFIPSEnabled();
-
-    /// Empty setting: always defer to the SDK's `Content-MD5`, including under FIPS where the SDK drops it.
-    /// Attaching a flexible checksum is opt-in, because support for `x-amz-checksum-*` outside AWS is inconsistent.
-    ASSERT_EQ(Algorithm::MD5,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false));
-
-    /// S3Express does not support `Content-MD5`, so the default upload checksum is `CRC32`.
-    ASSERT_EQ(Algorithm::CRC32,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
-
-    /// S3Express honors an explicit flexible algorithm instead of forcing CRC32.
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-    ASSERT_EQ(Algorithm::SHA256,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
-
-    /// S3Express cannot use MD5 (no Content-MD5), so an explicit MD5 is rejected rather than silently upgraded.
-    if (!fips)
-    {
-        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
-        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-        EXPECT_THROW({
-            try
-            {
-                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true);
-            }
-            catch (const DB::Exception & e)
-            {
-                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 for S3Express buckets"));
-                throw;
-            }
-        }, DB::Exception);
-    }
-}
-
-TEST_F(WBS3Test, DisabledChecksumAcceptsMD5UnderFIPS)
-{
-    /// `s3_disable_checksum` sends no checksum at all, so `MD5` must not be rejected here even under FIPS.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("checksum_disabled_md5_fips");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
-{
-    S3::S3RequestSettings request_settings;
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
-
-    EXPECT_THROW({
-        try
-        {
-            S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false);
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("only supports MD5, CRC32, SHA256"));
-            throw;
-        }
-    }, DB::Exception);
-
-    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
-    {
-        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
-        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
-
-        EXPECT_THROW({
-            try
-            {
-                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false);
-            }
-            catch (const DB::Exception & e)
-            {
-                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
-                throw;
-            }
-        }, DB::Exception);
-    }
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
-{
-    /// The empty setting keeps the SDK's `Content-MD5` path, including under FIPS where the SDK silently
-    /// omits the header. Attaching a flexible checksum is opt-in.
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("checksum_empty_default_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
-{
-    /// `GCS` requires `x-goog-*` and rejects `SigV4`-signed requests carrying `x-amz-checksum-*`, so even
-    /// an explicit algorithm must not reach the request.
-    client = MockS3::Client::CreateClient(
-        bucket, /* disable_checksum */ false, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
-    ASSERT_TRUE(client->isClientForGCS());
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-
-    auto buffer = getWriteBuffer("checksum_gcs_ignores_setting");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
-{
-    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
-        return;
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
-
-    auto buffer = getWriteBuffer("checksum_md5_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultDisabledChecksumSinglepart)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("checksum_empty_default_disabled_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithm)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-
-    auto buffer = getWriteBuffer("checksum_disabled_precedence");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_P(SyncAsync, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
-{
-    /// The multipart requests are built separately from `PutObject`, so the precedence has to be asserted here too.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("checksum_disabled_precedence_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
-    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
-}
-
-TEST_F(WBS3Test, CopyDataDisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
-{
-    /// `copyDataToS3File` has its own request builder, so it needs the same assertion as `WriteBufferFromS3`.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    const String data(10, 'a');
-    CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
-    {
-        return std::make_unique<ReadBufferFromString>(data);
-    };
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
-
-    copyDataToS3File(
-        create_read_buffer,
-        0,
-        data.size(),
-        client,
-        bucket,
-        "copy_checksum_disabled_precedence_multipart",
-        request_settings,
-        nullptr,
-        getAsyncPolicy().getScheduler(),
-        std::nullopt);
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
-    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_EQ(data, client->store->GetBucketStore(bucket).objects["copy_checksum_disabled_precedence_multipart"]);
-}
-
-TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
-{
-    /// S3Express forces CRC32 only as a default; an explicit SHA256 must survive `setIsS3ExpressBucket`,
-    /// which is applied when the request is sent (after the upload algorithm has been chosen).
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ false, /* is_s3express_bucket */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-
-    auto buffer = getWriteBuffer("s3express_explicit_sha256");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
-    ASSERT_TRUE(injection->put_object_request_checksum_required);
-}
-
-TEST_P(SyncAsync, S3ExpressDisabledChecksumKeepsMultipartChecksums)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true, /* is_s3express_bucket */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("s3express_disabled_checksum_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
-    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
-}
 
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());
@@ -1645,373 +931,6 @@ TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
             throw;
         }
       }, DB::S3Exception);
-}
-
-/// A conditional (`If-None-Match: *`) PutObject replayed after it already succeeded must report
-/// success, not the spurious `PreconditionFailed` the replay gets back.
-TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
-    auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
-        client->store, /* store_first_attempt= */ true);
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("conditional_put_lost_response", conditionalCreateWriteSettings());
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    /// Two PUT attempts (NO_SUCH_KEY then 412) and one HEAD that verified our own write token.
-    EXPECT_EQ(client->counters.putObject, 2u);
-    EXPECT_EQ(client->counters.headObject, 1u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["conditional_put_lost_response"], "A");
-
-    /// Both attempts carried the same token, and it is the one stored with the object.
-    ASSERT_EQ(injection->seen_metadata.size(), 2u);
-    const auto token = injection->seen_metadata[0].at("clickhouse-write-token");
-    EXPECT_FALSE(token.empty());
-    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-write-token"), token);
-    EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-write-token"), token);
-}
-
-/// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
-/// byte-identical to the payload on purpose, so a byte or size comparison would wrongly accept it.
-TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
-    auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-write-token", "written-by-somebody-else"}});
-
-    auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
-    setInjectionModel(injection);
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_put_foreign", conditionalCreateWriteSettings());
-            buffer->write('1');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            /// The thrown message carries the 412 text; the exception name is logged, not rethrown.
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    /// The foreign object is untouched, and the PUT really was conditional.
-    EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");
-    EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
-    ASSERT_FALSE(injection->seen_if_none_match.empty());
-    EXPECT_EQ(injection->seen_if_none_match[0], "*");
-}
-
-/// An ordinary (unconditional) S3 write is untouched: no token is stamped on the request, and a 412 is
-/// still thrown. Proves the `object_storage_write_if_none_match` guard is load-bearing.
-TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
-    auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
-    setInjectionModel(injection);
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("unconditional_put_412");
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            /// The thrown message carries the 412 text; the exception name is logged, not rethrown.
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    /// The request was not conditional, no token was stamped, and no HEAD looked one up.
-    ASSERT_FALSE(injection->seen_metadata.empty());
-    for (const auto & metadata : injection->seen_metadata)
-        EXPECT_FALSE(metadata.contains("clickhouse-write-token"));
-    for (const auto & if_none_match : injection->seen_if_none_match)
-        EXPECT_TRUE(if_none_match.empty());
-    EXPECT_EQ(client->counters.headObject, 0u);
-}
-
-/// A caller-supplied `object_metadata` must survive next to the write token -- the token is merged in,
-/// never substituted for the caller's map.
-TEST_P(SyncAsync, SinglepartConditionalPutKeepsCallerMetadata) {
-    auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
-        client->store, /* store_first_attempt= */ true);
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer(
-        "conditional_put_caller_metadata", conditionalCreateWriteSettings(), ObjectAttributes{{"caller-key", "caller-value"}});
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_FALSE(injection->seen_metadata.empty());
-    EXPECT_EQ(injection->seen_metadata[0].at("caller-key"), "caller-value");
-    EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-write-token").empty());
-}
-
-/// A 412 must not be accepted on an object carrying no token at all -- a pre-Fix or non-ClickHouse
-/// writer produced it, so this is a genuine conflict.
-TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskUntokenedObject) {
-    auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_put_untokened", "1", {});
-
-    auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
-    setInjectionModel(injection);
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_put_untokened", conditionalCreateWriteSettings());
-            buffer->write('1');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    EXPECT_EQ(bStore.objects["conditional_put_untokened"], "1");
-    EXPECT_TRUE(bStore.object_metadata["conditional_put_untokened"].empty());
-    ASSERT_FALSE(injection->seen_if_none_match.empty());
-    EXPECT_EQ(injection->seen_if_none_match[0], "*");
-}
-
-/// A 412 with no object stored at all (a pathological server) must throw: the guard proves our own
-/// write, it never infers one from the status code.
-TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskAbsentObject) {
-    auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
-    setInjectionModel(injection);
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_put_absent", conditionalCreateWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    /// The guard was consulted and found nothing to match against, so the payload never landed.
-    EXPECT_EQ(client->counters.headObject, 1u);
-    EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_put_absent"].empty());
-}
-
-/// When the verifying HEAD itself fails the write must still report the original 412, not the HEAD
-/// error and not success.
-TEST_P(SyncAsync, SinglepartConditionalPutThrowsWhenHeadFails) {
-    setInjectionModel(std::make_shared<MockS3::PutObjectPreconditionFailedAndHeadFailsInjection>());
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_put_head_fails", conditionalCreateWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            EXPECT_THAT(e.what(), testing::Not(testing::HasSubstr("HeadObjectFailIngection")));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    EXPECT_GE(client->counters.headObject, 1u);
-}
-
-/// The multipart carrier of the same defect: with `s3_max_single_part_upload_size = 0` a conditional
-/// Iceberg create takes the multipart path, whose CompleteMultipartUpload sets the same
-/// `If-None-Match` and is likewise replayed on a lost response. The token is stamped on
-/// CreateMultipartUpload and lands on the completed object.
-TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("conditional_mpu_lost_response", conditionalCreateWriteSettings());
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
-    EXPECT_EQ(client->counters.headObject, 1u);
-    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["conditional_mpu_lost_response"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-write-token").empty());
-}
-
-/// The multipart twin of the foreign-object arm: a 412 on a completion whose object somebody else
-/// wrote must still fail. The pre-existing object is byte-identical on purpose.
-TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
-    auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
-
-    auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_mpu_foreign", conditionalCreateWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    EXPECT_EQ(bStore.objects["conditional_mpu_foreign"], "A");
-    EXPECT_EQ(bStore.object_metadata["conditional_mpu_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
-
-    /// CreateMultipartUpload carried a token, so the guard had something to compare and rejected it.
-    ASSERT_FALSE(injection->seen_create_metadata.empty());
-    EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-write-token").empty());
-}
-
-/// The other door into the same replay: a completion that already landed can come back as
-/// `NO_SUCH_UPLOAD` (consumed upload id) instead of 412. On our own object that is still success.
-TEST_P(SyncAsync, MultipartConditionalCompleteRecoversNoSuchUploadOnOwnObject) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ true));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("conditional_mpu_no_such_upload", conditionalCreateWriteSettings());
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    /// The token was consulted rather than existence assumed, and the completed upload is not aborted.
-    EXPECT_GE(client->counters.headObject, 1u);
-    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-write-token").empty());
-}
-
-/// The same `NO_SUCH_UPLOAD` over an object somebody else wrote must still fail: existence at the key
-/// is not authorship, and reporting success would let a conditional create silently lose its payload.
-TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
-    auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
-
-    auto injection = std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ false);
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_mpu_no_such_upload_foreign", conditionalCreateWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload_foreign"], "A");
-    EXPECT_EQ(
-        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-write-token"),
-        "written-by-somebody-else");
-    ASSERT_FALSE(injection->seen_if_none_match.empty());
-    EXPECT_EQ(injection->seen_if_none_match[0], "*");
-}
-
-/// `If-Match` is conditional too, and it mints no write token, so nothing can prove authorship: the
-/// existence-only recovery must not fire there either.
-TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotRecoverNoSuchUpload) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ true));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
-            throw;
-        }
-      }, DB::S3Exception);
-}
-
-/// An unconditional completion keeps the existing recover-if-the-object-exists behaviour, which backs
-/// copyS3File and the disk write paths: the conditional gate must not change them.
-TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ true));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("unconditional_mpu_no_such_upload");
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    /// Recovered by the wrapper's own HEAD, with no token to look up.
-    EXPECT_GE(client->counters.headObject, 1u);
-    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].contains("clickhouse-write-token"));
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a

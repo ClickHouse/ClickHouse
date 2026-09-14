@@ -37,7 +37,10 @@ function cleanup()
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT kafka2_remove_zk_before_get_children" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT kafka2_remove_zk_before_final_multi" 2>/dev/null ||:
     # Every DROP here must really execute: it is what reaches removeTableNodesFromZooKeeper.
-    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS k2_race SYNC" 2>/dev/null ||:
+    # The stress runner injects `ignore_drop_queries_probability=0.2` and `clickhouse-client
+    # --fake-drop` (upgrade check) injects 1; for a storage that keeps nothing on disk the
+    # injection rewrites DROP into a TRUNCATE that Kafka does not implement. Hence the pin.
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
     ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${ZK_PATH}'" 2>/dev/null ||:
 }
 trap cleanup EXIT
@@ -130,7 +133,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT kafka2_remove_zk_before_get_chi
 
 # DROP TABLE SYNC triggers dropReplica -> removeTableNodesFromZooKeeper, which pauses on the
 # failpoint before calling tryGetChildren.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC" &
+${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" &
 DROP_PID=$!
 
 wait_for_pause kafka2_remove_zk_before_get_children
@@ -151,7 +154,7 @@ create_table
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT kafka2_remove_zk_before_final_multi"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC" &
+${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" &
 DROP_PID=$!
 
 wait_for_pause kafka2_remove_zk_before_final_multi

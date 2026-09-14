@@ -64,6 +64,12 @@ void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColu
 }
 
 template <typename T>
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
+{
+    in.ignore(sizeof(T));
+}
+
+template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
@@ -1444,13 +1450,6 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
-}
-
-template <typename T>
-bool ColumnVector<T>::hasOnlyTypeDefaults() const
-{
-    /// A conservative bit check intentionally keeps -0.0 columns physical.
-    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <typename T>
