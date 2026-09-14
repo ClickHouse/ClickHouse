@@ -2400,17 +2400,19 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
-    if (!storage.supportsPerSubcolumnCodecs())
+
+    const auto metadata = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    for (const auto & column : metadata->getColumns())
     {
-        const auto metadata = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-        for (const auto & column : metadata->getColumns())
-        {
-            if (column.codec.hasSubcolumns())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Storage {} does not support Tuple-element CODEC declarations",
-                    storage.getName());
-        }
+        if (!column.codec.hasSubcolumns())
+            continue;
+
+        if (!storage.supportsPerSubcolumnCodecs())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} does not support Tuple-element CODEC declarations",
+                storage.getName());
+        break;
     }
 }
 catch (...)
