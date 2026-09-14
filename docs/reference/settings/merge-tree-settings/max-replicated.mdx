@@ -18,7 +18,7 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 Limits the maximum speed of data exchange over the network in bytes per
 second for [replicated](/reference/engines/table-engines/mergetree-family/replication)
 fetches. This setting is applied to a particular table, unlike the
-[`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but for
@@ -41,7 +41,7 @@ Could be used for throttling speed when replicating data to add or replace
 new nodes.
 
 ## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
@@ -73,7 +73,7 @@ ReplicatedMergeTree queue.
 Limits the maximum speed of data exchange over the network in bytes per
 second for [replicated](/reference/engines/table-engines/mergetree-family/replacingmergetree)
 sends. This setting is applied to a particular table, unlike the
-[`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but

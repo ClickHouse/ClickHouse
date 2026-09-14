@@ -21,6 +21,7 @@ public:
     {
         "delete-on-destroy.txt",
         "txn_version.txt",
+        "invalidated_system_columns.txt",
     };
 
     DataPartStorageOnDiskPacked(

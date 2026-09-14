@@ -28,7 +28,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `event_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 精确到微秒的条目时间。
 * `thread_name` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行日志记录的线程名称。
 * `thread_id` ([UInt64](/zh/reference/data-types/int-uint)) — 操作系统线程 ID。
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/zh/reference/data-types/enum)) — 条目级别。可能的值：1 或 &#39;Fatal&#39;、2 或 &#39;Critical&#39;、3 或 &#39;Error&#39;、4 或 &#39;Warning&#39;、5 或 &#39;Notice&#39;、6 或 &#39;Information&#39;、7 或 &#39;Debug&#39;、8 或 &#39;Trace&#39;。
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/zh/reference/data-types/enum)) — 条目级别。可能的值：1 或 &#39;Fatal&#39;、2 或 &#39;Critical&#39;、3 或 &#39;Error&#39;、4 或 &#39;Warning&#39;、5 或 &#39;Notice&#39;、6 或 &#39;Information&#39;、7 或 &#39;Debug&#39;、8 或 &#39;Trace&#39;、9 或 &#39;Test&#39;。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `logger_name` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 日志记录器名称 (例如 DDLWorker) 。
 * `message` ([String](/zh/reference/data-types/string)) — 消息内容本身。
@@ -64,7 +64,6 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
-microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

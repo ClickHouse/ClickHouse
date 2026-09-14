@@ -1,0 +1,15 @@
+-- Branch-local `limit`/`offset` settings must be applied after each legacy range branch.
+-- { echo }
+
+SET enable_analyzer = 0;
+SELECT * FROM ((SELECT number AS n FROM numbers(6) ORDER BY number LIMIT AFTER number >= 2 SETTINGS limit = 2, offset = 1) UNION ALL (SELECT number + 10 AS n FROM numbers(6) ORDER BY number LIMIT AFTER number >= 3 SETTINGS limit = 2, offset = 2) UNION ALL (SELECT number + 100 AS n FROM numbers(1))) ORDER BY n;
+3
+4
+15
+100
+SELECT * FROM ((SELECT number AS n FROM numbers(6) ORDER BY number LIMIT UNTIL number >= 4 SETTINGS limit = 2, offset = 1) UNION ALL (SELECT number + 10 AS n FROM numbers(6) ORDER BY number LIMIT UNTIL number >= 5 SETTINGS limit = 2, offset = 3) UNION ALL (SELECT number + 100 AS n FROM numbers(1))) ORDER BY n;
+1
+2
+13
+14
+100

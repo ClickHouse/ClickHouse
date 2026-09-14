@@ -1,0 +1,4 @@
+CORR local_plan=0	999000
+CORR local_plan=1	999000
+NESTED local_plan=0	1000
+NESTED local_plan=1	1000

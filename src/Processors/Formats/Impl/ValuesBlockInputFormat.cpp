@@ -13,7 +13,9 @@
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -124,6 +126,11 @@ Chunk ValuesBlockInputFormat::read()
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
+        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
+        /// and the equivalent one in `IRowInputFormat::read`.
+        if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            CurrentThread::checkIfNotCancelled();
+
         try
         {
             skipWhitespaceAndSQLComments(*buf);
@@ -467,10 +474,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
 
-    bool parsed = false;
+    bool expression_parsed = false;
+    bool delimiter_found = false;
     ASTPtr ast;
     std::optional<IParser::Pos> ti_start;
     LiteralTokenMap literal_token_map;
+
+    /// The value of the last column is followed by ')', the others by ','.
+    const bool is_last_column = column_idx + 1 == num_columns;
 
     if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
     {
@@ -480,21 +491,60 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         ti_start = IParser::Pos(
             *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
 
-        parsed = parser.parse(*token_iterator, ast, expected);
+        expression_parsed = parser.parse(*token_iterator, ast, expected);
 
-        /// Consider delimiter after value (',' or ')') as part of expression
-        if (column_idx + 1 != num_columns)
-            parsed &= (*token_iterator)->type == TokenType::Comma;
+        /// The delimiter after the value ( ',' or ')' ) is considered part of the expression.
+        if (is_last_column)
+        {
+            /** The value of the last column may be followed by an optional trailing comma before ')' -
+              * `checkDelimiterAfterValue` accepts that on the streaming path and
+              * `03153_trailing_comma_in_values_list_in_insert` documents it. This path used to accept only
+              * ')', so `(1, 2, 3,)` worked while `(1, 2, toDate('2020-01-02') + 1,)` did not, purely
+              * because the last value needs the expression parser.
+              */
+            if ((*token_iterator)->type == TokenType::Comma)
+            {
+                auto after_comma = *token_iterator;
+                ++after_comma;
+                if (after_comma->type == TokenType::ClosingRoundBracket)
+                {
+                    ++(*token_iterator);
+                    delimiter_found = true;
+                }
+            }
+            else
+                delimiter_found = (*token_iterator)->type == TokenType::ClosingRoundBracket;
+        }
         else
-            parsed &= (*token_iterator)->type == TokenType::ClosingRoundBracket;
+            delimiter_found = (*token_iterator)->type == TokenType::Comma;
     }
 
-    if (!parsed)
+    const auto text_here = [&]
+    {
+        return std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position()));
+    };
+
+    if (!expression_parsed)
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,
             "Cannot parse expression of type {} here: {}",
             type.getName(),
-            std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+            text_here());
+
+    /** The value itself is fine and only the delimiter after it is missing, which is a different mistake and
+      * used to be reported as if the value were at fault: a row with fewer values than the table has columns,
+      * `INSERT INTO t (a, b, c) VALUES (1, 2)`, blamed the perfectly valid `2` for not being parseable as the
+      * type of `b`. Name the delimiter that is missing and the column it should follow instead.
+      */
+    if (!delimiter_found)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Expected {} after the value of column {} of type {} here: {}",
+            is_last_column ? "')'" : "','",
+            backQuote(header.getByPosition(column_idx).name),
+            type.getName(),
+            text_here());
+
     ++(*token_iterator);
 
     if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
@@ -856,10 +906,10 @@ The `Values` format prints every row in brackets.
 - Numbers are output in a decimal format without quotes. 
 - Arrays are output in `[]`.
 - Strings, dates, and dates with times are output in quotes. 
-- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+- Escaping rules and parsing are similar to the [TabSeparated](/reference/formats/TabSeparated/TabSeparated) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
+[`NULL`](/reference/syntax) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in the `Values` format: 
 - single quotes
@@ -919,7 +969,7 @@ SELECT * FROM prices ORDER BY total;
 The `Values` format can also be used to format query results. Numbers are
 written without quotes, arrays in `[]`, and strings and dates in single quotes;
 single quotes and backslashes inside strings are escaped with a backslash, and
-[`NULL`](/sql-reference/syntax) is written as `NULL`:
+[`NULL`](/reference/syntax) is written as `NULL`:
 
 ```sql title="Query"
 SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
@@ -933,9 +983,9 @@ SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
 
 | Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`input_format_values_interpret_expressions`](../../operations/settings/settings-formats.md/#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
-| [`input_format_values_deduce_templates_of_expressions`](../../operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
-| [`input_format_values_accurate_types_of_literals`](../../operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
+| [`input_format_values_interpret_expressions`](/reference/settings/formats/input-format#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
+| [`input_format_values_deduce_templates_of_expressions`](/reference/settings/formats/input-format#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
+| [`input_format_values_accurate_types_of_literals`](/reference/settings/formats/input-format#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
 )DOCS_MD"});
 }
 

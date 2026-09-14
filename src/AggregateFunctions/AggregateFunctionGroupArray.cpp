@@ -885,7 +885,10 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -929,19 +932,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -953,19 +956,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

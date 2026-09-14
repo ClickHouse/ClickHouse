@@ -73,7 +73,6 @@ Expression ((Project names + Projection))
             Granules: 4/4
           Statistics
             Keys:
-              str
               value
             Parts: 1/4
             Granules: 1/4

@@ -1,6 +1,6 @@
 ---
 description: 'Страница обзора оконных функций'
-sidebarTitle: 'Оконные функции'
+sidebarTitle: 'Обзор'
 slug: /sql-reference/window-functions/
 title: 'Оконные функции'
 doc_type: 'reference'
@@ -24,7 +24,7 @@ ClickHouse поддерживает стандартный SQL-синтакси�
 | Рамка окна `ROWS`                                                               | ✅               |                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Рамка окна `RANGE`                                                              | ✅               | Используется по умолчанию, если рамка окна явно не указана (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                                        |
 | Синтаксис `INTERVAL` для рамки `DateTime` `RANGE OFFSET`                        | ❌               | Вместо этого укажите количество секунд (`RANGE` работает с любым числовым типом).                                                                                                                                                                                                                                                                                                                                        |
-| Рамка окна `GROUPS`                                                             | ❌               |                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Рамка окна `GROUPS`                                                             | ✅               | Границы рамки учитывают целые группы равных строк (строк с одинаковым ключом `ORDER BY`); `N PRECEDING` и `N FOLLOWING` учитывают `N` групп равных строк до и после группы, к которой относится текущая строка.                                                                                                                                                                                                          |
 | Вычисление агрегатных функций по рамке окна (`sum(value) OVER (ORDER BY time)`) | ✅               | Поддерживаются все агрегатные функции.                                                                                                                                                                                                                                                                                                                                                                                   |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                          | ✅               |                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `percent_rank()`/`percentRank()`                                                | ✅               | Эффективно вычисляет относительное положение значения в пределах партиции. Заменяет более многословный и вычислительно затратный ручной SQL-расчёт: `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                                                          |
@@ -39,18 +39,18 @@ ClickHouse поддерживает стандартный SQL-синтакси�
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - определяет, как разбить результирующий набор на группы.
 * `ORDER BY` - определяет порядок строк внутри группы при вычислении aggregate&#95;function.
-* `ROWS or RANGE` - определяет границы рамки окна, в пределах которой вычисляется aggregate&#95;function.
+* `ROWS`, `RANGE` или `GROUPS` - определяет границы рамки окна, в пределах которой вычисляется aggregate&#95;function. `ROWS` считает физические строки, `RANGE` — значения `ORDER BY`, а `GROUPS` — группы равноправных строк (строки с одинаковым ключом `ORDER BY`).
 * `WINDOW` - позволяет нескольким выражениям использовать одно и то же определение окна.
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### Рамка GROUPS
+</div>
+
+Рамка `GROUPS` считает целые *группы равных строк* — наборы строк с одинаковым ключом `ORDER BY` — а не физические строки (`ROWS`) или значения `ORDER BY` (`RANGE`). `N PRECEDING` и `N FOLLOWING` отсчитывают `N` групп равных строк до и после группы равных строк текущей строки, при этом каждая включённая группа учитывается целиком.
+
+В приведённом ниже запросе используются одинаковые границы `1 PRECEDING AND 1 FOLLOWING` для рамок `ROWS`, `RANGE` и `GROUPS`. Столбец `order` содержит повторяющиеся и непоследовательные значения, поэтому три режима охватывают разные строки:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+Каждый режим по-разному интерпретирует границы:
+
+* `ROWS` считает физические строки, поэтому рамка окна включает не более трёх соседних строк: текущую и по одной с каждой стороны.
+* `RANGE` считает значения `order`, поэтому `1 PRECEDING` и `1 FOLLOWING` охватывают строки, чьё значение `order` отличается от значения текущей строки не более чем на 1. При разрывах в 10 ни одна соседняя строка не попадает в рамку, поэтому она содержит только строки с тем же значением `order`, что и у текущей строки.
+* `GROUPS` считает группы равных строк, поэтому `1 PRECEDING` и `1 FOLLOWING` всегда полностью включают соседние группы независимо от разрывов между значениями `order`.
 
 <div id="real-world-examples">
   ## Примеры из практики

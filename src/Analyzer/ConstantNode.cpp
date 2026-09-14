@@ -88,6 +88,24 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
+    /// A constant genuinely serialized by the initiator arrives as a _CAST over literals. A _CAST
+    /// produced locally by folding a server-context function (e.g. shardNum() -> _CAST(shardNum(),
+    /// ...), which folds to a literal on shards but stays symbolic on the initiator) is different:
+    /// its argument is either still a live function node, or a folded but non-deterministic
+    /// constant that carries that server-context function as its source expression. In that case
+    /// the initiator did not fold it, so the shard must name it via its source expression to match
+    /// the initiator; treating it as received-from-initiator would bake in the folded literal and
+    /// diverge the header (e.g. shard "_CAST(2, ...)" vs initiator "_CAST(shardNum(), ...)").
+    /// Deterministic wrapped literals (tuple(0), NULL, ...) are genuine received constants and must
+    /// keep being named via the cast, so only non-deterministic source-carrying args are excluded.
+    for (const auto & argument : cast_function->getArguments())
+    {
+        auto * constant_arg = argument->as<ConstantNode>();
+        if (!constant_arg)
+            return false;
+        if (constant_arg->hasSourceExpression() && !constant_arg->isDeterministic())
+            return false;
+    }
 
     /// The initiator serializes a folded constant as `_CAST('<value>', '<type>')` with a plain literal inside,
     /// so only that shape means that the constant was received from the initiator. `_CAST(__getScalar('<hash>'), '<type>')`
@@ -191,16 +209,40 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
+    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/true)); };
+    static const auto from_column_date_time_as_text = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/false)); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
     if (options.use_source_expression_for_constants && source_expression)
         return source_expression->toAST(options);
 
-    if (!options.add_cast_for_constants)
-        return getCachedAST(from_column);
-
     const auto & constant_value_type = constant_value.getType();
+
+    /// Decimal constants (including decimals nested in Array/Tuple/Map/Variant/Dynamic) have no exact
+    /// literal syntax: a bare numeric literal is re-parsed as Float64 on the receiving side and rounds.
+    /// Rebuild the literal from the column, upgrading every decimal-backed leaf to an exact
+    /// String -> Decimal cast (reconstructed with its own type), then cast the whole value to the
+    /// final type. This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn,
+    /// where casts are suppressed): a bare decimal in the set would be parsed as Float64 on the shard
+    /// and round, so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded
+    /// constants.
+    if (typeMayContainDecimal(*constant_value_type))
+    {
+        auto exact_ast = columnConstantToExactLiteralAST(
+            constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);
+        if (!options.add_cast_for_constants)
+            return exact_ast;
+        /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its
+        /// own type, so skip a redundant identity cast to the same type.
+        return makeCastToTypeNameAST(std::move(exact_ast), constant_value_type->getName());
+    }
+
+    if (!options.add_cast_for_constants)
+    {
+        if (options.date_time_constants_as_numbers)
+            return getCachedAST(from_column);
+        return getCachedAST(from_column_date_time_as_text);
+    }
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
@@ -226,7 +268,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
-        ASTPtr constant_value_ast = getCachedAST(from_column);
+        ASTPtr constant_value_ast = options.date_time_constants_as_numbers
+            ? getCachedAST(from_column)
+            : getCachedAST(from_column_date_time_as_text);
 
         /// A Variant value is serialized as a plain literal of its current member type, while conversion to Variant
         /// is allowed only for types equal by name to one of its members. The literal does not keep the exact member

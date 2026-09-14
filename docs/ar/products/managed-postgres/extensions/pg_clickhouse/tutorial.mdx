@@ -11,8 +11,14 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'مغلّف البيانات الخ�
   ## نظرة عامة
 </div>
 
-يعتمد هذا الدليل التعليمي على [دليل ClickHouse التعليمي]، لكنه يُجري جميع استعلاماته عبر
+يعتمد هذا الدليل العملي على [دليل ClickHouse التعليمي]، لكنه يُجري جميع استعلاماته عبر
 pg&#95;clickhouse.
+
+اختر كيفية تهيئة `pg_clickhouse`:
+
+* [من Console](#from-console) إذا كنت تستخدم ClickHouse Managed Postgres.
+* [من PSQL](#from-psql) إذا كنت تثبّت وتُهيّئ الامتداد
+  بنفسك.
 
 <div id="start-clickhouse">
   ## ابدأ ClickHouse
@@ -164,6 +170,43 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
+<div id="from-console">
+  ## من وحدة التحكم
+</div>
+
+إذا كنت تستخدم ClickHouse Managed Postgres، يمكنك تهيئة
+`pg_clickhouse` والاتصال بخدمة ClickHouse من خلال ClickHouse Cloud console.
+افتح خدمة Managed Postgres، واختر **الإعدادات**، ثم ابحث عن قسم
+**ClickHouse integration**. انقر على **تمكين pg&#95;clickhouse**.
+
+في نموذج الإعداد، أدخل اسمًا للخادم الخارجي. اختر خدمة ClickHouse
+وقاعدة البيانات والمستخدم المراد استخدامهم للاتصال. أدخل كلمة مرور
+ClickHouse، ثم اختر قاعدة بيانات Postgres ومخطط الوجهة الذي تريد
+استيراد جداول ClickHouse إليه. انقر على **اتصال** لإنشاء الخادم الخارجي
+واستيراد المخطط.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="نموذج إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+
+عند اكتمال الإعداد، تعرض وحدة التحكم رسالة تأكيد، ويظهر الخادم الخارجي
+في قائمة الخوادم.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="اكتمال إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="قائمة الخوادم الخارجية التي تعرض اتصال pg_clickhouse لسيارات الأجرة" size="lg" border />
+
+يمكنك الآن فتح **SQL console** في Postgres والاستعلام عن الجداول المستوردة:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+لمتابعة أمثلة سيارات الأجرة في هذا الدليل العملي، اختر قاعدة بيانات ClickHouse ‏`taxi`
+واستوردها إلى مخطط الوجهة ‏`taxi`.
+
+<div id="from-psql">
+  ## من PSQL
+</div>
+
 <div id="install-pg_clickhouse">
   ### تثبيت pg_clickhouse
 </div>
@@ -202,6 +245,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 هنا اخترنا استخدام برنامج التشغيل الثنائي، الذي يستخدم بروتوكول ClickHouse
 الثنائي. ويمكنك أيضًا استخدام برنامج التشغيل &quot;http&quot;، الذي يستخدم واجهة HTTP.
+
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud console لتشغيل SQL، فامنح مستخدم console الإداري حق الوصول إلى الخادم الخارجي:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 بعد ذلك، اربط مستخدم PostgreSQL بمستخدم ClickHouse. وأبسط طريقة للقيام بذلك
 هي تعيين مستخدم PostgreSQL الحالي إلى مستخدم بعيد على الخادم
@@ -502,7 +553,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    القاموس من ملف CSV في S3:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -513,67 +564,67 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  يؤدي تعيين `LIFETIME` إلى 0 إلى تعطيل التحديثات التلقائية لتجنّب
-  نقل بيانات غير ضروري إلى S3 bucket الخاص بنا. في حالات أخرى،
-  قد تحتاج إلى تهيئته بشكل مختلف. لمزيد من التفاصيل، راجع [تحديث بيانات القاموس باستخدام
-  LIFETIME](/ar/reference/statements/create/dictionary/lifetime).
-</Note>
+   <Note>
+     يؤدي تعيين `LIFETIME` إلى 0 إلى تعطيل التحديثات التلقائية لتجنّب
+     نقل بيانات غير ضروري إلى S3 bucket الخاص بنا. في حالات أخرى،
+     قد تحتاج إلى تهيئته بشكل مختلف. لمزيد من التفاصيل، راجع [تحديث بيانات القاموس باستخدام
+     LIFETIME](/ar/reference/statements/create/dictionary/lifetime).
+   </Note>
 
-2. الآن استورده:
+   2. الآن استورده:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. تأكَّد من أنه يمكننا الاستعلام عنه:
+   3. تأكَّد من أنه يمكننا الاستعلام عنه:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. ممتاز. الآن استخدم الدالة `dictGet` لاسترجاع
-   اسم حي إداري في استعلام. يجمع هذا الاستعلام عدد
-   رحلات سيارات الأجرة لكل حي إداري التي تنتهي في أحد مطاري LaGuardia أو JFK:
+   4. ممتاز. الآن استخدم الدالة `dictGet` لاسترجاع
+      اسم حي إداري في استعلام. يجمع هذا الاستعلام عدد
+      رحلات سيارات الأجرة لكل حي إداري التي تنتهي في أحد مطاري LaGuardia أو JFK:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-يحسب هذا الاستعلام إجمالي عدد رحلات سيارات الأجرة لكل حي إداري التي تنتهي في
-مطارَي LaGuardia أو JFK. لاحظ أن هناك عددًا كبيرًا من الرحلات التي
-لا يكون فيها الحي الذي انطلقت منه الرحلة معروفًا.
+   يحسب هذا الاستعلام إجمالي عدد رحلات سيارات الأجرة لكل حي إداري التي تنتهي في
+   مطارَي LaGuardia أو JFK. لاحظ أن هناك عددًا كبيرًا من الرحلات التي
+   لا يكون فيها الحي الذي انطلقت منه الرحلة معروفًا.
 
 <div id="perform-a-join">
   ## تنفيذ عملية join
@@ -609,35 +660,35 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    Time: 48.449 ms
    ```
 
-<Note>
-  لاحظ أن ناتج استعلام `JOIN` أعلاه مطابق لناتج استعلام `dictGet`
-  أعلاه (باستثناء أن قيم `Unknown` غير متضمّنة). في الخلفية،
-  يستدعي ClickHouse فعليًا الدالة `dictGet` من أجل
-  القاموس `taxi_zone_dictionary`، لكن صياغة `JOIN` أكثر
-  ألفةً لمطوري SQL.
-</Note>
+   <Note>
+     لاحظ أن ناتج استعلام `JOIN` أعلاه مطابق لناتج استعلام `dictGet`
+     أعلاه (باستثناء أن قيم `Unknown` غير متضمّنة). في الخلفية،
+     يستدعي ClickHouse فعليًا الدالة `dictGet` من أجل
+     قاموس `taxi_zone_dictionary`، لكن صياغة `JOIN` أكثر
+     ألفةً لمطوري SQL.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. يُرجع هذا الاستعلام صفوفًا لأعلى 1000 رحلة من حيث قيمة
-   الإكرامية، ثم يُجري INNER JOIN لكل صف مع القاموس:
+   الإكرامية، ثم يُجري INNER JOIN لكل صف مع قاموس:
 
    ```sql
    taxi=# SELECT *
@@ -654,7 +705,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   ألا تسترجع إلا الأعمدة التي تحتاج إليها فعليًا.
 </Note>
 
-[ClickHouse tutorial]: /get-started/quickstarts/tutorial "البرنامج التعليمي المتقدم لـ ClickHouse"
+[ClickHouse tutorial]: /get-started/quickstarts/tutorial "دليل ClickHouse العملي"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "تطبيقات عميل PostgreSQL: psql"
 
@@ -666,8 +717,8 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 
 [GitHub]: https://github.com/ClickHouse/pg_clickhouse/releases "إصدارات pg_clickhouse على GitHub"
 
-[pg_clickhouse image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "صورة OCI لـ pg_clickhouse على GitHub"
+[pg_clickhouse image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "image pg_clickhouse على GitHub"
 
-[Postgres image]: https://hub.docker.com/_/postgres "صورة OCI لـ Postgres على Docker Hub"
+[Postgres image]: https://hub.docker.com/_/postgres "image Postgres في Docker على Docker Hub"
 
-[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "مستندات ClickHouse: تحديث بيانات القاموس باستخدام LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "مستندات ClickHouse: تحديث بيانات قاموس باستخدام LIFETIME"
