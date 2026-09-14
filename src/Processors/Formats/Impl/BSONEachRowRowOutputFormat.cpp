@@ -41,11 +41,6 @@ static String toValidUTF8String(const String & name, const FormatSettings & sett
     {
         WriteBufferValidUTF8 validating_buf(buf);
         writeJSONString(name, validating_buf, settings);
-        /// The destructor of `WriteBufferValidUTF8` catches and suppresses a failure of the final
-        /// flush, which would leave `buf` empty (or partial) and make the `substr` below throw
-        /// `std::out_of_range` - an exception in a release build instead of the real error. Flush
-        /// explicitly so a failure propagates as itself.
-        validating_buf.finalize();
     }
     /// Return value without quotes
     return buf.str().substr(1, buf.str().size() - 2);
