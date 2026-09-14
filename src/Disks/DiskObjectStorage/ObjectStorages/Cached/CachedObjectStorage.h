@@ -127,7 +127,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }

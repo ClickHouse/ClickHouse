@@ -29,7 +29,6 @@ public:
 
     AzureObjectStorage(
         const String & name_,
-        AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
         const AzureBlobStorage::ConnectionParams & connection_params_,
@@ -61,7 +60,7 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return auth_method; }
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->auth_method; }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -119,15 +118,15 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override { return connection_params.get(); }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
 
-    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
+    AzureBlobStorage::ConnectionParams getConnectionParameters() const
     {
-        return connection_params;
+        return *connection_params.get();
     }
 
     ObjectStoragePtr cloneImpl() const override;
@@ -147,7 +146,6 @@ private:
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 
     const String name;
-    AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
@@ -158,7 +156,10 @@ private:
 
     const String common_key_prefix;
 
-    const AzureBlobStorage::ConnectionParams connection_params;
+    /// The parameters the current `client` was built from (the auth method included). Swapped
+    /// together with the client by `applyNewSettings`, so the ADLS paths, which build a client
+    /// per request from these parameters, never diverge from the rebuilt blob client.
+    MultiVersion<AzureBlobStorage::ConnectionParams> connection_params;
 
     /// What the container client was built from by `applyNewSettings`: the endpoint, the credentials and the
     /// SDK retry options. Compared on the next `applyNewSettings` to skip a needless client rebuild. Empty until

@@ -428,7 +428,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    /// Returns a snapshot: `applyNewSettings` may swap the parameters together with the client.
+    virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
