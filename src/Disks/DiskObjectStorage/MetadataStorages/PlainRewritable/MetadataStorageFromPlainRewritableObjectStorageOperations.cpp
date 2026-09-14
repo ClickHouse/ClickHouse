@@ -693,8 +693,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
                 read_settings,
                 write_settings);
 
-        /// Otherwise there is nothing to restore: the copy that puts the target aside runs before anything overwrites
-        /// or removes the target, so without that copy the target is still the blob this transaction found.
+        /// Otherwise there is nothing to restore. The copy that puts the target aside comes before anything overwrites
+        /// or removes the target, so either it reported success and its result is there, or it threw and the target
+        /// was never touched. A copy that reports success and writes nothing would break this, and it would break
+        /// every other call these reversals depend on just as much.
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
