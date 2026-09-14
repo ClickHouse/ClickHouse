@@ -1014,8 +1014,11 @@ void writeColumnImpl(
         ///  * bloom filter size must be at most 128 MiB.
         /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
         /// requires this.
-        /// Start from a bloom filter sized under the assumption that all values are unique.
-        const double requested_num_blocks = static_cast<double>(num_values) * options.bloom_filter_bits_per_value / 256;
+        /// Start from a bloom filter sized under the assumption that all values are unique. Only the entries at the
+        /// maximum definition level are hashed into the filter, so size it for the number of leaf values in the
+        /// primitive column, not for `num_values`, which also counts the null and empty-array placeholders of a
+        /// repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of placeholders per value).
+        const double requested_num_blocks = static_cast<double>(s.primitive_column->size()) * options.bloom_filter_bits_per_value / 256;
         size_t num_blocks = 1;
         while (static_cast<double>(num_blocks) < requested_num_blocks)
         {
