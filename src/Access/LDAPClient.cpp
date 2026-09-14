@@ -247,7 +247,7 @@ std::optional<String> LDAPClient::extractRDNValue(const String & dn, const Strin
     /// RDNs are ordered from the most specific one; the first matching attribute type wins.
     for (size_t i = 0; parsed_dn[i]; ++i)
     {
-        const LDAPRDN rdn = parsed_dn[i];
+        LDAPRDN rdn = parsed_dn[i];
         for (size_t j = 0; rdn[j]; ++j)
         {
             const LDAPAVA & ava = *rdn[j];
