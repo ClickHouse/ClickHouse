@@ -1,0 +1,14 @@
+-- a data file that records bytes keeps the table from classifying as empty
+data files that record bytes	1
+restore target sum(k) before	0
+BACKUP_CREATED
+RESTORED
+restored sum(k)	4950
+-- no data file records bytes, and the marks say there are rows
+data files that record bytes	0
+BACKUP_CREATED
+backup keeps the table data	1
+-- TinyLog keeps no marks, so only a later data file can keep the table
+data files that record bytes	1
+BACKUP_CREATED
+backup keeps the table data	1
