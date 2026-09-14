@@ -165,8 +165,8 @@ private:
     /// the first rebuild (the constructor gets a ready client and does not know the config it came from).
     struct ClientInputs
     {
-        AzureBlobStorage::Endpoint endpoint;
-        AzureBlobStorage::AuthConfig auth_config;
+        AzureBlobStorage::Endpoint endpoint{};
+        AzureBlobStorage::AuthConfig auth_config{};
         size_t sdk_max_retries = 0;
         size_t sdk_retry_initial_backoff_ms = 0;
         size_t sdk_retry_max_backoff_ms = 0;
