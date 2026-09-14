@@ -365,9 +365,93 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
     parseLDAPSearchParams(params, config, prefix);
 
     const bool has_prefix = config.has(prefix + ".prefix");
+    const bool has_rdn_attribute = config.has(prefix + ".rdn_attribute");
+    const bool has_groups = config.has(prefix + ".groups");
 
     if (has_prefix)
         params.prefix = config.getString(prefix + ".prefix");
+
+    if (has_rdn_attribute)
+    {
+        params.rdn_attribute = config.getString(prefix + ".rdn_attribute");
+        if (params.rdn_attribute.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'rdn_attribute' entry in '{}' section", prefix);
+    }
+
+    if (has_groups)
+    {
+        Poco::Util::AbstractConfiguration::Keys group_keys;
+        config.keys(prefix + ".groups", group_keys);
+
+        for (const auto & key : group_keys)
+        {
+            if (key != "group" && !key.starts_with("group["))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown entry '{}' in '{}.groups' section, only 'group' entries are allowed", key, prefix);
+
+            const auto group = config.getString(prefix + ".groups." + key);
+            if (group.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'group' entry in '{}.groups' section", prefix);
+
+            /// The role name candidate `prefix` is stripped from: the plain name itself, or the `rdn_attribute`
+            /// value of a DN-form entry. The lookup maps are filled here, where the normalized forms are computed;
+            /// duplicates surface as failed insertions (the two maps cannot collide because only DNs contain `=`).
+            String candidate;
+            bool inserted = false;
+            if (LDAPClient::RoleSearchParams::isGroupDN(group))
+            {
+                if (params.rdn_attribute.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "which requires 'rdn_attribute' to be set", group, prefix);
+
+                const auto normalized_dn = LDAPClient::normalizeDN(group);
+                if (!normalized_dn)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "but it is not a valid DN", group, prefix);
+
+                const auto rdn_value = LDAPClient::extractRDNValue(group, params.rdn_attribute);
+                if (!rdn_value)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "but it has no '{}' RDN", group, prefix, params.rdn_attribute);
+
+                candidate = *rdn_value;
+                inserted = params.dn_groups.emplace(*normalized_dn, candidate).second;
+            }
+            else
+            {
+                candidate = group;
+                inserted = params.plain_groups.emplace(toLowerCopyASCII(group), group).second;
+            }
+
+            if (!inserted)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate group '{}' in '{}.groups' section", group, prefix);
+
+            /// The role name is the candidate with `prefix` removed (see `LDAPAccessStorage::mapExternalRolesNoLock`),
+            /// so an entry that does not start with the prefix, or has nothing left after it, can never grant a role.
+            /// Such an entry is a dead configuration; reject it instead of silently ignoring it at every login.
+            if (!(candidate.size() > params.prefix.size() && candidate.starts_with(params.prefix)))
+            {
+                if (params.prefix.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section has an empty '{}' RDN value and can never be mapped to a role",
+                                    group, prefix, params.rdn_attribute);
+
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Group '{}' in '{}.groups' section does not start with the configured prefix '{}' or is equal to it, "
+                                "so it can never be mapped to a role", group, prefix, params.prefix);
+            }
+
+            params.groups.push_back(group);
+        }
+    }
+
+    /// Without an allow-list or a prefix every RDN value of every group the user belongs to would be
+    /// tried as a role name, which makes any LDAP group with a matching name grant a ClickHouse role.
+    if (!params.rdn_attribute.empty() && params.groups.empty() && params.prefix.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'rdn_attribute' in '{}' section requires a non-empty 'groups' list or a non-empty 'prefix'", prefix);
 }
 
 void ExternalAuthenticators::resetImpl()

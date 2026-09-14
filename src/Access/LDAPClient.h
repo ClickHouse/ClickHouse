@@ -12,6 +12,7 @@
 #endif
 
 #include <chrono>
+#include <map>
 #include <optional>
 #include <set>
 #include <vector>
@@ -46,6 +47,28 @@ public:
         : public SearchParams
     {
         String prefix;
+
+        /// If set, every value returned by the search is treated as a DN (for example an Active Directory
+        /// `memberOf` value) and replaced by the value of its first RDN whose attribute type equals
+        /// `rdn_attribute` case-insensitively. Values that are not DNs or have no such RDN are ignored.
+        String rdn_attribute;
+
+        /// Optional allow-list of groups, as configured. An entry containing `=` is a group DN and is
+        /// compared (normalized by `normalizeDN`) against the raw search result before `rdn_attribute`
+        /// extraction; the role name is then derived from the `rdn_attribute` value of the configured DN.
+        /// Any other entry is a plain group name compared ASCII-case-insensitively against the value after
+        /// extraction; the configured spelling wins. When the list is non-empty, values matching no entry
+        /// are ignored. `prefix` is stripped afterwards in both cases, so every entry must start with it.
+        /// Kept as configured for `updateHash` and `system.user_directories`; the lookups use the maps below.
+        std::vector<String> groups;
+
+        /// Lookup maps derived from `groups` by `parseLDAPRoleSearchParams`, the only producer of this struct.
+        /// ASCII-lower-cased plain group name -> the name as configured.
+        std::map<String, String> plain_groups;
+        /// Normalized group DN (`LDAPClient::normalizeDN`) -> the `rdn_attribute` value as spelled in the configured DN.
+        std::map<String, String> dn_groups;
+
+        static bool isGroupDN(const String & group) { return group.find('=') != String::npos; }
 
         void updateHash(SipHash & hash) const;
     };
@@ -146,6 +169,16 @@ public:
 
     explicit LDAPClient(const Params & params_);
     ~LDAPClient();
+
+    /// Parses `dn` as an LDAPv3 string representation of a distinguished name (RFC 4514) and returns the
+    /// unescaped value of the first RDN (the most specific one) whose attribute type equals `rdn_attribute`
+    /// case-insensitively. Returns `std::nullopt` if `dn` is not a valid non-empty DN or has no such RDN.
+    static std::optional<String> extractRDNValue(const String & dn, const String & rdn_attribute);
+
+    /// Returns a canonical, ASCII-lower-cased LDAPv3 string representation of `dn` intended for equality
+    /// comparison only (differences in whitespace, escaping and letter case disappear), or `std::nullopt`
+    /// if `dn` is not a valid non-empty DN.
+    static std::optional<String> normalizeDN(const String & dn);
 
     LDAPClient(const LDAPClient &) = delete;
     LDAPClient(LDAPClient &&) = delete;

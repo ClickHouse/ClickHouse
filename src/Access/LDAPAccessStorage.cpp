@@ -6,6 +6,7 @@
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -338,13 +339,58 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
         const auto & external_role_set = external_roles[i];
-        const auto & prefix = role_search_params[i].prefix;
+        const auto & role_mapping = role_search_params[i];
+        const auto & prefix = role_mapping.prefix;
 
         for (const auto & external_role : external_role_set)
         {
-            if (prefix.size() < external_role.size() && external_role.starts_with(prefix))
+            /// Pipeline: value -> [DN-form group match | `rdn_attribute` extraction -> plain group match] -> `prefix` -> role name.
+            String value;
+
+            bool matched_dn_group = false;
+            if (!role_mapping.dn_groups.empty())
             {
-                role_names.emplace(external_role, prefix.size());
+                if (const auto normalized_dn = LDAPClient::normalizeDN(external_role))
+                {
+                    const auto it = role_mapping.dn_groups.find(*normalized_dn);
+                    if (it != role_mapping.dn_groups.end())
+                    {
+                        value = it->second;
+                        matched_dn_group = true;
+                    }
+                }
+            }
+
+            if (!matched_dn_group)
+            {
+                value = external_role;
+
+                if (!role_mapping.rdn_attribute.empty())
+                {
+                    const auto rdn_value = LDAPClient::extractRDNValue(external_role, role_mapping.rdn_attribute);
+                    if (!rdn_value)
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not a DN with a '{}' RDN", external_role, role_mapping.rdn_attribute);
+                        continue;
+                    }
+                    value = *rdn_value;
+                }
+
+                if (!role_mapping.groups.empty())
+                {
+                    const auto it = role_mapping.plain_groups.find(toLowerCopyASCII(value));
+                    if (it == role_mapping.plain_groups.end())
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not in the 'groups' list", external_role);
+                        continue;
+                    }
+                    value = it->second;
+                }
+            }
+
+            if (prefix.size() < value.size() && value.starts_with(prefix))
+            {
+                role_names.emplace(value, prefix.size());
             }
         }
     }
@@ -401,6 +447,14 @@ String LDAPAccessStorage::getStorageParamsJSON() const
         role_mapping_json.set("search_filter", role_mapping.search_filter);
         role_mapping_json.set("attribute", role_mapping.attribute);
         role_mapping_json.set("prefix", role_mapping.prefix);
+        role_mapping_json.set("rdn_attribute", role_mapping.rdn_attribute);
+
+        Poco::JSON::Array groups_json;
+        for (const auto & group : role_mapping.groups)
+        {
+            groups_json.add(group);
+        }
+        role_mapping_json.set("groups", groups_json);
 
         String scope;
         switch (role_mapping.scope)
