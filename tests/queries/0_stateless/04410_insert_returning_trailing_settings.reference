@@ -81,8 +81,9 @@ source query cache settings are rejected
 0
 source parallel distributed insert-select setting is rejected
 0
-nested source query global settings are rejected
+nested source query cache settings stay local
 0
+1
 trailing settings do not affect returning planning
 1
 1

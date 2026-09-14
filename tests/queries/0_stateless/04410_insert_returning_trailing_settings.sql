@@ -239,12 +239,12 @@ SETTINGS parallel_distributed_insert_select = 1; -- { serverError NOT_IMPLEMENTE
 
 SELECT count() FROM t_ret_settings;
 
--- Unsupported source settings must also be rejected when nested in source subqueries.
-SELECT 'nested source query global settings are rejected';
+-- Nested source subquery query-cache settings stay local and must not be rejected.
+SELECT 'nested source query cache settings stay local';
 TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings
-SELECT * FROM (SELECT 1 SETTINGS max_execution_time = 1)
-RETURNING (SELECT count() FROM t_ret_settings); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM (SELECT 1 SETTINGS use_query_cache = 1)
+RETURNING (SELECT getSettingOrDefault('use_query_cache', 0));
 
 SELECT count() FROM t_ret_settings;
 

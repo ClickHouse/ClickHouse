@@ -2808,7 +2808,11 @@ static BlockIO executeQueryImpl(
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
             if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_runtime_ast)
             {
-                rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_runtime_ast);
+                /// Reject only source settings that will be applied on the outer INSERT context.
+                /// Nested source-subquery SETTINGS stay local to nested interpreters and must not
+                /// be rejected here.
+                if (insert_query->source_select_settings_global_ast)
+                    rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_global_ast);
                 Settings settings_before_source = context->getSettingsRef();
                 if (insert_query->source_select_settings_global_ast)
                 {
