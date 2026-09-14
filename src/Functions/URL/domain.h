@@ -80,7 +80,6 @@ inline std::string_view getURLHostRFC(const char * data, size_t size)
                 case '.':
                 case '-':
                 case '+':
-                case '[':
                     break;
                 case ' ': /// restricted symbols
                 case '\t':
