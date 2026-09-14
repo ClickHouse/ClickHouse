@@ -1,16 +1,16 @@
 #include <Common/StringUtils.h>
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 
 namespace
 {
-const std::array<size_t, 25> boundary_sizes = {
+const std::array<size_t, 28> boundary_sizes = {
     0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    255, 256, 257, 511, 512, 513, 1023, 1024, 1025};
+    255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095, 4096, 4097};
 
 std::vector<UInt8> makeASCIIData(size_t size)
 {
@@ -35,6 +35,25 @@ TEST(StringUtils, IsAllASCIIAcceptsAllASCIIBytes)
     {
         const auto data = makeASCIIData(size);
         EXPECT_TRUE(isAllASCII(data.data(), data.size())) << "size: " << size;
+    }
+}
+
+TEST(StringUtils, IsAllASCIIHandlesUnalignedData)
+{
+    for (const size_t size : boundary_sizes)
+    {
+        std::vector<UInt8> storage(size + 1);
+        UInt8 * data = storage.data() + 1;
+        for (size_t i = 0; i < size; ++i)
+            data[i] = static_cast<UInt8>(i & 0x7F);
+
+        EXPECT_TRUE(isAllASCII(data, size)) << "size: " << size;
+
+        if (size == 0)
+            continue;
+
+        data[size / 2] = 0x80;
+        EXPECT_FALSE(isAllASCII(data, size)) << "size: " << size;
     }
 }
 

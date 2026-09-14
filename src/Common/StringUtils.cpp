@@ -4,10 +4,10 @@
 
 #include "config.h"
 
-#if USE_SIMDUTF
-#    include <simdutf.h>
-#elif defined(__AVX2__)
+#if defined(__AVX2__)
 #include <immintrin.h>
+#elif USE_SIMDUTF
+#    include <simdutf.h>
 #endif
 
 
@@ -28,12 +28,7 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if USE_SIMDUTF
-    if (size == 0)
-        return true;
-
-    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), size);
-#elif defined(__AVX2__)
+#if defined(__AVX2__)
     __m256i masks = _mm256_setzero_si256();
 
     size_t i = 0;
@@ -50,6 +45,11 @@ bool isAllASCII(const UInt8 * data, size_t size)
 
     mask |= (tail_mask & 0x80);
     return !mask;
+#elif USE_SIMDUTF
+    if (size == 0)
+        return true;
+
+    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), size);
 #else
     UInt8 mask = 0;
     for (size_t i = 0; i < size; ++i)
