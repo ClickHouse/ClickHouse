@@ -86,7 +86,7 @@ private:
     std::optional<SnapshotState> fetchSnapshotState();
 
     TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
-    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets) const;
+    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const;
     bool tryCommit(SnapshotState & state, const DropPlan & plan);
 
     struct ManifestListWriteResult
