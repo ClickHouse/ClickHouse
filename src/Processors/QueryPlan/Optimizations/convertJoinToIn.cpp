@@ -9,6 +9,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -130,6 +132,23 @@ static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, Acti
     return dag;
 }
 
+static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (typeid_cast<const CommonSubplanStep *>(node->step.get())
+            || typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+            return true;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -194,6 +213,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join->typeChangingSides().empty())
         return 0;
 
+    /// A `CommonSubplanReferenceStep` holds a raw pointer to a node that must still hold a
+    /// `CommonSubplanStep` when the second pass resolves it. The rewrite below installs new steps at
+    /// both input node addresses and splices the right input into the IN set's own plan.
+    if (hasCommonSubplanNodes(*parent_node->children.at(0))
+        || hasCommonSubplanNodes(*parent_node->children.at(1)))
+        return 0;
+
     // {
     //     WriteBufferFromOwnString buf;
     //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
@@ -213,6 +239,41 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
+
+    /// Decline the conversion if the rewritten plan could not resolve some
+    /// input of `join_output_actions`: `mergeInplace` with
+    /// `remove_dangling_inputs = true` would drop the unmatched INPUT (e.g.
+    /// source `L.col` whose only forwarded form is `arrayJoin(L.col)`),
+    /// causing a `NOT_FOUND_COLUMN_IN_BLOCK` exception at execution. The
+    /// check must happen before any plan mutation below. Compare against the
+    /// real post-expression header (`ActionsDAG::updateHeader`: DAG outputs
+    /// plus input columns the DAG does not consume), counting occurrences
+    /// per name, because both `updateHeader` and `mergeInplace` match
+    /// duplicate names by multiplicity.
+    ///
+    /// NB: `ActionsDAG::hasArrayJoin()` on the key sub-DAGs cannot be used to
+    /// gate this — an `arrayJoin` in a JOIN ON key is not represented as an
+    /// `ARRAY_JOIN` DAG node here, so `hasArrayJoin()` returns false and the
+    /// dangling input would slip through. The header-resolution check below is
+    /// what actually detects the consumed column.
+    {
+        auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
+        const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
+        auto post_left_header = left_pre_join_actions.updateHeader(*left_input_header);
+
+        std::unordered_map<std::string_view, size_t> forwarded_columns;
+        for (const auto & column : post_left_header)
+            ++forwarded_columns[column.name];
+
+        for (const auto * input : join_output_actions_subdag.getInputs())
+        {
+            auto it = forwarded_columns.find(input->result_name);
+            if (it == forwarded_columns.end() || it->second == 0)
+                return 0;
+            --it->second;
+        }
+    }
+
     auto * lhs_in_node = parent_node->children.at(0);
     makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes, makeDescription("Calculate join left keys"));
     auto * rhs_in_node = parent_node->children.at(1);

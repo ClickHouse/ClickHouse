@@ -580,6 +580,10 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
+
+    /// The recent samples table (if any) receives a copy of every samples block.
+    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
 }
 
 
@@ -743,7 +747,15 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
 
-        samples_pipeline->push(std::move(samples_block));
+        /// The samples table is written before the recent samples table: if the insert fails between
+        /// the two writes, the sample is then missing from the recent samples table and just stays
+        /// invisible until the TTL window slides past it. With the opposite order the sample would be
+        /// visible in the TTL window and then disappear, which looks like data loss.
+        /// The copy is cheap: a Block copy only copies column pointers.
+        samples_pipeline->push(samples_block);
+
+        if (recent_samples_pipeline)
+            recent_samples_pipeline->push(std::move(samples_block));
     }
 }
 
@@ -830,6 +842,8 @@ void TimeSeriesSink::onFinish()
         tags_pipeline->executor->finish();
     if (samples_pipeline)
         samples_pipeline->executor->finish();
+    if (recent_samples_pipeline)
+        recent_samples_pipeline->executor->finish();
     if (metrics_pipeline)
         metrics_pipeline->executor->finish();
 }

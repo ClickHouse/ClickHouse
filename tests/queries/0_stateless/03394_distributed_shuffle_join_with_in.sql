@@ -1,7 +1,8 @@
 -- Tags: no-old-analyzer
 
--- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
+SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 -- Pin off: statistics change the estimated group count, flipping the distributed aggregation
 -- strategy (Shuffle vs partial+merge) and thus the asserted plan.
@@ -9,7 +10,9 @@ SET use_statistics = 0;
 
 DROP TABLE IF EXISTS test;
 
-CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
+-- auto_statistics_types='' pins out randomized column statistics: with them, the row-count
+-- estimator flips the distributed join from Shuffle to Scatter and changes the plan shape.
+CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types='';
 
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);

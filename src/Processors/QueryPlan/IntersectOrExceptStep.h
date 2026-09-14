@@ -16,11 +16,17 @@ public:
 
     String getName() const override { return "IntersectOrExcept"; }
 
+    Operator getOperator() const { return current_operator; }
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
     QueryPlanStepPtr clone() const override;
+
+    bool isSerializable() const override { return true; }
+    void serialize(Serialization & ctx) const override;
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

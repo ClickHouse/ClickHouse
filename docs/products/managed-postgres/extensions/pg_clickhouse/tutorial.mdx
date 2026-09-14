@@ -12,6 +12,12 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 This tutorial follows the [ClickHouse tutorial] but runs all its queries via
 pg_clickhouse.
 
+Choose how you want to configure `pg_clickhouse`:
+
+- [From console](#from-console) if you are using ClickHouse Managed Postgres.
+- [From PSQL](#from-psql) if you are installing and configuring the extension
+  yourself.
+
 ## Start ClickHouse {#start-clickhouse}
 
 First, create a ClickHouse database if you don't already have one. A quick way
@@ -155,6 +161,39 @@ Make sure we can query it then quit the client:
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+## From console {#from-console}
+
+If you are using ClickHouse Managed Postgres, you can configure
+`pg_clickhouse` and connect to a ClickHouse service from the ClickHouse Cloud
+console. Open your Managed Postgres service, select **Settings**, and find the
+**ClickHouse integration** section. Click **Enable pg_clickhouse**.
+
+In the setup form, enter a name for the foreign server. Select the ClickHouse
+service, database, and user to use for the connection. Enter the ClickHouse
+password, then select the Postgres database and destination schema where the
+ClickHouse tables should be imported. Click **Connect** to create the foreign
+server and import the schema.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="pg_clickhouse setup form for the taxi database in the ClickHouse Cloud console" size="lg" border/>
+
+When setup is complete, the console displays a confirmation and the foreign
+server appears in the server list.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Completed pg_clickhouse setup for the taxi database in the ClickHouse Cloud console" size="lg" border/>
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Foreign server list showing the taxi pg_clickhouse connection" size="lg" border/>
+
+You can now open the Postgres **SQL console** and query the imported tables:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+To follow the taxi examples in this tutorial, select the `taxi` ClickHouse
+database and import it into a `taxi` destination schema.
+
+## From PSQL {#from-psql}
 
 ### Install pg_clickhouse {#install-pg_clickhouse}
 
@@ -496,7 +535,7 @@ Here's an excerpt from the CSV file you're using in table format. The
     dictionary from the CSV file in S3:
 
     ```sql
-    SELECT clickhouse_raw_query($$
+    CALL clickhouse_perform('taxi_srv', $$
         CREATE DICTIONARY taxi.taxi_zone_dictionary (
             LocationID Int64 DEFAULT 0,
             Borough String,
@@ -507,15 +546,15 @@ Here's an excerpt from the CSV file you're using in table format. The
         SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
         LIFETIME(MIN 0 MAX 0)
         LAYOUT(HASHED_ARRAY())
-    $$, 'host=localhost dbname=taxi');
+    $$);
     ```
 
-<Note>
+    <Note>
     Setting `LIFETIME` to 0 disables automatic updates to avoid unnecessary
     traffic to our S3 bucket. In other cases, you might configure it
     differently. For details, see [Refreshing dictionary data using
     LIFETIME](/reference/statements/create/dictionary/lifetime).
-</Note>
+    </Note>
 
     2.  Now import it:
 
@@ -601,13 +640,13 @@ table.
     Time: 48.449 ms
     ```
 
-<Note>
+    <Note>
     Notice the output of the above `JOIN` query is the same as the `dictGet`
     query above, (except that the `Unknown` values aren't included). Behind
     the scenes, ClickHouse is actually calling the `dictGet` function for
     the `taxi_zone_dictionary` dictionary, but the `JOIN` syntax is more
     familiar for SQL developers.
-</Note>
+    </Note>
 
     ```pgsql
     taxi=# explain SELECT

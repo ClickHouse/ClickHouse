@@ -17,8 +17,10 @@ doc_type: 'reference'
 
 Псевдоним: `timeSeriesLastToGrid`.
 
+Если несколько образцов имеют одинаковую временную метку, используется только один из них: образец с наибольшим значением. Значение NaN уступает любому другому значению, поэтому значение NaN используется, только если все образцы с этой временной меткой имеют значение NaN.
+
 <Warning>
-  Эта функция экспериментальная; чтобы включить её, установите `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Эта функция экспериментальная; чтобы включить её, установите `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Синтаксис**
@@ -31,19 +33,19 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **Параметры**
 
-* `start_timestamp` — Задаёт начало сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `end_timestamp` — Задаёт конец сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `grid_step` — Задаёт шаг сетки в секундах. [`UInt32`](/ru/reference/data-types/int-uint)
-* `staleness_window` — Задаёт максимально допустимую устарелость последнего значения в секундах. [`UInt32`](/ru/reference/data-types/int-uint)
+* `start_timestamp` — Задаёт начало сетки. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо текстовое представление даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `end_timestamp` — Задаёт конец сетки. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо текстовое представление даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `grid_step` — Задаёт шаг сетки в секундах. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо продолжительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `staleness_window` — Задаёт максимально допустимую устарелость последнего образца в секундах. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо продолжительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
 
 **Аргументы**
 
-* `timestamp` — Временная метка значения. Может быть отдельным значением или массивом значений. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`Array(UInt32)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array)
+* `timestamp` — Временная метка образца. Может быть отдельным значением или массивом значений. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`Array(UInt32)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array)
 * `value` — Значение временного ряда, соответствующее временной метке. Может быть отдельным значением или массивом значений. [`Float*`](/ru/reference/data-types/float) или [`Array(Float*)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает значения временного ряда, для которых выполнена повторная дискретизация по указанной сетке. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если для конкретной точки сетки нет соответствующего значения. [`Array(Nullable(Float64))`](/ru/reference/data-types/array)
+Возвращает значения временного ряда, для которых выполнена повторная дискретизация по указанной сетке. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если для конкретной точки сетки нет соответствующего образца. [`Array(Nullable(Float64))`](/ru/reference/data-types/array)
 
 **Примеры**
 

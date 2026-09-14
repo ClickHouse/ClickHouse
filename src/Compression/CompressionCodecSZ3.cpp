@@ -11,10 +11,6 @@
 #    include <Compression/registerCompressionCodecs.h>
 #    include <Core/TypeId.h>
 #    include <DataTypes/IDataType.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
@@ -35,6 +31,7 @@ public:
     CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
 
@@ -49,9 +46,7 @@ protected:
     bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
-    /// We mark it as experimental for now.
     bool isLossyCompression() const override { return true; }
-    bool isExperimental() const override { return true; }
     /// SZ3 must be applied to raw floating-point data, so it can not follow another (e.g. delta) codec;
     /// this flag makes the codec-stack validation reject such combinations (like ALP/Gorilla/FPC).
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
@@ -105,7 +100,11 @@ CompressionCodecSZ3::CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
 {
-    setCodecDescription(
+}
+
+ASTPtr CompressionCodecSZ3::getCodecDesc() const
+{
+    return makeCodecDescription(
         "SZ3",
         {make_intrusive<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
          make_intrusive<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),

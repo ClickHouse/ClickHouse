@@ -374,10 +374,10 @@ static void expectGranulePathCountRejected(size_t num_paths, int expected_error_
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    auto column = DataTypeObject::getTypeOfSharedData()->createColumn();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/0, /*limit=*/1, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*column, /*limit=*/1, settings, state, nullptr);
         FAIL() << "Expected an exception for a corrupted granule num_paths count " << num_paths;
     }
     catch (const Exception & e)
