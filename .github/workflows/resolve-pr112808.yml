@@ -1,0 +1,41 @@
+name: Resolve PR 112808
+
+on:
+  push:
+    branches:
+      - agent/refreshable-mv-workload
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-merge:
+    if: github.repository == 'vanchaklar/ClickHouse'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect merge conflicts
+        shell: bash
+        run: |
+          set -uo pipefail
+          git config user.name 'clickhouse-gh'
+          git config user.email 'clickhouse-gh@users.noreply.github.com'
+          git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
+          git fetch --no-tags upstream master
+          set +e
+          git merge --no-commit --no-ff upstream/master
+          rc=$?
+          set -e
+          echo '=== STATUS ==='
+          git status --short
+          echo '=== CONFLICT FILES ==='
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          printf '%s\n' "$conflicts"
+          for f in $conflicts; do
+            echo "=== CONFLICT MARKERS: $f ==="
+            grep -n -B 12 -A 28 '^<<<<<<<\|^=======\|^>>>>>>>' "$f" || true
+          done
+          git merge --abort || true
+          exit "$rc"
