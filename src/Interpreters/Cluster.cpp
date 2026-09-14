@@ -1,5 +1,7 @@
 #include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -578,12 +580,41 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     initMisc();
 }
 
+String Cluster::makeShardScopeIdentity(std::string_view prefix, const String & cluster_name, const Strings & shard_keys)
+{
+    /// No keys means the numbering cannot be identified, which must decline a shard scope rather than
+    /// fall back on the cluster name: the name is equal on both sides by construction (the initiator
+    /// overwrites the shard's `cluster_for_parallel_replicas` with it before shipping the query), so a
+    /// name-derived identity would authenticate every shard number it was ever asked about.
+    if (shard_keys.empty())
+        return {};
+
+    WriteBufferFromOwnString out;
+    out << prefix;
+    /// Length-prefixed, so a key that happens to be spelled like the punctuation cannot move a boundary.
+    auto write_part = [&out](std::string_view part) { out << part.size() << ':' << part << ' '; };
+    write_part(cluster_name);
+    for (const auto & key : shard_keys)
+        write_part(key);
+    return out.str();
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
-    const ClusterConnectionParameters & params)
-    : shard_scope_identity(params.cluster_name)
+    const ClusterConnectionParameters & params,
+    const Strings & shard_keys)
+    : shard_scope_identity(makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, params.cluster_name, shard_keys))
 {
+    /// A missing key would be silently taken for a shorter cluster, so a partial list is not accepted.
+    if (!shard_keys.empty() && shard_keys.size() != names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Got {} shard keys for {} shards of cluster {}",
+            shard_keys.size(),
+            names.size(),
+            params.cluster_name);
+
     UInt32 current_shard_num = 1;
 
     secret = params.cluster_secret;
@@ -610,12 +641,34 @@ Cluster::Cluster(
     initMisc();
 }
 
+/// Each shard's `shard_name`, in the order the shards are numbered. A shard whose replicas disagree, or
+/// one with no name at all, leaves the numbering unidentifiable, so no identity is built for the cluster.
+static Strings getShardNamesForScopeIdentity(const std::vector<std::vector<DatabaseReplicaInfo>> & infos)
+{
+    Strings shard_names;
+    shard_names.reserve(infos.size());
+
+    for (const auto & shard : infos)
+    {
+        if (shard.empty() || shard.front().shard_name.empty())
+            return {};
+
+        for (const auto & replica : shard)
+            if (replica.shard_name != shard.front().shard_name)
+                return {};
+
+        shard_names.push_back(shard.front().shard_name);
+    }
+
+    return shard_names;
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication)
-    : shard_scope_identity(params.cluster_name)
+    : shard_scope_identity(makeShardScopeIdentity(REPLICAS_BY_SHARD_SCOPE, params.cluster_name, getShardNamesForScopeIdentity(infos)))
 {
     UInt32 current_shard_num = 1;
 

@@ -17,9 +17,22 @@ using namespace DB::ClusterProxy;
 namespace
 {
 
+/// `ClusterConnectionParameters` holds references, so a caller must keep these alive across the call.
+struct ConnectionParameterStorage
+{
+    const String username = "default";
+    const String password;
+    const String bind_host;
+
+    ClusterConnectionParameters params(const String & name) const
+    {
+        return ClusterConnectionParameters{username, password, 9000, false, false, false, bind_host, Priority{1}, name, ""};
+    }
+};
+
 /// `replicas_per_shard` replicas on distinct hosts, so that deriving replicas-as-shards is not collapsed by
 /// its duplicate-host skip and the derived cluster really is renumbered.
-ClusterPtr makeCluster(const Settings & settings, const String & name, size_t shards, size_t replicas_per_shard = 1)
+HostsByShard makeHosts(size_t shards, size_t replicas_per_shard)
 {
     HostsByShard hosts;
     size_t host = 1;
@@ -30,14 +43,49 @@ ClusterPtr makeCluster(const Settings & settings, const String & name, size_t sh
             replicas.push_back("127.0.0." + std::to_string(host++));
         hosts.push_back(std::move(replicas));
     }
+    return hosts;
+}
 
-    /// ClusterConnectionParameters holds references, so these must outlive the call.
-    const String username = "default";
-    const String password;
-    const String bind_host;
-    ClusterConnectionParameters params{
-        username, password, 9000, false, false, false, bind_host, Priority{1}, name, ""};
-    return std::make_shared<Cluster>(settings, hosts, params);
+/// A cluster built from a bare host list, as `remote()` builds one. It carries no shard-scope identity:
+/// nothing here says what its shard numbers mean, since the same name can be handed a different host list.
+ClusterPtr makeCluster(const Settings & settings, const String & name, size_t shards, size_t replicas_per_shard = 1)
+{
+    const HostsByShard hosts = makeHosts(shards, replicas_per_shard);
+    const ConnectionParameterStorage storage;
+    return std::make_shared<Cluster>(settings, hosts, storage.params(name));
+}
+
+/// A cluster discovered from Keeper: `ClusterDiscovery::makeCluster` groups the currently visible nodes by
+/// their `shard_id` and lets `Cluster` renumber the groups `1..N`, so the shard ids are what a shard number
+/// of the result means, and they are what identifies its numbering.
+/// On a tree without the shard-keys parameter this falls back to the three-argument form, which is what
+/// makes the arms below report what an unpatched server computes instead of failing to compile.
+template <typename SettingsT>
+ClusterPtr makeDiscoveredCluster(
+    const SettingsT & settings, const String & name, const Strings & shard_ids, size_t replicas_per_shard = 1)
+{
+    const HostsByShard hosts = makeHosts(shard_ids.size(), replicas_per_shard);
+    const ConnectionParameterStorage storage;
+    const auto params = storage.params(name);
+
+    if constexpr (requires { Cluster(settings, hosts, params, shard_ids); })
+        return std::make_shared<Cluster>(settings, hosts, params, shard_ids);
+    else
+        return std::make_shared<Cluster>(settings, hosts, params);
+}
+
+/// A `Replicated` database's cluster: `DatabaseReplicated::getClusterImpl` walks the visible replicas,
+/// starts a new shard each time the shard name parsed out of Keeper changes, and lets `Cluster` renumber
+/// the groups `1..N`. A shard disappears from that walk once its last visible replica is filtered out by
+/// the local replica group or carries a `DROPPED_MARK`, and every later shard then shifts down.
+ClusterPtr makeReplicatedDatabaseCluster(const Settings & settings, const String & name, const Strings & shard_names)
+{
+    std::vector<std::vector<DatabaseReplicaInfo>> infos;
+    for (size_t i = 0; i < shard_names.size(); ++i)
+        infos.push_back({DatabaseReplicaInfo{"127.0.0." + std::to_string(i + 1), shard_names[i], "replica1", {}}});
+
+    const ConnectionParameterStorage storage;
+    return std::make_shared<Cluster>(settings, infos, storage.params(name));
 }
 
 ContextMutablePtr makeContextWithScalar(const Block & shard_num_scalar)
@@ -132,8 +180,8 @@ TEST(ParallelReplicasShardScope, AbsentProvenanceIsTrusted)
 
 TEST(ParallelReplicasShardScope, MatchingProvenanceIsScoped)
 {
-    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, String("some_cluster")));
-    auto cluster = makeCluster(context->getSettingsRef(), "some_cluster", 3);
+    auto cluster = makeDiscoveredCluster(getContext().context->getSettingsRef(), "some_cluster", {"0", "1", "2"});
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*cluster)));
 
     const auto scope = getShardScopeCompat(context, *cluster);
     EXPECT_EQ(scope.kind, SCOPE_SCOPED);
@@ -143,15 +191,16 @@ TEST(ParallelReplicasShardScope, MatchingProvenanceIsScoped)
 TEST(ParallelReplicasShardScope, ForeignProvenanceIsRejected)
 {
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, String("producing_cluster")));
-    auto cluster = makeCluster(context->getSettingsRef(), "another_cluster", 3);
+    /// A config cluster's identity is its bare name, which is what the provenance above stands for.
+    auto cluster = makeDiscoveredCluster(context->getSettingsRef(), "another_cluster", {"0", "1", "2"});
 
     const auto scope = getShardScopeCompat(context, *cluster);
     EXPECT_EQ(scope.kind, SCOPE_FOREIGN);
     EXPECT_EQ(scope.shard_num, 2u);
 }
 
-/// A cluster built from a host list without a name reports an empty name, so an empty provenance value would
-/// compare equal to it and authenticate any such cluster against any other.
+/// A cluster whose numbering cannot be identified carries an empty identity, so an empty provenance value
+/// would compare equal to it and authenticate any such cluster against any other.
 TEST(ParallelReplicasShardScope, EmptyProvenanceNeverMatches)
 {
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, String("")));
@@ -201,7 +250,7 @@ TEST(ParallelReplicasShardScope, NoScalarIsNone)
 /// Comparing names would authenticate such a number against the original and index an unrelated shard.
 TEST(ParallelReplicasShardScope, RenumberedDerivedClusterIsForeign)
 {
-    auto original = makeCluster(getContext().context->getSettingsRef(), "some_cluster", 2, 3);
+    auto original = makeDiscoveredCluster(getContext().context->getSettingsRef(), "some_cluster", {"0", "1"}, 3);
     auto derived = original->getClusterWithReplicasAsShards(getContext().context->getSettingsRef());
     ASSERT_EQ(original->getShardCount(), 2u);
     ASSERT_EQ(derived->getShardCount(), 6u);
@@ -229,12 +278,12 @@ TEST(ParallelReplicasShardScope, RenumberedDerivedClusterIsForeign)
 TEST(ParallelReplicasShardScope, DerivedClusterIdentityIsNotForgeable)
 {
     const auto & settings = getContext().context->getSettingsRef();
-    auto original = makeCluster(settings, "c", 2, 3);
+    auto original = makeDiscoveredCluster(settings, "c", {"0", "1"}, 3);
     auto derived = original->getClusterWithReplicasAsShards(settings);
     ASSERT_EQ(derived->getShardCount(), 6u);
 
     /// A cluster a user can produce by naming a `Replicated` database, which resolves to a cluster of that name.
-    auto impostor = makeCluster(settings, "c (replicas as shards)", 3);
+    auto impostor = makeDiscoveredCluster(settings, "c (replicas as shards)", {"0", "1", "2"});
 
     auto context = makeContextWithScalar(makeShardNumScalarCompat(6, getShardScopeIdentityCompat(*derived)));
     EXPECT_EQ(getShardScopeCompat(context, *impostor).kind, SCOPE_FOREIGN);
@@ -270,11 +319,108 @@ TEST(ParallelReplicasShardScope, LocalPlanPredicateResolvesNoCluster)
     EXPECT_FALSE(canUseLocalPlanForParallelReplicas(shipped));
 }
 
+/// A discovered cluster is renumbered from whichever nodes are visible when it is built, so its name
+/// describes a different numbering on a producer that can see a shard the consumer cannot. Both sides
+/// resolve the same name, so comparing names authenticated the number: `shard_num = 3` against a 2-shard
+/// consumer, which `prepareClusterForParallelReplicas` answers with `Shard number is greater than shard
+/// count` rather than by declining the scope.
+TEST(ParallelReplicasShardScope, DiscoveredClusterWithAnotherMembershipIsForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeDiscoveredCluster(settings, "discovered", {"0", "1", "2"});
+    auto consumer = makeDiscoveredCluster(settings, "discovered", {"0", "1"});
+    ASSERT_EQ(consumer->getShardCount(), 2u);
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(3, getShardScopeIdentityCompat(*producer)));
+    const auto scope = getShardScopeCompat(context, *consumer);
+    EXPECT_EQ(scope.kind, SCOPE_FOREIGN);
+    EXPECT_EQ(scope.shard_num, 3u);
+}
+
+/// The converse, or the arm above could pass by declining every discovered cluster: such a cluster is a
+/// legitimate `cluster_for_parallel_replicas`, and the identity must not depend on the replicas either,
+/// since a discovered cluster gains and loses those as servers come and go.
+TEST(ParallelReplicasShardScope, DiscoveredClusterWithTheSameShardsIsScoped)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeDiscoveredCluster(settings, "discovered", {"0", "1"});
+    auto consumer = makeDiscoveredCluster(settings, "discovered", {"0", "1"});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *producer).kind, SCOPE_SCOPED);
+    EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_SCOPED);
+}
+
+/// The same for a `Replicated` database, where the shipped number stays in range instead: `shard_num = 2`
+/// denotes `shard2` on a producer that sees both shards, and `shard1` on a consumer whose `shard1` has
+/// been filtered out - the half of the defect that returned another shard's rows with no error at all.
+TEST(ParallelReplicasShardScope, ReplicatedDatabaseWithADroppedShardIsForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeReplicatedDatabaseCluster(settings, "replicated_db", {"shard1", "shard2"});
+    auto consumer = makeReplicatedDatabaseCluster(settings, "replicated_db", {"shard2"});
+    ASSERT_EQ(consumer->getShardCount(), 1u);
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
+
+    /// Replica groups make the two sides see different replicas of a shard in ordinary operation, so only
+    /// a shard leaving the cluster may decline; the same shards seen on both sides must stay scoped.
+    auto unchanged = makeReplicatedDatabaseCluster(settings, "replicated_db", {"shard1", "shard2"});
+    EXPECT_EQ(getShardScopeCompat(context, *unchanged).kind, SCOPE_SCOPED);
+}
+
+/// Databases name their shards identically by default, so the identity carries the cluster name as well as
+/// the shard names - otherwise one database's shard number would index another's shards. This one holds on
+/// the merge base too, where the name is the whole identity; it pins what dropping the name would cost.
+TEST(ParallelReplicasShardScope, ReplicatedDatabasesSharingShardNamesAreForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeReplicatedDatabaseCluster(settings, "db_a", {"shard1", "shard2"});
+    auto consumer = makeReplicatedDatabaseCluster(settings, "db_b", {"shard1", "shard2"});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
+}
+
+/// Both the name and the shard names are chosen by whoever creates the database, so their assembly must be
+/// unambiguous: a name spelled like the punctuation plus one fewer shard must not produce the identity of
+/// a shorter name plus one more shard. Like the arm above, this pins the assembly rather than reproducing
+/// the defect - it also holds where the name is the whole identity.
+TEST(ParallelReplicasShardScope, ShardNameIdentityIsUnambiguous)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"});
+    auto impostor = makeReplicatedDatabaseCluster(settings, "db 6:shard1", {"shard2"});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *impostor).kind, SCOPE_FOREIGN);
+}
+
+/// A config cluster's identity is its bare name, and a shard-key identity must not be confusable with one:
+/// a config cluster name is an XML element name, so the shape prefix is spelled with a space.
+TEST(ParallelReplicasShardScope, ShardKeyIdentityIsNotSpellableAsAClusterName)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+
+    /// The same name and the same single shard key in both shapes, so only the shape prefix differs: a
+    /// discovered cluster and a `Replicated` database can share a name, and their shard `1` is not the
+    /// same shard.
+    const String discovered = getShardScopeIdentityCompat(*makeDiscoveredCluster(settings, "x", {"s"}));
+    const String replicated = getShardScopeIdentityCompat(*makeReplicatedDatabaseCluster(settings, "x", {"s"}));
+    EXPECT_NE(discovered, replicated);
+
+    EXPECT_NE(discovered, "x");
+    EXPECT_NE(replicated, "x");
+    EXPECT_NE(discovered.find(' '), String::npos);
+    EXPECT_NE(replicated.find(' '), String::npos);
+}
+
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
 /// identity must carry over: `optimize_skip_unused_shards` reads through such a cluster.
 TEST(ParallelReplicasShardScope, ShardSubsetKeepsIdentity)
 {
-    auto original = makeCluster(getContext().context->getSettingsRef(), "some_cluster", 3);
+    auto original = makeDiscoveredCluster(getContext().context->getSettingsRef(), "some_cluster", {"0", "1", "2"});
     auto subset = original->getClusterWithMultipleShards({1});
     ASSERT_EQ(subset->getShardsInfo().at(0).shard_num, 2u);
 
