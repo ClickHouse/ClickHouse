@@ -48,15 +48,46 @@ WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'tuple_codec_wrapper_
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- StorageMaterializedView owns an inner target and is validated as the outer
--- storage after that target has been created.
+-- A materialized view with an external target does not own the physical streams.
+-- Its local codec metadata must be rejected regardless of the target engine.
 DROP TABLE IF EXISTS tuple_codec_wrapper_mv;
+DROP TABLE IF EXISTS tuple_codec_wrapper_mv_external_merge_tree;
+DROP TABLE IF EXISTS tuple_codec_wrapper_mv_external_memory;
+DROP TABLE IF EXISTS tuple_codec_wrapper_external_merge_tree;
+DROP TABLE IF EXISTS tuple_codec_wrapper_external_memory;
 DROP TABLE IF EXISTS tuple_codec_wrapper_source;
 CREATE TABLE tuple_codec_wrapper_source
 (
     payload Tuple(number UInt64, text String)
 )
 ENGINE = Null;
+
+CREATE TABLE tuple_codec_wrapper_external_merge_tree
+(
+    payload Tuple(number UInt64, text String) CODEC(LZ4)
+)
+ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW tuple_codec_wrapper_mv_external_merge_tree
+TO tuple_codec_wrapper_external_merge_tree
+(
+    payload Tuple(number UInt64 CODEC(ZSTD(3)), text String)
+)
+AS SELECT payload FROM tuple_codec_wrapper_source; -- { serverError NOT_IMPLEMENTED }
+
+CREATE TABLE tuple_codec_wrapper_external_memory
+(
+    payload Tuple(number UInt64, text String) CODEC(LZ4)
+)
+ENGINE = Memory;
+CREATE MATERIALIZED VIEW tuple_codec_wrapper_mv_external_memory
+TO tuple_codec_wrapper_external_memory
+(
+    payload Tuple(number UInt64 CODEC(ZSTD(3)), text String)
+)
+AS SELECT payload FROM tuple_codec_wrapper_source; -- { serverError NOT_IMPLEMENTED }
+
+-- An owned inner MergeTree does store the materialized view's codec metadata.
+-- The outer storage is validated after that inner target has been created.
 
 CREATE MATERIALIZED VIEW tuple_codec_wrapper_mv
 (
@@ -69,4 +100,6 @@ INSERT INTO tuple_codec_wrapper_source VALUES ((2, 'view'));
 SELECT payload FROM tuple_codec_wrapper_mv;
 
 DROP TABLE tuple_codec_wrapper_mv;
+DROP TABLE tuple_codec_wrapper_external_merge_tree;
+DROP TABLE tuple_codec_wrapper_external_memory;
 DROP TABLE tuple_codec_wrapper_source;
