@@ -648,13 +648,16 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBufferPinnedToETag(
 /// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
 /// at a time, without any read having been performed on it yet. With `ignore_range`, the endpoint
 /// answers every request with `200 OK` and the object from byte 0. `known_object_size` is the size
-/// of the object as it is known locally, from a listing or a `HEAD`, before any read.
+/// of the object as it is known locally, from a listing or a `HEAD`, before any read. With
+/// `use_external_buffer`, the buffer reads into memory a wrapper hands it with `set`, the way the
+/// page cache and the asynchronous prefetch drive it, instead of memory of its own.
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(
     size_t max_response_size,
     size_t blob_size,
     bool ignore_range = false,
     std::optional<size_t> known_object_size = {},
-    const std::string & expected_etag = {})
+    const std::string & expected_etag = {},
+    bool use_external_buffer = false)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
@@ -670,7 +673,7 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(
         DB::ReadSettings{},
         /* max_single_read_retries */ 1,
         /* max_single_download_retries */ 1,
-        /* use_external_buffer */ false,
+        use_external_buffer,
         /* restricted_seek */ false,
         /* read_until_position */ 0,
         /* blob_storage_log */ DB::BlobStorageLogWriterPtr{},
@@ -1630,14 +1633,19 @@ TEST(AzureReadWithoutRightBound, KnownSizeIsTheFileSize)
 }
 
 /// The page cache sizes itself by `getFileSize` of the buffer it wraps before it reads a byte, and
-/// then reads the whole file through `readBigAt`. The object was listed as 100 bytes and has been
+/// then reads the whole file through it, block by block, into the memory of its cells. The object
+/// was listed as 100 bytes and has been
 /// replaced by a 200-byte generation since (the read is not pinned, so the replacement is served):
 /// the wrapper must learn the 100 bytes the buffer ends at, not the 200 a fresh `HEAD` reports,
 /// or its first cold miss asks for bytes the buffer never delivers and ends in an error instead of
 /// the listed file.
 TEST(AzureReadWithoutRightBound, KnownSizeThroughThePageCache)
 {
-    auto buffer = makeFreshBuffer(/* max_response_size */ 200, /* blob_size */ 200, /* ignore_range */ false, /* known_object_size */ 100);
+    /// The page cache hands the buffer the memory of the cache cell to read into, so the buffer
+    /// must be one that reads into external memory - as `ReadPipeline` creates it under the cache.
+    auto buffer = makeFreshBuffer(
+        /* max_response_size */ 200, /* blob_size */ 200, /* ignore_range */ false, /* known_object_size */ 100,
+        /* expected_etag */ {}, /* use_external_buffer */ true);
 
     DB::PageCacheSettings page_cache_settings;
     page_cache_settings.cache = std::make_shared<DB::PageCache>(
