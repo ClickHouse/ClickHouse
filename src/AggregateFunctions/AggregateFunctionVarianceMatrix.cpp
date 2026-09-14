@@ -229,7 +229,7 @@ Returns the population covariance matrix over N variables.
     )";
     FunctionDocumentation::Syntax covarPopMatrix_syntax = "covarPopMatrix(x1[, x2, ...])";
     FunctionDocumentation::Arguments covarPopMatrix_arguments = {
-        {"x1[, x2, ...]", "A variable number of parameters.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x1[, x2, ...]", "One or more parameters over which to compute the population covariance matrix.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters covarPopMatrix_parameters = {};
     FunctionDocumentation::ReturnedValue covarPopMatrix_returned_value = {"Returns the population covariance matrix.", {"Array(Array(Float64))"}};
