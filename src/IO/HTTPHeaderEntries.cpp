@@ -2,15 +2,23 @@
 
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace DB
 {
 
-void normalizeHeaderNames(HTTPHeaderEntries & headers)
+NormalizedHTTPHeaderEntries::NormalizedHTTPHeaderEntries(const HTTPHeaderEntries & headers)
 {
-    for (auto & header : headers)
-        std::transform(header.name.begin(), header.name.end(), header.name.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
+    entries.reserve(headers.size());
+    for (const auto & header : headers)
+        push_back(header);
+}
+
+void NormalizedHTTPHeaderEntries::push_back(HTTPHeaderEntry entry)
+{
+    std::transform(entry.name.begin(), entry.name.end(), entry.name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    entries.push_back(std::move(entry));
 }
 
 }

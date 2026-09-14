@@ -126,19 +126,34 @@ TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
 /// attached to the request after signing, and never reach the rename.
 TEST(GCSHeaderTranslation, NormalizesHeaderNames)
 {
-    DB::HTTPHeaderEntries headers{
+    const DB::NormalizedHTTPHeaderEntries headers(DB::HTTPHeaderEntries{
         {"X-Amz-Meta-Owner", "analytics"},
         {"X-AMZ-STORAGE-CLASS", "GLACIER"},
         {"Custom-Auth-Token", "KeepTheValue"},
-    };
+    });
 
-    DB::normalizeHeaderNames(headers);
+    const DB::HTTPHeaderEntries seen(headers.begin(), headers.end());
 
-    EXPECT_EQ(headers[0].name, "x-amz-meta-owner");
-    EXPECT_EQ(headers[1].name, "x-amz-storage-class");
-    EXPECT_EQ(headers[2].name, "custom-auth-token");
+    ASSERT_EQ(seen.size(), 3u);
+    EXPECT_EQ(seen[0].name, "x-amz-meta-owner");
+    EXPECT_EQ(seen[1].name, "x-amz-storage-class");
+    EXPECT_EQ(seen[2].name, "custom-auth-token");
     /// Values are untouched.
-    EXPECT_EQ(headers[2].value, "KeepTheValue");
+    EXPECT_EQ(seen[2].value, "KeepTheValue");
+}
+
+/// The headers ClickHouse adds itself go through the same door, so the invariant does not depend on
+/// where an entry came from.
+TEST(GCSHeaderTranslation, NormalizesHeaderNamesOnPushBack)
+{
+    DB::NormalizedHTTPHeaderEntries headers;
+    headers.push_back({"X-Amz-Server-Side-Encryption-Customer-Key", "KeepTheValue"});
+
+    const DB::HTTPHeaderEntries seen(headers.begin(), headers.end());
+
+    ASSERT_EQ(seen.size(), 1u);
+    EXPECT_EQ(seen[0].name, "x-amz-server-side-encryption-customer-key");
+    EXPECT_EQ(seen[0].value, "KeepTheValue");
 }
 
 

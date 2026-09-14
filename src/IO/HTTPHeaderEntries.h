@@ -17,8 +17,33 @@ struct HTTPHeaderEntry
 
 using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-/// Lower-case every header name in place, for code that classifies a name by a literal prefix.
-/// `HTTPHeaderFilter` needs the original case for `(?-i)` regexps, so this is not done on construction.
-void normalizeHeaderNames(HTTPHeaderEntries & headers);
+/// Header names lower-cased on insertion.
+///
+/// The S3 client sorts a header by the literal prefix `x-amz-`: once before signing, to pick what
+/// joins the canonical list, and once after, to pick what is attached as an ordinary header. A name
+/// in the spelling an operator wrote, such as `X-Amz-Meta-Owner`, fails both tests and leaves
+/// unsigned and untranslated.
+///
+/// The conversion cannot happen any earlier than the client. `HTTPHeaderFilter` matches
+/// `<http_forbid_headers>` regexps against the original case, so that an inline `(?-i)` scope keeps
+/// working, and the refresh of a GCS token finds the header to replace by comparing the name to
+/// `Authorization`. Both run on the way here. Holding the rule in the type is what keeps the last
+/// step from being skipped.
+class NormalizedHTTPHeaderEntries
+{
+public:
+    using const_iterator = HTTPHeaderEntries::const_iterator;
+
+    NormalizedHTTPHeaderEntries() = default;
+    explicit NormalizedHTTPHeaderEntries(const HTTPHeaderEntries & headers);
+
+    void push_back(HTTPHeaderEntry entry); /// NOLINT
+
+    const_iterator begin() const { return entries.begin(); }
+    const_iterator end() const { return entries.end(); }
+
+private:
+    HTTPHeaderEntries entries;
+};
 
 }
