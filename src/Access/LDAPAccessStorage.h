@@ -113,6 +113,10 @@ private: // IAccessStorage implementations.
         const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const;
     std::shared_ptr<User> makeUserNoLock(const String & user_name) const;
 
+    /// Throws `LDAP_ERROR` when `max_staleness` is set and the last successful synchronisation is older than it.
+    /// Only called for names present in `memory_storage`, so it can never refuse a user of another storage.
+    void checkNotStale(const String & user_name) const;
+
     /// The synchronisation, see `sync`.
     struct SyncPlan
     {
@@ -180,7 +184,8 @@ private: // IAccessStorage implementations.
     bool sync_thread_should_exit = false;
     std::mutex sync_mutex;
     bool roles_storage_pick_logged = false;                     // the ambiguous default pick is warned about once, under `sync_mutex`
-    /// Steady-clock seconds of the last successful (non-dry) run, 0 = never.
+    /// Steady-clock seconds of the last successful (non-dry) run, 0 = never; read by `checkNotStale` without `mutex`.
     std::atomic<Int64> last_sync_success_time_s{0};
+    mutable std::atomic<Int64> last_staleness_log_time_s{0};    // once-per-minute throttle of the staleness warning
 };
 }

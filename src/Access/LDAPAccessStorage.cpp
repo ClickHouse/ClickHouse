@@ -602,9 +602,48 @@ bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const C
         return true;
 
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+    {
+        /// In a synced directory the synchronisation is the sole role authority, so a login verifies the
+        /// password only. A role search here would feed the `verification_cooldown` cache, whose entries can
+        /// be up to `verification_cooldown` old, and a cache hit would then re-apply a stale role set over
+        /// what the synchronisation just wrote.
+        if (sync_params)
+            return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, nullptr, nullptr);
+
         return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, &role_search_params, &role_search_results);
+    }
 
     return false;
+}
+
+
+void LDAPAccessStorage::checkNotStale(const String & user_name) const
+{
+    const auto & params = *sync_params;
+    if (params.max_staleness == std::chrono::seconds{0})
+        return;
+
+    const Int64 now_s = steadyNowSeconds();
+    const Int64 last_success_s = last_sync_success_time_s.load();
+    const bool never_synced = (last_success_s == 0);
+    const Int64 age_s = never_synced ? 0 : (now_s - last_success_s);
+    if (!never_synced && age_s <= params.max_staleness.count())
+        return;
+
+    String message;
+    if (never_synced)
+        message = fmt::format("LDAP directory {} has never been synchronised successfully (max_staleness = {} s), refusing to authenticate user '{}'",
+            backQuote(getStorageName()), params.max_staleness.count(), user_name);
+    else
+        message = fmt::format("LDAP directory {} has not been synchronised for {} s (max_staleness = {} s), refusing to authenticate user '{}'",
+            backQuote(getStorageName()), age_s, params.max_staleness.count(), user_name);
+
+    /// During an outage every login of every synced user fails with this; one line per minute is enough.
+    Int64 last_log_s = last_staleness_log_time_s.load();
+    if (now_s - last_log_s >= 60 && last_staleness_log_time_s.compare_exchange_strong(last_log_s, now_s))
+        LOG_WARNING(getLogger(), "{}", message);
+
+    throw Exception(ErrorCodes::LDAP_ERROR, "{}", message);
 }
 
 
@@ -741,6 +780,23 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
     if (!force_external_lookup || type != AccessEntityType::USER)
         return id;
 
+    if (sync_params)
+    {
+        /// A synced directory serves the synchronised snapshot: with `only_synced_users` a name outside it
+        /// does not exist here, whatever the directory says (same gate as `authenticateImpl`). Roles never
+        /// come from a lookup in a synced directory, so an existing entry is not refreshed either, and a
+        /// lazily materialised one (only without `only_synced_users`) waits for the next run to get its roles.
+        if (id || sync_params->only_synced_users)
+            return id;
+
+        if (!access_control.getExternalAuthenticators().findLDAPUser(ldap_server_name, name, nullptr, nullptr))
+            return {};
+
+        auto new_user = makeUserNoLock(name);
+        assignRolesNoLock(*new_user, {});
+        return memory_storage.insert(new_user);
+    }
+
     const bool has_role_mapping = !role_search_params.empty();
 
     /// An entry may exist in memory yet have been materialized without resolving role
@@ -844,6 +900,23 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
 
     auto id = memory_storage.find<User>(user_name);
 
+    if (sync_params)
+    {
+        /// Gate order is deliberate. A name outside the synchronised snapshot is "not found" (before the
+        /// first successful run nobody logs in through this directory, and the storages that follow are
+        /// unaffected), so the staleness gate below can only ever refuse a user this directory owns.
+        if (!id && sync_params->only_synced_users)
+        {
+            LOG_DEBUG(getLogger(), "User {} is not in the synchronised snapshot of directory {}", user_name, backQuote(getStorageName()));
+            if (throw_if_user_not_exists)
+                throwNotFound(AccessEntityType::USER, user_name, getStorageName());
+            return {};
+        }
+
+        if (id)
+            checkNotStale(user_name);
+    }
+
     UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
 
     std::shared_ptr<User> new_user;
@@ -878,12 +951,13 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
     }
-    else if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+    else if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials) && !sync_params)
     {
         // Just in case external_roles are changed. This will be no-op if they are not.
         // Interserver `AlwaysAllowCredentials` skip the LDAP round-trip (see `areLDAPCredentialsValidNoLock`),
         // so `external_roles` is empty for them; updating from it would wipe the roles mapped at the user's
         // last password login until the next one (https://github.com/ClickHouse/ClickHouse/pull/101920).
+        // In a synced directory the roles come from the synchronisation only (see `areLDAPCredentialsValidNoLock`).
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
