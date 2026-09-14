@@ -12,6 +12,11 @@ set(SIMDJSON_SRC "${SIMDJSON_SRC_DIR}/simdjson.cpp")
 add_library(_simdjson ${SIMDJSON_SRC})
 target_include_directories(_simdjson SYSTEM PUBLIC "${SIMDJSON_INCLUDE_DIR}" PRIVATE "${SIMDJSON_SRC_DIR}")
 
+# A ClickHouse `String` is a byte string with no encoding contract, so a JSON document built from one
+# need not be valid UTF-8, while simdjson rejects such a document by default. This is simdjson's own
+# switch for that check. The scalar `fallback` backend ignores it and still validates.
+target_compile_definitions(_simdjson PRIVATE SIMDJSON_UTF8VALIDATION=0)
+
 # For x86-64-v2 (and lower), simdjson uses its own CPU dispatching and gets
 # confused if we enable AVX/AVX2 flags. Disable them so it can pick the best
 # implementation at runtime, and enable the scalar fallback for CPUs without
