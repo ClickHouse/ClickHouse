@@ -5,11 +5,14 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/assert_cast.h>
 
 #include <gtest/gtest.h>
 #include <base/types.h>
@@ -246,4 +249,28 @@ TEST(ConvertColumnToType, OrThrow)
     ASSERT_NE(null_ok, nullptr);
     ASSERT_EQ(null_ok->size(), 1u);
     EXPECT_TRUE(null_ok->isNullAt(0));
+}
+
+/// `Dynamic` hides its payload type from the type tree, so a `Bool` row inside it must not take the
+/// identity fast path either: a raw `Bool` byte (2 here) is normalized through the `Field` path, as it
+/// is for a plain `Bool`, and the result compares equal to a genuine `true`.
+TEST(ConvertColumnToType, DynamicHoldingRawBoolIsNormalized)
+{
+    const auto dynamic = DataTypeFactory::instance().get("Dynamic");
+
+    auto raw = dynamic->createColumn();
+    raw->insert(Field(true));
+    auto & raw_dynamic = assert_cast<ColumnDynamic &>(*raw);
+    const auto bool_discriminator = raw_dynamic.getVariantInfo().variant_name_to_discriminator.at("Bool");
+    assert_cast<ColumnUInt8 &>(raw_dynamic.getVariantColumn().getVariantByGlobalDiscriminator(bool_discriminator)).getData()[0] = 2;
+
+    auto expected = dynamic->createColumn();
+    expected->insert(Field(true));
+
+    EXPECT_NE(raw->compareAt(0, 0, *expected, 1), 0);
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*raw, dynamic, dynamic);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    EXPECT_EQ(converted->compareAt(0, 0, *expected, 1), 0);
 }

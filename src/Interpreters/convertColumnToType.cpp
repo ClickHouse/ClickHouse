@@ -89,10 +89,14 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 }
 
 /// `Bool` anywhere in the type tree (the shapes `retagBoolInField` normalizes, and any other nesting).
+/// `Dynamic` and `JSON` count as containing `Bool`: their payload types are not children the type tree
+/// exposes (`DataTypeDynamic` has no subtypes, `DataTypeObject::forEachChild` visits typed paths only),
+/// yet a row of either may hold a `Bool`.
 bool containsBool(const IDataType & type)
 {
-    bool found = type.getName() == "Bool";
-    type.forEachChild([&](const IDataType & child) { found = found || child.getName() == "Bool"; });
+    auto is_bool_carrier = [](const IDataType & t) { return t.getName() == "Bool" || isDynamic(t) || isObject(t); };
+    bool found = is_bool_carrier(type);
+    type.forEachChild([&](const IDataType & child) { found = found || is_bool_carrier(child); });
     return found;
 }
 
