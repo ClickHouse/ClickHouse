@@ -225,18 +225,6 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-TypeIndex typeIdx(const IDataType * data_type)
-{
-    if (!data_type)
-        return TypeIndex::Nothing;
-
-    WhichDataType which(*data_type);
-    if (baseType(which.idx) != TypeIndex::Nothing)
-        return which.idx;
-
-    return TypeIndex::Nothing;
-}
-
 void transpose64x8(UInt64 * src_dst)
 {
     const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
@@ -400,7 +388,7 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
 }
 
 template <typename T>
-T restoreUpperBits(T value, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]])
+T restoreUpperBits(T value, T upper_min, T upper_max, T sign_bit)
 {
     if constexpr (is_signed_v<T>)
     {
@@ -417,11 +405,32 @@ template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail) /// NOLINT
 {
+    UInt32 part_bits = num_bits % 8;
+
+    /// Flags and small ranges often need at most eight stored bits.
+    /// A 64-byte matrix avoids clearing unused planes and reconstructing zero high bytes.
+    if (num_bits <= 8)
+    {
+        UInt64 matrix[8] = {};
+        memcpy(matrix, src, num_bits * sizeof(UInt64));
+
+        if (full || part_bits)
+            reverseTranspose64x8(matrix);
+
+        const auto * values = reinterpret_cast<const UInt8 *>(matrix);
+        for (UInt32 col = 0; col < tail; ++col)
+        {
+            T value = static_cast<T>(values[col]);
+            value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
+            memcpy(dst + col * sizeof(T), &value, sizeof(value));
+        }
+        return;
+    }
+
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
 
     UInt32 full_bytes = num_bits / 8;
-    UInt32 part_bits = num_bits % 8;
 
     if constexpr (full)
     {
@@ -445,7 +454,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
 })
 )
 
-/// UInt64[N] transposed matrix -> UIntX[64]
+/// UInt64[N] transposed matrix -> T[tail], upper bits restored
 template <typename T, bool full = false>
 ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail = 64)
 {
@@ -655,8 +664,8 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
                         expected, num_elements);
 
     T upper_min = 0;
-    T upper_max [[maybe_unused]] = 0;
-    T sign_bit [[maybe_unused]] = 0;
+    T upper_max = 0;
+    T sign_bit = 0;
     if (num_bits < 64)
         upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
 
@@ -856,8 +865,8 @@ void registerCodecT64(CompressionCodecFactory & factory)
         std::optional<TypeIndex> type_idx;
         if (type)
         {
-            type_idx = typeIdx(type);
-            if (type_idx == TypeIndex::Nothing)
+            type_idx = type->getTypeId();
+            if (baseType(*type_idx) == TypeIndex::Nothing)
                 throw Exception(
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         }
