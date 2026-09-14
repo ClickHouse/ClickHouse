@@ -479,6 +479,175 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         putInt16(payload, -1); /// negative format-code count
         EXPECT_TRUE(deserializeThrows(framePayload(std::move(payload)), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT));
     }
+
+    /// `C = 1` broadcasts one format code to all parameters, which is legal when the message
+    /// carries none; with no values there is no binary payload to decode.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 1); /// one parameter format code
+        putInt16(payload, 1); /// binary, applied to all parameters
+        putInt16(payload, 0); /// zero parameter values
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        EXPECT_NO_THROW(msg->deserialize(in));
+        EXPECT_FALSE(msg->has_binary_format_param);
+        char marker = 0;
+        in.readStrict(&marker, 1);
+        EXPECT_EQ(marker, 'X');
+
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement statement;
+        statement.function_name = "";
+        statement.function_body = "SELECT 1";
+        manager.addStatement(&statement);
+        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
+    }
+
+    /// Two format codes with no values: the codes describe nothing, so the message is accepted
+    /// even though the count matches no parameter.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 2); /// two parameter format codes
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 0); /// zero parameter values
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        EXPECT_NO_THROW(msg->deserialize(in));
+        EXPECT_FALSE(msg->has_binary_format_param);
+        char marker = 0;
+        in.readStrict(&marker, 1);
+        EXPECT_EQ(marker, 'X');
+
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement statement;
+        statement.function_name = "";
+        statement.function_body = "SELECT 1";
+        manager.addStatement(&statement);
+        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
+    }
+
+    /// A binary format code over a protocol NULL carries no bytes to decode, so it is accepted
+    /// and the parameter is substituted as `NULL`.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 1); /// one parameter format code
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 1); /// one parameter value
+        putInt32(payload, -1); /// NULL: no value bytes follow
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        EXPECT_NO_THROW(msg->deserialize(in));
+        EXPECT_FALSE(msg->has_binary_format_param);
+        ASSERT_EQ(msg->parameters.size(), 1u);
+        EXPECT_FALSE(msg->parameters[0].has_value());
+
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement statement;
+        statement.function_name = "";
+        statement.function_body = "SELECT $1";
+        manager.addStatement(&statement);
+        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT NULL");
+    }
+
+    /// The flag is message-wide, not per parameter: with `C = N` the binary code covers only the
+    /// NULL, yet the text-coded value still carries bytes, and the message is refused.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 2); /// one format code per parameter
+        putInt16(payload, 1); /// binary, for the NULL below
+        putInt16(payload, 0); /// text, for the value below
+        putInt16(payload, 2); /// two parameter values
+        putInt32(payload, -1); /// NULL: no value bytes follow
+        putInt32(payload, 2);
+        payload += "hi";
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_TRUE(msg.has_binary_format_param);
+        ASSERT_EQ(msg.parameters.size(), 2u);
+        EXPECT_FALSE(msg.parameters[0].has_value());
+
+        EXPECT_TRUE(deserializeThenAttach(bytes));
+    }
+
+    /// Acceptance depends on neither the value count nor the broadcast form: a per-parameter code
+    /// array over NULLs alone is still nothing to decode.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 2); /// one format code per parameter
+        putInt16(payload, 0); /// text
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 2); /// two parameter values
+        putInt32(payload, -1); /// NULL: no value bytes follow
+        putInt32(payload, -1); /// NULL
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        EXPECT_NO_THROW(msg->deserialize(in));
+        EXPECT_FALSE(msg->has_binary_format_param);
+        ASSERT_EQ(msg->parameters.size(), 2u);
+
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement statement;
+        statement.function_name = "";
+        statement.function_body = "SELECT $1 + $2";
+        manager.addStatement(&statement);
+        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT NULL + NULL");
+    }
+
+    /// A zero-length value is a value: only the `-1` sentinel means no bytes follow, so a binary
+    /// code over an empty value is refused like any other.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 1); /// one parameter format code
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 1); /// one parameter value
+        putInt32(payload, 0); /// present, and empty
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_TRUE(msg.has_binary_format_param);
+        ASSERT_EQ(msg.parameters.size(), 1u);
+        ASSERT_TRUE(msg.parameters[0].has_value());
+        EXPECT_TRUE(msg.parameters[0]->empty());
+
+        EXPECT_TRUE(deserializeThenAttach(bytes));
+    }
 }
 
 TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)

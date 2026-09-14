@@ -127,6 +127,10 @@ FROM input(
      unstable_threshold Float64'
 ) FORMAT TSV"""
 
+# Praktika expands exactly this sub-result into per-test-case CIDB rows: it is the
+# `result_name_for_cidb` of both performance jobs (ci/defs/job_configs.py).
+CIDB_TEST_CASES_RESULT_NAME = "Tests"
+
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 
 # --- Aggregate report tables on the play cluster --------------------------
@@ -1721,14 +1725,14 @@ def read_ci_checks_results(path):
     return results, malformed, True
 
 
-def import_ci_checks_results(path, results):
-    """Import `ci-checks.tsv` rows into the previous subtask's results.
+def import_ci_checks_results(path, results, target_name=CIDB_TEST_CASES_RESULT_NAME):
+    """Import `ci-checks.tsv` rows into the `target_name` sub-result.
 
     Returns True when the file was importable. A file with no data row at all -
     empty, or only the header lines - is reported and left unimported. That
-    distinction is a diagnostic one, not a data-preserving one: every subtask
-    `main()` appends before this call is built without a `results=` argument, so
-    the assignment target's row list is empty either way and there is nothing an
+    distinction is a diagnostic one, not a data-preserving one: the target
+    is built by `Result.from_commands_run`, which takes no `results=`
+    argument, so its row list is empty either way and there is nothing an
     empty assignment could destroy. A file that lost individual rows still
     imports the intact ones and reports how many it skipped, because degrading
     beats dying. An absent file is the atomic publish's own failure signal -
@@ -1746,8 +1750,11 @@ def import_ci_checks_results(path, results):
         return False
     if malformed:
         print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
-    # results[-2] is a previuos subtask
-    results[-2].results = test_results
+    target = next((r for r in results if r.name == target_name), None)
+    if target is None:
+        print(f"WARNING: no [{target_name}] sub-result to import ci-checks.tsv into")
+        return False
+    target.results = test_results
     return True
 
 
@@ -2272,7 +2279,9 @@ def main():
         commands = [
             run_tests,
         ]
-        results.append(Result.from_commands_run(name="Tests", command=commands))
+        results.append(
+            Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
+        )
         res = results[-1].is_ok()
 
     if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
@@ -2580,7 +2589,7 @@ def main():
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
-            if r.name == "Tests" and r.results:
+            if r.name == CIDB_TEST_CASES_RESULT_NAME and r.results:
                 tests_result = r
                 break
         if tests_result:

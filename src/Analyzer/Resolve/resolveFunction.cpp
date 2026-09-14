@@ -92,7 +92,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -1845,10 +1845,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the single-key shape just identified, which stays on the regular `IN` path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
@@ -2337,24 +2337,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-        {
-            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
-            {{
-                {"in", "nullIn"},
-                {"notIn", "notNullIn"},
-                {"globalIn", "globalNullIn"},
-                {"globalNotIn", "globalNotNullIn"},
-            }};
-
-            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
-            {
-                if (function_name == in_function_name)
-                {
-                    function_name = in_function_name_to_replace;
-                    break;
-                }
-            }
-        }
+            function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
@@ -2541,7 +2524,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element into the tuple type, so a non-parseable value raises the same parsing
                     /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
                     /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
-                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
+                    /// columns are gated by `enable_nullable_tuple_type`, and the
                     /// constant `Set` path throws for a non-parseable tuple element rather than
                     /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)

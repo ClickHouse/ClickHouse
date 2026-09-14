@@ -275,13 +275,15 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPlan &, ContextPtr) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
+        /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        PreparedSetsPtr prepared_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
@@ -327,6 +329,7 @@ private:
 
     static void convertAndFilterSourceStream(
         const Block & header,
+        const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
