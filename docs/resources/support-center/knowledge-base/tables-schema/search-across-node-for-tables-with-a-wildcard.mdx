@@ -6,6 +6,9 @@ tags: ['Deployments and Scaling']
 keywords: [search nodes, query_log, wildcard, table prefix]
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## When to use it {#when-to-use-it}
 This is useful when there are tables that have similar naming conventions and similar columns but are not replicated. An example is searching the system database for entries in the query log tables.
 
@@ -92,3 +95,4 @@ SELECT * EXCEPT (used_privileges, missing_privileges)
 FROM clusterAllReplicas(default, merge('system', 'query_log[\\_]*'))
 WHERE (query_id = '31a93b8e-1149-4edd-a33d-f03f47a676cc') AND (event_time = '2024-10-21 12:49:04')
 ```
+

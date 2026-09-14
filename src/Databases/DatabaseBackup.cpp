@@ -6,7 +6,6 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -31,8 +30,6 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-
-#include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
 
@@ -85,27 +82,12 @@ public:
     {}
 };
 
-/// The name is the cache key of the storage policy, so it must cover every input the policy's disk
-/// depends on, including the local database name. Fields are length-prefixed to keep their
-/// boundaries unambiguous, and the name stays a pure function of them because it has to come out
-/// identical on every open of the same database.
-String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
+String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
 {
-    const auto backup_info_string = config.backup_info.toString();
-
-    SipHash hash;
-    hash.update(local_database_name.size());
-    hash.update(local_database_name);
-    hash.update(config.database_name.size());
-    hash.update(config.database_name);
-    hash.update(backup_info_string.size());
-    hash.update(backup_info_string);
-
-    return fmt::format("__database_backup_config_{}", getSipHash128AsHexString(hash));
+    return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
 }
 
-void updateCreateQueryWithDatabaseBackupStoragePolicy(
-    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config)
+void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_query, const DatabaseBackup::Configuration & config, ContextPtr)
 {
     auto * storage = create_query->storage;
 
@@ -166,7 +148,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(
         settings = storage->settings;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(local_database_name, config);
+    auto storage_policy_name = buildStoragePolicyName(config);
     settings->changes.setSetting("storage_policy", Field(storage_policy_name));
 }
 
@@ -255,7 +237,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
         return;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
+    auto storage_policy_name = buildStoragePolicyName(config);
 
     getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
     {
@@ -373,7 +355,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
                 return;
             }
 
-            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
+            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
             {
                 SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
@@ -509,16 +491,6 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
-void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
-{
-    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
-    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
-        return;
-
-    auto config = parseArguments(engine_args, query_context);
-    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
-}
-
 void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
@@ -532,21 +504,12 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             engine_args = engine->arguments->children;
 
         auto config = parseArguments(engine_args, args.context);
-
-        /// Authorize only a newly introduced definition: one read back from this server's metadata was
-        /// already validated, and a context with no user cannot be checked per user.
-        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
-        const bool from_existing_metadata
-            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
-        if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
-
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
     factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
         .description = R"DOCS_MD(
-Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
+Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.
 
@@ -557,7 +520,7 @@ CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
 
-The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
+The backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
 
 **Engine Parameters**
 
