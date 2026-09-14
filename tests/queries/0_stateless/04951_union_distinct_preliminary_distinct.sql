@@ -32,6 +32,8 @@ SELECT count() FROM (
 ) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT';
+-- The set-operation step is under test, not its join rewrite.
+SET optimize_rewrite_intersect_except_to_join = 0;
 SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x INTERSECT DISTINCT SELECT 1 AS x
 ) WHERE explain ILIKE '%Preliminary%';

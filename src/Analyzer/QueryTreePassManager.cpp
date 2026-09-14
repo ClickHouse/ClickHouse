@@ -21,6 +21,7 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/HasToInPass.h>
+#include <Analyzer/Passes/RewriteIntersectExceptToJoinPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
@@ -274,6 +275,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
+    manager.addPass(std::make_unique<RewriteIntersectExceptToJoinPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
