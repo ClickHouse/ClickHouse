@@ -56,6 +56,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -121,13 +122,8 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 
-/// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
-/// re-parsed on execution. Re-parsing resets any set-operation nodes (`UNION`/`INTERSECT`/`EXCEPT`)
-/// to their un-normalized form (`union_mode` becomes `UNION_DEFAULT` and the `is_normalized` flag is
-/// lost), which the analyzer rejects with "UNION mode UNION_DEFAULT must be normalized". Re-run the
-/// same normalization that `executeQuery` applies to top-level queries so set operators work inside
-/// mutations. The serialized text always carries explicit modes, so the `*_default_mode` fallbacks
-/// are not reached in practice; passing the current context settings just mirrors `executeQuery`.
+/// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
+/// practice; passing the current context settings just mirrors `executeQuery`.
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -796,6 +792,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Readable MATERIALIZED dependency graph; EPHEMERAL inputs are excluded.
     std::unordered_map<String, Names> column_to_affected_materialized;
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns reading an EPHEMERAL column, with their readable dependencies. They are
+    /// skipped by the recompute, so they are checked for staleness after the graph is built.
+    std::vector<std::pair<String, const Names *>> ephemeral_reading_materialized;
 
     const bool need_materialized_analysis =
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
@@ -817,17 +816,14 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (materialized->reads_ephemeral)
             {
-                /// Warn if the mutation also updates a dependency of this MATERIALIZED column — the
-                /// on-disk value will become stale. Not on an on-fly read, which builds an interpreter
-                /// per read task per part and writes nothing, so the warning is untrue and repeats there.
-                if (!settings.apply_on_fly_for_read
-                    && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep); }))
-                    LOG_WARNING(logger,
-                        "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
-                        "columns that are being updated. Its value will NOT be recalculated "
-                        "during this mutation — the on-disk value may become inconsistent. "
-                        "To fix this, re-INSERT the affected rows.",
-                        column.name);
+                /// Such a column is never recomputed, so its on-disk value goes stale as soon as
+                /// one of its regular inputs changes. Collect it and warn below, once the readable
+                /// dependency graph is complete: whether an input changed can only be answered
+                /// over the transitive closure, and a hop of the chain may still be unvisited here.
+                /// Not on an on-fly read, which builds an interpreter per read task per part and
+                /// writes nothing, so the warning is untrue and repeats there.
+                if (!settings.apply_on_fly_for_read)
+                    ephemeral_reading_materialized.emplace_back(column.name, &required_columns);
                 continue;
             }
 
@@ -888,6 +884,30 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         return affected;
     };
+
+    /// A MATERIALIZED column reading an EPHEMERAL column cannot be recomputed by a mutation, so if
+    /// any of its readable inputs is changed by this mutation — directly, or through another
+    /// MATERIALIZED hop that this mutation does recompute — its on-disk value becomes stale.
+    if (!ephemeral_reading_materialized.empty())
+    {
+        NameSet changed_base_columns = updated_columns;
+        changed_base_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        changed_base_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+
+        NameSet stale_columns = affected_materialized_closure(changed_base_columns);
+        stale_columns.insert(changed_base_columns.begin(), changed_base_columns.end());
+
+        for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        {
+            if (std::ranges::any_of(*readable_dependencies, [&](const auto & dep) { return stale_columns.contains(dep); }))
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                    "columns that are being updated or cleared. Its value will NOT be "
+                    "recalculated during this mutation — the on-disk value may become "
+                    "inconsistent. To fix this, re-INSERT the affected rows.",
+                    name);
+        }
+    }
 
     /// Emit dependency-ordered recomputation stages.
     auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized, std::optional<UInt64> mutation_version)
@@ -2268,6 +2288,9 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
     if (subqueries.empty())
         return;
 
+    /// Materialized CTEs referenced by each planned set subquery.
+    std::vector<OrderedMaterializedCTEs> materialized_ctes_per_subquery;
+
     for (auto & subquery : subqueries)
     {
         if (subquery->get())
@@ -2298,6 +2321,10 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
+        /// The subquery planner has built the plans of the CTEs it references, so the collector
+        /// admits them here (`hasPlanOrBuilt`). They are planted below, after the sets step.
+        materialized_ctes_per_subquery.push_back(collectMaterializedCTEs(query_tree, SelectQueryOptions{}));
+
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
         for (const auto & ctx : subquery_plan.getInterpretersContexts())
             query_plan.addInterpreterContext(ctx);
@@ -2317,6 +2344,12 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         network_transfer_limits,
         prepared_sets_cache);
     query_plan.addStep(std::move(step));
+
+    /// `DelayedCreatingSetsStep::makePlansForSets` strips the safety-net `DelayedMaterializingCTEsStep`
+    /// from a set plan built at run time and relies on the outer plan to gate the CTE readers, which
+    /// the `Planner` provides for a `SELECT`. This plan is assembled here, so plant that step here.
+    for (const auto & materialized_ctes : materialized_ctes_per_subquery)
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, SelectQueryOptions{}, materialized_ctes);
 }
 
 std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)

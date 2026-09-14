@@ -26,6 +26,7 @@ public:
     CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
     void updateHash(SipHash & hash) const override;
 
     /// Compresses the block with whichever candidate produces the smallest output. Decompression cannot tell adaptive was involved.

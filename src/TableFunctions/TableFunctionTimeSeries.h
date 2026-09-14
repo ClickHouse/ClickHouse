@@ -23,6 +23,9 @@ public:
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    /// The returned storage is the target table itself, so a persisted table would rename a live table in memory.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,

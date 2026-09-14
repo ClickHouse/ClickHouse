@@ -251,7 +251,7 @@ private:
         const DateLUTImpl & time_zone,
         Int64 scale_multiplier)
     {
-        std::optional<Int64> modular_divisor;
+        std::optional<DateLUTImpl::ModularDivisor> modular_divisor;
         if constexpr (unit == IntervalKind::Kind::Minute)
             modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
         else if constexpr (unit == IntervalKind::Kind::Second)
@@ -263,7 +263,11 @@ private:
         }
         if (!modular_divisor)
             return false;
-        const Int64 divisor = *modular_divisor;
+        const Int64 divisor = modular_divisor->divisor;
+        /// Below the epoch the offset of some zones has a sub-divisor component, and the rounding is not
+        /// modular there; such rows take the generic path one by one, the rest of the column keeps the fast
+        /// one. `DateTime` cannot represent a negative timestamp, so it is never concerned.
+        [[maybe_unused]] const bool valid_before_epoch = modular_divisor->valid_before_epoch;
 
         const size_t size = time_data.size();
         using ResultFieldType = typename ResultContainer::value_type;
@@ -304,7 +308,7 @@ private:
                 const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
+                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
                 {
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));

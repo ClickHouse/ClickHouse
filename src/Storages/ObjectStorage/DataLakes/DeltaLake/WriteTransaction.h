@@ -46,7 +46,6 @@ private:
 
     const DeltaLake::KernelHelperPtr kernel_helper;
     const LoggerPtr log;
-    std::string write_path;
     std::string path_prefix;
 
     KernelExternEngine engine;

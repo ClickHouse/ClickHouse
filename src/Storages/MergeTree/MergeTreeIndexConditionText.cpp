@@ -141,10 +141,12 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -293,6 +295,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
+
+    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
+    /// the matching rows. Nothing else is supported yet.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -1085,6 +1092,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
+    /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
+    /// path. Partition hard, so none of them can emit a token in the pair format.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
@@ -1119,7 +1131,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
@@ -1813,7 +1825,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
         if (!parsed)
             return false;
 
@@ -1846,6 +1858,77 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     return true;
 }
 
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
+{
+    /// `m['key']` before the subcolumn rewrite.
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+            return std::nullopt;
+
+        if (!hasIndexForColumn(function.getArgumentAt(0).getColumnName()))
+            return std::nullopt;
+
+        Field key_field;
+        DataTypePtr key_type;
+        /// FixedString excluded, see traverseMapElementKeyValueNode.
+        if (!function.getArgumentAt(1).tryGetConstant(key_field, key_type) || !WhichDataType(key_type).isString())
+            return std::nullopt;
+
+        return key_field.safeGet<String>();
+    }
+
+    /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    if (!parsed)
+        return std::nullopt;
+
+    auto & [map_column_name, serialized_key] = *parsed;
+    if (!hasIndexForColumn(map_column_name))
+        return std::nullopt;
+
+    /// `serializeText` is the identity for the String keys this index requires, so this is the raw key.
+    /// Same assumption as traverseMapElementKeyNode.
+    return serialized_key;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
+    const String & function_name,
+    const RPNBuilderTreeNode & index_column_node,
+    TextIndexDirectReadMode direct_read_mode,
+    const DataTypePtr & value_type,
+    const Field & value_field,
+    RPNElement & out) const
+{
+    if (function_name != "equals")
+        return false;
+
+    /// A FixedString Field carries its zero padding, which the index does not store: the token would
+    /// never be found and exact direct read would drop rows. Scan instead.
+    if (!WhichDataType(value_type).isString())
+        return false;
+
+    auto key = tryGetMapElementKeyForIndexColumn(index_column_node);
+    if (!key)
+        return false;
+
+    /// `m['key'] = ''` also holds for rows without the key, which have no token. Keep the predicate,
+    /// as `equals` does for an empty needle.
+    const String & value = value_field.safeGet<String>();
+    if (value.empty())
+        return false;
+
+    /// `m['key']` is the key's first occurrence: is_rest = 0.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
+
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(
+        std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+    return true;
+}
+
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
@@ -1861,7 +1944,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;

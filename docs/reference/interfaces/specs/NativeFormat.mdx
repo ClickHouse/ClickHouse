@@ -537,7 +537,7 @@ The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateT
 
 A clock duration rather than a point in time. `Time` is a signed second count, 4 bytes little-endian Int32; `Time64(scale)` is a signed tick count at the given decimal scale (0–9), 8 bytes little-endian Int64 — the same wire shape as `DateTime64`.
 
-The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders at the cap with a zeroed fraction (`999:59:59.000`). `CAST` clamps the stored value to this range as well, though arithmetic can produce out-of-range values that are clamped only on display. None of this affects the wire bytes, which are the plain signed integer.
+The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders with the seconds at the cap and the stored fraction kept as-is, so a tick count of `3700000.25` renders as `999:59:59.250000`. `CAST` saturates the stored value to the largest representable tick at the target scale (`999:59:59.999999` for `Time64(6)`), not to the whole second, whereas arithmetic can still leave an out-of-range tick count in the column that is capped only on display. None of this affects the wire bytes, which are the plain signed integer.
 
 `Time` value `45296` (`12:34:56`):
 
@@ -1423,6 +1423,8 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9d` | `SZ3`             |
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
+
+`DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
 
 `0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 

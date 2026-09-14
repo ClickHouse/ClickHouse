@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -67,6 +68,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -148,7 +150,14 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministic())
+    /// A `COLUMN` node is not always an innocent literal. `node->isDeterministic` covers the function of a
+    /// `FUNCTION` node and a constant that was folded from a non-deterministic expression such as `now`.
+    /// `allNodeFunctions` additionally looks inside a lambda that constant folding turned into a `COLUMN`
+    /// node holding a `ColumnFunction`: a call on the lambda argument lives in the lambda's own
+    /// `ActionsDAG`, so it is invisible to a walk over this DAG alone.
+    if (!node->isDeterministic())
+        return false;
+    if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
@@ -316,6 +325,7 @@ namespace Setting
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1389,24 +1399,38 @@ static bool missingColumnReadsPhysicalColumns(
     return false;
 }
 
-/// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
-/// `parts_with_ranges`.
+/// Which of the two sizes a part records for a column the estimate below should sum up.
+enum class ReadBytesKind : uint8_t
+{
+    /// The bytes the values occupy once decoded, i.e. the amount of work the pipeline does.
+    Uncompressed,
+    /// The bytes the values occupy on disk, i.e. the amount of data the read pulls in.
+    Compressed,
+};
+
+/// Estimate the size of `column_names` over the mark ranges actually selected in `parts_with_ranges`.
 ///
-/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not cap.
+/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not
+/// rely on it.
 ///
-/// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
-/// against is proportional to the work done per stream, which scales with the number of values
-/// processed, not with how well they compress. A highly compressible column (e.g. a constant
-/// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
-/// expressions and aggregation.
+/// `kind` picks which size to sum, and the choice belongs to the caller's question. Stream capping
+/// wants `Uncompressed`: the per-stream overhead it trades against is proportional to the work done
+/// per stream, which scales with the number of values processed, not with how well they compress. A
+/// highly compressible column (e.g. a constant `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet
+/// still feeds every row through PREWHERE, expressions and aggregation. Sizing a read against a
+/// byte threshold wants `Compressed`, which is what the read actually pulls off disk.
 static std::optional<size_t> estimateReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
-    const Settings & settings)
+    const Settings & settings,
+    ReadBytesKind kind)
 {
+    const auto size_of = [kind](const ColumnSize & column_size)
+    { return kind == ReadBytesKind::Compressed ? column_size.data_compressed : column_size.data_uncompressed; };
+
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
 
@@ -1549,7 +1573,7 @@ static std::optional<size_t> estimateReadBytes(
                 const auto & requested_name = *requested_names.begin();
                 const auto col = data_part.tryGetColumn(requested_name);
                 if (col && col->isSubcolumn() && use_subcolumn_sizes)
-                    col_bytes = data_part.getSubcolumnSize(requested_name).data_uncompressed;
+                    col_bytes = size_of(data_part.getSubcolumnSize(requested_name));
             }
 
             /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
@@ -1564,7 +1588,7 @@ static std::optional<size_t> estimateReadBytes(
                     && (!physical_col || !canScaleSizeBySelectedRows(*physical_col->type)))
                     return std::nullopt;
 
-                col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+                col_bytes = size_of(data_part.getColumnSize(physical_name));
             }
 
             if (col_bytes == 0)
@@ -1589,7 +1613,7 @@ static std::optional<size_t> estimateReadBytes(
             if (selected_rows < data_part.rows_count)
                 return std::nullopt;
 
-            part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+            part_bytes = size_of(data_part.getTotalColumnsSize());
         }
 
         const auto selected_bytes_wide
@@ -1675,8 +1699,8 @@ static void capStreamsByReadBytes(
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes
-        = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings);
+    const auto estimated_read_bytes = estimateReadBytes(
+        parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, ReadBytesKind::Uncompressed);
     if (!estimated_read_bytes)
         return;
 
@@ -2737,6 +2761,79 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         /*check_row_limits=*/false);
 }
 
+std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
+{
+    const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
+    if (!analysis)
+        return {};
+
+    /// Reads that are priced per part below, but whose column set is only known once a read task is
+    /// built for a concrete part: `getReadTaskColumns` gives every index read task and on-fly mutation
+    /// step its own input columns. Patch parts are the same case twice over - `MergeTreeReadPoolBase`
+    /// picks them per part and `addPatchPartsColumns` then adds the patch key columns to the main
+    /// read, and the patch parts themselves are read in full but are not among `parts_with_ranges`.
+    /// They are counted separately from data mutations, so a lightweight update leaves
+    /// `hasDataMutations` false. Rather than under-count any of this, decline to answer - the caller
+    /// reads that as "could be any size".
+    if (!index_read_tasks.empty()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        return {};
+
+    /// With the range-splitting fault injection enabled, `spreadMarkRangesAmongStreams` may turn an
+    /// ordinary read into an in-order one and append the whole sorting key to the columns it reads,
+    /// which the estimate below does not account for because `reader_settings.read_in_order` is not
+    /// set. The decision is a per-execution coin flip made when the pipeline is built, long after
+    /// this runs, so it cannot be predicted here - decline to answer whenever the injection is armed,
+    /// as `capStreamsByReadBytes` already does with the same estimate. The setting is only ever set
+    /// by tests, so this costs nothing in production.
+    if (context->getSettingsRef()[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] > 0)
+        return {};
+
+    Names column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
+    {
+        NameSet present(column_names.begin(), column_names.end());
+        const auto add_columns = [&](const Names & names_to_add)
+        {
+            for (const auto & column_name : names_to_add)
+                if (present.emplace(column_name).second)
+                    column_names.push_back(column_name);
+        };
+
+        if (query_info.prewhere_info)
+            add_columns(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames());
+        if (query_info.row_level_filter)
+            add_columns(query_info.row_level_filter->actions.getRequiredColumnsNames());
+        if (analysis->sampling.use_sampling && analysis->sampling.filter_expression)
+            add_columns(analysis->sampling.filter_expression->getRequiredColumns().getNames());
+
+        if (reader_settings.read_in_order)
+            add_columns(storage_snapshot->metadata->getColumnsRequiredForSortingKey());
+
+        if (reader_settings.apply_deleted_mask)
+            add_columns({RowExistsColumn::name});
+    }
+
+    if (const auto estimate = estimateReadBytes(
+            analysis->parts_with_ranges,
+            column_names,
+            storage_snapshot,
+            mutations_snapshot,
+            context,
+            context->getSettingsRef(),
+            ReadBytesKind::Compressed))
+        return estimate;
+
+    /// No per-column estimate is available. Charge every selected part in full rather than giving up:
+    /// the caller needs a number it can act on, and over-estimating only makes it act less often.
+    size_t total_bytes = 0;
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_compressed, &total_bytes))
+            return std::numeric_limits<size_t>::max();
+    }
+    return total_bytes;
+}
+
 namespace
 {
 
@@ -2789,6 +2886,66 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
 
+void ReadFromMergeTree::buildPartitionPruningIndexes(
+    Indexes & indexes,
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+    const MergeTreeData & data,
+    const ContextPtr & query_context,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_,
+    bool require_ready_sets)
+{
+    const auto & settings = query_context->getSettingsRef();
+    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto data_settings = data.getSettings();
+
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+    {
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        {
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
+            ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
+            return KeyCondition{
+                wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
+                require_ready_sets};
+        };
+        indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+    }
+
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        indexes.partition_pruner.emplace(
+            metadata_snapshot,
+            *filter_dag_ptr,
+            query_context,
+            /*strict=*/false,
+            /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning],
+            require_ready_sets);
+    }
+}
+
+RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
+    const RangesInDataParts & parts,
+    const ActionsDAG::Node * predicate,
+    const MergeTreeData & data,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & query_context,
+    bool skip_partition_pruning_)
+{
+    auto filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate, query_context, /* boolean_context */ true);
+    Indexes partition_indexes(nullptr);
+    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, /* require_ready_sets */ true);
+    IndexStats unused_stats;
+    /// Execution checks forced index usage after it builds subquery sets.
+    return MergeTreeDataSelectExecutor::filterPartsByPartition(
+        parts, partition_indexes.partition_pruner, partition_indexes.minmax_idx_condition,
+        std::nullopt, metadata_snapshot, data, query_context, nullptr, getLogger("ReadFromMergeTree"), unused_stats,
+        /* check_index_usage */ false);
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -2832,34 +2989,7 @@ void ReadFromMergeTree::buildIndexes(
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
 
-    {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        const auto data_settings = data.getSettings();
-
-        if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
-        {
-            auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings](const ActionsDAG *, const ActionsDAG::Node * predicate)
-            {
-                auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
-                ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-                return KeyCondition{
-                    wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
-                    /* single_point_ = */ false,
-                    /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
-            };
-            indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
-        }
-
-        if (metadata_snapshot->hasPartitionKey())
-        {
-            indexes->partition_pruner.emplace(
-                metadata_snapshot,
-                filter_dag,
-                query_context,
-                /*strict=*/false,
-                /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning]);
-        }
-    }
+    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
 
     indexes->part_values
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
@@ -2977,69 +3107,15 @@ void ReadFromMergeTree::buildIndexes(
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes);
-    {
-        std::vector<size_t> index_sizes;
-        index_sizes.reserve(skip_indexes.useful_indices.size());
-
-        for (const auto & part : parts)
-        {
-            auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
-            index_order.resize(skip_indexes.useful_indices.size());
-            std::iota(index_order.begin(), index_order.end(), 0);
-
-            index_sizes.clear();
-
-            for (const auto & idx : skip_indexes.useful_indices)
-            {
-                size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
-
-                for (const auto & substream : format.substreams)
-                {
-                    String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
-                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
-                    /// reordering accounts for them instead of treating them as free.
-                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
-                }
-
-                index_sizes.emplace_back(index_size);
-            }
-
-            // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            ::stableSort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
-            {
-                const auto l_index = useful_indices[l].index;
-                const auto r_index = useful_indices[r].index;
-
-                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
-                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
-
-                auto l_index_priority = l_is_minmax ? 1 : 2;
-                auto r_index_priority = r_is_minmax ? 1 : 2;
-
-#if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
-                    l_index_priority = 0;
-                if (r_is_vectorsimilarity)
-                    r_index_priority = 0;
-#endif
-                // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
-
-                const auto l_size = idx_sizes[l];
-                const auto r_size = idx_sizes[r];
-
-                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
-            });
-        }
-    }
 
     indexes->skip_indexes = std::move(skip_indexes);
+}
+
+String SkipIndexOrderCache::makeKey(const IMergeTreeDataPart & part)
+{
+    if (const auto * parent_part = part.getParentPart())
+        return parent_part->name + "/" + part.name;
+    return part.name;
 }
 
 bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
@@ -3850,6 +3926,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
         return false;
 
+    /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
+    /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
+    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+        return false;
+
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
     /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
     /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
@@ -3865,8 +3946,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
+    /// Coverage is the number of primary key columns the conversion reads, not the number of
+    /// columns it outputs: constant ORDER BY columns are outputs backed by no key column.
     if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
+        && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
         resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
@@ -6032,6 +6115,21 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 }
 
 
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimatorForPrewhere(
+    const Names & required_columns, const ActionsDAG::Node * predicate) const
+{
+    if (analyzed_result_ptr || indexes)
+        return getConditionSelectivityEstimator(required_columns);
+
+    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+        return nullptr;
+
+    /// Statistics-only plans have not built indexes yet. Analyze the scalar predicate
+    /// without executing `IN` subqueries, which belong to the actual execution plan.
+    auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), skip_partition_pruning);
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+}
+
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
     return getConditionSelectivityEstimator(required_columns, analyzed_result_ptr);
@@ -6041,10 +6139,23 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 {
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
-    if (!getStorageMetadata()->hasStatistics())
+    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+
+    /// Use the execution path's min-max-before-partition order: min-max pruning can
+    /// exclude parts on which partition expressions would throw.
+    if (!analyzed_result && indexes)
+    {
+        IndexStats unused_stats;
+        auto pruned_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+            parts, indexes->partition_pruner, indexes->minmax_idx_condition,
+            indexes->part_values, getStorageMetadata(), data, getContext(),
+            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
+        return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
+    }
+
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
@@ -6220,7 +6331,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// below) so a deduplication group stays within one bucket.
     if (!isQueryWithFinal() || data.merging_params.mode == MergeTreeData::MergingParams::Ordinary)
     {
-        auto analysis = selectRangesToRead();
+        auto analysis = getOrCreateAnalyzedResult();
         if (!analysis || analysis->parts_with_ranges.empty())
         {
             LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
@@ -6274,7 +6385,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         return 0;
     }
 
-    auto analysis = selectRangesToRead();
+    auto analysis = getOrCreateAnalyzedResult();
     if (!analysis || analysis->parts_with_ranges.empty())
     {
         LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
@@ -6428,7 +6539,7 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
     if (distributed_read_bucket_count == 0)
         return default_shard_list;
 
-    auto analysis_result = selectRangesToRead();
+    auto analysis_result = getOrCreateAnalyzedResult();
     if (!analysis_result)
         return default_shard_list;
 
@@ -6454,8 +6565,8 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         unsupported_deferred_filters = false;
 #endif
     /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
-    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
-    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    /// getReasonReadCannotBeDistributed, so it cannot reach here. Do not gate on it: the worker
+    /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
     return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
@@ -6486,7 +6597,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
-    /// earlier in checkDistributedReadSupported.)
+    /// earlier in getReasonReadCannotBeDistributed.)
     if (query_info.isStream())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");

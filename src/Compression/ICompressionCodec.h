@@ -33,8 +33,8 @@ public:
     /// Byte which indicates codec in compressed file
     virtual uint8_t getMethodByte() const = 0;
 
-    /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
-    virtual ASTPtr getCodecDesc() const;
+    /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)". Constructed on demand.
+    virtual ASTPtr getCodecDesc() const = 0;
 
     /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
     /// "CODEC(LZ4,LZ4HC(5))"
@@ -121,14 +121,10 @@ protected:
     /// Actually decompress data without header
     virtual UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
-    /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
-    void setCodecDescription(const String & name, const ASTs & arguments);
-    void setCodecDescription(const String & name) { setCodecDescription(name, ASTs{}); }
+    /// Build a description for `getCodecDesc` from a codec name and optional arguments.
+    static ASTPtr makeCodecDescription(const String & name, const ASTs & arguments = {});
 
     int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
-
-private:
-    ASTPtr full_codec_desc;
 };
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;

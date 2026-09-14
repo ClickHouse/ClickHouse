@@ -58,6 +58,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+String DataTypeObject::getCombinedSubcolumnName(const String & key)
+{
+    return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     std::unordered_map<String, DataTypePtr> typed_paths_,
@@ -773,6 +778,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         if (!nested_info)
             return nullptr;
 
+        /// SerializationObjectSharedDataPath resolves this name again against the Dynamic type
+        /// alone to extract the subcolumn from a path read from the shared data. Only a dynamic
+        /// path keeps the name, but rewriting it for a typed path is harmless: it is unused there.
+        path_subcolumn = getSubcolumnNameForZeroArrayLevel(path_subcolumn, nested_info->substreams_path);
+
         res->data = std::move(nested_info->data);
         res->substreams_path.insert(
             res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());
@@ -1146,6 +1156,31 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 │                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
+
+Bracket syntax `json['key']` can also be used to access JSON paths. Nested access is supported via chaining:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+The bracket syntax works for `Nullable(JSON)` as well, and returns the same value and type as the
+equivalent dot syntax, following the same nullability rules as `json.key`: a path that can represent
+`NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for a `NULL` row,
+while a non-nullable typed path such as `Array` or `Map` keeps its default value there.
+
+Chained bracket access is flattened into a single JSON path when `optimize_functions_to_subcolumns`
+is enabled, so `json['a']['b']` reads the path `a.b` just like `json.a.b` does: a row where `a` holds
+a scalar instead of an object has no `a.b` and yields `NULL`. Without that optimization the outer
+access is applied to the `Dynamic` value of `json['a']` instead, and such a row follows the
+`dynamic_throw_on_type_mismatch` setting.
 
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
 
