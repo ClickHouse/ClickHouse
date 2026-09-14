@@ -47,6 +47,9 @@ static String getCustomLocalDisksBaseDirectory(const ContextPtr & context)
     return base_directory;
 }
 
+/// The path of a disk that is local and is not an object storage. It is used exactly as it was
+/// given - a relative path against the working directory of the process - so it is checked that way
+/// too, and only checked.
 static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr & context)
 {
     auto base_directory = getCustomLocalDisksBaseDirectory(context);
@@ -54,8 +57,7 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
     if (!pathStartsWith(path, base_directory))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Path `{}` of the custom local disk must be inside `{}` directory",
-            path,
+            "Path of the custom local disk must be inside `{}` directory",
             base_directory);
 }
 
@@ -75,8 +77,12 @@ static String resolveCustomDiskPath(const String & path, const ContextPtr & cont
     auto absolute_path
         = (fs::path(path).is_absolute() ? fs::path(path) : fs::path(base_directory) / path).lexically_normal();
 
-    if (!attach)
-        checkCustomDiskPathIsAllowed(absolute_path.string(), context);
+    if (!attach && !pathStartsWith(absolute_path.string(), base_directory))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Path `{}` of the custom local disk must be inside `{}` directory",
+            path,
+            base_directory);
 
     return absolute_path.string();
 }
@@ -91,11 +97,13 @@ static void resolveCustomDiskDefinitionPaths(Poco::Util::AbstractConfiguration &
     const auto object_storage_type = config.getString("object_storage_type", "");
 
     /// `local_blob_storage` is the compatibility spelling of `object_storage` over `local`; the
-    /// object storage types backed by the local filesystem all start with `local`.
-    const bool names_local_path = disk_type == "local" || disk_type == "local_blob_storage"
-        || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
+    /// object storage types backed by the local filesystem all start with `local`. A `local` disk,
+    /// which is not an object storage, is checked after it is created instead: it uses the path
+    /// exactly as given, so there is nothing to resolve.
+    const bool names_local_object_storage
+        = disk_type == "local_blob_storage" || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
 
-    if (names_local_path && config.has("path"))
+    if (names_local_object_storage && config.has("path"))
         config.setString("path", resolveCustomDiskPath(config.getString("path"), context, attach));
 
     /// The metadata of a disk is written to the local filesystem whenever `metadata_path` is given.
