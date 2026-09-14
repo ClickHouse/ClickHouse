@@ -64,6 +64,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty");
 
+    params.name = name;
+
     const String ldap_server_config = "ldap_servers." + name;
 
     const bool has_host = config.has(ldap_server_config + ".host");
@@ -149,6 +151,46 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Both 'lookup_bind_dn' and 'lookup_password' must be specified together");
 
+    if (binds_as_detected_user_dn)
+    {
+        /// Search-and-bind: the user is located by `user_dn_detection` under the lookup identity
+        /// before any DN is known, so the detection templates can only depend on `{user_name}`
+        /// and the search must yield a DN to bind as. These checks run before the generic
+        /// `lookup_bind_dn` ones below so that a search-and-bind configuration gets the
+        /// mode-specific message (the generic hint to use `{bind_dn}`/`{user_dn}` does not
+        /// apply here).
+        if (!has_lookup_bind_dn)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'lookup_bind_dn' and 'lookup_password'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        if (!params.user_dn_detection)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'user_dn_detection'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        const String & udd_base_dn = params.user_dn_detection->base_dn;
+        const String & udd_search_filter = params.user_dn_detection->search_filter;
+
+        if (!udd_base_dn.contains("{user_name}") && !udd_search_filter.contains("{user_name}"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'user_dn_detection.base_dn' or 'user_dn_detection.search_filter' to contain '{{user_name}}'",
+                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        for (const auto * placeholder : {"{bind_dn}", "{user_dn}"})
+        {
+            if (udd_base_dn.contains(placeholder) || udd_search_filter.contains(placeholder))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'user_dn_detection' cannot reference '{}' when 'bind_dn' = '{}': the user DN is not known before the detection",
+                    placeholder, LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+        }
+
+        /// Whatever `attribute` returns is what the user's password is verified against, so it
+        /// must be the entry DN; any other attribute would be bound as a DN and every login would fail.
+        if (!boost::iequals(params.user_dn_detection->attribute, "dn"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'user_dn_detection.attribute' must be 'dn' when 'bind_dn' = '{}', got '{}'",
+                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER, params.user_dn_detection->attribute);
+    }
+
     if (has_lookup_bind_dn)
     {
         params.lookup_bind_dn = config.getString(ldap_server_config + ".lookup_bind_dn");
@@ -191,43 +233,6 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
                 "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
                 "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "
                 "or use '{{bind_dn}}'/'{{user_dn}}' with a 'bind_dn' template that contains '{{user_name}}'");
-    }
-
-    if (binds_as_detected_user_dn)
-    {
-        /// Search-and-bind: the user is located by `user_dn_detection` under the lookup identity
-        /// before any DN is known, so the detection templates can only depend on `{user_name}`
-        /// and the search must yield a DN to bind as.
-        if (!has_lookup_bind_dn)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'bind_dn' = '{}' requires 'lookup_bind_dn' and 'lookup_password'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
-
-        if (!params.user_dn_detection)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'bind_dn' = '{}' requires 'user_dn_detection'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
-
-        const String & udd_base_dn = params.user_dn_detection->base_dn;
-        const String & udd_search_filter = params.user_dn_detection->search_filter;
-
-        if (!udd_base_dn.contains("{user_name}") && !udd_search_filter.contains("{user_name}"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'bind_dn' = '{}' requires 'user_dn_detection.base_dn' or 'user_dn_detection.search_filter' to contain '{{user_name}}'",
-                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
-
-        for (const auto * placeholder : {"{bind_dn}", "{user_dn}"})
-        {
-            if (udd_base_dn.contains(placeholder) || udd_search_filter.contains(placeholder))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'user_dn_detection' cannot reference '{}' when 'bind_dn' = '{}': the user DN is not known before the detection",
-                    placeholder, LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
-        }
-
-        /// Whatever `attribute` returns is what the user's password is verified against, so it
-        /// must be the entry DN; any other attribute would be bound as a DN and every login would fail.
-        if (!boost::iequals(params.user_dn_detection->attribute, "dn"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'user_dn_detection.attribute' must be 'dn' when 'bind_dn' = '{}', got '{}'",
-                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER, params.user_dn_detection->attribute);
     }
 
     if (has_verification_cooldown)

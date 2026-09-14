@@ -483,7 +483,8 @@ bool LDAPClient::bind(BindMode mode)
                 /// not a "user not found" or "wrong password" signal. Fail loudly.
                 if (as_service)
                     throw Exception(ErrorCodes::LDAP_ERROR,
-                        "LDAP lookup bind as '{}' failed: invalid credentials; check 'lookup_bind_dn' and 'lookup_password'", dn);
+                        "LDAP lookup bind as '{}' failed for server '{}': invalid credentials; check 'lookup_bind_dn' and 'lookup_password'",
+                        dn, params.name);
 
                 /// The user supplied the password, so invalid credentials is the canonical
                 /// authentication-failed outcome. Active Directory tells the reason apart in a
@@ -512,7 +513,11 @@ std::optional<String> LDAPClient::detectUserDN(bool tolerate_missing_user)
     /// A `base_dn` that substitutes `{user_name}` (e.g. `cn={user_name},ou=users,...`) does
     /// not exist for an unknown user and the directory answers the search itself with
     /// `LDAP_NO_SUCH_OBJECT`; that is the same "user does not exist" signal as an empty result.
-    const auto results = search(*params.user_dn_detection, /* tolerate_no_such_object = */ tolerate_missing_user);
+    /// A static `base_dn` (e.g. `dc=example,dc=org`) must exist, so the same code there means
+    /// the configuration points at a wrong naming context; tolerating it would turn every login
+    /// through this server into a silent "user not found" instead of an `LDAP_ERROR`.
+    const bool base_dn_depends_on_user = params.user_dn_detection->base_dn.contains("{user_name}");
+    const auto results = search(*params.user_dn_detection, /* tolerate_no_such_object = */ tolerate_missing_user && base_dn_depends_on_user);
 
     if (results.empty())
     {

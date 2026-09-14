@@ -100,6 +100,11 @@ public:
 
         ProtocolVersion protocol_version = ProtocolVersion::V3;
 
+        /// Name of the `ldap_servers` entry these parameters were parsed from. Used in
+        /// messages only, so that a log line can tell apart several servers sharing the
+        /// same service account; deliberately not part of `updateHash`.
+        String name;
+
         String host;
         UInt16 port = 636;
 
@@ -193,8 +198,10 @@ protected:
 
     /// Runs `params.user_dn_detection` and returns the single DN it yields. Throws
     /// `LDAP_ERROR` when more than one entry matches. When `tolerate_missing_user` is set an
-    /// empty result (including `LDAP_NO_SUCH_OBJECT` for a `base_dn` that substitutes
-    /// `{user_name}` and therefore does not exist) yields nullopt, otherwise it throws.
+    /// empty result yields nullopt, otherwise it throws. `LDAP_NO_SUCH_OBJECT` counts as an
+    /// empty result only when `base_dn` substitutes `{user_name}` (the base then legitimately
+    /// does not exist for an unknown user); for a static `base_dn` it is a misconfiguration
+    /// and always throws.
     MAYBE_NORETURN std::optional<String> detectUserDN(bool tolerate_missing_user);
 
     void closeConnection() noexcept;

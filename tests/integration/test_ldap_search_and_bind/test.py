@@ -35,6 +35,11 @@ LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
 LDAP_ADMIN_PASSWORD = "clickhouse"
 LDAP_SERVICE_BIND_DN = "cn=svc.clickhouse,ou=service,dc=example,dc=org"
 LDAP_SERVICE_PASSWORD = "svcsecret"
+LDAP_SERVER_NAME = "openldap_strict"
+LOOKUP_BIND_FAILED = (
+    f"LDAP lookup bind as '{LDAP_SERVICE_BIND_DN}' failed for server '{LDAP_SERVER_NAME}':"
+    " invalid credentials"
+)
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 CONFIGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
@@ -104,7 +109,8 @@ def wait_openldap_strict_ready(timeout=180):
 def ldap_add_group(group_cn, member_cns):
     """Add a `groupOfNames` under `ou=groups` (readable by the service account only)."""
     members = "".join(
-        f"member: cn={member_cn},ou=users,dc=example,dc=org\n" for member_cn in member_cns
+        f"member: cn={member_cn},ou=users,dc=example,dc=org\n"
+        for member_cn in member_cns
     )
     ldap_exec(
         f'echo "dn: cn={group_cn},ou=groups,dc=example,dc=org\n'
@@ -147,7 +153,8 @@ def wait_count_in_log(node, substring, expected, retry_count=40, sleep_time=0.5)
 
 def login_fails_without_ldap_error(node, user, password):
     """The login must be rejected as a plain authentication failure: no `LDAP_ERROR` is
-    logged for it, so the following user directories keep their chance to authenticate."""
+    logged for it, so the following user directories keep their chance to authenticate.
+    """
     failed_before = count_in_log(node, "Authentication failed")
     ldap_errors_before = count_in_log(node, "LDAP_ERROR")
 
@@ -290,10 +297,7 @@ def test_wrong_lookup_password_is_an_ldap_error(ldap_cluster):
         "SELECT currentUser()", user="janedoe", password="qwerty"
     )
     assert "Authentication failed" in error, error
-    assert_logs_contain_with_retry(
-        instance_bad_lookup,
-        f"LDAP lookup bind as '{LDAP_SERVICE_BIND_DN}' failed: invalid credentials",
-    )
+    assert_logs_contain_with_retry(instance_bad_lookup, LOOKUP_BIND_FAILED)
     assert instance_bad_lookup.contains_in_log("LDAP_ERROR")
 
 
@@ -358,9 +362,7 @@ def test_service_password_rotation(ldap_cluster):
         )
         assert "Authentication failed" in error, error
         wait_count_in_log(instance, "LDAP_ERROR", ldap_errors_before + 1)
-        assert instance.contains_in_log(
-            f"LDAP lookup bind as '{LDAP_SERVICE_BIND_DN}' failed: invalid credentials"
-        )
+        assert instance.contains_in_log(LOOKUP_BIND_FAILED)
 
         # Reload with the new password: both a cached and an uncached user succeed.
         reload_config(instance, "ldap_search_and_bind.xml", rotated_config)
@@ -463,7 +465,9 @@ def test_search_and_bind_requires_dn_attribute(ldap_cluster):
     )
     assert uid_attribute_config != original_config
     try:
-        reload_config(instance_parse_error, "ldap_parse_error.xml", uid_attribute_config)
+        reload_config(
+            instance_parse_error, "ldap_parse_error.xml", uid_attribute_config
+        )
         assert_logs_contain_with_retry(
             instance_parse_error,
             "'user_dn_detection.attribute' must be 'dn' when 'bind_dn' = '{user_dn}', got 'uid'",
@@ -477,6 +481,83 @@ def test_search_and_bind_requires_dn_attribute(ldap_cluster):
             instance_parse_error,
             "LDAP server 'broken' is misconfigured: 'user_dn_detection.attribute' must be 'dn'",
         )
+    finally:
+        reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
+
+
+def test_search_and_bind_requires_user_name_in_detection(ldap_cluster):
+    """With `bind_dn` = `{user_dn}` a static `user_dn_detection` would bind every login as
+    the same entry; the rejection must carry the search-and-bind message, not the generic
+    hint to use `{bind_dn}`/`{user_dn}` (which is not allowed in this mode)."""
+    original_config = read_config("ldap_parse_error.xml")
+    static_filter_config = original_config.replace(
+        "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>",
+        "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>\n"
+        "            <lookup_password>svcsecret</lookup_password>",
+    ).replace(
+        "<search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>",
+        "<search_filter>(&amp;(objectClass=inetOrgPerson)(uid=janedoe))</search_filter>",
+    )
+    assert static_filter_config != original_config
+    expected = (
+        "'bind_dn' = '{user_dn}' requires 'user_dn_detection.base_dn' or"
+        " 'user_dn_detection.search_filter' to contain '{user_name}'"
+    )
+    try:
+        reload_config(
+            instance_parse_error, "ldap_parse_error.xml", static_filter_config
+        )
+        assert_logs_contain_with_retry(instance_parse_error, expected)
+        assert not instance_parse_error.contains_in_log(
+            "or use '{bind_dn}'/'{user_dn}' with a 'bind_dn' template"
+        )
+
+        error = instance_parse_error.query_and_get_error(
+            "SELECT currentUser()", user="johndoe", password="qwertz"
+        )
+        assert "Authentication failed" in error, error
+        assert_logs_contain_with_retry(
+            instance_parse_error, f"LDAP server 'broken' is misconfigured: {expected}"
+        )
+    finally:
+        reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
+
+
+def test_nonexistent_detection_base_dn_is_an_ldap_error(ldap_cluster):
+    """A static `base_dn` that does not exist (mistyped naming context) makes the directory
+    answer `user_dn_detection` with `LDAP_NO_SUCH_OBJECT`. That is a misconfiguration and
+    must be logged as `LDAP_ERROR`; only a `base_dn` that substitutes `{user_name}` may
+    treat it as "user not found"."""
+    original_config = read_config("ldap_parse_error.xml")
+    nonexistent_base_config = original_config.replace(
+        "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>",
+        "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>\n"
+        "            <lookup_password>svcsecret</lookup_password>",
+    ).replace(
+        "<base_dn>dc=example,dc=org</base_dn>",
+        "<base_dn>dc=nonexistent,dc=org</base_dn>",
+    )
+    assert nonexistent_base_config != original_config
+    parse_errors_before = count_in_log(
+        instance_parse_error, "Could not parse LDAP server"
+    )
+    try:
+        reload_config(
+            instance_parse_error, "ldap_parse_error.xml", nonexistent_base_config
+        )
+        # The configuration itself is valid, so nothing is rejected at parse time.
+        assert (
+            count_in_log(instance_parse_error, "Could not parse LDAP server")
+            == parse_errors_before
+        )
+
+        ldap_errors_before = count_in_log(instance_parse_error, "LDAP_ERROR")
+        error = instance_parse_error.query_and_get_error(
+            "SELECT currentUser()", user="johndoe", password="qwertz"
+        )
+        assert "Authentication failed" in error, error
+        wait_count_in_log(instance_parse_error, "LDAP_ERROR", ldap_errors_before + 1)
+        assert instance_parse_error.contains_in_log("No such object")
     finally:
         reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
 
