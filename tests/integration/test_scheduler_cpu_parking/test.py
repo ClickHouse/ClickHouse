@@ -114,6 +114,34 @@ def test_parking_fires_on_throttled_read():
     assert parks == unparks, f"parks={parks} != unparks={unparks}"
 
 
+# A self-`remote` read makes the coordinator's single (max_threads=1) pipeline thread wait on an
+# async socket. That wait happens inside PollingQueue's epoll section, which is a different park
+# site from the throttled-local-read test above (Throttler::sleep): it is the single-thread
+# async-wait path, where the executor blocks in `ExecutorTasks::tryGetTask` while holding a lease.
+# Throttling the remote side's local read keeps the async wait long enough to park repeatedly.
+ASYNC_REMOTE_QUERY = (
+    "select sum(length(value)) from remote('127.0.0.2', currentDatabase(), park_data) "
+    "settings workload = 'all', max_threads = 1, async_socket_for_remote = 1, "
+    "async_query_sending_for_remote = 1, max_local_read_bandwidth = 4000000"
+)
+
+
+def test_parking_fires_on_single_thread_async_remote_wait():
+    setup_cpu_workload()
+    create_throttled_table()
+    query_id = "cpu_parking_async_remote"
+    node.query(ASYNC_REMOTE_QUERY, query_id=query_id)
+    node.query("system flush logs")
+    parks = get_profile_event(query_id, "ConcurrencyControlParks")
+    unparks = get_profile_event(query_id, "ConcurrencyControlUnparks")
+    # The coordinator's single thread waits on the remote socket (async) via PollingQueue while
+    # holding a CPU lease, so the lease parks and unparks. This exercises the max_threads=1
+    # single-thread async-wait path, not the multi-thread idle wait.
+    assert parks > 0, f"expected parks > 0, got {parks}"
+    assert unparks > 0, f"expected unparks > 0, got {unparks}"
+    assert parks == unparks, f"parks={parks} != unparks={unparks}"
+
+
 @pytest.mark.parametrize(
     "with_custom_config",
     [

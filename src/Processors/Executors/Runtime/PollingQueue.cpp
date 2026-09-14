@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Exception.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <algorithm>
 
 #include <IO/WriteBufferFromString.h>
@@ -137,7 +138,16 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
         epoll_event event{};
         event.data.ptr = nullptr;
-        size_t num_events = epoll.getManyReady(1, &event, timeout);
+        size_t num_events = 0;
+        {
+            /// The tasks mutex is released for this blocking epoll wait, so it is a non-CPU wait:
+            /// park the current thread's CPU lease (if any) to free its slot for other work while
+            /// we block, and unpark on the way out. The lease mutex is taken here with no tasks
+            /// mutex held, so parking adds no lock-order edge (a guard placed by the caller while
+            /// holding the tasks mutex would invert against renew()'s resume path).
+            CPULeaseParkGuard cpu_park;
+            num_events = epoll.getManyReady(1, &event, timeout);
+        }
 
         lock.lock();
 
