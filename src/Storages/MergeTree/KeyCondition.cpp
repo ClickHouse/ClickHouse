@@ -3006,6 +3006,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 
     chassert(set_types.size() == set_columns.size());
 
+    bool repacked_only_by_transform_input = false;
+
     /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
     /// `key_tuple IN ((a, b), (c, d), ...)`.
     ///
@@ -3014,15 +3016,37 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     /// the key column type when preparing index conditions
     if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
     {
-        DataTypePtr key_type = removeNullable(data_types[0]);
+        /// Set elements are pushed through the key transform before the comparison, so the layout to
+        /// match is that chain's input type, not the key expression result (`String` for `toString(k)`).
+        const bool key_is_transformed = set_transforming_dags[0].has_value();
+        DataTypePtr key_type = removeNullable(key_is_transformed ? set_transforming_dags[0]->input_type : data_types[0]);
         if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
         {
             if (key_tuple_type->getElements().size() == set_types.size())
             {
+                /// The key expression result type re-packs a tuple of the same arity by itself, so only
+                /// a layout it rejects reaches index analysis here for the first time.
+                const auto * result_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(data_types[0]).get());
+                repacked_only_by_transform_input
+                    = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == set_types.size());
+
                 set_columns = {ColumnTuple::create(set_columns)};
                 set_types = {std::make_shared<DataTypeTuple>(set_types)};
             }
         }
+    }
+
+    /// A layout the key expression result type rejects has never reached index analysis before, so it is
+    /// unknown whether the transform maps distinct key values onto distinct transformed ones: `toString`
+    /// claims that for every type, yet it folds NaN payloads and fall-back hours.
+    if (repacked_only_by_transform_input)
+    {
+        const auto & function_name = func.getFunctionName();
+        if (function_name == "notIn" || function_name == "notNullIn" || function_name == "globalNotIn"
+            || function_name == "globalNotNullIn")
+            return false;
+
+        out.relaxed = true;
     }
 
     if (!tryPrepareSetColumnsForIndex(
@@ -5593,6 +5617,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    if (functions.empty())
+        return key_range;
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -6635,52 +6662,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
+                /// the helper returns the range unchanged.
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    sparse_hyperrectangle[sparse_pos],
+                    element.monotonic_functions_chain,
+                    sparse_data_types[sparse_pos],
+                    single_point);
 
-                /// The case when the column is wrapped in a chain of possibly monotonic functions.
-                if (!element.monotonic_functions_chain.empty())
+                if (!new_range)
                 {
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
-                        single_point);
-
-                    if (!new_range)
-                    {
-                        /// Cannot determine monotonicity on this range – unknown.
-                        rpn_stack.emplace_back(true, true);
-                    }
-                    else
-                    {
-                        key_range = *new_range;
-
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
-
-                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                        /// analysis may incorrectly include NaN values.
-                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                        ///   so no comparison condition can be true.
-                        /// - If only right bound is NaN: the range extends into NaN territory,
-                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
-                        {
-                            intersects = false;
-                            contains = false;
-                        }
-                        else if (unlikely(key_range.right.isNaN()))
-                        {
-                            contains = false;
-                        }
-
-                        rpn_stack.emplace_back(intersects, !contains);
-                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
-                    }
+                    /// Cannot determine monotonicity on this range – unknown.
+                    rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
+                    const Range & key_range = *new_range;
+
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
@@ -6702,7 +6700,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
-
                 }
             }
 

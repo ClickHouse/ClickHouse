@@ -300,7 +300,7 @@ public:
                 {
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                         "Actual type {}.",
                         getName(),
                         key_column_type->getName());
@@ -596,7 +596,7 @@ public:
                 {
                     throw Exception(
                          ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                          "Actual type {}.",
                          getName(),
                          key_col_with_type.type->getName());
