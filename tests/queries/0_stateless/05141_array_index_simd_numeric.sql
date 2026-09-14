@@ -133,7 +133,7 @@ SELECT 'UInt64 first vector early',
 
 -- Exercise SIMD searches on rows with non-zero, changing array offsets.
 
-SELECT arraySize(arr),
+SELECT length(arr),
     has(arr, toUInt8(32)),
     indexOf(arr, toUInt8(32)),
     has(arr, toUInt8(64)),
@@ -147,9 +147,9 @@ FROM
         range(67)::Array(UInt8)
     ]) AS arr
 )
-ORDER BY arraySize(arr);
+ORDER BY length(arr);
 
-SELECT arraySize(arr),
+SELECT length(arr),
     has(arr, toUInt32(8)),
     indexOf(arr, toUInt32(8)),
     has(arr, toUInt32(16)),
@@ -164,7 +164,7 @@ FROM
         range(33)::Array(UInt32)
     ]) AS arr
 )
-ORDER BY arraySize(arr);
+ORDER BY length(arr);
 
 SELECT 'UInt16 lane equality',
     has(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
