@@ -19,9 +19,11 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
 
     constexpr size_t lanes = sizeof(__m256i) / sizeof(T);
 
-    /// Keep the cheapest possible early-hit path without scanning a whole vector scalarly.
+    /// Keep a cheap early-hit prefix without scanning a whole vector scalarly.
     if (size && data[0] == value)
         return 0;
+    if (size > 1 && data[1] == value)
+        return 1;
 
     __m256i needle;
     if constexpr (std::is_same_v<T, UInt8>)
