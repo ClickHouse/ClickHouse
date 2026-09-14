@@ -1242,15 +1242,17 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         /// that is not this table's, so it must not be ranked against this table's files. A pointer
         /// declares the scheme; uuid selection identifies files by content and needs no name rule.
         std::optional<bool> own_scheme_is_version_numbered;
+        std::optional<String> declared_target;
+        Int32 declared_target_version = 0;
         if (!(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
         {
             /// The version a pointer names may be stale, which is why these callers list instead,
-            /// but the scheme it spells is this table's: a pointer of the other scheme would not
-            /// resolve here at all. Precedence is the reader's: explicit path first, then the hint.
+            /// but the scheme it spells is this table's. A commit advances the hint and never the
+            /// explicit path, so only the hint spells it here; a reader obeys the explicit path.
             String pointer_content;
-            if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
-                pointer_content = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-            else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+            if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+                && (ignore_metadata_pointer_overrides
+                    || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed))
             {
                 /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
                 /// widen what a destructive caller may delete, so the read is allowed to throw.
@@ -1258,6 +1260,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 auto buf = object_storage->readObject(version_hint, ReadSettings{});
                 readString(pointer_content, *buf);
             }
+            else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+                pointer_content = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
             if (auto target = metadataPointerTargetName(pointer_content))
             {
                 const bool version_numbered = isVersionNumberedCommitScheme(*target);
@@ -1266,6 +1270,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 for (const auto & path : metadata_files)
                 {
                     String name = std::filesystem::path(path).filename();
+                    /// A commit in progress leaves one of these behind and it is never a candidate,
+                    /// so counting its name as a scheme would describe the table by a file that
+                    /// cannot be current.
+                    if (isTemporaryMetadataFile(name))
+                        continue;
                     if (isVersionNumberedCommitScheme(name) == version_numbered)
                         scheme_present = true;
                     if (name == *target)
@@ -1275,7 +1284,18 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 /// scheme is what has to be present, not the exact name. A pointer naming a file
                 /// directly declares nothing unless that file is really there.
                 if (scheme_present && (version_numbered || target_present))
-                    own_scheme_is_version_numbered = version_numbered;
+                {
+                    /// A uuid-named name is no commit order, so such a pointer cannot stand in for one
+                    /// here and must not hide the scheme this table's own writes land in. A v<N> one
+                    /// may: a higher N exists only because it was committed.
+                    if (version_numbered || !ignore_metadata_pointer_overrides)
+                        own_scheme_is_version_numbered = version_numbered;
+                    if (ignore_metadata_pointer_overrides && !version_numbered)
+                    {
+                        declared_target = *target;
+                        declared_target_version = getMetadataFileAndVersion(*target).version;
+                    }
+                }
             }
         }
 
@@ -1341,9 +1361,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 table_path);
         }
 
-        /// Two schemes among the candidates mean nothing declared one (a declared scheme filtered the
-        /// other out above), and the two number sequences are unrelated, so the highest number can
-        /// name a file this table never committed. A destructive caller cannot undo rooting there.
+        /// Two schemes among the candidates mean no `v<N>` pointer declared one, and their numbers are
+        /// unrelated: the highest can name a file this table never committed, or sit either side of a
+        /// uuid-named declaration. A destructive caller cannot undo rooting there.
         if (ignore_metadata_pointer_overrides)
         {
             bool version_numbered_candidate = false;
@@ -1355,6 +1375,16 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 else
                     uuid_named_candidate = true;
             }
+            if (version_numbered_candidate && uuid_named_candidate && declared_target)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} declares '{}' as its current metadata file, but the table also "
+                    "holds `v<N>.metadata.json` files, whose numbers cannot be ordered against a "
+                    "`<N>-<uuid>.metadata.json` one, so a file this table committed may rank either side of the "
+                    "declared one. Refusing, because this operation deletes or rewrites metadata. Declare the "
+                    "current `v<N>.metadata.json` instead, or remove the metadata files of the other scheme",
+                    table_path,
+                    *declared_target);
             if (version_numbered_candidate && uuid_named_candidate)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1377,6 +1407,20 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         const ShortMetadataFileInfo & latest_metadata_file_info
             = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
+
+        /// Ranking put a different file above the one the table declares current, so either the
+        /// declaration is stale or the winner was never committed, and nothing here can tell which.
+        /// Both are unsafe to delete or rewrite from.
+        if (declared_target && latest_metadata_file_info.version != declared_target_version)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg table with path {} declares '{}' as its current metadata file, but '{}' ranks above it, so "
+                "which one is current cannot be determined. Refusing, because this operation deletes or rewrites "
+                "metadata. Point the table at the newest committed metadata file, or remove the one that is not "
+                "current",
+                table_path,
+                *declared_target,
+                latest_metadata_file_info.path);
 
         /// `max_element` returns the first of equal elements, so a candidate ranking equal to the
         /// winner was separated from it by listing order alone. Ambiguity is whatever the policy in

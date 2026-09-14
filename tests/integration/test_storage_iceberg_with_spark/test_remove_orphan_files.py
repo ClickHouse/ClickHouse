@@ -739,6 +739,12 @@ def test_remove_orphan_files_stale_version_hint_keeps_committed_snapshot(
     # the survival assertions below but fails this one.
     env.add_orphan("data", "orphan-stale-hint.parquet")
 
+    # A foreign-named metadata file and the temporary file an interrupted commit leaves behind are
+    # both non-candidates, so the hint below still describes this table and the cleanup must run:
+    # a higher v<N> exists only because it was committed, whatever else sits in the directory.
+    env.copy_metadata_file(f"v{newest}.metadata.json", f"00099-{get_uuid_str()}.metadata.json")
+    env.add_orphan_metadata(f"{get_uuid_str()}.metadata.json")
+
     env.write_version_hint(newest - 1)
     # Guard: without an effective rewrite that differs from the newest version present,
     # "stale hint" is a fiction and the case would pass on the unfixed binary.
@@ -997,4 +1003,165 @@ def test_insert_refuses_undeclared_scheme(
     env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
     env._n_rows = 4
     assert env.newest_metadata_version() > newest
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_uuid_pointer_outranked(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """On the all-uuid layout iceberg-java writes, the pointer is the only statement of current.
+
+    `<N>-<uuid>.metadata.json` prefixes are chosen by the writer, so with no transactional catalog
+    a higher one can name an abandoned write. Ranking the prefix then puts such a file above the
+    one the table declares current and roots the scan at state the table never committed."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_uuid_ptr")
+    env.populate(3, use_version_hint=True)
+
+    # Re-spell the committed chain the way iceberg-java names it. No v<N> file may be left: this
+    # case is about ranking within one scheme, and two schemes are refused for a different reason.
+    newest = env.newest_metadata_version()
+    assert newest >= 3, f"Need three metadata versions to plant a stale copy, got v{newest}"
+    renamed = {}
+    for version in range(1, newest + 1):
+        renamed[version] = f"{version:05d}-{get_uuid_str()}.metadata.json"
+        env.copy_metadata_file(f"v{version}.metadata.json", renamed[version])
+        env.remove_metadata_file(f"v{version}.metadata.json")
+    env.write_version_hint(renamed[newest])
+    assert env.read_version_hint() == renamed[newest], "version-hint.text rewrite did not take effect"
+
+    # v2 is the state after the first insert, so two of the three committed data files are
+    # unreachable from it, and its copy carries a higher prefix than the declared file.
+    stray = f"{newest + 2:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(renamed[2], stray)
+    assert env.metadata_files_with_version(newest + 2) == [stray], (
+        "Fixture did not produce a candidate outranking the declared one, so a resolver that "
+        "ranks the prefix would not pick it and the case is vacuous"
+    )
+
+    # A planted orphan keeps the refusal honest: a binary that just stopped deleting would
+    # satisfy the survival assertion below but not the control at the end.
+    env.add_orphan("data", "orphan-uuid-ptr.parquet")
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="ranks above it"):
+        env.remove_orphans(older_than=env.now_ts())
+
+    files_after = sorted(env.list_files())
+    assert files_after == files_before, (
+        "remove_orphan_files refused but deleted objects anyway.\n"
+        f"  Before: {files_before}\n  After:  {files_after}"
+    )
+
+    # Control: with the outranking file gone the declaration is unambiguous again, so a binary
+    # that refuses every uuid-named pointer does not pass.
+    env.remove_metadata_file(stray)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"Cleanup must resume once the outranking file is gone: {counts}"
+    )
+    assert not env.exists("data", "orphan-uuid-ptr.parquet"), \
+        "The planted orphan should have been deleted by the control run"
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_insert_refuses_uuid_pin_beside_own_scheme(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """`iceberg_metadata_file_path` is a setting, so no commit can advance it as it does the hint.
+
+    A uuid-named pin therefore keeps naming that scheme while ClickHouse commits
+    `v<N>.metadata.json`, and taking the scheme from the pin hides the table's own newest
+    snapshot: the write roots behind it and a later cleanup treats it as orphan. Nothing is
+    planted here, so this is the ordinary consequence of writing to a pinned table."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_uuid_pin")
+    env.populate(3)
+
+    newest = env.newest_metadata_version()
+    declared = f"{newest:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest}.metadata.json", declared)
+
+    drop_iceberg_table(env.instance, env.table_name)
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)",
+        format_version=2, if_not_exists=True,
+        explicit_metadata_path=f"metadata/{declared}",
+    )
+    assert env.instance.query(f"SELECT count() FROM {env.table_name}").strip() == "3", \
+        "The pinned read must resolve the copy, otherwise the pin is not in force"
+
+    files_before = sorted(env.list_files())
+    with pytest.raises(Exception, match="may rank either side of the declared one"):
+        env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
+    assert sorted(env.list_files()) == files_before, "refused INSERT left objects behind"
+
+    # Control: the refusal belongs to the uuid-named pin standing beside the v<N> chain, so the
+    # same table commits and reads normally once that file is gone.
+    env.remove_metadata_file(declared)
+    drop_iceberg_table(env.instance, env.table_name)
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)",
+        format_version=2, if_not_exists=True,
+    )
+    env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
+    env._n_rows = 4
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_pin_superseded_in_own_scheme(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """`iceberg_metadata_file_path` is an exact read override, not a statement of the commit scheme.
+
+    Letting it choose the scheme discards the files of the other one, so an old pin kept for
+    time-travel reads hides a current metadata file another engine committed under a uuid-named
+    name, and the cleanup rooted behind it deletes that file and the data only it references."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_vn_pin")
+    env.populate(4, use_version_hint=True)
+
+    # Re-spell the newest metadata the way iceberg-java names a commit and point the hint at it,
+    # so the table's current file is uuid-named while its history stays v<N>.
+    newest = env.newest_metadata_version()
+    current = f"{newest:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest}.metadata.json", current)
+    env.remove_metadata_file(f"v{newest}.metadata.json")
+    env.write_version_hint(current)
+
+    drop_iceberg_table(env.instance, env.table_name)
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)",
+        format_version=2, if_not_exists=True, use_version_hint=True,
+        explicit_metadata_path=f"metadata/v{newest - 3}.metadata.json",
+    )
+
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="may rank either side of the declared one"):
+        env.remove_orphans(older_than=env.now_ts())
+
+    files_after = sorted(env.list_files())
+    assert files_after == files_before, (
+        "remove_orphan_files refused but deleted objects anyway.\n"
+        f"  Before: {files_before}\n  After:  {files_after}"
+    )
+
+    # Control: dropping the pin and the v<N> history the migration left behind makes the layout
+    # unambiguous, so a binary that refuses this table outright does not pass.
+    drop_iceberg_table(env.instance, env.table_name)
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)",
+        format_version=2, if_not_exists=True, use_version_hint=True,
+    )
+    for version in range(1, newest):
+        env.remove_metadata_file(f"v{version}.metadata.json")
+    env.add_orphan("data", "orphan-vn-pin.parquet")
+    time.sleep(2)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"Cleanup must work once the stale pin is gone: {counts}"
+    )
+    assert env.exists("metadata", current), \
+        "Cleanup deleted the current uuid-named metadata file the hint names"
     env.assert_data_intact()
