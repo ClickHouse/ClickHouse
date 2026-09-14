@@ -1740,15 +1740,15 @@ TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
     /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
 #ifndef DEBUG_OR_SANITIZER_BUILD
     auto decoder = std::make_shared<CompressionCodecMultiple>();
-    EXPECT_THROW(decoder->getCodecDesc(), Exception);
-    EXPECT_THROW(decoder->getFullCodecDesc(), Exception);
+    EXPECT_THROW(decoder->getCodecDescription(), Exception);
+    EXPECT_THROW(decoder->getFullCodecDescription(), Exception);
     /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
     EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
 #endif
 
     /// An explicitly configured empty chain has a description and can be nested.
     auto empty = std::make_shared<CompressionCodecMultiple>(Codecs{});
-    EXPECT_EQ(empty->getFullCodecDesc()->formatForErrorMessage(), "CODEC()");
+    EXPECT_EQ(empty->getFullCodecDescription()->formatForErrorMessage(), "CODEC()");
     EXPECT_NO_THROW(CompressionCodecMultiple{Codecs{empty}});
 }
 
@@ -1758,7 +1758,7 @@ TEST(CompressionCodecMultipleTest, NestedCodecDescription)
     CompressionCodecPtr outer = std::make_shared<CompressionCodecMultiple>(Codecs{inner});
 
     /// The inner chain is one argument of `CODEC`, even though its description is a list.
-    const auto full_description = outer->getFullCodecDesc();
+    const auto full_description = outer->getFullCodecDescription();
     const auto * function = full_description->as<ASTFunction>();
     ASSERT_NE(function, nullptr);
     EXPECT_EQ(function->name, "CODEC");

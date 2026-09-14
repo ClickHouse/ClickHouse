@@ -187,8 +187,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
 {
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
-    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 2")) << definition;
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
+    EXPECT_TRUE(definition.contains("version = 3")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -258,7 +258,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TypesDeclaredInInnerColumns)
     auto definition = normalizeNewTable(
         "CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32) TAGS INNER COLUMNS (id UInt64)");
 
-    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(DateTime64(6), Float32))")) << definition;
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float32))")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6), `value` Float32");
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"),
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))");
@@ -380,7 +380,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
 
     auto definition = normalizeNewTable(
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRICS db.ext_metrics", params);
-    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(DateTime64(6), Float32))")) << definition;
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float32))")) << definition;
     EXPECT_TRUE(definition.contains("id_type = 'UInt64'")) << definition;
     EXPECT_FALSE(definition.contains("INNER")) << definition;
 
@@ -400,22 +400,64 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, OuterColumns)
     EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (timestamp String) ENGINE = TimeSeries"); }), ErrorCodes::INCORRECT_QUERY);
     EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (value Int32) ENGINE = TimeSeries"); }), ErrorCodes::INCORRECT_QUERY);
 
-    /// The `time_series` column must have type Array(Tuple(timestamp, value)) with a date/time timestamp and a floating-point value.
-    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (time_series String) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
-    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (time_series Array(Tuple(String, Float64))) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
-    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (time_series Array(Tuple(DateTime64(3), String))) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
+    /// The `samples` column must have type Array(Tuple(timestamp, value)) with a date/time timestamp and a floating-point value.
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (samples String) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(String, Float64))) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(DateTime64(3), String))) ENGINE = TimeSeries"); }), ErrorCodes::BAD_TYPE_OF_FIELD);
 
-    /// The declared element types of `time_series` propagate to the generated samples columns.
-    auto definition = normalizeNewTable("CREATE TABLE db.ts (time_series Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
-    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(UInt32, Float32))")) << definition;
+    /// The declared element types of `samples` propagate to the generated samples columns.
+    auto definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(UInt32, Float32))")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
         "`id` " + default_id_type + ", `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))");
 
     /// The outer columns are an IO interface which stores no data, so the declared ones are replaced with the canonical list.
     definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String) ENGINE = TimeSeries");
     EXPECT_EQ(extractOuterColumns(definition),
-        "`metric_name` String, `tags` Map(String, String), `time_series` Array(Tuple(DateTime64(3), Float64)), "
+        "`metric_name` String, `tags` Map(String, String), `samples` Array(Tuple(DateTime64(3), Float64)), "
         "`metric_family` String, `type` String, `unit` String, `help` String");
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesOuterColumnNameDependsOnVersion)
+{
+    /// The outer column with samples is named `samples` from version 3 and `time_series` in the earlier versions (see TimeSeriesVersion.h).
+    const String samples_column = "`samples` Array(Tuple(DateTime64(3), Float64))";
+    const String time_series_column = "`time_series` Array(Tuple(DateTime64(3), Float64))";
+
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
+    EXPECT_TRUE(definition.contains(samples_column)) << definition;
+    EXPECT_FALSE(definition.contains("`time_series`")) << definition;
+
+    definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3");
+    EXPECT_TRUE(definition.contains(samples_column)) << definition;
+
+    for (UInt64 version : {0, 1, 2})
+    {
+        definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = " + std::to_string(version));
+        EXPECT_TRUE(definition.contains(time_series_column)) << definition;
+        EXPECT_FALSE(definition.contains("`samples`")) << definition;
+    }
+
+    /// Both names are accepted in a CREATE query whatever the version is: the column is regenerated under the name
+    /// of the version and keeps the declared type.
+    definition = normalizeNewTable("CREATE TABLE db.ts (time_series Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(UInt32, Float32))")) << definition;
+    EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
+        "`id` " + default_id_type + ", `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))");
+
+    definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries SETTINGS version = 2");
+    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(UInt32, Float32))")) << definition;
+
+    /// The stored definition of a table of an earlier version keeps the old name on ATTACH.
+    const String stored_definition_of_version_2 = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2");
+    EXPECT_TRUE(stored_definition_of_version_2.contains(time_series_column)) << stored_definition_of_version_2;
+    EXPECT_EQ(normalizeExistingTable(stored_definition_of_version_2), stored_definition_of_version_2);
+
+    /// The clause `AS <other_table>` doesn't copy the version, so a copy of a table of an earlier version gets the new name.
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", stored_definition_of_version_2);
+    EXPECT_TRUE(definition.contains(samples_column)) << definition;
+    EXPECT_FALSE(definition.contains("`time_series`")) << definition;
 }
 
 
@@ -437,6 +479,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
 TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 {
     /// An explicit supported version is accepted, an unknown one is rejected.
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2").contains("version = 2"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1").contains("version = 1"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 0").contains("version = 0"));
     EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 999"); }), ErrorCodes::INVALID_SETTING_VALUE);
@@ -444,7 +487,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 2")) << definition;
+    EXPECT_TRUE(definition.contains("version = 3")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
 }
 
@@ -464,6 +507,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
     const std::vector<std::pair<String, NormalizeTimeSeriesDefinitionParams>> definitions =
     {
         {"CREATE TABLE db.ts ENGINE = TimeSeries", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0, recent_samples_ttl_seconds = 0", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_partition_by = 'toStartOfHour(timestamp)' "
          "SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, ZSTD(1)), extra UInt8) TAGS INNER COLUMNS (id UInt64) "
@@ -594,7 +639,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithExternalTargetTables)
 
     EXPECT_TRUE(definition.contains("id_type = 'UInt64'")) << definition;
     EXPECT_TRUE(definition.contains("id_generator = 'sipHash64(tags)'")) << definition;
-    EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(DateTime64(6), Float64))")) << definition;
+    /// The copy gets the latest version, so the column with samples is named `samples` (see SamplesOuterColumnNameDependsOnVersion).
+    EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float64))")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3)), `extra` UInt8");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
