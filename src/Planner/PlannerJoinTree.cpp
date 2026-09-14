@@ -1662,7 +1662,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery,
-    const QueryTreeNodePtr & query_prewhere)
+    QueryTreeNodePtr & query_prewhere)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1676,9 +1676,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         auto columns = table_expression_data.getColumns();
         table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
 
-        /// Once wrapped, this table is read by the nested planner, so keep its `PREWHERE` with that read.
+        /** Once wrapped, this table is read by the nested planner, so keep its `PREWHERE` with that read.
+          * Drop it from the outer query and from this table's initiator actions: otherwise
+          * `appendSetsFromActionsDAG` still treats the original `IN` sets as useful, and they
+          * stay not-ready after the nested planner built a separate copy.
+          */
         if (query_prewhere && table_expression_data.getPrewhereFilterActions())
+        {
             table_expression->as<QueryNode &>().getPrewhere() = query_prewhere->clone();
+            query_prewhere = {};
+            table_expression_data.resetPrewhereFilterActions();
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
