@@ -63,6 +63,8 @@
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Poco/String.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace Setting
@@ -117,6 +119,21 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The analyzer names every table expression of the query text it ships to other replicas with a
+/// synthetic alias of the exact form `__table<N>`, where `N` is a non-empty sequence of digits
+/// (see `createUniqueAliasesIfNecessary`). Only that exact form is an internal alias: a user-visible
+/// name that merely starts with `__table`, like `__table_prod`, can never be synthesized, so an
+/// `additional_table_filters` entry keyed to it is an entry for an unrelated table. The same rule
+/// is applied by `isPlannerGeneratedTableAlias` in `QueryResultCache.cpp`.
+bool isAnalyzerGeneratedTableAlias(std::string_view name)
+{
+    constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return false;
+    const auto digits = name.substr(prefix.size());
+    return !digits.empty() && std::ranges::all_of(digits, [](char c) { return c >= '0' && c <= '9'; });
+}
 
 /// A step is row-preserving when it cannot drop rows, so an expression evaluated below it sees
 /// exactly the rows that reach the step above it. Only such steps may separate an outer predicate
@@ -605,7 +622,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         /// alias the outer query gives it (`hasAdditionalTableFilter`, the same rule as in
         /// `QueryAnalyzer::inlineViewSubqueryIfNeeded`). An entry keyed to an unrelated table
         /// cannot make the replica take that path, so it keeps the shortcut. An entry keyed to an
-        /// internal `__table` alias counts as applying: the query text a replica receives names the
+        /// internal `__table<N>` alias counts as applying: the query text a replica receives names the
         /// view by such an alias, so the replica would match the entry even though the outer query
         /// never wrote it. A caller that does not know the alias fails closed on any entry.
         const auto & additional_table_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
@@ -821,8 +838,7 @@ bool StorageView::additionalTableFiltersApplyToInternalAlias(const Field & addit
         if (tuple.size() != 2 || tuple[0].getType() != Field::Types::String)
             return true;
 
-        /// The analyzer names every table expression `__table<N>` in the query text it ships.
-        if (tuple[0].safeGet<String>().starts_with("__table"))
+        if (isAnalyzerGeneratedTableAlias(tuple[0].safeGet<String>()))
             return true;
     }
 
@@ -1442,11 +1458,17 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// A proxy (a lazily loaded table of a database with `lazy_load_tables`, or a table created
     /// from a table function) and an `Alias` table forward `read` to another storage while
     /// reporting their own engine, so classify the storage that actually serves the read.
-    /// Fail closed on a chain that cannot be resolved.
+    /// Fail closed on a chain that cannot be resolved. Every table of the chain is remembered:
+    /// a read through an `Alias` applies the row policies of the `Alias` and of its target
+    /// together (`getEffectiveRowPolicyFilter`, `InterpreterSelectQuery`), so a policy defined on
+    /// the `Alias` alone hides rows just like one defined on the table that serves the read.
+    std::vector<StorageID> chain_storage_ids;
     for (size_t depth = 0;; ++depth)
     {
         if (depth >= 16)
             return true;
+
+        chain_storage_ids.push_back(table->getStorageID());
 
         if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
             table = proxy->getNested();
@@ -1487,12 +1509,15 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
         return true;
 
     /// Row policies are evaluated as part of the source read. They are not represented in the
-    /// stored view AST, so inspect them under the effective context that runs the inner query.
-    const auto & storage_id = table->getStorageID();
-    auto row_policy_filter = context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        return true;
+    /// stored view AST, so inspect them under the effective context that runs the inner query,
+    /// for the table that serves the read and for every `Alias` (or proxy) the read went through.
+    for (const auto & storage_id : chain_storage_ids)
+    {
+        auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            return true;
+    }
 
     return false;
 }

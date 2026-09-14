@@ -96,8 +96,10 @@ public:
     /// predicate is evaluated in the view's output namespace and can hide rows just like a row
     /// policy attached to the view.
     static bool hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context);
-    /// Whether an entry of `additional_table_filters` is keyed to an internal `__table<N>` alias, the
-    /// name the analyzer gives every table expression in the query text it ships to other replicas.
+    /// Whether an entry of `additional_table_filters` is keyed to an internal `__table<N>` alias
+    /// (`N` a non-empty sequence of digits, the exact form), the name the analyzer gives every table
+    /// expression in the query text it ships to other replicas. A user-visible name that merely
+    /// starts with `__table` is not one.
     static bool additionalTableFiltersApplyToInternalAlias(const Field & additional_table_filters);
 
     /// Whether a `SETTINGS` clause written in the view's query can hide rows (a `limit`, an extra
