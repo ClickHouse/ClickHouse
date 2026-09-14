@@ -35,10 +35,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Settings changes is a vector of structs
-        ///     {setting_name, previous_value, new_value, reason}.
-        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
-        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
+        /// Entries are `{setting_name, previous_value, new_value, reason, compatibility_mode = Apply}`.
+        /// Use `Ignore` when a new default must apply even with an older `compatibility` version.
+        /// For a newly added setting choose the most appropriate `previous_value` (for example, if the setting
+        /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
@@ -113,6 +113,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
+            {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
+            {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
+            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -1496,6 +1499,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
+    using CompatibilitySetting = SettingsChangesHistory::SettingChange::CompatibilitySetting;
     static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
@@ -1508,6 +1512,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "sainte_lague", "sainte_lague", "Keep Sainte-Lague distribution regardless of `compatibility`.", CompatibilitySetting::Ignore},
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
