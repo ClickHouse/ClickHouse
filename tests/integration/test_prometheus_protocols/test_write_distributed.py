@@ -6,6 +6,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 from .prometheus_test_utils import (
+    convert_metrics_metadata_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_response_to_remote_write,
@@ -44,6 +45,12 @@ HIDDEN_SYSTEM_TABLES = ["tables", "columns"]
 CLUSTER_COLUMN_USER = "prom_cluster_column_user"
 # The columns a remote write sends, and so the only ones the shard INSERT names.
 WRITTEN_COLUMNS = "metric_name, tags, time_series"
+
+# The metric family a sample and its metadata are sent under, and the metadata sent with it: a
+# wrapper declaring only the columns above has no column any of the three could travel in.
+METADATA_METRIC = "metadata_metric"
+METADATA_HELP = "Metadata carried with the samples"
+METADATA_UNIT = "seconds"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -174,6 +181,19 @@ def write_one(path, metric_name, host, timestamp):
     )
 
 
+def write_with_metadata(path, metric_name):
+    """One sample and the metadata of its family, in the one request a sender sends both in."""
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": metric_name, "host": "h0"}, {START_TIME: 1.0})]
+    )
+    write_request.metadata.extend(
+        convert_metrics_metadata_to_protobuf(
+            [(metric_name, "GAUGE", METADATA_HELP, METADATA_UNIT)]
+        ).metadata
+    )
+    return get_response_to_remote_write(node.ip_address, 9093, path, write_request)
+
+
 def count_on_the_shards(wrapper, metric_name, flush=True, table="ts_local"):
     if flush:
         node.query(f"SYSTEM FLUSH DISTRIBUTED {wrapper}")
@@ -182,6 +202,18 @@ def count_on_the_shards(wrapper, metric_name, flush=True, table="ts_local"):
             f"SELECT (SELECT count() FROM timeSeriesTags(shard_0.{table}) WHERE metric_name = '{metric_name}')"
             f" + (SELECT count() FROM timeSeriesTags(shard_1.{table}) WHERE metric_name = '{metric_name}')"
         )
+    )
+
+
+def metadata_on_the_shards(metric_family, table="ts_local"):
+    """The `type`, `help` and `unit` stored for a metric family, from both shards: a metadata row
+    carries no tags, so the sharding key always puts it on one of the two."""
+    return node.query(
+        f"SELECT type, help, unit FROM timeSeriesMetrics(shard_0.{table})"
+        f" WHERE metric_family_name = '{metric_family}'"
+        " UNION ALL "
+        f"SELECT type, help, unit FROM timeSeriesMetrics(shard_1.{table})"
+        f" WHERE metric_family_name = '{metric_family}'"
     )
 
 
@@ -493,3 +525,36 @@ def test_the_probe_accepts_a_cluster_user_granted_only_the_written_columns():
         ).strip()
         == "0"
     )
+
+
+def test_remote_write_metadata_needs_a_wrapper_declaring_its_columns():
+    """Metadata reaches the shards through a wrapper of the full schema; the same request over one
+    declaring only the sample columns is refused whole, since none of them could carry it."""
+    # The full wrapper: the sample and the metadata of its family both reach the shard tables.
+    response = write_with_metadata("/dist/write", METADATA_METRIC)
+    assert response.status_code == 204, response.text
+    assert count_on_the_shards("prom_dist", METADATA_METRIC) == 1
+    stored = metadata_on_the_shards(METADATA_METRIC)
+    assert stored == f"gauge\t{METADATA_HELP}\t{METADATA_UNIT}\n", stored
+
+    # The same request over a wrapper declaring only the columns a sample needs is refused before
+    # the shards are asked anything, and the refusal names the column the metadata would need.
+    response = write_with_metadata("/column_granted/write", METADATA_METRIC)
+    assert response.status_code >= 500, response.text
+    assert "INCOMPATIBLE_SCHEMA" in response.text
+    assert "prom_column_granted" in response.text
+    assert "does not declare column `metric_family`" in response.text
+    # Nothing landed on either shard: neither the samples nor the metadata sent with them.
+    on_the_narrow_shards = count_on_the_shards(
+        "prom_column_granted", METADATA_METRIC, table="ts_column_granted"
+    )
+    assert on_the_narrow_shards == 0
+    assert metadata_on_the_shards(METADATA_METRIC, table="ts_column_granted") == ""
+
+    # Not vacuous: the very same samples without metadata still travel that narrow wrapper.
+    assert write("/column_granted/write", METADATA_METRIC).status_code == 204
+    on_the_narrow_shards = count_on_the_shards(
+        "prom_column_granted", METADATA_METRIC, table="ts_column_granted"
+    )
+    assert on_the_narrow_shards == 1
+    assert metadata_on_the_shards(METADATA_METRIC, table="ts_column_granted") == ""

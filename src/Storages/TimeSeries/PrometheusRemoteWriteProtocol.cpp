@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -174,6 +175,27 @@ Block makeTimeSeriesBlock(
     block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
     block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
     return block;
+}
+
+/// Metadata is stored in columns of its own, which a Distributed table declaring only the sample columns has not got:
+/// the sink sends what the wrapper declares, so metadata it cannot name could not reach a shard that would store it.
+void checkTableAcceptsMetricsMetadata(const StorageInMemoryMetadata & metadata, const StorageID & storage_id)
+{
+    for (const auto * column :
+         {TimeSeriesColumnNames::MetricFamily, TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit, TimeSeriesColumnNames::Help})
+    {
+        if (!metadata.columns.has(column))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} does not declare column `{}`, so remote write cannot store the metric metadata sent with the samples: "
+                "declare `{}`, `{}`, `{}` and `{}` on it, or send the samples without metadata",
+                storage_id.getNameForLogs(),
+                column,
+                TimeSeriesColumnNames::MetricFamily,
+                TimeSeriesColumnNames::Type,
+                TimeSeriesColumnNames::Unit,
+                TimeSeriesColumnNames::Help);
+    }
 }
 
 Block makeMetricsMetadataBlock(
@@ -353,11 +375,15 @@ void PrometheusRemoteWriteProtocol::write(
         time_series.size(),
         metrics_metadata.size());
 
+    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
+    if (!metrics_metadata.empty())
+        checkTableAcceptsMetricsMetadata(*metadata, storage_id);
+
     /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
     /// own shard choice; checked here, not on construction, with no request body read in between.
     checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
-    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
 
