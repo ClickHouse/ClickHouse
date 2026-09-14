@@ -169,6 +169,30 @@ class OrphanTestEnv:
                 io.BytesIO(payload), len(payload),
             )
 
+    def metadata_last_updated_ms(self, name):
+        """The `last-updated-ms` field of one metadata object."""
+        assert self.storage_type == "local", "reads the object in place, local only"
+        path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+        field = self.instance.exec_in_container(
+            ["bash", "-c", f"grep -o '\"last-updated-ms\" *: *[0-9]*' {path}"]
+        )
+        return int(field.rsplit(":", 1)[1])
+
+    def set_metadata_last_updated_ms(self, name, value):
+        """Rewrite that field in place.
+
+        `iceberg_recent_metadata_file_by_last_updated_ms_field` ranks candidates by it, and a
+        stale file carries a newer one whenever it was written back after the commit it belongs
+        to: restored from a backup, or rolled back by copying an old file over a new name."""
+        assert self.storage_type == "local", "edits the object in place, local only"
+        path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+        self.instance.exec_in_container(
+            ["bash", "-c",
+             f"sed -i 's/\"last-updated-ms\" *: *[0-9]*/\"last-updated-ms\" : {value}/' {path}"]
+        )
+        assert self.metadata_last_updated_ms(name) == value, \
+            f"in-place timestamp edit of {name} did not take effect"
+
     def remove_metadata_file(self, name):
         """Delete one metadata object."""
         if self.storage_type == "local":
@@ -977,6 +1001,77 @@ def test_remove_orphan_files_refuses_last_updated_ms_tie(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_ms_ranking_against_pointer(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """A timestamp says when a file was written, not which file the table committed.
+
+    Under `iceberg_recent_metadata_file_by_last_updated_ms_field` the ranking can therefore land
+    on a file the table's own pointer contradicts: one below the declared version, or a second
+    file spelling that version. The two carry different timestamps, so nothing ranks equal, and
+    their version numbers are not what selected them, so neither is refused by the version
+    number alone."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ms_pointer")
+    env.populate(
+        3,
+        use_version_hint=True,
+        additional_settings=["iceberg_recent_metadata_file_by_last_updated_ms_field = true"],
+    )
+    newest = env.newest_metadata_version()
+    assert newest >= 3, f"Need three metadata versions to plant a stale copy, got v{newest}"
+    assert env.read_version_hint() == str(newest), "the hint must name the committed version"
+    declared_ms = env.metadata_last_updated_ms(f"v{newest}.metadata.json")
+
+    env.add_orphan("data", "orphan-ms-pointer.parquet")
+
+    # v2 is the state after the first insert, so two of the three committed data files are
+    # unreachable from it. Restored under a name of its own and timestamped after the version the
+    # hint names, it is what the policy ranks first, while its version says the table moved past
+    # it. A name no query has read yet, so no parsed copy of it can be served from the cache.
+    env.copy_metadata_file("v2.metadata.json", "v0.metadata.json")
+    env.set_metadata_last_updated_ms("v0.metadata.json", declared_ms + 1000)
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="ranking selects"):
+        env.remove_orphans(older_than=env.now_ts())
+    assert sorted(env.list_files()) == files_before, "refused cleanup deleted objects anyway"
+    env.remove_metadata_file("v0.metadata.json")
+
+    # Re-spell the chain the way iceberg-java names it and let the hint name that file exactly.
+    # The twin then holds the declared version with different content, which a comparison of
+    # version numbers cannot see at all.
+    renamed = {}
+    for version in range(1, newest + 1):
+        renamed[version] = f"{version:05d}-{get_uuid_str()}.metadata.json"
+        env.copy_metadata_file(f"v{version}.metadata.json", renamed[version])
+        env.remove_metadata_file(f"v{version}.metadata.json")
+    env.write_version_hint(renamed[newest])
+    twin = f"{newest:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(renamed[2], twin)
+    env.set_metadata_last_updated_ms(twin, declared_ms + 1000)
+    assert env.metadata_files_with_version(newest) == sorted([renamed[newest], twin]), (
+        "Fixture did not put a second file on the declared version, so the case is vacuous"
+    )
+
+    files_before = sorted(env.list_files())
+    time.sleep(2)
+    with pytest.raises(Exception, match="ranking selects"):
+        env.remove_orphans(older_than=env.now_ts())
+    assert sorted(env.list_files()) == files_before, "refused cleanup deleted objects anyway"
+
+    # Control: with the twin gone the pointer and the ranking agree again, so a binary that
+    # refuses this policy outright does not pass.
+    env.remove_metadata_file(twin)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"Cleanup must resume once the contradicting file is gone: {counts}"
+    )
+    assert not env.exists("data", "orphan-ms-pointer.parquet"), \
+        "The planted orphan should have been deleted by the control run"
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
 def test_insert_refuses_undeclared_scheme(
     started_cluster_iceberg_with_spark, storage_type
 ):
@@ -1044,7 +1139,7 @@ def test_remove_orphan_files_refuses_uuid_pointer_outranked(
     env.add_orphan("data", "orphan-uuid-ptr.parquet")
     files_before = sorted(env.list_files())
     time.sleep(2)
-    with pytest.raises(Exception, match="ranks above it"):
+    with pytest.raises(Exception, match="ranking selects"):
         env.remove_orphans(older_than=env.now_ts())
 
     files_after = sorted(env.list_files())
@@ -1146,6 +1241,20 @@ def test_remove_orphan_files_refuses_pin_superseded_in_own_scheme(
         "remove_orphan_files refused but deleted objects anyway.\n"
         f"  Before: {files_before}\n  After:  {files_after}"
     )
+
+    # The same layout with the hint switched off, so the pin is the only pointer there is. It must
+    # refuse here too: an explicit path no commit advances cannot say which scheme is current, and
+    # taking the scheme from it is what hides the uuid-named file holding the current state.
+    drop_iceberg_table(env.instance, env.table_name)
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)",
+        format_version=2, if_not_exists=True,
+        explicit_metadata_path=f"metadata/v{newest - 3}.metadata.json",
+    )
+    with pytest.raises(Exception, match="nothing declares which of the two schemes"):
+        env.remove_orphans(older_than=env.now_ts())
+    assert sorted(env.list_files()) == files_before, \
+        "remove_orphan_files refused the pinned table but deleted objects anyway"
 
     # Control: dropping the pin and the v<N> history the migration left behind makes the layout
     # unambiguous, so a binary that refuses this table outright does not pass.

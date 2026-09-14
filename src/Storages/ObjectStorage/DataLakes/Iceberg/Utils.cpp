@@ -1250,6 +1250,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             /// but the scheme it spells is this table's. A commit advances the hint and never the
             /// explicit path, so only the hint spells it here; a reader obeys the explicit path.
             String pointer_content;
+            bool pointer_is_version_hint = false;
             if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
                 && (ignore_metadata_pointer_overrides
                     || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed))
@@ -1259,14 +1260,20 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
                 auto buf = object_storage->readObject(version_hint, ReadSettings{});
                 readString(pointer_content, *buf);
+                pointer_is_version_hint = true;
             }
             else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
                 pointer_content = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
             if (auto target = metadataPointerTargetName(pointer_content))
             {
                 const bool version_numbered = isVersionNumberedCommitScheme(*target);
+                /// A bare version number addresses a compressed spelling of the name just as well,
+                /// so `v<N>.` is what identifies the file the pointer means, not the whole name.
+                const String target_prefix = target->substr(0, target->size() - strlen(".metadata.json")) + ".";
                 bool scheme_present = false;
                 bool target_present = false;
+                String only_spelling;
+                size_t spellings = 0;
                 for (const auto & path : metadata_files)
                 {
                     String name = std::filesystem::path(path).filename();
@@ -1279,21 +1286,40 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         scheme_present = true;
                     if (name == *target)
                         target_present = true;
+                    else if (version_numbered && isVersionNumberedCommitScheme(name) && name.starts_with(target_prefix))
+                    {
+                        only_spelling = name;
+                        ++spellings;
+                    }
                 }
-                /// A bare version number may address a compressed spelling of the name, so the
-                /// scheme is what has to be present, not the exact name. A pointer naming a file
-                /// directly declares nothing unless that file is really there.
+                /// A pointer naming a file declares nothing unless that file is really there, and a
+                /// bare version number needs one spelling of it to be unambiguous.
                 if (scheme_present && (version_numbered || target_present))
                 {
-                    /// A uuid-named name is no commit order, so such a pointer cannot stand in for one
-                    /// here and must not hide the scheme this table's own writes land in. A v<N> one
-                    /// may: a higher N exists only because it was committed.
-                    if (version_numbered || !ignore_metadata_pointer_overrides)
+                    /// Hiding the other scheme hides the file the table committed last unless the name
+                    /// that declares it is both a commit order and current: a uuid-named one is neither,
+                    /// and an explicit path no commit advances may predate a change of writer.
+                    if (!ignore_metadata_pointer_overrides || (version_numbered && pointer_is_version_hint))
                         own_scheme_is_version_numbered = version_numbered;
-                    if (ignore_metadata_pointer_overrides && !version_numbered)
+                    /// A file that is really there says more than the scheme: this table committed it,
+                    /// so nothing older is current and nothing else holds its version. A bare version
+                    /// number names one spelling of it, and two spellings name neither.
+                    if (ignore_metadata_pointer_overrides)
                     {
-                        declared_target = *target;
-                        declared_target_version = getMetadataFileAndVersion(*target).version;
+                        if (!target_present && spellings > 1)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Iceberg table with path {} holds {} metadata files spelling the version its pointer "
+                                "names ('{}'), so which of them is current cannot be determined. Refusing, because "
+                                "this operation deletes or rewrites metadata. Remove the spelling that is not current",
+                                table_path,
+                                spellings,
+                                *target);
+                        if (target_present || spellings == 1)
+                        {
+                            declared_target = target_present ? *target : only_spelling;
+                            declared_target_version = getMetadataFileAndVersion(*declared_target).version;
+                        }
                     }
                 }
             }
@@ -1375,7 +1401,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 else
                     uuid_named_candidate = true;
             }
-            if (version_numbered_candidate && uuid_named_candidate && declared_target)
+            if (version_numbered_candidate && uuid_named_candidate && declared_target
+                && !isVersionNumberedCommitScheme(*declared_target))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg table with path {} declares '{}' as its current metadata file, but the table also "
@@ -1392,8 +1419,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     "files named `<N>-<uuid>.metadata.json`, and nothing declares which of the two schemes "
                     "this table commits through, so its current metadata file cannot be identified. "
                     "Refusing, because this operation deletes or rewrites metadata. Declare the current "
-                    "metadata file with `iceberg_metadata_file_path`, or with `iceberg_use_version_hint = 1` "
-                    "and a `metadata/version-hint.text` naming it",
+                    "`v<N>.metadata.json` with `iceberg_use_version_hint = 1` and a "
+                    "`metadata/version-hint.text` naming it, or remove the metadata files of the other scheme",
                     table_path);
         }
 
@@ -1408,19 +1435,25 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         const ShortMetadataFileInfo & latest_metadata_file_info
             = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
 
-        /// Ranking put a different file above the one the table declares current, so either the
-        /// declaration is stale or the winner was never committed, and nothing here can tell which.
-        /// Both are unsafe to delete or rewrite from.
-        if (declared_target && latest_metadata_file_info.version != declared_target_version)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Iceberg table with path {} declares '{}' as its current metadata file, but '{}' ranks above it, so "
-                "which one is current cannot be determined. Refusing, because this operation deletes or rewrites "
-                "metadata. Point the table at the newest committed metadata file, or remove the one that is not "
-                "current",
-                table_path,
-                *declared_target,
-                latest_metadata_file_info.path);
+        /// Ranking selected another file than the one the table declares current: either the
+        /// declaration is stale or that file was never committed, and nothing here tells which.
+        /// Only a higher `v<N>` is no disagreement, that number exists because a commit wrote it.
+        if (declared_target)
+        {
+            const bool superseded_in_own_scheme = isVersionNumberedCommitScheme(*declared_target)
+                && latest_metadata_file_info.version > declared_target_version;
+            if (!superseded_in_own_scheme
+                && std::filesystem::path(latest_metadata_file_info.path).filename() != *declared_target)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} declares '{}' as its current metadata file, but ranking selects "
+                    "'{}', so which one is current cannot be determined. Refusing, because this operation deletes "
+                    "or rewrites metadata. Point the table at the newest committed metadata file, or remove the "
+                    "one that is not current",
+                    table_path,
+                    *declared_target,
+                    latest_metadata_file_info.path);
+        }
 
         /// `max_element` returns the first of equal elements, so a candidate ranking equal to the
         /// winner was separated from it by listing order alone. Ambiguity is whatever the policy in
