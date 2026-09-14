@@ -256,11 +256,14 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool run_local_paths_check) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+
+        if (run_local_paths_check)
+            checkCustomLocalDiskPath(object_key_prefix, context);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);

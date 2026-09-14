@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <Interpreters/Context.h>
 
 
@@ -124,13 +125,16 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
         const ObjectStorageRouterPtr & object_storages,
-        bool /* run_local_paths_check */) -> MetadataStoragePtr
+        bool run_local_paths_check) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
         auto metadata_path = config.getString(config_prefix + ".metadata_path",
                                               fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
+
+        if (run_local_paths_check && config.has(config_prefix + ".metadata_path"))
+            checkCustomLocalDiskPath(metadata_path, Context::getGlobalContextInstance());
 
         fs::create_directories(metadata_path);
         const auto db_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
