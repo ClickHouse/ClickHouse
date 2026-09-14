@@ -544,6 +544,9 @@ void DataPartStorageOnDiskPacked::startPrecommitTransaction()
     if (!is_precommitted)
     {
         preFinalizeWriter();
+        /// Local writes cannot overlap: release their file descriptors before starting the next part.
+        if (!supportParallelWrite())
+            finalizeWriter();
         is_precommitted = true;
     }
 }
