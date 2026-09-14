@@ -215,10 +215,13 @@ For more information, see the section [External data for query processing](/refe
 
 You can use the following aliases from within the REPL:
 
-- `\l` - SHOW DATABASES
-- `\d` - SHOW TABLES
-- `\c <DATABASE>` - USE DATABASE
+- `\l` - `SHOW DATABASES`
+- `\d` - `SHOW TABLES`
+- `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+- `\c <DATABASE>` - `USE <DATABASE>`
 - `.` - repeat the last query
+
+An argument of `\d` that continues the `SHOW TABLES` query instead of naming a table - as in `\d FROM system` or `\d LIKE 'hits%'` - keeps the listing. A table whose name is spelled as one of these clauses has to be quoted: `` \d `format` ``.
 
 ### Keyboard shortcuts {#keyboard_shortcuts}
 

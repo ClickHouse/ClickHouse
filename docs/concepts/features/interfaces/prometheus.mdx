@@ -86,10 +86,10 @@ ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/e
 
 ### Prerequisites {#prerequisites}
 
-Enable the [`allow_experimental_time_series_table`](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting for the user that creates and accesses the table:
+Enable the `enable_time_series_table` setting for the user that creates and accesses the table:
 
 ```sql
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 ```
 
 Create a database and a `TimeSeries` table:
@@ -99,7 +99,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-For HTTP API requests, enable `allow_experimental_time_series_table` in the profile of the API user.
+For HTTP API requests, enable `enable_time_series_table` in the profile of the API user.
 
 ### Configure the Prometheus API {#configure-prometheus-api}
 

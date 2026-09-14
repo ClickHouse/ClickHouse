@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFusedAggregationBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
@@ -83,6 +84,15 @@ namespace
             case NodeType::BinaryOperator:
             {
                 const auto * binary_operator = static_cast<const PrometheusQueryTree::BinaryOperator *>(node);
+
+                if (canFuseAggregationBinaryOperator(binary_operator, context))
+                {
+                    const auto * aggregation
+                        = static_cast<const PrometheusQueryTree::AggregationOperator *>(binary_operator->getLeftArgument());
+                    SQLQueryPiece argument = visitNode(aggregation->getArguments().at(0), context);
+                    return applyFusedAggregationBinaryOperator(binary_operator, std::move(argument), context);
+                }
+
                 SQLQueryPiece left_argument = visitNode(binary_operator->getLeftArgument(), context);
                 SQLQueryPiece right_argument = visitNode(binary_operator->getRightArgument(), context);
                 return applyBinaryOperator(binary_operator, std::move(left_argument), std::move(right_argument), context);
