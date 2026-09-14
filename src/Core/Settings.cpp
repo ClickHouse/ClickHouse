@@ -8575,7 +8575,7 @@ Enables a two-stage approximate vector search without index (brute force scan) o
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
 2. rescore the found vectors against original, full-precision vectors.
 
-The two-stage search reads the quantized codes in addition to the full-precision vector, so it applies only where the vector can be read lazily for the shortlisted rows: it needs the analyzer and setting `query_plan_optimize_lazy_materialization`, and it does not apply to a table with patch parts, or to a query using `SAMPLE`, `FINAL` on an engine other than `ReplacingMergeTree`, or a filter or row policy that reads the vector column. Otherwise the query runs the exact full-precision scan.
+The two-stage search reads the quantized codes in addition to the full-precision vector, so it applies only where the vector can be read lazily for the shortlisted rows: it needs the analyzer, setting `query_plan_optimize_lazy_materialization` and a `LIMIT` (including any `OFFSET`) no greater than `query_plan_max_limit_for_lazy_materialization`, and it does not apply to a table with patch parts, or to a query using `SAMPLE`, `FINAL` on an engine other than `ReplacingMergeTree`, or a filter or row policy that reads the vector column. Otherwise the query runs the exact full-precision scan.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.

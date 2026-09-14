@@ -182,6 +182,47 @@ WITH
 SELECT 'codes_without_deferral_reads_no_more_than_exact_scan',
     exact_scan > 0 AND codes_without_deferral = exact_scan;
 
+-- The old analyzer produces no lazy read at all, so the rewrite must leave the query exact there too. `enable_analyzer`
+-- is set at session level because a nested `SETTINGS enable_analyzer` is rejected inside the `EXPLAIN` subquery.
+SET enable_analyzer = 0;
+
+SELECT 'analyzer_off_declines',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+-- Measured as above, with the old analyzer as the reason the deferral is unavailable.
+SELECT id FROM quantize_lazy_off
+ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+LIMIT 5 SETTINGS vector_search_use_quantized_codes = 0,
+    log_comment = '02354_analyzer_off_exact' FORMAT Null;
+
+SELECT id FROM quantize_lazy_off
+ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+LIMIT 5 SETTINGS vector_search_use_quantized_codes = 1,
+    log_comment = '02354_analyzer_off_codes' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+WITH
+    (SELECT read_bytes FROM system.query_log
+     WHERE current_database = currentDatabase() AND event_date >= yesterday()
+       AND type = 'QueryFinish' AND log_comment = '02354_analyzer_off_exact'
+     ORDER BY event_time_microseconds DESC LIMIT 1) AS exact_scan,
+    (SELECT read_bytes FROM system.query_log
+     WHERE current_database = currentDatabase() AND event_date >= yesterday()
+       AND type = 'QueryFinish' AND log_comment = '02354_analyzer_off_codes'
+     ORDER BY event_time_microseconds DESC LIMIT 1) AS codes_without_deferral
+SELECT 'analyzer_off_reads_no_more_than_exact_scan',
+    exact_scan > 0 AND codes_without_deferral = exact_scan;
+
+SET enable_analyzer = 1;
+
 DROP TABLE quantize_lazy_off SYNC;
 
 -- FINAL on an engine other than ReplacingMergeTree: lazy materialization declines on the read step itself, because the
