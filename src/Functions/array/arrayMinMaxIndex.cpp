@@ -465,6 +465,35 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
     return best_index;
 }
 
+/// Wide integers do not have a SIMD findExtreme implementation. Keep them on a typed scan
+/// instead of paying the generic compareAt dispatch for every element.
+template <ArrayMinMaxIndexStrategy strategy, typename Element>
+requires(is_big_int_v<Element>)
+static bool executeWideNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & result_ptr)
+{
+    const auto * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+    if (!column)
+        return false;
+
+    auto result_column = ColumnUInt32::create(offsets.size());
+    auto & result = result_column->getData();
+    const Element * data = column->getData().data();
+
+    size_t begin = 0;
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        const size_t end = offsets[row];
+        const size_t size = end - begin;
+        result[row] = size == 0
+            ? 0
+            : static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
+        begin = end;
+    }
+
+    result_ptr = std::move(result_column);
+    return true;
+}
+
 template <ArrayMinMaxIndexStrategy strategy, typename Element>
 static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & result_ptr)
 {
@@ -512,21 +541,17 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
                 ++tile_rows;
             }
 
-            if (tile_rows != 0)
+            chassert(tile_rows != 0);
+            for (size_t tile_row = 0; tile_row < tile_rows; ++tile_row)
             {
-                for (size_t tile_row = 0; tile_row < tile_rows; ++tile_row)
-                {
-                    const size_t index = findFirstSelectedValue(
-                        row_data[tile_row], row_sizes[tile_row], extrema[tile_row], true);
-                    chassert(index < row_sizes[tile_row]);
-                    result[row + tile_row] = static_cast<UInt32>(index + 1);
-                }
-                row += tile_rows - 1;
-                begin = tile_begin;
-                continue;
+                const size_t index = findFirstSelectedValue(
+                    row_data[tile_row], row_sizes[tile_row], extrema[tile_row], true);
+                chassert(index < row_sizes[tile_row]);
+                result[row + tile_row] = static_cast<UInt32>(index + 1);
             }
-
-            result[row] = static_cast<UInt32>(findIndexSmallOrOnePass<strategy>(data + begin, size) + 1);
+            row += tile_rows - 1;
+            begin = tile_begin;
+            continue;
         }
         else if (size <= 64 || !use_simd)
         {
@@ -587,6 +612,10 @@ struct ArrayMinMaxIndexImpl
             || executeNumeric<strategy, Int16>(mapped, offsets, numeric_result)
             || executeNumeric<strategy, Int32>(mapped, offsets, numeric_result)
             || executeNumeric<strategy, Int64>(mapped, offsets, numeric_result)
+            || executeWideNumeric<strategy, UInt128>(mapped, offsets, numeric_result)
+            || executeWideNumeric<strategy, UInt256>(mapped, offsets, numeric_result)
+            || executeWideNumeric<strategy, Int128>(mapped, offsets, numeric_result)
+            || executeWideNumeric<strategy, Int256>(mapped, offsets, numeric_result)
             || executeNumeric<strategy, Float32>(mapped, offsets, numeric_result)
             || executeNumeric<strategy, Float64>(mapped, offsets, numeric_result))
             return numeric_result;

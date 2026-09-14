@@ -25,6 +25,7 @@ SELECT
     arrayMinIndex(arrayConcat(arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360)))),
     arrayMaxIndex(arrayConcat(arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360))));
 SELECT arrayMinIndex([NULL, 2, 1]), arrayMaxIndex([NULL, 2, 1]);
+SELECT arrayMinIndex([NULL::Nullable(Int64), NULL::Nullable(Int64)]), arrayMaxIndex([NULL::Nullable(Int64), NULL::Nullable(Int64)]);
 SELECT arrayMinIndex(x -> 0, emptyArrayInt32()), arrayMaxIndex(x -> 0, emptyArrayInt32());
 SELECT arrayMinIndex([toUInt8(255), toUInt8(0), toUInt8(0), toUInt8(1)]), arrayMaxIndex([toUInt8(1), toUInt8(255), toUInt8(255), toUInt8(0)]);
 SELECT arrayMinIndex([toUInt16(65535), toUInt16(0), toUInt16(0), toUInt16(1)]), arrayMaxIndex([toUInt16(1), toUInt16(65535), toUInt16(65535), toUInt16(0)]);
@@ -34,6 +35,15 @@ SELECT arrayMinIndex([toInt8(-1), toInt8(-128), toInt8(-128), toInt8(0)]), array
 SELECT arrayMinIndex([toInt16(1), toInt16(-32768), toInt16(-32768), toInt16(0)]), arrayMaxIndex([toInt16(-1), toInt16(32767), toInt16(32767), toInt16(0)]);
 SELECT arrayMinIndex([toInt32(1), toInt32(-2147483648), toInt32(-2147483648), toInt32(0)]), arrayMaxIndex([toInt32(-1), toInt32(2147483647), toInt32(2147483647), toInt32(0)]);
 SELECT arrayMinIndex([toInt64(1), toInt64('-9223372036854775807'), toInt64('-9223372036854775807'), toInt64(0)]), arrayMaxIndex([toInt64(-1), toInt64('9223372036854775807'), toInt64('9223372036854775807'), toInt64(0)]);
+SELECT
+    arrayMinIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
+    arrayMaxIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
+    arrayMinIndex([toUInt128(0), toUInt128(2), toUInt128(2), toUInt128(1), toUInt128(1)]),
+    arrayMaxIndex([toUInt128(0), toUInt128(2), toUInt128(2), toUInt128(1), toUInt128(1)]),
+    arrayMinIndex([toInt256(0), toInt256(-1), toInt256(-1), toInt256(1), toInt256(1)]),
+    arrayMaxIndex([toInt256(0), toInt256(-1), toInt256(-1), toInt256(1), toInt256(1)]),
+    arrayMinIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1), toUInt256(1)]),
+    arrayMaxIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1), toUInt256(1)]);
 SELECT arrayMinIndex([nan::Float32, -inf::Float32, -inf::Float32, 0::Float32]), arrayMaxIndex([nan::Float32, inf::Float32, inf::Float32, 0::Float32]);
 SELECT arrayMinIndex([nan::Float64, -inf::Float64, -inf::Float64, 0::Float64]), arrayMaxIndex([nan::Float64, inf::Float64, inf::Float64, 0::Float64]);
 SELECT arrayMinIndex([(2, 'b'), (1, 'c'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (1, 'c'), (1, 'a')]);

@@ -1,9 +1,8 @@
 <test run_all_queries="1">
     <!--
-        This is an exhaustive long performance matrix for the fused index reductions.
-        It deliberately covers every implementation transition, all four extrema positions,
-        both directions, several numeric widths, floating point edge values, strings,
-        Nullable values, lambda forms, and two-array lambdas.
+        Keep this long test focused on performance. The stateless test owns exhaustive
+        correctness coverage; this matrix exercises every implementation transition and
+        representative raw, lambda, multi-array, floating point, String, and Nullable cases.
     -->
     <tag>long</tag>
 
@@ -13,62 +12,23 @@
     </settings>
 
     <substitutions>
+        <!-- Small, medium, 1024-block, and 64-bit crossover boundaries. -->
         <substitution>
             <name>matrix_length</name>
             <values>
-                <value>1</value>
-                <value>2</value>
-                <value>3</value>
-                <value>4</value>
-                <value>5</value>
-                <value>7</value>
-                <value>8</value>
-                <value>9</value>
-                <value>15</value>
-                <value>16</value>
-                <value>17</value>
-                <value>31</value>
-                <value>32</value>
-                <value>33</value>
                 <value>47</value>
                 <value>48</value>
                 <value>49</value>
                 <value>63</value>
                 <value>64</value>
                 <value>65</value>
-                <value>95</value>
-                <value>96</value>
-                <value>127</value>
-                <value>128</value>
-                <value>129</value>
-                <value>191</value>
-                <value>192</value>
                 <value>255</value>
                 <value>256</value>
                 <value>257</value>
-                <value>511</value>
-                <value>512</value>
-                <value>513</value>
-                <value>767</value>
-                <value>768</value>
-                <value>1023</value>
                 <value>1024</value>
-                <value>1025</value>
-                <value>2047</value>
-                <value>2048</value>
-                <value>2049</value>
-                <value>4095</value>
-                <value>4096</value>
-                <value>4097</value>
-                <value>8191</value>
-                <value>8192</value>
-                <value>8193</value>
                 <value>16383</value>
                 <value>16384</value>
                 <value>16385</value>
-                <value>32767</value>
-                <value>32768</value>
-                <value>32769</value>
                 <value>65536</value>
             </values>
         </substitution>
@@ -76,96 +36,30 @@
         <substitution>
             <name>edge_length</name>
             <values>
-                <value>1</value>
-                <value>2</value>
-                <value>3</value>
-                <value>7</value>
-                <value>8</value>
-                <value>15</value>
-                <value>16</value>
-                <value>31</value>
-                <value>32</value>
-                <value>47</value>
-                <value>48</value>
                 <value>49</value>
-                <value>63</value>
-                <value>64</value>
                 <value>65</value>
-                <value>95</value>
-                <value>96</value>
-                <value>127</value>
-                <value>128</value>
-                <value>129</value>
-                <value>191</value>
-                <value>192</value>
-                <value>255</value>
-                <value>256</value>
                 <value>257</value>
-                <value>511</value>
-                <value>512</value>
-                <value>513</value>
-                <value>1023</value>
                 <value>1024</value>
-                <value>2048</value>
-                <value>4096</value>
-                <value>8192</value>
                 <value>16384</value>
-                <value>32768</value>
                 <value>65536</value>
             </values>
         </substitution>
 
         <substitution>
-            <name>position_case</name>
+            <name>lambda_length</name>
             <values>
-                <value>1</value>
-                <value>2</value>
-                <value>3</value>
-                <value>4</value>
-                <value>5</value>
-                <value>6</value>
-                <value>7</value>
-                <value>8</value>
+                <value>65</value>
+                <value>257</value>
+                <value>16384</value>
             </values>
         </substitution>
 
         <substitution>
-            <name>numeric_type</name>
-            <values>
-                <value>UInt8</value>
-                <value>UInt16</value>
-                <value>UInt32</value>
-                <value>UInt64</value>
-                <value>Int8</value>
-                <value>Int16</value>
-                <value>Int32</value>
-                <value>Int64</value>
-                <value>Float32</value>
-                <value>Float64</value>
-            </values>
-        </substitution>
-
-        <substitution>
-            <name>adversarial_length</name>
+            <name>narrow_length</name>
             <values>
                 <value>257</value>
-                <value>512</value>
-                <value>1024</value>
-                <value>2048</value>
-                <value>4096</value>
-                <value>8192</value>
-                <value>16383</value>
                 <value>16384</value>
-                <value>16385</value>
-            </values>
-        </substitution>
-
-        <substitution>
-            <name>adversarial_case</name>
-            <values>
-                <value>9</value>
-                <value>10</value>
-                <value>11</value>
+                <value>65536</value>
             </values>
         </substitution>
     </substitutions>
@@ -176,6 +70,14 @@
             case_id UInt8,
             array_length UInt32,
             a Array(UInt64)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_u8
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(UInt8)
         ) ENGINE = Memory
     </create_query>
     <create_query>
@@ -211,7 +113,7 @@
         ) ENGINE = Memory
     </create_query>
 
-    <!-- Every length is populated with first, middle, last, and changing-position maxima and minima. -->
+    <!-- Raw UInt64 queries isolate the index kernel from lambda evaluation. -->
     <fill_query>
         INSERT INTO array_min_max_index_perf_u64
         SELECT
@@ -222,35 +124,38 @@
                     case_id = 1 AND x = 0, toUInt64('18446744073709551615'),
                     case_id = 2 AND x = intDiv({matrix_length}, 2), toUInt64('18446744073709551615'),
                     case_id = 3 AND x = {matrix_length} - 1, toUInt64('18446744073709551615'),
-                    case_id = 4 AND x = number % {matrix_length}, toUInt64('18446744073709551615'),
                     case_id = 5 AND x = 0, toUInt64(0),
                     case_id = 6 AND x = intDiv({matrix_length}, 2), toUInt64(0),
                     case_id = 7 AND x = {matrix_length} - 1, toUInt64(0),
-                    case_id = 8 AND x = number % {matrix_length}, toUInt64(0),
                     case_id &gt; 4, toUInt64(x + 1),
                     toUInt64(x)),
                 range({matrix_length}))
-        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
-        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+        FROM numbers(greatest(1, intDiv(12000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
-    <!-- Keep the 64-bit adversarial workloads that justified the conservative 16384 threshold. -->
+    <!-- UInt8 covers the narrow-integer record-block path. -->
     <fill_query>
-        INSERT INTO array_min_max_index_perf_u64
-        SELECT 9, {adversarial_length}, range({adversarial_length})
-        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
-    </fill_query>
-    <fill_query>
-        INSERT INTO array_min_max_index_perf_u64
-        SELECT 10, {adversarial_length}, arrayReverse(range({adversarial_length}))
-        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
-    </fill_query>
-    <fill_query>
-        INSERT INTO array_min_max_index_perf_u64
-        SELECT 11, {adversarial_length}, arrayMap(x -&gt; toUInt64(42), range({adversarial_length}))
-        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
+        INSERT INTO array_min_max_index_perf_u8
+        SELECT
+            case_id,
+            {narrow_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toUInt8(255),
+                    case_id = 2 AND x = intDiv({narrow_length}, 2), toUInt8(255),
+                    case_id = 3 AND x = {narrow_length} - 1, toUInt8(255),
+                    case_id = 5 AND x = 0, toUInt8(0),
+                    case_id = 6 AND x = intDiv({narrow_length}, 2), toUInt8(0),
+                    case_id = 7 AND x = {narrow_length} - 1, toUInt8(0),
+                    case_id &gt; 4, toUInt8(x % 100 + 1),
+                    toUInt8(x % 100)),
+                range({narrow_length}))
+        FROM numbers(greatest(1, intDiv(12000, {narrow_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
+    <!-- Raw Int64 queries exercise the signed 64-bit crossover too. -->
     <fill_query>
         INSERT INTO array_min_max_index_perf_i64
         SELECT
@@ -261,18 +166,17 @@
                     case_id = 1 AND x = 0, toInt64(1000000000000),
                     case_id = 2 AND x = intDiv({matrix_length}, 2), toInt64(1000000000000),
                     case_id = 3 AND x = {matrix_length} - 1, toInt64(1000000000000),
-                    case_id = 4 AND x = number % {matrix_length}, toInt64(1000000000000),
                     case_id = 5 AND x = 0, toInt64(-1000000000000),
                     case_id = 6 AND x = intDiv({matrix_length}, 2), toInt64(-1000000000000),
                     case_id = 7 AND x = {matrix_length} - 1, toInt64(-1000000000000),
-                    case_id = 8 AND x = number % {matrix_length}, toInt64(-1000000000000),
                     case_id &gt; 4, toInt64(x + 1),
                     toInt64(x)),
                 range({matrix_length}))
-        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
-        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+        FROM numbers(greatest(1, intDiv(12000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
+    <!-- Raw Float64 queries exercise the floating point record-block path. -->
     <fill_query>
         INSERT INTO array_min_max_index_perf_float
         SELECT
@@ -280,65 +184,20 @@
             {matrix_length},
             arrayMap(x -&gt;
                 multiIf(
-                    case_id = 1 AND x = 0, toFloat64('1000000000000'),
-                    case_id = 2 AND x = intDiv({matrix_length}, 2), toFloat64('1000000000000'),
-                    case_id = 3 AND x = {matrix_length} - 1, toFloat64('1000000000000'),
-                    case_id = 4 AND x = number % {matrix_length}, toFloat64('1000000000000'),
-                    case_id = 5 AND x = 0, toFloat64('-1000000000000'),
-                    case_id = 6 AND x = intDiv({matrix_length}, 2), toFloat64('-1000000000000'),
-                    case_id = 7 AND x = {matrix_length} - 1, toFloat64('-1000000000000'),
-                    case_id = 8 AND x = number % {matrix_length}, toFloat64('-1000000000000'),
+                    case_id = 1 AND x = 0, toFloat64(1000000000000),
+                    case_id = 2 AND x = intDiv({matrix_length}, 2), toFloat64(1000000000000),
+                    case_id = 3 AND x = {matrix_length} - 1, toFloat64(1000000000000),
+                    case_id = 5 AND x = 0, toFloat64(-1000000000000),
+                    case_id = 6 AND x = intDiv({matrix_length}, 2), toFloat64(-1000000000000),
+                    case_id = 7 AND x = {matrix_length} - 1, toFloat64(-1000000000000),
                     case_id &gt; 4, toFloat64(x + 1),
                     toFloat64(x)),
                 range({matrix_length}))
-        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
-        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+        FROM numbers(greatest(1, intDiv(12000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
-    <fill_query>
-        INSERT INTO array_min_max_index_perf_string
-        SELECT
-            case_id,
-            {edge_length},
-            arrayMap(x -&gt;
-                multiIf(
-                    case_id = 1 AND x = 0, 'zzzzzzzzzz',
-                    case_id = 2 AND x = intDiv({edge_length}, 2), 'zzzzzzzzzz',
-                    case_id = 3 AND x = {edge_length} - 1, 'zzzzzzzzzz',
-                    case_id = 4 AND x = number % {edge_length}, 'zzzzzzzzzz',
-                    case_id = 5 AND x = 0, '',
-                    case_id = 6 AND x = intDiv({edge_length}, 2), '',
-                    case_id = 7 AND x = {edge_length} - 1, '',
-                    case_id = 8 AND x = number % {edge_length}, '',
-                    concat('item-', toString(x))),
-                range({edge_length}))
-        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
-        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
-    </fill_query>
-
-    <fill_query>
-        INSERT INTO array_min_max_index_perf_nullable
-        SELECT
-            case_id,
-            {edge_length},
-            arrayMap(x -&gt;
-                toNullable(multiIf(
-                    case_id = 1 AND x = 0, toInt64(1000000000000),
-                    case_id = 2 AND x = intDiv({edge_length}, 2), toInt64(1000000000000),
-                    case_id = 3 AND x = {edge_length} - 1, toInt64(1000000000000),
-                    case_id = 4 AND x = number % {edge_length}, toInt64(1000000000000),
-                    case_id = 5 AND x = 0, toInt64(-1000000000000),
-                    case_id = 6 AND x = intDiv({edge_length}, 2), toInt64(-1000000000000),
-                    case_id = 7 AND x = {edge_length} - 1, toInt64(-1000000000000),
-                    case_id = 8 AND x = number % {edge_length}, toInt64(-1000000000000),
-                    case_id &gt; 4, toInt64(x + 1),
-                    toInt64(x))),
-                range({edge_length}))
-        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
-        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
-    </fill_query>
-
-    <!-- Long floating point rows exercise the NaN and record-block paths. -->
+    <!-- Keep two long floating point edge cases in the performance suite. -->
     <fill_query>
         INSERT INTO array_min_max_index_perf_float
         SELECT 9, 16384, arrayMap(x -&gt; nan, range(16384))
@@ -355,23 +214,47 @@
                 arrayMap(x -&gt; toFloat64(x), range(15360)))
         FROM numbers(32)
     </fill_query>
+
+    <!-- String and Nullable queries keep the generic compareAt path visible. -->
     <fill_query>
-        INSERT INTO array_min_max_index_perf_float
-        SELECT 11, 1024, arrayMap(x -&gt; if(x % 2 = 0, 0.0, -0.0), range(1024))
-        FROM numbers(256)
+        INSERT INTO array_min_max_index_perf_string
+        SELECT
+            case_id,
+            {edge_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, 'zzzzzzzzzz',
+                    case_id = 2 AND x = intDiv({edge_length}, 2), 'zzzzzzzzzz',
+                    case_id = 3 AND x = {edge_length} - 1, 'zzzzzzzzzz',
+                    case_id = 5 AND x = 0, '',
+                    case_id = 6 AND x = intDiv({edge_length}, 2), '',
+                    case_id = 7 AND x = {edge_length} - 1, '',
+                    concat('item-', toString(x))),
+                range({edge_length}))
+        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
     <fill_query>
-        INSERT INTO array_min_max_index_perf_float
-        SELECT 12, 4, [nan, -inf, -inf, 0.0]
-        FROM numbers(2000)
-    </fill_query>
-    <fill_query>
-        INSERT INTO array_min_max_index_perf_float
-        SELECT 13, 4, [0.0, -0.0, 0.0, -0.0]
-        FROM numbers(2000)
+        INSERT INTO array_min_max_index_perf_nullable
+        SELECT
+            case_id,
+            {edge_length},
+            arrayMap(x -&gt;
+                toNullable(multiIf(
+                    case_id = 1 AND x = 0, toInt64(1000000000000),
+                    case_id = 2 AND x = intDiv({edge_length}, 2), toInt64(1000000000000),
+                    case_id = 3 AND x = {edge_length} - 1, toInt64(1000000000000),
+                    case_id = 5 AND x = 0, toInt64(-1000000000000),
+                    case_id = 6 AND x = intDiv({edge_length}, 2), toInt64(-1000000000000),
+                    case_id = 7 AND x = {edge_length} - 1, toInt64(-1000000000000),
+                    case_id &gt; 4, toInt64(x + 1),
+                    toInt64(x))),
+                range({edge_length}))
+        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
-    <!-- UInt64: every matrix length and every position pattern, then lambda forms. -->
+    <!-- User-facing raw API versus the existing extrema plus index composition. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
         FROM array_min_max_index_perf_u64
@@ -384,74 +267,54 @@
         WHERE array_length = {matrix_length}
         FORMAT Null
     </query>
+
     <query>
-        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        SELECT sum(arrayMinIndex(x -&gt; x % 97, a) + arrayMaxIndex(x -&gt; x % 97, a))
         FROM array_min_max_index_perf_u64
-        WHERE array_length = {adversarial_length} AND case_id = {adversarial_case}
+        WHERE array_length = {lambda_length}
         FORMAT Null
     </query>
     <query>
-        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        SELECT sum(
+            indexOf(arrayMap(x -&gt; x % 97, a), arrayMin(x -&gt; x % 97, a))
+            + indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a)))
         FROM array_min_max_index_perf_u64
-        WHERE array_length = {adversarial_length} AND case_id = {adversarial_case}
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
-        FROM array_min_max_index_perf_u64
-        WHERE array_length = {edge_length} AND case_id = {position_case}
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
-        FROM array_min_max_index_perf_u64
-        WHERE array_length = {edge_length} AND case_id = {position_case}
-        FORMAT Null
-    </query>
-    <query>
-        SELECT
-            sum(
-                arrayMinIndex(x -&gt; x % 97, a)
-                + arrayMaxIndex(x -&gt; x % 97, a)
-                + arrayMinIndex(x, y -&gt; x + y, a, a)
-                + arrayMaxIndex(x, y -&gt; x + y, a, a))
-        FROM array_min_max_index_perf_u64
-        WHERE array_length = {edge_length}
-        FORMAT Null
-    </query>
-    <query>
-        SELECT
-            sum(
-                indexOf(arrayMap(x -&gt; x % 97, a), arrayMin(x -&gt; x % 97, a))
-                + indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a))
-                + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMin(x, y -&gt; x + y, a, a))
-                + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a)))
-        FROM array_min_max_index_perf_u64
-        WHERE array_length = {edge_length}
+        WHERE array_length = {lambda_length}
         FORMAT Null
     </query>
 
-    <!-- Exercise every numeric instantiation, including narrow integer and Float32 paths. -->
+    <query>
+        SELECT sum(
+            arrayMinIndex(x, y -&gt; x + y, a, a)
+            + arrayMaxIndex(x, y -&gt; x + y, a, a))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {lambda_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(
+            indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMin(x, y -&gt; x + y, a, a))
+            + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a)))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {lambda_length}
+        FORMAT Null
+    </query>
+
+    <!-- Narrow unsigned integer path. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
-        FROM
-        (
-            SELECT arrayMap(x -&gt; to{numeric_type}(x + number), range({edge_length})) AS a
-            FROM numbers(greatest(1, intDiv(6000, {edge_length})))
-        )
+        FROM array_min_max_index_perf_u8
+        WHERE array_length = {narrow_length}
         FORMAT Null
     </query>
     <query>
         SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
-        FROM
-        (
-            SELECT arrayMap(x -&gt; to{numeric_type}(x + number), range({edge_length})) AS a
-            FROM numbers(greatest(1, intDiv(6000, {edge_length})))
-        )
+        FROM array_min_max_index_perf_u8
+        WHERE array_length = {narrow_length}
         FORMAT Null
     </query>
 
-    <!-- Int64: the same full matrix plus higher-order evaluation. -->
+    <!-- Signed 64-bit path and a lambda workload. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
         FROM array_min_max_index_perf_i64
@@ -467,30 +330,29 @@
     <query>
         SELECT sum(arrayMinIndex(x -&gt; abs(x), a) + arrayMaxIndex(x -&gt; abs(x), a))
         FROM array_min_max_index_perf_i64
-        WHERE array_length = {edge_length}
+        WHERE array_length = {lambda_length}
         FORMAT Null
     </query>
     <query>
-        SELECT
-            sum(
-                indexOf(arrayMap(x -&gt; abs(x), a), arrayMin(x -&gt; abs(x), a))
-                + indexOf(arrayMap(x -&gt; abs(x), a), arrayMax(x -&gt; abs(x), a)))
+        SELECT sum(
+            indexOf(arrayMap(x -&gt; abs(x), a), arrayMin(x -&gt; abs(x), a))
+            + indexOf(arrayMap(x -&gt; abs(x), a), arrayMax(x -&gt; abs(x), a)))
         FROM array_min_max_index_perf_i64
-        WHERE array_length = {edge_length}
+        WHERE array_length = {lambda_length}
         FORMAT Null
     </query>
 
-    <!-- Float64: normal values at every length and long floating point edge rows. -->
+    <!-- Float64 normal values plus the two long edge cases. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
         FROM array_min_max_index_perf_float
-        WHERE array_length = {matrix_length} AND case_id &lt;= 8
+        WHERE array_length = {matrix_length} AND case_id &lt;= 7
         FORMAT Null
     </query>
     <query>
         SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
         FROM array_min_max_index_perf_float
-        WHERE array_length = {matrix_length} AND case_id &lt;= 8
+        WHERE array_length = {matrix_length} AND case_id &lt;= 7
         FORMAT Null
     </query>
     <query>
@@ -508,20 +370,19 @@
     <query>
         SELECT sum(arrayMinIndex(x -&gt; -x, a) + arrayMaxIndex(x -&gt; -x, a))
         FROM array_min_max_index_perf_float
-        WHERE array_length = {edge_length} AND case_id &lt;= 8
+        WHERE array_length = {lambda_length} AND case_id &lt;= 7
         FORMAT Null
     </query>
     <query>
-        SELECT
-            sum(
-                indexOf(arrayMap(x -&gt; -x, a), arrayMin(x -&gt; -x, a))
-                + indexOf(arrayMap(x -&gt; -x, a), arrayMax(x -&gt; -x, a)))
+        SELECT sum(
+            indexOf(arrayMap(x -&gt; -x, a), arrayMin(x -&gt; -x, a))
+            + indexOf(arrayMap(x -&gt; -x, a), arrayMax(x -&gt; -x, a)))
         FROM array_min_max_index_perf_float
-        WHERE array_length = {edge_length} AND case_id &lt;= 8
+        WHERE array_length = {lambda_length} AND case_id &lt;= 7
         FORMAT Null
     </query>
 
-    <!-- String: generic compareAt path, every position pattern at every edge length. -->
+    <!-- Generic String path and a mapped String workload. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
         FROM array_min_max_index_perf_string
@@ -541,16 +402,15 @@
         FORMAT Null
     </query>
     <query>
-        SELECT
-            sum(
-                indexOf(arrayMap(x -&gt; length(x), a), arrayMin(x -&gt; length(x), a))
-                + indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a)))
+        SELECT sum(
+            indexOf(arrayMap(x -&gt; length(x), a), arrayMin(x -&gt; length(x), a))
+            + indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a)))
         FROM array_min_max_index_perf_string
         WHERE array_length = {edge_length}
         FORMAT Null
     </query>
 
-    <!-- Nullable keeps the generic path visible even when all values are non-null. -->
+    <!-- Nullable keeps compareAt and null ordering in the benchmark. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
         FROM array_min_max_index_perf_nullable
@@ -565,6 +425,7 @@
     </query>
 
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u8</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_i64</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
