@@ -86,7 +86,13 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
 
     if (source_disk_name.has_value())
     {
-        const auto & config = context->getConfigRef();
+        /// The settings of a disk come from the server config and the server-level settings only. Apply
+        /// them under the global context, exactly as the config reload of the disk itself does (see
+        /// `DiskSelector::updateFromConfig`): the query context would leak the session's `s3_*`/`azure_*`
+        /// overrides into the table's long-lived copy of the disk's object storage, and they would stick,
+        /// because a later query with default settings does not mark them as changed and cannot revert them.
+        auto global_context = context->getGlobalContext();
+        const auto & config = global_context->getConfigRef();
         const auto disk_config_prefix = tryGetDiskConfigurationPrefix(config, *source_disk_name);
         if (!disk_config_prefix)
             return;
@@ -96,7 +102,7 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         /// the query, so `isStaticConfiguration` does not apply: the object storage itself decides whether the settings
         /// its client is built from have changed.
         options.allow_client_change = true;
-        object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", context, options);
+        object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", global_context, options);
         return;
     }
 

@@ -254,6 +254,34 @@ def test_disk_resource_applies_to_table(started_cluster):
     node.query("DROP TABLE t_ice6 SYNC")
 
 
+def test_query_settings_do_not_leak_into_disk_client(started_cluster):
+    node.query("DROP TABLE IF EXISTS t_ice8 SYNC")
+    node.query(
+        "CREATE TABLE t_ice8 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl8') "
+        "SETTINGS disk = 's3_disk_repro'"
+    )
+    node.query(
+        "INSERT INTO t_ice8 VALUES (1)", settings={"allow_insert_into_iceberg": 1}
+    )
+    assert node.query("SELECT count() FROM t_ice8").strip() == "1"
+
+    # A query-scoped override of a setting the S3 client is built from must not reach the
+    # table's private copy of the disk's client: neither rebuild it for the query nor stick
+    # to it afterwards. The table follows the disk config and server-level settings only.
+    before = s3_clients_created()
+    assert (
+        node.query(
+            "SELECT count() FROM t_ice8", settings={"s3_max_redirects": 5}
+        ).strip()
+        == "1"
+    )
+    for _ in range(2):
+        assert node.query("SELECT count() FROM t_ice8").strip() == "1"
+    assert s3_clients_created() == before
+
+    node.query("DROP TABLE t_ice8 SYNC")
+
+
 def test_disk_config_change_propagates_through_locations_disk(started_cluster):
     config_path = "/etc/clickhouse-server/config.d/storage_conf.xml"
 
