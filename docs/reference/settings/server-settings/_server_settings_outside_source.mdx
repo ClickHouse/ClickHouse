@@ -2145,7 +2145,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 
 | Setting | Description |
 |---------|-------------|
-| `interval` | seconds between two synchronizations, `900` by default; the first run starts after a random delay of up to a tenth of the interval, a failed run is retried after min(`interval`, 60) seconds. `0` runs the synchronization at startup and on `SYSTEM RELOAD USERS` only. |
+| `interval` | seconds between two synchronizations, `900` by default; the first run starts after a random delay of up to a tenth of the interval, a failed run is retried after min(`interval`, 60) seconds. `0` runs the synchronization at startup and on `SYSTEM RELOAD USERS` only; at most `315360000` (ten years). |
 | `base_dn` | base DN of the search that lists the users. Mandatory; must not contain `{user_name}`, `{bind_dn}` or `{user_dn}`. |
 | `scope` | scope of that search: `base`, `one_level`, `children` or `subtree` (the default). |
 | `search_filter` | filter of that search, mandatory; the same placeholder rule as for `base_dn` applies. Special characters must be escaped properly in XML. |
@@ -2157,7 +2157,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 | `min_users` | a run that finds fewer users applies nothing; `1` by default. |
 | `max_users` | a run that receives more entries applies nothing; `10000` by default, `0` = unlimited. Must be `0` or greater than `min_users`. |
 | `max_removed_fraction` | a run that would remove more than max(1, floor(fraction × currently synchronized users)) users applies nothing; `0.5` by default, between `0` and `1`. |
-| `max_staleness` | seconds; when greater than `0`, logins of synchronized users are refused while the last successful run is older than this. Requires `only_synced_users` = `true`, `interval` > `0` and a value greater than `interval`. `0` (the default) disables the gate. |
+| `max_staleness` | seconds; when greater than `0`, logins of synchronized users are refused while the last successful run is older than this. Requires `only_synced_users` = `true`, `interval` > `0` and a value greater than `interval`; at most `315360000` (ten years). `0` (the default) disables the gate. |
 | `dry_run` | enumerate and plan, log what would change, apply nothing; `false` by default. |
 
 **Example**

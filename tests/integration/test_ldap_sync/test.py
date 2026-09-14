@@ -946,3 +946,8 @@ def test_startup_validation_of_the_other_sync_keys():
         without_groups,
         "'create_roles' in 'user_directories.ldap.sync' section requires a non-empty 'groups' allow-list",
     )
+    # A duration that does not fit into the signed count would wrap into a negative wait.
+    assert_startup_fails_with(
+        directories_bad_config(interval="315360001"),
+        "'interval' in 'user_directories.ldap.sync' section must not exceed 315360000 s (ten years), got 315360001",
+    )

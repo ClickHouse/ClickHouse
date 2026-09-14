@@ -902,7 +902,7 @@
                          synchronization. Read at startup only.
                     interval - seconds between two runs, 900 by default. The first run starts after a random delay of up to a
                              tenth of the interval; a failed run is retried after min(interval, 60) seconds. 0 runs the
-                             synchronization at startup and on SYSTEM RELOAD USERS only.
+                             synchronization at startup and on SYSTEM RELOAD USERS only. At most 315360000 (ten years).
                     base_dn - base DN of the search that lists the users. Mandatory; must not contain '{user_name}',
                              '{bind_dn}' or '{user_dn}'.
                     scope - scope of that search: 'base', 'one_level', 'children', 'subtree' (the default).
@@ -924,7 +924,8 @@
                     max_removed_fraction - a run that would remove more than max(1, floor(fraction * synchronized users)) users
                              applies nothing (0.5 by default).
                     max_staleness - seconds; when > 0, logins of synchronized users are refused while the last successful run
-                             is older than this (0 = off; requires only_synced_users = true and a value greater than interval).
+                             is older than this (0 = off; requires only_synced_users = true and a value greater than interval;
+                             at most 315360000).
                     dry_run - enumerate and plan, log what would change, apply nothing ('false' by default).
              Example:
                 <ldap>

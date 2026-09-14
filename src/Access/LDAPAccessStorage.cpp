@@ -202,13 +202,26 @@ LDAPAccessStorage::SyncParams LDAPAccessStorage::parseSyncParams(
     SyncParams params;
     parseLDAPUserEnumerationParams(params.enumeration, config, prefix);
 
-    params.interval = std::chrono::seconds{config.getUInt64(prefix + ".interval", params.interval.count())};
+    /// Both durations are kept as `std::chrono::seconds`, whose count is signed: a value that does not fit would
+    /// wrap into a negative wait, so the thread would spin against the directory and the jitter range would be
+    /// inverted. Ten years is far beyond any meaningful value; reject the rest at startup.
+    static constexpr UInt64 max_duration_s = 10ULL * 365 * 24 * 3600;
+    auto get_duration = [&](const char * key, std::chrono::seconds default_value)
+    {
+        const UInt64 value_s = config.getUInt64(prefix + "." + key, default_value.count());
+        if (value_s > max_duration_s)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'{}' in '{}' section must not exceed {} s (ten years), got {}", key, prefix, max_duration_s, value_s);
+        return std::chrono::seconds{value_s};
+    };
+
+    params.interval = get_duration("interval", params.interval);
     params.create_roles = config.getBool(prefix + ".create_roles", params.create_roles);
     params.only_synced_users = config.getBool(prefix + ".only_synced_users", params.only_synced_users);
     params.min_users = config.getUInt64(prefix + ".min_users", params.min_users);
     params.max_users = config.getUInt64(prefix + ".max_users", params.max_users);
     params.max_removed_fraction = config.getDouble(prefix + ".max_removed_fraction", params.max_removed_fraction);
-    params.max_staleness = std::chrono::seconds{config.getUInt64(prefix + ".max_staleness", params.max_staleness.count())};
+    params.max_staleness = get_duration("max_staleness", params.max_staleness);
     params.dry_run = config.getBool(prefix + ".dry_run", params.dry_run);
 
     if (config.has(prefix + ".roles_storage"))
