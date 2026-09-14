@@ -77,7 +77,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -134,13 +134,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `ENGINE = URL` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 }
 
@@ -2749,7 +2749,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
