@@ -106,23 +106,9 @@ SET enable_prometheus_remote_write_v2 = 1;
 ```
 
 Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata.
-ClickHouse rejects the complete request when native histograms or exemplars are present.
-Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so senders cannot use it to omit native histograms.
+ClickHouse drops native histograms from mixed requests and reports zero histograms written.
+ClickHouse rejects the complete request when exemplars are present.
 Senders can set `send_exemplars: false` to omit exemplars.
-A sender drops native histogram series with a `write_relabel_configs` rule on the `__type__` label.
-Prometheus sets `__type__` only when it runs with `--enable-feature=type-and-unit-labels`.
-The rule removes the complete series, not only the histogram samples.
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
-    protobuf_message: io.prometheus.write.v2.Request
-    send_exemplars: false
-    write_relabel_configs:
-      - source_labels: [__type__]
-        regex: histogram
-        action: drop
-```
 
 To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
 
