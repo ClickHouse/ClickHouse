@@ -56,8 +56,8 @@ concept HasLowCardinalityFastPath = requires(
   *   agree, and the rules for wrapping results in LowCardinality and for handling
   *   Nullable inside LowCardinality are easy to get wrong.
   *
-  * - executeImplDryRun() takes that same path with the dry run forwarded to the delegate and to
-  *   Base, so that a dry run's column is produced by the path whose result type getReturnTypeImpl
+  * - `executeImplDryRun` takes that same path with the dry run forwarded to the delegate and to
+  *   `Base`, so that a dry run's column is produced by the path whose result type `getReturnTypeImpl`
   *   below declares.
   *
   * - getReturnTypeImpl(ColumnsWithTypeAndName) is likewise redone on the plain Base instance
