@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: shard
 
-# `DistinctStep::serialize` carries neither `limit_hint` nor `has_order_sensitive_post_distinct_limit`,
-# and the follower optimizes the deserialized fragment again. Without the guard it would hash-scatter a
-# final `DISTINCT` whose output order the initiator's `LIMIT`, `OFFSET` or `LIMIT BY` consumes.
+# A serialized plan fragment does not include downstream order requirements. The follower preserves
+# input order when optimizing its final `DISTINCT` because the initiator can consume that order through
+# a `LIMIT`, `OFFSET`, or `LIMIT BY`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
