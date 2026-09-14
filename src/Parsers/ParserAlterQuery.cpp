@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -146,7 +147,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
-    ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
+    ParserCompoundColumnDeclaration parser_modify_col_decl(
+        /* require_type = */ false,
+        /* allow_null_modifiers = */ true,
+        /* check_keywords_after_name = */ true,
+        /* tuple_element_codec_syntax = */ TupleElementCodecSyntax::AllowSetAndRemove);
     ParserPartition parser_partition;
     ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(
@@ -1566,6 +1571,8 @@ This query changes the `name` column properties:
 - Enum Values for Enum/Enum8/Enum16 types
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](/reference/statements/create/table/codec).
+
+To change a codec on a `Tuple` element, restate the type of its owning top-level column and put `CODEC(...)` or `REMOVE CODEC` on the element. Element codec clauses use patch semantics: an omitted clause preserves the stored declaration. Supported `Nullable` wrappers are transparent, so adding or removing one in an otherwise valid type change does not rename the element declarations. The feature is experimental and does not add dotted `MODIFY COLUMN` targets or a `MODIFY SUBCOLUMN` command. See [Tuple element codecs](/reference/statements/create/table/codec#tuple-element-codecs) for syntax and limitations.
 
 For examples of columns TTL modifying, see [Column TTL](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
