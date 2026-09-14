@@ -215,15 +215,46 @@ async function parseReportUrl(htmlUrl, credentials = null) {
 /**
  * Construct JSON URL for a given task name
  */
-function constructJsonUrl(baseUrl, suffix, sha, workflowName, taskName) {
-  // The S3 layout inserts the normalized workflow name (name_0) as a path segment:
-  //   <suffix>/<sha>/<normalized_workflow>/result_<job>.json
-  // Both the workflow-index report (result_<workflow>.json) and every per-job report
-  // (result_<job>.json) live under that same <normalized_workflow> directory. See
-  // fetchData/buildResultPath in ci/praktika/praktika.html for the ground truth.
+/// Workflow names whose report is an index over every job of the workflow rather than one job's
+/// result. `PR` / `MasterCI` / `MergeQueueCI` run off master, `BackportPR` runs on backport pull
+/// requests and `ReleaseBranchCI` on release branches; `REF`/`master` are the legacy tokens.
+const WORKFLOW_INDEX_NAMES = /^(PR|MasterCI|MergeQueueCI|BackportPR|ReleaseBranchCI|REF|master)$/i;
+
+function jsonUrlCandidates(baseUrl, suffix, sha, workflowName, taskName) {
+  // Two layouts are live at the same time, because the path is built by the praktika that ships
+  // in the branch under test (`_Environment.get_s3_prefix_static`):
+  //   master               <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+  //   release branches     <suffix>/<sha>/result_<job>.json
+  // The workflow-name segment is a master-only addition, so every workflow that runs off a release
+  // branch - `BackportPR` on backport pull requests, `ReleaseBranchCI` - still uses the flat form.
+  // Both the workflow-index report (result_<workflow>.json) and every per-job report live under the
+  // same directory within a given layout. See fetchData/buildResultPath in
+  // ci/praktika/praktika.html for the ground truth.
   const workflowSegment = normalizeTaskName(workflowName);
   const normalizedTask = normalizeTaskName(taskName);
-  return `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/${workflowSegment}/result_${normalizedTask}.json`;
+  const base = `${baseUrl}/${suffix}/${encodeURIComponent(sha)}`;
+  return [
+    `${base}/${workflowSegment}/result_${normalizedTask}.json`,
+    `${base}/result_${normalizedTask}.json`,
+  ];
+}
+
+/**
+ * Fetch a report JSON, resolving which of the two S3 layouts this workflow used.
+ * Returns { url, text }. Throws listing every URL tried when none of them resolves, so a genuinely
+ * missing report is never reported as a layout problem (or the other way round).
+ */
+async function fetchJsonReport(baseUrl, suffix, sha, workflowName, taskName, credentials) {
+  const candidates = jsonUrlCandidates(baseUrl, suffix, sha, workflowName, taskName);
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      return { url, text: await fetchUrl(url, credentials) };
+    } catch (e) {
+      errors.push(`  ${url}\n    -> ${e.message}`);
+    }
+  }
+  throw new Error(`Report not found. Tried:\n${errors.join('\n')}`);
 }
 
 /**
@@ -552,14 +583,14 @@ function allChildReportUrls(topLevelUrl, jsonData) {
 
 /**
  * Return true when a URL is a concrete job report (name_1 present, or name_0 is not a
- * workflow-level aggregator). Workflow-index URLs (name_0=PR|MasterCI|REF|master with no
+ * workflow-level aggregator). Workflow-index URLs (name_0 in WORKFLOW_INDEX_NAMES with no
  * name_1) return false so they can be filtered out before --report N selection.
  */
 function isConcreteJobUrl(u) {
   const m = u.match(/[?&]name_0=([^&]+)/);
   if (!m) return true;
   const name0 = decodeURIComponent(m[1]);
-  return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
+  return !WORKFLOW_INDEX_NAMES.test(name0) || /[?&]name_1=/.test(u);
 }
 
 /**
@@ -743,7 +774,7 @@ async function fetchReport(inputUrl, options = {}) {
         }
       }
 
-      // Remove workflow-index entries (name_0=PR|MasterCI|REF|master with no name_1) so that
+      // Remove workflow-index entries (name_0 in WORKFLOW_INDEX_NAMES with no name_1) so that
       // --report N and the displayed numbering only count concrete job reports, not the
       // top-level aggregation URL that would be mishandled as a concrete job when selected.
       const concreteUrls = ciUrls.filter(isConcreteJobUrl);
@@ -767,13 +798,13 @@ async function fetchReport(inputUrl, options = {}) {
     // A direct top-level workflow result JSON (result_pr.json / result_masterci.json / result_ref.json)
     // is a workflow index, just like the praktika.html?...&name_0=PR form. In the S3 layout it lives
     // under the normalized-workflow directory: <sha>/<workflow>/result_<workflow>.json, where the
-    // directory name equals the file's workflow token (pr/masterci/ref). Rewrite it to the HTML form
+    // directory name equals the file's workflow token (pr/masterci/backportpr/...). Rewrite it to the HTML form
     // so the index handling below applies uniformly (expand into per-job reports; refuse per-job
     // --download-logs) instead of treating the whole PR/workflow as a single job. Concrete job reports
     // are result_<job>.json under the same directory, so they never match this and stay on the
     // single-report path. Setting name_0 to the captured workflow token reconstructs the same
-    // <workflow> directory segment via constructJsonUrl.
-    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/(?:[^/?]+\/)?result_(pr|masterci|ref)\.json(?:$|\?)/i);
+    // <workflow> directory segment via jsonUrlCandidates.
+    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/(?:[^/?]+\/)?result_(pr|masterci|mergequeueci|backportpr|releasebranchci|ref)\.json(?:$|\?)/i);
     if (topJson) {
       const prefix = inputUrl.slice(0, topJson.index);
       const workflowToken = topJson[4].toLowerCase();
@@ -808,8 +839,9 @@ async function fetchReport(inputUrl, options = {}) {
         console.log(`SHA: ${sha}\n`);
       }
 
-      // Construct JSON URL for the primary task (name_0)
-      const jsonUrl = constructJsonUrl(baseUrl, suffix, sha, nameParams[0], nameParams[0]);
+      // Fetch the primary task (name_0) report, resolving which S3 layout this workflow used
+      const json0 = await fetchJsonReport(baseUrl, suffix, sha, nameParams[0], nameParams[0], options.credentials);
+      const jsonUrl = json0.url;
       if (!options.isSingleReport) {
         console.log(`Fetching JSON: ${jsonUrl}\n`);
       }
@@ -820,9 +852,9 @@ async function fetchReport(inputUrl, options = {}) {
       // jobs' per-job reports. A concrete single-job URL also has one nameParam but its name_0 is the
       // JOB (e.g. name_0=Stateless tests (...)) — those must stay on the single-report path below,
       // so gate on the workflow name, not merely nameParams.length.
-      const isWorkflowIndex = /^(PR|MasterCI|REF|master)$/i.test(nameParams[0]);
+      const isWorkflowIndex = WORKFLOW_INDEX_NAMES.test(nameParams[0]);
       if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport) {
-        const topJson = JSON.parse(await fetchUrl(jsonUrl, options.credentials));
+        const topJson = JSON.parse(json0.text);
 
         // Build the display list once — shared by both the summary and --report N selection.
         // Use failed concrete children only (UX: show what matters). Fall back to all concrete
@@ -854,17 +886,17 @@ async function fetchReport(inputUrl, options = {}) {
         return await renderMultiReport(displayList, options);
       }
 
-      // Fetch name_0 JSON data, and name_1 separately if present (matching praktika.html behavior)
-      const fetchTasks = [fetchUrl(jsonUrl, options.credentials)];
+      // name_0 is already fetched; fetch name_1 separately if present (matching praktika.html behavior)
+      const fetchResults = [json0.text, null];
       if (nameParams.length > 1) {
-        const json1Url = constructJsonUrl(baseUrl, suffix, sha, nameParams[0], nameParams[1]);
-        if (!options.isSingleReport) {
-          console.log(`Fetching JSON (name_1): ${json1Url}\n`);
+        const json1 = await fetchJsonReport(baseUrl, suffix, sha, nameParams[0], nameParams[1], options.credentials)
+          .catch(() => null);
+        if (json1 && !options.isSingleReport) {
+          console.log(`Fetching JSON (name_1): ${json1.url}\n`);
         }
-        fetchTasks.push(fetchUrl(json1Url, options.credentials).catch(() => null));
+        fetchResults[1] = json1 ? json1.text : null;
       }
 
-      const fetchResults = await Promise.all(fetchTasks);
       jsonData = JSON.parse(fetchResults[0]);
 
       // Resolve target data: use dedicated name_1 JSON if available, fall back to navigating name_0.results
