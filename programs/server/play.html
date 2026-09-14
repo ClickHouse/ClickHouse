@@ -11218,7 +11218,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let plain_http_each_row_error = false;
     reply = '';
     try {
-        targetResultEl.startProfileTraces(profile_traces);
         if (profile_traces && ((!use_framing && !user_event_stream) || explicit_format?.toLowerCase() === 'jsoncompactcolumns'))
         {
             throw new Error('Live flame graphs require EventStream framing. Uncheck Flame graph to use JSONCompactColumns or another framing_output_format.');
@@ -11237,6 +11236,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         }
 
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
+        targetResultEl.startProfileTraces(profile_traces);
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -12157,6 +12157,7 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 /// live fail-closed behavior for a collected image (see `renderEventStreamText`).
                 truncated: !!result.is_truncated,
                 framing_kind: result.framing_kind,
+                flame_available: !!el._flame_requested,
                 elapsed_ns: 1e6 * (performance.now() - query_start),
                 params: paramValuesSnapshot,
                 fullEditor: ran_full_editor,
@@ -12245,6 +12246,7 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         /// See the failure save above; always false here (a truncated stream is reported failed).
         truncated: !!result.is_truncated,
         framing_kind: result.framing_kind,
+        flame_available: !!el._flame_requested,
         elapsed_ns: el.elapsedNs,
         params: paramValuesSnapshot,
         fullEditor: ran_full_editor,
@@ -12492,6 +12494,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             /// whose framed stream was cut off (see `renderEventStreamText`).
             truncated: r ? !!r.is_truncated : false,
             framing_kind: r ? (r.framing_kind ?? '') : '',
+            flame_available: !!resultElements[i]._flame_requested,
             failed,
         };
     });
@@ -12745,6 +12748,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     /// multi-run size cap still renders: every failure persists its rendered error text in
     /// `display_error` (see `renderFailedSnapshot`), so only failures with neither survive as blank.
     if (snap.data == null && typeof snap.display_error !== 'string') return true;
+    el.startProfileTraces(snap.flame_available === true);
     const format = snap.format;
     const kind = snapshotFramingKind(snap);
 
@@ -13187,6 +13191,7 @@ async function materializeResult(tab) {
     /// returns `200` with no bytes - and must still restore as `done` (with its elapsed time and
     /// download action), not be demoted to idle.
     if (result.data == null && result.ok !== false) { tab.progressPhase = 'idle'; return; }
+    el.startProfileTraces(result.flame_available === true);
 
     let is_table = false;
     let is_raw = false;
@@ -14850,6 +14855,10 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// The framing kind of the `data` snapshot ('event_stream' / 'ndjson_packets' / ''), so the
         /// replay path dispatches on it explicitly instead of sniffing the payload's first bytes.
         framing_kind: stateData.framing_kind ?? '',
+        /// A profiling request can finish without any trace packets. Keep its Flame view and
+        /// no-samples guidance available when the result is restored, independently of the
+        /// next run's profiling option. Older snapshots still discover availability from packets.
+        flame_available: stateData.flame_available === true,
         /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
         /// runs and for multi-query runs too large to snapshot (see `postMulti`).
         multi: stateData.multi ?? null,
@@ -15187,6 +15196,7 @@ window.onpopstate = function(event) {
             base64: flat.base64 ?? false,
             truncated: flat.truncated ?? false,
             framing_kind: flat.framing_kind ?? '',
+            flame_available: flat.flame_available === true,
             multi: flat.multi ?? null,
             color_modes: flat.color_modes || {},
             pinned_columns: flat.pinned_columns || {},
