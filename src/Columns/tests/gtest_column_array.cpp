@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -32,6 +33,18 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
     auto offsets = ColumnArray::ColumnOffsets::create();
     for (ColumnArray::Offset offset : offset_values)
         offsets->getData().push_back(offset);
+
+    return ColumnArray::create(std::move(data), std::move(offsets));
+}
+
+ColumnArray::MutablePtr createDynamicArrayWithEmptyFirstRow()
+{
+    auto data = ColumnDynamic::create();
+    data->insert(Field(UInt64(1) << 40));
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(0);
+    offsets->insertValue(1);
 
     return ColumnArray::create(std::move(data), std::move(offsets));
 }
@@ -166,6 +179,55 @@ TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
     destination->insertManyFrom(*source, 100, 0);
     EXPECT_EQ(destination->size(), 9);
     EXPECT_EQ(destination->getData().size(), 8);
+}
+
+TEST(ColumnArray, InsertManyFromMatchesScalarForSmallMultiElementArrays)
+{
+    auto source = createArray({10, 20, 30}, {3});
+
+    for (size_t length : {size_t{2}, size_t{4}, size_t{16}})
+    {
+        auto bulk = createArray({7}, {1});
+        auto scalar = createArray({7}, {1});
+
+        bulk->insertManyFrom(*source, 0, length);
+        for (size_t i = 0; i < length; ++i)
+            scalar->insertFrom(*source, 0);
+
+        ASSERT_EQ(bulk->size(), scalar->size()) << "length = " << length;
+        ASSERT_EQ(bulk->getData().size(), scalar->getData().size()) << "length = " << length;
+        ASSERT_EQ(bulk->getOffsets().size(), scalar->getOffsets().size()) << "length = " << length;
+
+        for (size_t i = 0; i < bulk->size(); ++i)
+        {
+            EXPECT_EQ(bulk->getOffsets()[i], scalar->getOffsets()[i]) << "row = " << i << ", length = " << length;
+            EXPECT_EQ((*bulk)[i], (*scalar)[i]) << "row = " << i << ", length = " << length;
+        }
+    }
+}
+
+TEST(ColumnArray, InsertManyFromMatchesScalarForDynamicNestedColumn)
+{
+    auto source = createDynamicArrayWithEmptyFirstRow();
+
+    auto repeated = ColumnArray::create(ColumnDynamic::create());
+    repeated->insertFrom(*source, 0);
+    repeated->insertFrom(*source, 0);
+
+    auto bulk = ColumnArray::create(ColumnDynamic::create());
+    bulk->insertManyFrom(*source, 0, 2);
+
+    ASSERT_EQ(bulk->size(), repeated->size());
+    ASSERT_EQ(bulk->getData().size(), repeated->getData().size());
+    ASSERT_EQ(bulk->getOffsets().size(), repeated->getOffsets().size());
+    ASSERT_TRUE(bulk->getData().hasDynamicStructure());
+    EXPECT_TRUE(bulk->dynamicStructureEquals(*repeated));
+
+    for (size_t i = 0; i < bulk->size(); ++i)
+    {
+        EXPECT_EQ(bulk->getOffsets()[i], repeated->getOffsets()[i]);
+        EXPECT_EQ((*bulk)[i], (*repeated)[i]);
+    }
 }
 
 TEST(ColumnArray, InsertManyFromRejectsRowCountOverflow)
