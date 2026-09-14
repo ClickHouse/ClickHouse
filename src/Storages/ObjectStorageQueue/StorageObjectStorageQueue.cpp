@@ -2001,31 +2001,18 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     if ((keeper_path_expands_table_name && old_name.table_name != new_name.table_name)
         || (keeper_path_expands_database_name && move_between_databases))
     {
-        /// Converting an Ordinary database to Atomic renames every table through a temporary database
-        /// and back, so the path the table ends up with is the one it already uses.
-        auto global_context = Context::getGlobalContextInstance();
-        const bool is_server_startup = global_context->getApplicationType() == Context::ApplicationType::SERVER
-            && !global_context->isServerCompletelyStarted();
-        const bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
-
-        if (!is_server_startup || !move_to_atomic)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot rename Storage{}Queue table, because its `keeper_path` setting expands the "
-                "{{database}} or {{table}} macro (possibly nested in another macro). The Keeper path "
-                "would change and the table would process every file again. "
-                "To rename it, edit the metadata file to hold the resolved path without these macros and "
-                "reattach the table",
-                configuration->getEngineName());
-        }
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot rename Storage{}Queue table, because its `keeper_path` setting expands the "
+            "{{database}} or {{table}} macro (possibly nested in another macro). The Keeper path "
+            "would change and the table would process every file again",
+            configuration->getEngineName());
     }
 
     if (keeper_path_expands_uuid && !new_name.hasUUID() && old_name.hasUUID())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot move Storage{}Queue table to a database without UUIDs, because its `keeper_path` "
-            "setting expands the {{uuid}} macro. The table would not be loadable again. Edit the "
-            "metadata file to hold the resolved path instead and reattach the table",
+            "setting expands the {{uuid}} macro. The table would not be loadable again",
             configuration->getEngineName());
     }
 
