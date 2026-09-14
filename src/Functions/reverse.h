@@ -116,7 +116,7 @@ struct ReverseImpl
 
         if (n == 1)
         {
-            memcpy(res_data.data(), data.data(), data.size());
+            memcpy(res_data.data(), data.data(), input_rows_count);
             return;
         }
 
