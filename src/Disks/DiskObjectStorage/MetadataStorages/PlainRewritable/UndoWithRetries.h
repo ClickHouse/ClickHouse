@@ -28,6 +28,11 @@ namespace DB
   *
   * A stage that throws `LOGICAL_ERROR` is not repeated, because no invariant is repaired by asking again. A stage uses
   * it to report the one state a reversal cannot leave: the blob it has to restore exists nowhere.
+  *
+  * That is the only exit, and it is not a repaired one. The blob is gone, so nothing brings back the file it belonged
+  * to, and `MetadataOperationsHolder::rollback` stops at the operation that threw, so the operations below it keep the
+  * writes they have already made. A debug or sanitizer build aborts on the logical error before any of that, and a
+  * release build reports the transaction as failed and leaves the metadata describing a part of it.
   */
 void undoWithRetries(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage);
 
