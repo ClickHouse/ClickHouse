@@ -15,6 +15,7 @@ SELECT b FROM stripelog_alter_add_column ORDER BY b;
 SELECT * FROM stripelog_alter_add_column ORDER BY a;
 
 INSERT INTO stripelog_alter_add_column (a, s, b) VALUES (3, 'three', 999);
+INSERT INTO stripelog_alter_add_column (a, s) VALUES (4, 'four');
 
 SELECT a, b
 FROM stripelog_alter_add_column
