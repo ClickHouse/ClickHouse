@@ -8,7 +8,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
@@ -18,43 +17,38 @@ namespace
 template <typename A, typename B>
 struct BitTestImpl
 {
-    using ResultType = UInt8;
+    using ResultType = std::conditional_t<is_big_int_v<B>, NumberTraits::Error, UInt8>;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_big_int_v<B>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "bitTest is not implemented for big integers as second argument");
+        using AInteger = typename NumberTraits::ToInteger<A>::Type;
+        using BInteger = typename NumberTraits::ToInteger<B>::Type;
+        AInteger a_int = a;
+        BInteger b_int = b;
+        const Int64 max_position = static_cast<Int64>((8 * sizeof(a)) - 1);
+        bool position_out_of_bounds = false;
+        if constexpr (is_signed_v<BInteger>)
+            position_out_of_bounds = b_int < 0 || b_int > max_position;
         else
-        {
-            using AInteger = typename NumberTraits::ToInteger<A>::Type;
-            using BInteger = typename NumberTraits::ToInteger<B>::Type;
-            AInteger a_int = a;
-            BInteger b_int = b;
-            const Int64 max_position = static_cast<Int64>((8 * sizeof(a)) - 1);
-            bool position_out_of_bounds = false;
-            if constexpr (is_signed_v<BInteger>)
-                position_out_of_bounds = b_int < 0 || b_int > max_position;
-            else
-                position_out_of_bounds = b_int > static_cast<BInteger>(max_position);
+            position_out_of_bounds = b_int > static_cast<BInteger>(max_position);
 
-            if (position_out_of_bounds)
+        if (position_out_of_bounds)
+        {
+            const auto a_string = [&]
             {
-                const auto a_string = [&]
-                {
-                    if constexpr (is_big_int_v<A>)
-                        return wide::to_string(a_int);
-                    else
-                        return std::to_string(a_int);
-                }();
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                "The bit position argument needs to a positive value and less or equal to {} for integer {}",
-                                std::to_string(max_position), a_string);
-            }
-            return static_cast<Result>((a_int >> b_int) & 1);
+                if constexpr (is_big_int_v<A>)
+                    return wide::to_string(a_int);
+                else
+                    return std::to_string(a_int);
+            }();
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                            "The bit position argument needs to a positive value and less or equal to {} for integer {}",
+                            std::to_string(max_position), a_string);
         }
+        return static_cast<Result>((a_int >> b_int) & 1);
     }
 
 #if USE_EMBEDDED_COMPILER

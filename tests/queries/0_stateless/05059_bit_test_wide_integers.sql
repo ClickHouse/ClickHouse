@@ -41,8 +41,10 @@ FROM numbers(256);
 SELECT bitTest(bitShiftLeft(toUInt128(1), 127), 128); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTestAll(bitShiftLeft(toUInt256(1), 255), 256); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTestAny(toInt256(-1), 256); -- { serverError PARAMETER_OUT_OF_BOUND }
-SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt128(1), 64)); -- { serverError NOT_IMPLEMENTED }
-SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt256(1), 128)); -- { serverError NOT_IMPLEMENTED }
+SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt128(1), 64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt256(1), 128)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTest(toUInt256(1), toInt128(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTest(toUInt256(1), toInt256(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT bitTest(toUInt256(1), toInt8(-1)); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTestAll(toUInt128(1), number) FROM numbers(129); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTestAny(toUInt256(1), number) FROM numbers(257); -- { serverError PARAMETER_OUT_OF_BOUND }
