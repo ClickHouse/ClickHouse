@@ -5675,6 +5675,7 @@ Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<sub
 When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
 When disabled, a CTE declared as `MATERIALIZED` results in an exception, unless the setting `force_materialized_cte` is also disabled; then the `MATERIALIZED` keyword is ignored, the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 In a lightweight `UPDATE` or `DELETE` executed without the analyzer, a CTE declared as `MATERIALIZED` is rejected regardless of `force_materialized_cte`.
+An `INSERT ... SELECT` whose `SELECT` declares a materialized CTE, directly or through a SQL user-defined function it uses, does not take the `parallel_distributed_insert_select` routes and runs on the initiator.
 )", EXPERIMENTAL) \
     DECLARE(Bool, force_materialized_cte, true, R"(
 If a common table expression is declared `AS MATERIALIZED` but cannot be materialized, throw an exception instead of silently inlining it as a regular CTE.

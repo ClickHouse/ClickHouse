@@ -11,6 +11,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -26,11 +27,14 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -61,6 +65,7 @@
 #include <Interpreters/TreeRewriter.h>
 
 #include <memory>
+#include <unordered_set>
 
 
 namespace DB
@@ -316,6 +321,45 @@ static bool hasAggregateFunctions(const IAST * ast)
 
     return false;
 }
+
+/// Whether the query declares a CTE `AS MATERIALIZED`, directly or inside the body of a SQL user-defined function
+/// it references (also through `APPLY`). Read-only: `UserDefinedSQLFunctionVisitor` is not used because it
+/// rejects asterisk and `COLUMNS` arguments that the analyzer accepts.
+static bool hasMaterializedCTE(const IAST & ast, std::unordered_set<String> & visited_udfs)
+{
+    if (const auto * with_element = typeid_cast<const ASTWithElement *>(&ast); with_element && with_element->is_materialized)
+        return true;
+
+    auto udf_has_materialized_cte = [&](const String & name)
+    {
+        if (name.empty() || !visited_udfs.insert(name).second)
+            return false;
+        auto udf = UserDefinedSQLFunctionFactory::instance().tryGet(name);
+        const auto * create = udf ? udf->as<ASTCreateSQLFunctionQuery>() : nullptr;
+        return create && create->function_core && hasMaterializedCTE(*create->function_core, visited_udfs);
+    };
+
+    if (const auto * function = typeid_cast<const ASTFunction *>(&ast); function && udf_has_materialized_cte(function->name))
+        return true;
+
+    /// `APPLY f` keeps the name as a string and `APPLY (x -> ...)` keeps the lambda outside `children`.
+    if (const auto * apply = typeid_cast<const ASTColumnsApplyTransformer *>(&ast))
+    {
+        if (udf_has_materialized_cte(apply->func_name))
+            return true;
+        if (apply->lambda && hasMaterializedCTE(*apply->lambda, visited_udfs))
+            return true;
+        if (apply->parameters && hasMaterializedCTE(*apply->parameters, visited_udfs))
+            return true;
+    }
+
+    for (const auto & child : ast.children)
+        if (hasMaterializedCTE(*child, visited_udfs))
+            return true;
+
+    return false;
+}
+
 /** A query that just reads all data without any complex computations or filetering.
   * If we just pipe the result to INSERT, we don't have to use too many threads for read.
   */
@@ -1327,7 +1371,15 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
     if (query.select)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        /// The fast paths expand CTE references in place and the parallel-replicas route forwards the resolved
+        /// query, so a materialized CTE would be evaluated per reference or shipped as the initiator's temporary
+        /// table. Such queries take the general path.
+        std::unordered_set<String> visited_udfs;
+        const bool has_materialized_cte = hasMaterializedCTE(*query.select, visited_udfs);
+        if (has_materialized_cte && settings[Setting::parallel_distributed_insert_select])
+            LOG_DEBUG(logger, "The SELECT declares or references a materialized CTE: skipping the `parallel_distributed_insert_select` routes");
+
+        if (settings[Setting::parallel_distributed_insert_select] && !has_materialized_cte)
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();

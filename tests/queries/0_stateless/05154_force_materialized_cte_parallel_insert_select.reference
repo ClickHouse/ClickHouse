@@ -1,10 +1,15 @@
-Distributed fast path, local shard executes the query itself
+materialized CTE bypasses the Distributed fast path (local shard)
 0	5
-Distributed fast path, query text is sent to the shard
+materialized CTE bypasses the Distributed fast path (text route)
 0	5
-parallel replicas insert route after the Distributed fast path declined
+route evidence: a plain CTE is forwarded, a materialized CTE is not
+1	0
+materialized CTE bypasses the parallel replicas route (Distributed destination)
 0	5
-parallel replicas insert route after the ReplicatedMergeTree fast path declined
+materialized CTE bypasses the parallel replicas route (ReplicatedMergeTree destination)
+0	5
+nested declaration with inner SETTINGS bypasses the routes
+0	5
 0	5
 a CTE with ORDER BY LIMIT in FROM is not distributed per replica
 1	1
