@@ -124,6 +124,7 @@ ProcessedManifestFileEntryPtr makeDataEntryForRecordCount(
         /*row_number=*/0,
         ManifestEntryStatus::ADDED,
         /*written_sequence_number=*/std::nullopt,
+        /*written_file_sequence_number=*/std::nullopt,
         /*written_snapshot_id=*/std::nullopt,
         DB::Row{},
         std::move(columns_infos),
