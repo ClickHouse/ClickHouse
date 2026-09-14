@@ -3,137 +3,60 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <!-- Each value creates a separate case. Keep exact byte sizes around the 128-byte cutoff. -->
-    <substitutions>
-        <substitution>
-            <name>size</name>
-            <values>
-                <value>32</value>
-                <value>48</value>
-                <value>64</value>
-                <value>80</value>
-                <value>96</value>
-                <value>112</value>
-                <value>120</value>
-                <value>127</value>
-                <value>128</value>
-                <value>129</value>
-                <value>144</value>
-                <value>160</value>
-                <value>192</value>
-                <value>256</value>
-                <value>512</value>
-                <value>1024</value>
-            </values>
-        </substitution>
-    </substitutions>
-
-    <!-- Keep short rows on the existing path. -->
+    <!-- Keep this to ten explicit cases: CI samples at most ten queries from each performance test. -->
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT arrayJoin([
-                concat(repeat('a', 63), toString(number % 10)),
-                concat(repeat('a', 95), toString(number % 10)),
-                concat(repeat('a', 126), toString(number % 10))
-            ]) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 127)))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT arrayJoin([
-                concat(repeat('é', 31), toString(number % 10), 'a'),
-                concat(repeat('é', 47), toString(number % 10), 'a'),
-                concat(repeat('é', 63), toString(number % 10))
-            ]) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 128)))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT arrayJoin([
-                concat(repeat('é', 26), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 42), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 58), '中文🙂', toString(number % 10))
-            ]) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 129)))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
 
-    <!-- Exercise the simdutf cutoff with separate short-length cases. -->
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT concat(repeat('a', {size} - 1), toString(number % 10)) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('é', 63), 'a')))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT concat(
-                repeat('é', intDiv({size} - 1, 2)),
-                if(({size} - 1) % 2 = 1, 'a', ''),
-                toString(number % 10)) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(repeat('é', 64)))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT arrayJoin([
-                concat(repeat('é', 58), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 59), '中文🙂', toString(number % 10)),
-                concat(repeat('é', 90), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 122), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 250), '中文🙂', toString(number % 10), 'a'),
-                concat(repeat('é', 506), '中文🙂', toString(number % 10), 'a')
-            ]) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('é', 64), 'a')))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <!-- Long valid mixed UTF-8 input. The expression is materialized to avoid measuring row construction. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('aé中文🙂', 80)))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
 
     <!-- Invalid input should repair from the first error without rescanning the prefix. -->
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT concat('\xC2', repeat('é', 64), toString(number % 10)) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(concat('\xFF', repeat('a', 127))))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT concat(repeat('é', 31), '\xE2\x28\xA1', repeat('é', 31), toString(number % 10)) AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 63), '\xE2\x82X', repeat('b', 64))))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(value)))
-        FROM
-        (
-            SELECT concat(repeat('é', 64), toString(number % 10), '\xC2') AS value
-            FROM numbers(100000)
-        )
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 127), '\xE2')))))
+        FROM numbers(100000)
         FORMAT Null
     </query>
 </test>
