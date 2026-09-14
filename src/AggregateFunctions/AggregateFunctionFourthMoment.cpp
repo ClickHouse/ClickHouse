@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T> using AggregateFunctionFourthMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 4>>;
 
-void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_samp = R"(
@@ -19,7 +18,7 @@ It represents an unbiased estimate of the kurtosis of a random variable if passe
 kurtSamp(expr)
     )";
     FunctionDocumentation::Arguments arguments_samp = {
-        {"expr", "[Expression](/reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "[Expression](/sql-reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value_samp = {"Returns the kurtosis of the given distribution. If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.", {"Float64"}};
@@ -52,7 +51,7 @@ Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 kurtPop(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "[Expression](/reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "[Expression](/sql-reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the kurtosis of the given distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
