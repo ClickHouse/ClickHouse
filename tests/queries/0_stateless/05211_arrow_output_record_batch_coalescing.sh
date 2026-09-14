@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every arm asserts an exact batch count plus the rows read back, so that combining cannot lose, duplicate
 # or reorder rows.
 #
-# `numbers()` (never `numbers_mt()`) with `max_block_size` pinned in the query's own SETTINGS, which beats
+# `numbers` (never `numbers_mt`) with `max_block_size` pinned in the query's own SETTINGS, which beats
 # the test runner's randomization, is what makes the sequence of blocks reaching the writer, and therefore
 # the batch counts, reproducible. `max_threads = 1` keeps the source and the read-back single-stream, so
 # that neither the batch counts nor the `in_order` check below can depend on scheduling.
@@ -90,7 +90,7 @@ oracle
 
 echo "--- a block reaching the target flushes what is staged instead of absorbing it ---"
 # The three blocks are 3, 65409 and 254 rows. `toString(number) IN (...)` rather than `number < 3` keeps
-# the condition out of reach of the range analysis of `numbers()`, which would otherwise generate exactly
+# the condition out of reach of the range analysis of `numbers`, which would otherwise generate exactly
 # the matching rows and deliver them as two full blocks, leaving no small block in front of the big one.
 ${CLICKHOUSE_LOCAL} --query "SELECT number FROM numbers(131072) WHERE toString(number) IN ('0', '1', '2') OR number > 65408 SETTINGS max_block_size = 65409, ${COMMON}, output_format_arrow_record_batch_size = 1000, output_format_arrow_record_batch_size_bytes = 0 FORMAT ArrowStream" > "${FILE}"
 arrow_batches stream detail
@@ -116,7 +116,7 @@ arrow_batches stream detail
 ${CLICKHOUSE_LOCAL} --query "${DICT_READBACK}"
 
 echo "--- the byte target counts the bytes the block holds, which for LowCardinality is a deduplicated value ---"
-# The byte target counts one index per row plus the dictionary once (`ColumnLowCardinality::byteSize()`), while
+# The byte target counts one index per row plus the dictionary once (`ColumnLowCardinality::byteSize`), while
 # the encoder writes one value per row: documented on the setting, hence asserted here rather than filed as a bug.
 ${CLICKHOUSE_LOCAL} --query "SELECT toLowCardinality(repeat('x', 1000)) AS s FROM numbers(100) SETTINGS max_block_size = 1, ${COMMON}, output_format_arrow_low_cardinality_as_dictionary = 0, output_format_arrow_record_batch_size = 0, output_format_arrow_record_batch_size_bytes = 1500 FORMAT ArrowStream" > "${FILE}"
 arrow_batches stream detail
