@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 
 namespace DB
@@ -22,6 +23,7 @@ private:
     /// compact discriminators read from the wire.
     size_t num_variants;
 
+public:
     SerializationVariantElement(
         const SerializationPtr & nested_,
         const String & variant_element_name_,
@@ -33,16 +35,6 @@ private:
         , num_variants(num_variants_)
     {
     }
-
-public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_);
-    static SerializationPtr create(
-        const SerializationPtr & nested_,
-        const String & variant_element_name_,
-        ColumnVariant::Discriminator variant_discriminator_,
-        size_t num_variants_ = 0);
-    size_t allocatedBytes() const override;
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -71,7 +63,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -108,9 +101,10 @@ private:
 
     struct DeserializeBinaryBulkStateVariantElement;
 
-    static size_t deserializeCompactDiscriminators(
-        IColumn & discriminators_column,
+    static std::pair<size_t, size_t> deserializeCompactDiscriminators(
+        ColumnPtr & discriminators_column,
         ColumnVariant::Discriminator variant_discriminator,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
