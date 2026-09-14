@@ -389,6 +389,8 @@ public:
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
+    /// Starts preparing the transaction; `precommitTransaction` waits for completion.
+    virtual void startPrecommitTransaction() { precommitTransaction(); }
     virtual bool hasActiveTransaction() const = 0;
 
     /// Returns true if underlying filesystem is case-insensitive,
