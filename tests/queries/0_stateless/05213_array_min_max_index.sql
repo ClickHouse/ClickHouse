@@ -14,3 +14,14 @@ SELECT arrayMinIndex(range(16384)), arrayMaxIndex(range(16384));
 SELECT arrayMinIndex(a), arrayMaxIndex(a)
 FROM (SELECT arrayJoin([range(128), arrayReverse(range(128)), range(64)]) AS a)
 ORDER BY length(a), arrayMax(a);
+SELECT
+    n,
+    arrayMinIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))),
+    arrayMaxIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n)))
+FROM (SELECT arrayJoin([48, 49, 64, 65, 256, 257, 16383, 16384, 16385]) AS n)
+ORDER BY n;
+SELECT arrayMinIndex(arrayMap(x -> nan, range(16384))), arrayMaxIndex(arrayMap(x -> nan, range(16384)));
+SELECT
+    arrayMinIndex(arrayConcat(arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360)))),
+    arrayMaxIndex(arrayConcat(arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360))));
+SELECT arrayMinIndex([NULL, 2, 1]), arrayMaxIndex([NULL, 2, 1]);
