@@ -761,6 +761,7 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *view_metadata;
+    const StorageInMemoryMetadata & old_metadata = *view_metadata;
 
     /// Use the database where the materialized view is created to resolve nested views
     ContextMutablePtr mv_db_context = Context::createCopy(local_context);
@@ -790,10 +791,11 @@ void StorageMaterializedView::alter(
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.addViewDependency(*new_metadata.definer, table_id);
-    else
-        instance.removeViewDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
 
