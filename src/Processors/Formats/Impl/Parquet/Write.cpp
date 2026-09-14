@@ -918,7 +918,12 @@ void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolde
                 }
             }
         }
+        /// `resize` only moves the logical end; the allocation behind the unfolded filter stays at its original size
+        /// (up to 128 MiB for a column chunk at the cap). The folded filters of completed row groups are buffered in
+        /// memory until `flushBloomFilters`, and that buffer is accounted by `size()`, so release the capacity here
+        /// to keep the accounting honest and to avoid pinning a huge allocation per row group.
         data.resize(new_blocks * 8);
+        data.shrink_to_fit();
     }
 
     /// Fill out the paperwork.
