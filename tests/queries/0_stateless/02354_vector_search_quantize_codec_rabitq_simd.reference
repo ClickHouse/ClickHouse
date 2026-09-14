@@ -1,4 +1,5 @@
 code_length	132
+rewrite_engages	1
 unfiltered_exact	1
 recall_at_10_ge_8	1
 nearest_is_self	1

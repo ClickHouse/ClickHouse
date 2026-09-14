@@ -2902,6 +2902,7 @@ ENGINE = MergeTree()
 It stores the original, full-precision vectors, as well as a compact *quantized code* per vector alongside.
 On `MergeTree`-family tables, vector search queries with setting [`vector_search_use_quantized_codes`](/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) will scan the quantized codes to build a shortlist and subsequently rescore the results against the full-precision vectors.
 This two-stage search reads fewer bytes than a normal full-precision scan at the cost of lower recall.
+It applies only where the full-precision vector can be read lazily for the shortlisted rows: it needs the analyzer and setting `query_plan_optimize_lazy_materialization`, and it does not apply to a table with patch parts, or to a query using `SAMPLE`, `FINAL` on an engine other than `ReplacingMergeTree`, or a filter or row policy that reads the vector column. Otherwise the query runs the exact full-precision scan.
 `dimensions` is the vector length; supported `method` values are `rabitq`, `turboquant`, `int8`, `prefix` and `product`, each a different size / accuracy / distance-function trade-off.
 
 The codec can only be set in `CREATE TABLE`, it cannot be added, removed, or changed through `ALTER TABLE`, including with `ADD COLUMN ... CODEC(Quantized(...))`.

@@ -56,6 +56,25 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 9223372036854775807
 SETTINGS max_limit_for_vector_search_queries = 9223372036854775807, vector_search_index_fetch_multiplier = 2.0, query_plan_max_limit_for_lazy_materialization = 10;
 
+-- The rewrite must actually run for the multiplication under test to happen, and both queries here are result-only: an
+-- exact scan returns the same rows. `enable_parallel_replicas = 0` inline because the runner can inject parallel
+-- replicas, which disables the rewrite, and this file stays in that config for its index-based half.
+SELECT 'quantized_rewrite_engages',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM tab_quantized
+    WHERE id > 0
+    ORDER BY L2Distance(vec, [0.0, 2.0])
+    LIMIT 9223372036854775807
+    SETTINGS max_limit_for_vector_search_queries = 9223372036854775807,
+             vector_search_index_fetch_multiplier = 2.0,
+             query_plan_max_limit_for_lazy_materialization = 0,
+             enable_parallel_replicas = 0
+);
+
 WITH [0.0, 2.0] AS reference_vec
 SELECT id
 FROM tab_quantized
