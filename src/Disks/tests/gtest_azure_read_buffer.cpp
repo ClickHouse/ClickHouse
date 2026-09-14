@@ -2680,20 +2680,19 @@ static DB::RelativePathWithMetadata listingEntry(const std::string & etag)
     return DB::RelativePathWithMetadata("blob", metadata);
 }
 
-/// An Azure `MOVE` copies and deletes the generation that was ingested, and an Azure `DELETE`
-/// deletes it: both act on that generation, so for both it must be known up front. The copy of an
-/// S3 `MOVE` is pinned to the ingested generation too, so the read that ingests the file has to be
-/// pinned to that generation whatever `s3_validate_etag_on_read` says - otherwise the generation
-/// the move refuses could be the one that was actually read, and it would be ingested twice. A
-/// `TAG` or a `KEEP` leaves the object as it is, and an S3 `DELETE` addresses it by key.
-TEST(AzureIngestedGeneration, AzureMoveAndDeleteNeedIt)
+/// A `MOVE` copies and deletes the generation that was ingested, and a `DELETE` deletes it: both
+/// act on that generation, on Azure and on S3 alike, so for both it must be known up front, and the
+/// read that ingests the file has to be pinned to that generation whatever `s3_validate_etag_on_read`
+/// says - otherwise the generation the move or the delete refuses could be the one that was
+/// actually read, and it would be ingested twice. A `TAG` or a `KEEP` leaves the object as it is.
+TEST(AzureIngestedGeneration, MoveAndDeleteNeedIt)
 {
     ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::MOVE));
     ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::DELETE));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::KEEP));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Azure, DB::ObjectStorageQueueAction::TAG));
     ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::MOVE));
-    ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::DELETE));
+    ASSERT_TRUE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::DELETE));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::KEEP));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::S3, DB::ObjectStorageQueueAction::TAG));
     ASSERT_FALSE(DB::afterProcessingNeedsIngestedGeneration(DB::ObjectStorageType::Local, DB::ObjectStorageQueueAction::MOVE));

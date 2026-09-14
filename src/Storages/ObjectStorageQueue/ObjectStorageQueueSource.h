@@ -30,8 +30,8 @@ struct ObjectMetadata;
 /// `s3_validate_etag_on_read`: were it not, a read that served a newer generation `B` would still be
 /// recorded as an ingestion of the listed generation `A`, the post-processing pinned to `A` would
 /// refuse the object, and `B` would be ingested a second time on the next pass. An S3 `DELETE`
-/// addresses the object by key (S3 has no conditional `DeleteObject` on general purpose buckets),
-/// so it acts on no particular generation.
+/// is pinned as well (`If-Match` on the `DeleteObject`, the `ETag` element of a `DeleteObjects`),
+/// so it needs the ingested generation for the same reason.
 bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
 
 /// Makes `object_info` carry the generation (`etag`) that the read of the object is then pinned

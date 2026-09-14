@@ -99,14 +99,11 @@ bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, Obje
 {
     switch (storage_type)
     {
-        /// The copy of a `MOVE` and the `DELETE` are both pinned to the ingested generation.
+        /// The copy of a `MOVE` (`If-Match` on the copy source) and the `DELETE` (`If-Match` on the
+        /// delete) are both pinned to the ingested generation, on Azure and on S3 alike.
         case ObjectStorageType::Azure:
-            return after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE;
-        /// The copy of a `MOVE` is pinned to the ingested generation (`x-amz-copy-source-if-match`).
-        /// A `DELETE` addresses the object by key: S3 has no conditional `DeleteObject` on general
-        /// purpose buckets, so it acts on no particular generation and needs none.
         case ObjectStorageType::S3:
-            return after_processing == ObjectStorageQueueAction::MOVE;
+            return after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE;
         default:
             return false;
     }
@@ -689,9 +686,9 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             continue;
         }
 
-        /// An Azure `MOVE` after processing copies and deletes the very generation that was
-        /// ingested, and an Azure `DELETE` deletes it, so that generation must be known before the
-        /// read is opened, and the read is then pinned to it. It is the generation the listing
+        /// A `MOVE` after processing copies and deletes the very generation that was ingested, and
+        /// a `DELETE` deletes it (on Azure and on S3 alike), so that generation must be known before
+        /// the read is opened, and the read is then pinned to it. It is the generation the listing
         /// reported, and only that one - a `HEAD` made now could name a generation that replaced
         /// it after it was listed. A file whose listing carries no generation is still returned:
         /// the source refuses to read it and fails it, so that it is never committed as processed
@@ -1784,8 +1781,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// this file in this pass: nothing is moved or deleted, and the reset only decides
                 /// whether the path is listed again. What the post-processing does with a file that
                 /// was ingested is a separate matter (`ObjectStorageQueuePostProcessor`): there the
-                /// copy of a move is pinned to the ingested generation on both Azure and S3, the
-                /// delete is pinned on Azure and by key on S3, which has no conditional delete.
+                /// copy of a move and the delete are pinned to the ingested generation on both
+                /// Azure and S3.
                 const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
                     || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
 
