@@ -79,8 +79,8 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
-        /// the lower the better
-        UInt64 estimated_row_count = 0;
+        /// The lower the better. Max means that statistics cannot estimate the condition.
+        UInt64 estimated_row_count = std::numeric_limits<UInt64>::max();
 
         /// Lower is better: bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf
         /// when the condition rejects no rows. Comparable across conditions only in the same unit,
