@@ -137,17 +137,26 @@ public:
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
         auto current_scope_context_ptr = current_context;
+        bool is_subquery_node = false;
         SCOPE_EXIT(
             current_context = std::move(current_scope_context_ptr);
-            --subquery_depth;
+            if (is_subquery_node)
+                --subquery_depth;
         );
 
         if (auto * query_node = query_tree_node->template as<QueryNode>())
+        {
             current_context = query_node->getContext();
+            is_subquery_node = true;
+        }
         else if (auto * union_node = query_tree_node->template as<UnionNode>())
+        {
             current_context = union_node->getContext();
+            is_subquery_node = true;
+        }
 
-        ++subquery_depth;
+        if (is_subquery_node)
+            ++subquery_depth;
 
         getDerived().enterImpl(query_tree_node);
 
