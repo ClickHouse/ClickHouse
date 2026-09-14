@@ -178,9 +178,9 @@ def started_cluster():
             # A released version old enough that this PR will certainly not be backported to it, so the
             # comparison stays meaningful: it has Delta writes (>= 25.10) but no write-schema cast, so it
             # demonstrates the old "write the value as-is" behaviour before `restart_with_latest_version`.
-            # Uses only `users.xml` (not `enable_writes.xml`, which carries the 26.9-only
-            # `allow_delta_lake_create_table` setting the old binary would reject at startup); write settings
-            # are passed per query instead.
+            # Enables writes via a profile config (not `enable_writes.xml`, which carries the 26.9-only
+            # `allow_delta_lake_create_table` setting the old binary would reject at startup): the old binary
+            # does not apply the per-query writes-enable setting on the write path, so it must be a profile default.
             "node_old_writes",
             main_configs=[
                 "configs/config.d/named_collections.xml",
@@ -188,7 +188,10 @@ def started_cluster():
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes_old.xml",
+            ],
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
             tag="26.6",
@@ -568,36 +571,29 @@ def test_write_cast_upgrade_compatibility(started_cluster):
     write_deltalake_with_retry(path, table, storage_options=storage_options)
 
     url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
-    write = {
-        "allow_experimental_delta_kernel_rs": 1,
-        "allow_experimental_delta_lake_writes": 1,
-        "async_insert": 0,
-    }
 
     try:
         # Attach on the OLD version with a declared column (Int32) wider than the Delta type (int8). The old
         # version has no write-schema cast, so the out-of-range INSERT writes the value as-is and succeeds.
+        # Writes and the kernel are enabled via the node's profile config (see `enable_writes_old.xml`).
         node.query(
-            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
-            settings=write,
+            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')"
         )
-        node.query(f"INSERT INTO {table_name} VALUES (1000)", settings=write)
+        node.query(f"INSERT INTO {table_name} VALUES (1000)")
 
         # Upgrade to the current build; the table definition (Int32 column) is reloaded from metadata.
         node.restart_with_latest_version()
 
         # New version, default (delta_lake_accurate_write_cast = 1): the write-schema cast Int32 -> int8 now
         # throws on the out-of-range value instead of silently truncating.
-        error = node.query_and_get_error(
-            f"INSERT INTO {table_name} VALUES (1000)", settings=write
-        )
+        error = node.query_and_get_error(f"INSERT INTO {table_name} VALUES (1000)")
         assert "cannot be safely converted" in error, error
 
         # New version with the setting off (as `compatibility` below 26.9 selects): the plain cast is used, so
         # the INSERT succeeds again, preserving the old permissive behaviour.
         node.query(
             f"INSERT INTO {table_name} VALUES (1000)",
-            settings={**write, "delta_lake_accurate_write_cast": 0},
+            settings={"delta_lake_accurate_write_cast": 0},
         )
     finally:
         node.query(f"DROP TABLE IF EXISTS {table_name}")
