@@ -59,6 +59,9 @@ private:
         String default_column_name;
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    /// Names of `expired_columns_data` entries ordered so that a column whose `DEFAULT` reads
+    /// another expired column comes after it.
+    Names expired_columns_in_dependency_order;
     LoggerPtr log;
 };
 
