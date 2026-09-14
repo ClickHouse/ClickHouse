@@ -131,7 +131,7 @@ In other words, the byte examples in this section that begin with a `BlockInfo` 
 
 ### Storage-specific block indexes {#storage-specific-block-indexes}
 
-Some on-disk users of the Native block layout, including `StripeLog`, keep a separate index with the columns and offsets for each block. The column set is a property of each block, not of the whole stream, so blocks in one Native data file may contain different columns. A reader using such an index can project each block independently. If a requested column is absent from a block, the reader must read the columns recorded for that block and let the storage layer materialize the missing column from its schema and default expressions. This storage-specific index metadata is not part of the Native wire payload.
+Some on-disk users of the Native block layout, including `StripeLog`, keep a separate index with the columns and offsets for each block. The column set is a property of each block, not of the whole stream, so blocks in one Native data file may contain different columns. A storage that supports per-block schema evolution may project each block independently. If a requested column is absent from a block, it may read the columns recorded for that block and let the storage layer materialize the missing column from its schema and default expressions. This storage-specific index metadata is not part of the Native wire payload.
 
 ### BlockInfo {#blockinfo}
 

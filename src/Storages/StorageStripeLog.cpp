@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int INCORRECT_INDEX;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
 }
@@ -78,39 +79,67 @@ namespace FailPoints
     extern const char stripe_log_sink_write_fallpoint[];
 }
 
-static bool blockContainsColumns(const IndexOfBlockForNativeFormat & block, const Names & column_names)
+static bool isValidHistoricalBlock(const IndexOfBlockForNativeFormat & block, const NamesAndTypesList & current_columns)
 {
-    return std::all_of(column_names.begin(), column_names.end(), [&](const auto & name)
-    {
-        return std::any_of(block.columns.begin(), block.columns.end(), [&](const auto & column)
-        {
-            return column.name == name;
-        });
-    });
-}
+    if (block.num_columns != block.columns.size() || block.num_columns > current_columns.size())
+        return false;
 
-static bool indexContainsColumns(const IndexForNativeFormat & index, const Names & column_names)
-{
-    return std::all_of(index.blocks.begin(), index.blocks.end(), [&](const auto & block)
+    auto current_column = current_columns.begin();
+    for (const auto & column : block.columns)
     {
-        return blockContainsColumns(block, column_names);
-    });
+        if (current_column == current_columns.end()
+            || column.name != current_column->name
+            || column.type != current_column->type->getName())
+            return false;
+
+        ++current_column;
+    }
+
+    return true;
 }
 
 static IndexForNativeFormat extractIndexForColumnsOrKeepAll(
     const IndexForNativeFormat & index,
     const NameSet & required_columns,
-    const Names & column_names)
+    const NamesAndTypesList & current_columns,
+    bool & read_blocks_individually)
 {
     IndexForNativeFormat res;
     res.blocks.reserve(index.blocks.size());
+    read_blocks_individually = false;
 
     for (const auto & block : index.blocks)
     {
-        if (blockContainsColumns(block, column_names))
-            res.blocks.emplace_back(block.extractIndexForColumns(required_columns));
-        else
+        if (block.num_columns != block.columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains an invalid number of columns");
+
+        IndexOfBlockForNativeFormat selected_block;
+        selected_block.columns.reserve(required_columns.size());
+
+        for (const auto & column : block.columns)
+        {
+            if (required_columns.contains(column.name))
+                selected_block.columns.emplace_back(column);
+        }
+
+        if (selected_block.columns.size() > required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains duplicate columns");
+
+        if (selected_block.columns.size() < required_columns.size())
+        {
+            /// A missing requested column is valid only for an older append-only schema.
+            if (!isValidHistoricalBlock(block, current_columns))
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains a block with an invalid schema");
+
+            read_blocks_individually = true;
             res.blocks.emplace_back(block);
+        }
+        else
+        {
+            selected_block.num_columns = selected_block.columns.size();
+            selected_block.num_rows = block.num_rows;
+            res.blocks.emplace_back(std::move(selected_block));
+        }
     }
 
     return res;
@@ -467,6 +496,12 @@ void StorageStripeLog::checkAlterIsPossible(const AlterCommands & commands, Cont
 {
     for (const auto & command : commands)
     {
+        if (command.type == AlterCommand::Type::ADD_COLUMN && (command.first || !command.after_column.empty()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER TABLE ... ADD COLUMN with FIRST or AFTER is not supported by storage {}",
+                getName());
+
         if (command.type != AlterCommand::Type::ADD_COLUMN && !command.isCommentAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
@@ -528,11 +563,10 @@ Pipe StorageStripeLog::read(
     /// Filter out virtual columns - they are not stored on disk and not in the index.
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
     const NameSet required_columns{physical_column_names.begin(), physical_column_names.end()};
-    const bool read_blocks_individually = !indexContainsColumns(indices, physical_column_names);
-    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(
-        read_blocks_individually
-            ? extractIndexForColumnsOrKeepAll(indices, required_columns, physical_column_names)
-            : indices.extractIndexForColumns(required_columns));
+    const auto current_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
+    bool read_blocks_individually = false;
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(extractIndexForColumnsOrKeepAll(
+        indices, required_columns, current_columns, read_blocks_individually));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
@@ -943,7 +977,7 @@ For each table ClickHouse writes the files:
 - `data.bin` — Data file.
 - `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
-The `StripeLog` engine supports `ALTER TABLE ... ADD COLUMN`. Existing data blocks are read with default values for the new column.
+The `StripeLog` engine supports append-only `ALTER TABLE ... ADD COLUMN`. Existing data blocks are read with default values for the new column.
 The engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
 ## Reading the data {#table_engines-stripelog-reading-the-data}
