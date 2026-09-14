@@ -32,6 +32,14 @@ ${CLIENT_AS_CALLER} --query "
     EXECUTE AS ${target} CREATE DATABASE ${CLICKHOUSE_DATABASE}_db
 " 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "ALLOWED"
 
+echo "-- two layers of nesting: PARALLEL WITH inside EXECUTE AS is checked too"
+${CLIENT_AS_CALLER} --query "
+    EXECUTE AS ${target}
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_nested_1 (x UInt8) ENGINE = Memory
+    PARALLEL WITH
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_nested_2 (x UInt8) ENGINE = Memory
+" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "ALLOWED"
+
 echo "-- nothing was created"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${CLICKHOUSE_DATABASE}_db'"
