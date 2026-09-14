@@ -1,5 +1,6 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -26,6 +28,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Core/Joins.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -109,8 +112,18 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// Non-deterministic or approximate aggregate functions.
     "any", "anyLast", "anyHeavy",
     "anyRespectNulls", "anyLastRespectNulls",
+    /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
+    /// names they are registered under and are equally valid in a query.
+    "any_respect_nulls", "anyLast_respect_nulls",
     "first_value", "last_value",
     "topK", "topKWeighted",
+    /// `approx_top_k` / `approx_top_sum` are the space-saving counterparts of
+    /// `topK`: which elements survive the bounded counter table, and the counts
+    /// reported for them, depend on the order values arrive in and on how the
+    /// partial states are merged. `QueryFuzzer`'s aggregate swap list offers
+    /// `approx_top_k` for any single-argument aggregate, so omitting it here let
+    /// the TLP Aggregate oracle report false mismatches on master CI.
+    "approx_top_k", "approx_top_sum",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
     /// than direct computation due to approximate merging algorithms. Block both
@@ -125,7 +138,23 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileDD", "quantilesDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantilesTiming", "quantilesTimingWeighted",
-    "quantileDeterministic", "quantilesDeterministic",
+    /// `quantileDeterministic` / `quantilesDeterministic` are deliberately NOT listed:
+    /// `ReservoirSamplerDeterministic` retains a sample purely by `hash & skip_mask == 0`,
+    /// `merge` raises `skip_degree` to the maximum of the two states and re-thins everything
+    /// (`setSkipDegree` calls `thinOut`), and the final degree is the smallest one whose
+    /// retained count fits `max_sample_size` - a function of the hash multiset alone. So the
+    /// merged sample equals the directly accumulated one no matter how the rows were
+    /// partitioned, which is exactly the property the oracle needs. Verified over 1M rows
+    /// (and over a duplicate-heavy set containing `nan` / `inf`) that direct evaluation,
+    /// `max_threads` fan-out, and a `State`/`Merge` over 3, 7, 31, 997 and 9991 partitions
+    /// all agree, including through the version-0 state serialization that drops
+    /// `skip_degree`: the samples are filtered again at the final degree, so nothing that
+    /// should survive is lost.
+    /// The exact families below stay listed: `QuantileExact` selects with `::nth_element`
+    /// over the concatenated array, and that selection is order-dependent for values that
+    /// compare equal but format differently. Concretely, over 100000 rows alternating
+    /// `-0.` and `0.`, `quantileExact(0.5)` (and `*Low` / `*High`) print `-0` when computed
+    /// directly and `0` when merged from three partial states.
     "quantileExact", "quantileExactWeighted",
     "quantilesExact", "quantilesExactWeighted",
     "quantileExactLow", "quantileExactHigh",
@@ -133,6 +162,12 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileExactExclusive", "quantileExactInclusive",
     "quantilesExactExclusive", "quantilesExactInclusive",
     "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
+    /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
+    /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
+    /// are order-dependent, unlike the `UInt64`-weighted
+    /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
+    /// deliberately NOT listed here.
+    "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
     /// Order-dependent or floating-point aggregates whose State/Merge path
     /// can differ from direct computation. `sum` / `sumWithOverflow` are
     /// blocked because floating-point addition is non-associative — the
@@ -145,13 +180,22 @@ const std::unordered_set<String> non_deterministic_functions = {
     "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
     "varPop", "varSamp", "varPopStable", "varSampStable",
     "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
+    "corrMatrix", "covarPopMatrix", "covarSampMatrix",
     "avg", "avgWeighted",
     "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sum", "sumWithOverflow", "sumKahan",
+    "sum", "sumWithOverflow", "sumKahan", "sumCount",
+    /// Per-key sums over maps and arrays add the same floating-point values in
+    /// a merge-order-dependent order, exactly like `sum` above.
+    "sumMappedArrays", "sumMapWithOverflow",
+    "sumMapFiltered", "sumMapFilteredWithOverflow",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
     /// Order-dependent aggregate functions.
     "groupArray", "groupUniqArray", "groupArrayInsertAt",
+    /// `groupArrayIntersect` emits the surviving set in hash-table iteration
+    /// order, which depends on the insertion history — same reason as
+    /// `groupUniqArray`. The *set* matches, the array order does not.
+    "groupArrayIntersect",
     "groupArrayMovingSum", "groupArrayMovingAvg",
     "groupArraySorted", "groupArrayLast",
     /// `argMin`/`argMax`/`groupConcat` are order-dependent on ties: the
@@ -170,13 +214,21 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
     /// then legitimately differs from direct evaluation.
     "largestTriangleThreeBuckets",
+    /// `boundingRatio` divides by the gap between the leftmost and rightmost
+    /// points: on ties in the x argument which point wins is merge-order
+    /// dependent, and the ratio is a Float64 either way.
+    "boundingRatio",
+    /// `mergedJSONPatch` keeps the last write per path ordered by the sort key,
+    /// so tied keys resolve differently depending on the merge order.
+    "mergedJSONPatch",
     /// Depends on physical data layout, not values.
     "estimateCompressionRatio",
     /// Statistical hypothesis-test / correlation aggregates: they return
     /// floating-point statistics or p-values computed with rank/tie handling
     /// and non-associative summation, so the State/Merge, DQP and
     /// subquery-rewrite paths legitimately differ from direct evaluation.
-    "mannWhitneyUTest", "studentTTest", "welchTTest", "meanZTest",
+    "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
+    "analysisOfVariance",
     "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
     "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
 };
@@ -236,6 +288,25 @@ String stripAggregateCombinators(String name)
     return name;
 }
 
+/// Resolve an aggregate function alias to the name it was registered under.
+/// ClickHouse aliases plenty of aggregates whose `State`/`Merge` rewrite is
+/// unsafe for the oracle — `min_by`/`max_by` for `argMin`/`argMax`, `array_agg`
+/// for `groupArray`, `lttb` for `largestTriangleThreeBuckets`, every `median*`
+/// for the matching `quantile*`, `approx_top_count` for `approx_top_k`, `anova`
+/// for `analysisOfVariance`, `STDDEV_POP`/`VAR_SAMP`/`COVAR_POP` for the
+/// `stddev*`/`var*`/`covar*` families — and listing each alias by hand is the
+/// kind of bookkeeping that rots silently: one missing spelling is one false
+/// oracle mismatch reddening master CI. Resolve through the factory instead:
+/// `getAliasToOrName` consults both alias maps, so a case-insensitive alias
+/// resolves through any spelling of it (`StdDev_Pop` as much as `STDDEV_POP`),
+/// and a name that is not an alias comes back unchanged. Over-matching a
+/// spelling ClickHouse would not resolve at all only skips one more query,
+/// which is safe.
+String resolveAggregateAlias(const String & name)
+{
+    return AggregateFunctionFactory::instance().getAliasToOrName(name);
+}
+
 /// True if `name`, after removing zero or more combinator suffixes, names an
 /// entry of `non_deterministic_functions` (matched case-insensitively).
 /// Membership must be tested at EVERY stripping stage, not only at the
@@ -243,11 +314,37 @@ String stripAggregateCombinators(String name)
 /// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
 /// member), but one more iteration eats the literal `Array` and produces
 /// `groupUniq`, which the set does not contain.
+bool namesUnsafeFunctionAfterStripping(String name)
+{
+    while (true)
+    {
+        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+            return true;
+        if (!stripLongestCombinatorSuffix(name))
+            return false;
+    }
+}
+
+/// As above, but a name is also unsafe when the aggregate function it is an
+/// alias of is.
 bool isOracleUnsafeFunctionName(String name)
 {
     while (true)
     {
         if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+            return true;
+        /// The raw spelling is tested first and separately, never replaced by
+        /// the canonical one: the set is free to name a function by whichever
+        /// spelling reads best, so resolving before the lookup would turn a
+        /// listed alias into an unlisted canonical and lose the match.
+        /// The alias is resolved at every stripping stage rather than once up
+        /// front, because the combinators the fuzzer appends hide the alias
+        /// from the factory (`min_byIf` is not a registered name, `min_by` is).
+        /// The expansion is then stripped in turn: an alias may well expand to
+        /// a name that itself carries a combinator, as `array_concat_agg` does
+        /// to `groupArrayArray` (`groupArray` plus `Array`).
+        if (const String canonical = resolveAggregateAlias(name);
+            canonical != name && namesUnsafeFunctionAfterStripping(canonical))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
@@ -393,31 +490,6 @@ bool hasArrayJoin(const ASTSelectQuery & select)
         if (elem && elem->array_join)
             return true;
     }
-    return false;
-}
-
-/// Recursively walks `ast` looking for any call to `arrayJoin(...)`
-/// — the function form, distinct from the ARRAY JOIN clause caught by
-/// `hasArrayJoin` above. Both forms multiply rows, so any of them in a
-/// SELECT list breaks oracle invariants like NoREC's
-/// `count(SELECT ... arrayJoin ...) == countIf(WHERE)`.
-bool hasArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        /// `unnest` is registered as a case-insensitive alias of `arrayJoin`,
-        /// and the parser preserves the caller's spelling, so match both names
-        /// lowercased. Over-matching a spelling that would not resolve merely
-        /// skips one more query, which is the safe direction for this gate.
-        const String name_lower = Poco::toLower(func->name);
-        if (name_lower == "arrayjoin" || name_lower == "unnest")
-            return true;
-    }
-    for (const auto & child : ast->children)
-        if (hasArrayJoinFunction(child))
-            return true;
     return false;
 }
 
@@ -932,6 +1004,125 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     return false;
 }
 
+constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
+
+/// A query names relations and columns; reading them evaluates the definitions
+/// stored behind those names, and each read re-evaluates them, so the oracle's
+/// two reads of one name can observe different values while the query's own AST
+/// holds only an `ASTTableIdentifier`. A view reading another view recurses, and
+/// the depth cap bounds a chain closed into a cycle by `CREATE OR REPLACE`.
+bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr & context, size_t depth = 0)
+{
+    if (!ast)
+        return false;
+    if (depth > MAX_DEFINITION_SCREEN_DEPTH)
+        return true;
+
+    if (const auto * table_id = ast->as<ASTTableIdentifier>())
+    {
+        try
+        {
+            /// Resolve the name as a read resolves it: a temporary view lives in the session
+            /// namespace, not a database, and a `{name:Identifier}` placeholder has no name
+            /// until substitution. A name that does not resolve cannot be proven safe.
+            const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+            if (!resolved)
+                return true;
+
+            if (auto storage = DatabaseCatalog::instance().tryGetTable(resolved, context))
+            {
+                /// An engine that returns rows it does not store evaluates a definition that
+                /// is neither in this AST nor in its own metadata, so its engine name does
+                /// not say what a read of it evaluates.
+                if (storage->readsFromOtherTables())
+                    return true;
+
+                /// A `MaterializedView` read is forwarded to whatever its target name resolves to
+                /// at read time, and a refresh replaces that table, so this metadata does not
+                /// describe what a read of this name evaluates.
+                if (storage->getName() == "MaterializedView")
+                    return true;
+
+                auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+                ASTs definitions;
+
+                /// Match the engine name: `isView()` is also true for `MaterializedView`.
+                if (storage->getName() == "View")
+                {
+                    /// A `DEFINER` view evaluates its body as the definer, so the row policies a read
+                    /// of it applies are that user's, while the screen below resolves them for the
+                    /// current one. `NONE` runs with no user at all, where no policy applies.
+                    if (metadata->sql_security_type == SQLSecurityType::DEFINER)
+                        return true;
+
+                    /// `hasSelectQuery()` tests `select_query`, which `StorageView`
+                    /// never sets; `inner_query` is what `readImpl` evaluates.
+                    const auto & inner_query = metadata->getSelectQuery().inner_query;
+                    if (!inner_query)
+                        return true;
+                    definitions.push_back(inner_query);
+                }
+
+                /// A read evaluates an `ALIAS` expression always, and any other kind for a column
+                /// the part does not store, which this metadata does not say. Supplying one also
+                /// pulls in the defaults its own expression needs, reaching an `EPHEMERAL` one.
+                for (const auto & column : metadata->getColumns())
+                    if (column.default_desc.expression)
+                        definitions.push_back(column.default_desc.expression);
+
+                /// A row policy filters every read of this name for the current user, with an
+                /// expression stored on the policy rather than in this metadata; the lookup a read
+                /// performs resolves a policy on the table and, failing that, one on the database.
+                auto row_policy = context->getRowPolicyFilter(
+                    resolved.getDatabaseName(), resolved.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy && row_policy->expression)
+                    definitions.push_back(row_policy->expression);
+
+                for (const auto & definition : definitions)
+                    if (hasNonDeterministicFunctionsImpl(definition, context)
+                        || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
+                        || referencesDistributedTableAnywhere(definition, context)
+                        || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
+                        return true;
+            }
+        }
+        catch (...)
+        {
+            /// Ok: fail closed. A name or metadata we cannot read cannot be proven safe, so
+            /// skip the query rather than risk a false oracle mismatch. Deliberately not
+            /// logged: this runs per-AST-node on a hot path.
+            return true;
+        }
+    }
+
+    /// `IN t` names a table and means `IN (SELECT * FROM t)`. That operand is still a plain
+    /// `ASTIdentifier` here, because the rewrite to `ASTTableIdentifier` happens during
+    /// analysis, after this check runs.
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (functionIsInOrGlobalInOperator(func->name) && func->arguments && func->arguments->children.size() > 1)
+        {
+            if (const auto * identifier = func->arguments->children[1]->as<ASTIdentifier>())
+            {
+                /// A name that cannot be read as a table name, such as a `{name:Identifier}`
+                /// placeholder before substitution, cannot be proven safe either.
+                const ASTPtr table_id = identifier->createTable();
+                if (!table_id)
+                    return true;
+
+                /// An operand naming an alias or a CTE needs no exclusion: it resolves to no storage, which the branch above passes over.
+                if (referencesUnscreenedDefinitionAnywhere(table_id, context, depth))
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+        if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
+            return true;
+    return false;
+}
+
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
 /// ASTs. The default visitor calls `node.getColumnName()` for deduplication,
 /// which recursively invokes `appendColumnName` on every child. Some AST node
@@ -1023,12 +1214,11 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
     /// stays identical across all TLP partitions, only WHERE changes.
     /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
-    /// *function* appearing anywhere in the query: it multiplies rows, breaking
+    /// *function* in this query's own scope: it multiplies rows, breaking
     /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
-    /// row-count equality the TLP oracles depend on.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    /// row-count equality the TLP oracles depend on. A nested query keeps its
+    /// `arrayJoin` to itself, so it does not disturb these invariants.
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
@@ -1569,9 +1759,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     /// The `arrayJoin(...)` *function* multiplies rows just like the ARRAY JOIN
     /// clause; partitioning by WHERE then breaks the row-count invariant the
     /// oracle relies on. `isSafeForOracle` rejects both — mirror that here.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil()
         || select.prewhere() || select.qualify())
@@ -2374,10 +2562,10 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
-    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions
-    /// anywhere in the query before it can remove an `ORDER BY arrayJoin(...)`
+    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions in
+    /// this query's own scope before it can remove an `ORDER BY arrayJoin(...)`
     /// expression and make the oracle validate a different query shape.
-    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
 
     auto ref_ast = select.clone();
@@ -2538,6 +2726,15 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (referencesDistributedTableAnywhere(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
+        return false;
+    }
+
+    /// A view body and an `ALIAS` column expression are evaluated on every read,
+    /// so a construct rejected when written in the query must be rejected when a
+    /// name hides it too, or the oracle's reads observe different values.
+    if (referencesUnscreenedDefinitionAnywhere(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: query reads a stored definition the gates reject");
         return false;
     }
 
