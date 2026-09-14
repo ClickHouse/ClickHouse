@@ -394,7 +394,8 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # deallocation stacks behind every ASan and LSan report, and its `STRIP_PAC_PC` is the
     # identity unless `compiler-rt` itself was compiled with `-mbranch-protection`. Signed frames
     # then reach the reports verbatim: the signature occupies the bits above the virtual address,
-    # so every frame past the innermost one symbolizes to `<unknown module>`. It is also a memory
+    # so most of the frames of a report symbolize to `<unknown module>` (17 of 21 in the one that
+    # this was measured on, against 1 of 26 for the same report on master). It is also a memory
     # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
     # different value at every stack depth and each one takes a fresh entry in the stack depot,
     # which is never freed.
