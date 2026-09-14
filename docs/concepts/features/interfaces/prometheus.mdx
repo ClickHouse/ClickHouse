@@ -108,6 +108,7 @@ SET enable_prometheus_remote_write_v2 = 1;
 Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata.
 ClickHouse rejects the complete request when native histograms are present.
 ClickHouse rejects the complete request when exemplars are present.
+ClickHouse rejects the complete request when a sample has a nonzero `start_timestamp`.
 Senders can set `send_exemplars: false` to omit exemplars.
 
 Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so a sender cannot use it to omit native histograms.
@@ -123,7 +124,7 @@ remote_write:
     send_exemplars: false
     write_relabel_configs:
       - source_labels: [__type__]
-        regex: histogram
+        regex: histogram|gaugehistogram
         action: drop
 ```
 
