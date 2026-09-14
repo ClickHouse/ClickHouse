@@ -84,12 +84,12 @@ public:
         UInt16 port_,
         const String & default_database_,
         const String & user_,
-        const String & password_,
+        std::string_view password_,
         const String & proto_send_chunked_,
         const String & proto_recv_chunked_,
         const String & quota_key_,
         const String & cluster_,
-        const String & cluster_secret_,
+        std::string_view cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
@@ -159,14 +159,14 @@ protected:
 private:
     String default_database;
     String user;
-    String password;
+    SensitiveString password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String quota_key;
 
     /// For inter-server authorization
     String cluster;
-    String cluster_secret;
+    SensitiveString cluster_secret;
 
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
@@ -190,12 +190,12 @@ public:
         UInt16 port;
         String default_database;
         String user;
-        String password;
+        SensitiveString password;
         String proto_send_chunked;
         String proto_recv_chunked;
         String quota_key;
         String cluster;
-        String cluster_secret;
+        SensitiveString cluster_secret;
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
@@ -216,12 +216,12 @@ public:
         UInt16 port,
         String default_database,
         String user,
-        String password,
+        std::string_view password,
         String proto_send_chunked,
         String proto_recv_chunked,
         String quota_key,
         String cluster,
-        String cluster_secret,
+        std::string_view cluster_secret,
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,

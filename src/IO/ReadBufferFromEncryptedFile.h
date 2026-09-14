@@ -18,7 +18,7 @@ public:
         const String & file_name_,
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> in_,
-        const String & key_,
+        const SensitiveString & key_,
         const FileEncryption::Header & header_,
         size_t offset_ = 0);
 

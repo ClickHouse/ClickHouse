@@ -105,7 +105,7 @@ Cluster::Address::Address(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const String & cluster_,
-        const String & cluster_secret_,
+        std::string_view cluster_secret_,
         UInt32 shard_index_,
         UInt32 replica_index_)
     : cluster(cluster_)
@@ -248,7 +248,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
         return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
 
-    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' + escapeForFileName(host_name)
+    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(String(password)))) + '@' + escapeForFileName(host_name)
         + ':' + std::to_string(port) + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }

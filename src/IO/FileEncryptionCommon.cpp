@@ -282,7 +282,7 @@ InitVector InitVector::random()
 }
 
 
-Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
+Encryptor::Encryptor(Algorithm algorithm_, const SensitiveString & key_, const InitVector & iv_)
     : key(key_)
     , init_vector(iv_)
     , evp_cipher(getCipher(algorithm_))
@@ -307,7 +307,7 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
     if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
+                            reinterpret_cast<const uint8_t*>(key.data()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
     size_t in_size = 0;
@@ -357,7 +357,7 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
     if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
+                            reinterpret_cast<const uint8_t*>(key.data()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
     size_t in_size = 0;
@@ -464,14 +464,14 @@ void Header::write(WriteBuffer & out) const
     out.write(zero_bytes, reserved_size);
 }
 
-UInt128 calculateKeyFingerprint(const String & key)
+UInt128 calculateKeyFingerprint(const SensitiveString & key)
 {
     const UInt64 seed0 = 0x4368456E63727970ULL; // ChEncryp
     const UInt64 seed1 = 0x7465644469736B46ULL; // tedDiskF
     return sipHash128Keyed(seed0, seed1, key.data(), key.size());
 }
 
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id)
+UInt128 calculateV1KeyFingerprint(const SensitiveString & key, UInt64 key_id)
 {
     /// In the version 1 we stored {key_id, very_small_hash(key)} instead of a fingerprint.
     UInt8 small_key_hash = sipHash64(key.data(), key.size()) & 0x0F;

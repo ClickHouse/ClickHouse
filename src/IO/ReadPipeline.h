@@ -6,6 +6,7 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
 #include <Common/Logger.h>
+#include <Common/SensitiveString.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -92,7 +93,7 @@ public:
     };
 
     /// Function that finds an encryption key by its fingerprint.
-    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+    using KeyFinderFunc = std::function<SensitiveString(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     ReadPipeline() = default;
     ReadPipeline(const ReadPipeline &) = default;

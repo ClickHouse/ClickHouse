@@ -103,13 +103,13 @@ Connection::~Connection()
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
-    const String & user_, const String & password_,
+    const String & user_, std::string_view password_,
     const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
     [[maybe_unused]] const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
-    const String & cluster_secret_,
+    std::string_view cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
@@ -513,7 +513,7 @@ void Connection::sendHello()
       * Limiting number of possible characters in user-controlled part of handshake
       *  will mitigate this possibility but doesn't solve it completely.
       */
-    auto has_control_character = [](const std::string & s)
+    auto has_control_character = [](std::string_view s)
     {
         for (auto c : s)
             if (isControlASCII(c))

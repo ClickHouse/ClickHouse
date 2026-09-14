@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SensitiveString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <unordered_set>
@@ -28,7 +29,7 @@ namespace DB
 class InterserverCredentials
 {
 public:
-    using UserWithPassword = std::pair<std::string, std::string>;
+    using UserWithPassword = std::pair<std::string, SensitiveString>;
     using CheckResult = std::pair<std::string, bool>;
     using CurrentCredentials = std::vector<UserWithPassword>;
 
@@ -36,30 +37,30 @@ public:
 
     static std::unique_ptr<InterserverCredentials> make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag);
 
-    InterserverCredentials(const std::string & current_user_, const std::string & current_password_, const CurrentCredentials & all_users_store_)
+    InterserverCredentials(const std::string & current_user_, const SensitiveString & current_password_, const CurrentCredentials & all_users_store_)
         : current_user(current_user_)
         , current_password(current_password_)
         , all_users_store(all_users_store_)
     {}
 
     CheckResult isValidUser(const UserWithPassword & credentials) const;
-    CheckResult isValidUser(const std::string & user, const std::string & password) const;
+    CheckResult isValidUser(std::string_view user, std::string_view password) const;
 
     std::string getUser() const { return current_user; }
 
-    std::string getPassword() const { return current_password; }
+    const SensitiveString & getPassword() const { return current_password; }
 
 
 private:
     std::string current_user;
-    std::string current_password;
+    SensitiveString current_password;
 
     /// In common situation this store contains one record
     CurrentCredentials all_users_store;
 
     static CurrentCredentials parseCredentialsFromConfig(
         const std::string & current_user_,
-        const std::string & current_password_,
+        const SensitiveString & current_password_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_tag);
 };

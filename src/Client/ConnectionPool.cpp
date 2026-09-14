@@ -33,12 +33,12 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     UInt16 port,
     String default_database,
     String user,
-    String password,
+    std::string_view password,
     String proto_send_chunked,
     String proto_recv_chunked,
     String quota_key,
     String cluster,
-    String cluster_secret,
+    std::string_view cluster_secret,
     String client_name,
     Protocol::Compression compression,
     Protocol::Secure secure,
@@ -46,7 +46,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Priority priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, password, proto_send_chunked, proto_recv_chunked, quota_key, cluster, cluster_secret, client_name, compression, secure, bind_host, priority};
+        max_connections, host, port, default_database, user, SensitiveString(password), proto_send_chunked, proto_recv_chunked, quota_key, cluster, SensitiveString(cluster_secret), client_name, compression, secure, bind_host, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
@@ -96,9 +96,9 @@ size_t ConnectionPoolFactory::KeyHash::operator()(const ConnectionPoolFactory::K
     hash_combine(seed, hash_value(k.port));
     hash_combine(seed, hash_value(k.default_database));
     hash_combine(seed, hash_value(k.user));
-    hash_combine(seed, hash_value(k.password));
+    hash_combine(seed, hash_value(std::string_view(k.password)));
     hash_combine(seed, hash_value(k.cluster));
-    hash_combine(seed, hash_value(k.cluster_secret));
+    hash_combine(seed, hash_value(std::string_view(k.cluster_secret)));
     hash_combine(seed, hash_value(k.client_name));
     hash_combine(seed, hash_value(k.compression));
     hash_combine(seed, hash_value(k.secure));

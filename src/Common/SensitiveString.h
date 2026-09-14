@@ -15,18 +15,25 @@ class SensitiveString
 {
 public:
     SensitiveString() = default;
-    explicit SensitiveString(std::string_view str) : data(str.begin(), str.end()) {}
-    SensitiveString & operator=(std::string_view str) { data.assign(str.begin(), str.end()); return *this; }
 
-    operator std::string_view() const { return {data.data(), data.size()}; }
-    bool empty() const { return data.empty(); }
-    void clear() { data.clear(); }
+    explicit SensitiveString(std::string_view str) : bytes(str.begin(), str.end()) {}
+
+    SensitiveString(size_t count, char c) : bytes(count, c) {}
+
+    SensitiveString & operator=(std::string_view str) { bytes.assign(str.begin(), str.end()); return *this; }
+
+    operator std::string_view() const { return {bytes.data(), bytes.size()}; }
+
+    bool empty() const { return bytes.empty(); }
+    size_t size() const { return bytes.size(); }
+    const char * data() const { return bytes.data(); }
+    void clear() { bytes.clear(); }
 
     bool operator==(const SensitiveString & rhs) const = default;
     bool operator==(std::string_view rhs) const { return std::string_view(*this) == rhs; }
 
 private:
-    std::vector<char, NoDumpAllocator<char>> data;
+    std::vector<char, NoDumpAllocator<char>> bytes;
 };
 
 }

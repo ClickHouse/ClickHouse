@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <base/types.h>
+#include <Common/SensitiveString.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -80,10 +81,10 @@ public:
         /// All data sets at the same time to prevent situations,
         /// when config changes and key and nonce are read from different versions
         /// If nonce is empty, it will return 12 null bytes.
-        void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
+        void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, SensitiveString & current_key, String & nonce) const;
 
         /// Same as getCurrentKeyAndNonce. It is used to get key. (need for correct decryption, that is why nonce is not necessary)
-        String getKey(EncryptionMethod method, const UInt64 & key_id) const;
+        SensitiveString getKey(EncryptionMethod method, const UInt64 & key_id) const;
     private:
         /// struct Params consists of:
         /// 1) hash-table of keys and their ids
@@ -93,7 +94,7 @@ public:
         /// because all algorithms can be described in config and used for different tables.
         struct Params
         {
-            UnorderedMapWithMemoryTracking<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
+            UnorderedMapWithMemoryTracking<UInt64, SensitiveString> keys_storage[MAX_ENCRYPTION_METHOD];
             UInt64 current_key_id[MAX_ENCRYPTION_METHOD] = {0, 0};
             String nonce[MAX_ENCRYPTION_METHOD];
         };

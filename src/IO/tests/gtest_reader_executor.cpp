@@ -1201,7 +1201,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
 
 /// Encrypt `plaintext` with the given key/iv at stream offset 0 using AES_128_CTR. CTR is
 /// symmetric -- encryption and decryption are the same operation.
-String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+String aesCtrEncrypt(const SensitiveString & key, FileEncryption::InitVector iv, const String & plaintext)
 {
     FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
     enc.setOffset(0);
@@ -1214,7 +1214,7 @@ String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const St
 /// legacy stacked-encryption write where an outer layer's keystream covers `[inner_header (64),
 /// inner_ciphertext]` at offsets `[0, inner_ciphertext_size + 64)`. CTR is position-addressable, so
 /// encrypting two contiguous chunks at adjacent offsets equals encrypting the concatenation.
-String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
+String aesCtrEncryptAt(const SensitiveString & key, FileEncryption::InitVector iv,
     size_t stream_offset, const char * data, size_t size)
 {
     FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
@@ -1225,7 +1225,7 @@ String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
 }
 
 /// Build the on-disk encrypted byte stream: Header(64 bytes) + ciphertext.
-String makeEncryptedFile(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+String makeEncryptedFile(const SensitiveString & key, FileEncryption::InitVector iv, const String & plaintext)
 {
     String file_bytes;
     {
@@ -1258,7 +1258,7 @@ StoredObject writeBytesObject(const std::filesystem::path & dir, const std::stri
 TEST_F(ReaderExecutorTest, DecryptsSmallPayload)
 {
     /// Single layer, payload smaller than one block -- the executor serves plaintext.
-    String key(16, 'q');
+    SensitiveString key(16, 'q');
     const FileEncryption::InitVector iv(UInt128{42});
     const String plaintext = "Hello, encrypted world!";
     StoredObjects objects{writeBytesObject(tmp_dir, "small.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1277,7 +1277,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossManyWindows)
     /// Plaintext far larger than the block, so the executor decrypts many successive windows,
     /// each at its own increasing logical offset -- the CTR keystream offset must advance per
     /// window or the tail windows come back garbage.
-    String key(16, 'k');
+    SensitiveString key(16, 'k');
     const FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
 
     const size_t plaintext_size = 4096 * 3 + 777;
@@ -1308,7 +1308,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
     /// A single encrypted file (header + ciphertext) split across two objects. The header lives in
     /// the first object and the payload spans both, so this exercises the physical shift
     /// `position + data_start_offset` and the object-piece mapping crossing a boundary while decrypting.
-    String key(16, 'm');
+    SensitiveString key(16, 'm');
     const FileEncryption::InitVector iv(UInt128{0x55});
     const size_t plaintext_size = 5000;
     String plaintext(plaintext_size, '\0');
@@ -1344,8 +1344,8 @@ TEST_F(ReaderExecutorTest, DecryptsMultiLayer)
     /// The outer keystream covers the inner header AND payload -- outer's keystream offset for
     /// user-byte P is `P + 64`, inner's is `P`. `initDecryption` peels the outer layer off the
     /// inner header before parsing it.
-    String key_inner(16, 'i');
-    String key_outer(16, 'o');
+    SensitiveString key_inner(16, 'i');
+    SensitiveString key_outer(16, 'o');
     const FileEncryption::InitVector iv_inner(UInt128{1});
     const FileEncryption::InitVector iv_outer(UInt128{2});
 
@@ -1407,8 +1407,8 @@ TEST_F(ReaderExecutorTest, TotalSizeIsZeroForEmptyEncryptedSource)
     StoredObjects objects{makeFile("empty.bin", 0)};
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
-    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
-    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return SensitiveString{}; });
+    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return SensitiveString{}; });
     executor.initDecryption();
 
     EXPECT_EQ(executor.totalSize(), 0u);
@@ -1421,8 +1421,8 @@ TEST_F(ReaderExecutorTest, UndersizedEncryptedSourceThrowsOnInit)
     StoredObjects objects{makeFile("tiny.bin", 10)};   // 10 bytes < 128-byte two-layer header
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
-    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
-    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return SensitiveString{}; });
+    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return SensitiveString{}; });
 
     EXPECT_THROW(executor.initDecryption(), DB::Exception);
 }
@@ -1434,7 +1434,7 @@ TEST_F(ReaderExecutorTest, EncryptedEofReleasesLongConnectionSlot)
     /// `data_start_offset`, so after the last plaintext byte `position` stayed below the physical
     /// size, `atEnd` stayed false, the EOF branch was skipped and the `LongConnectionLimit` slot was
     /// pinned past EOF. With the logical `totalSize()` the slot is released.
-    String key(16, 'k');
+    SensitiveString key(16, 'k');
     const FileEncryption::InitVector iv(UInt128{0xfeedfaceULL});
     const String plaintext(2048, 'E');
     StoredObjects objects{writeBytesObject(tmp_dir, "eof.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1455,7 +1455,7 @@ TEST_F(ReaderExecutorTest, EncryptionHeaderCacheServesRepeatedOpens)
 {
     /// With a shared header cache, the first open populates it and the second serves the header
     /// from the cache (skipping the source read); both must decrypt to the same plaintext.
-    String key(16, 'c');
+    SensitiveString key(16, 'c');
     FileEncryption::InitVector iv(UInt128{0x1234abcdULL});
     const String plaintext(5000, 'Z');
     StoredObjects objects{writeBytesObject(tmp_dir, "cached.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1487,7 +1487,7 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
     /// several threads decrypting DISTINCT logical offsets concurrently must not cross-talk through a
     /// shared keystream offset. Parse a known single-layer header, then have N threads each decrypt a
     /// distinct chunk; every chunk must match a single-threaded reference decrypt of the same chunk.
-    String key(16, 'r');
+    SensitiveString key(16, 'r');
     const FileEncryption::InitVector iv(UInt128{0xabcdef0123456789ULL});
 
     const size_t chunk_size = 4096;

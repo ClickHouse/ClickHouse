@@ -439,7 +439,7 @@ public:
     }
 
 private:
-    std::string key;
+    SensitiveString key;
     UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
 };

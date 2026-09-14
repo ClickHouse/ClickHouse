@@ -616,7 +616,7 @@ TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
     auto enc_settings = std::make_unique<DiskEncryptedSettings>();
     enc_settings->wrapped_disk = local_disk;
     enc_settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
-    const String key = "1234567890123456";
+    const SensitiveString key{"1234567890123456"};
     enc_settings->current_key = key;
     enc_settings->current_key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
     enc_settings->all_keys[enc_settings->current_key_fingerprint] = key;

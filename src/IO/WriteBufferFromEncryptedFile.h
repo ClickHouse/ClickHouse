@@ -21,7 +21,7 @@ public:
     WriteBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const String & key_,
+        const SensitiveString & key_,
         const FileEncryption::Header & header_,
         size_t old_file_size,
         bool use_adaptive_buffer_size_,

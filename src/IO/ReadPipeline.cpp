@@ -796,7 +796,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
 
         FileEncryption::Header header;
         header.read(*impl);
-        String key = dec.key_finder(header.key_fingerprint, dec.path);
+        auto key = dec.key_finder(header.key_fingerprint, dec.path);
 
         impl = std::make_unique<ReadBufferFromEncryptedFile>(
             dec.path,

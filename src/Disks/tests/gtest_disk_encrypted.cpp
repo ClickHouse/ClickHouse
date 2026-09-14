@@ -42,7 +42,7 @@ protected:
         local_disk.reset();
     }
 
-    DiskPtr makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key, DiskPtr non_encrypted_disk, const String & path = "")
+    DiskPtr makeEncryptedDisk(FileEncryption::Algorithm algorithm, const SensitiveString & key, DiskPtr non_encrypted_disk, const String & path = "")
     {
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = non_encrypted_disk;
@@ -114,7 +114,7 @@ protected:
 
 TEST_F(DiskEncryptedTest, WriteAndRead)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     /// No files
     EXPECT_EQ(getFileNames(), "");
@@ -144,7 +144,7 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
 TEST_F(DiskEncryptedTest, Append)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     /// Write a file (we use the append mode).
     {
@@ -172,7 +172,7 @@ TEST_F(DiskEncryptedTest, Append)
 
 TEST_F(DiskEncryptedTest, Truncate)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     /// Write a file (we use the append mode).
     {
@@ -203,7 +203,7 @@ TEST_F(DiskEncryptedTest, Truncate)
 
 TEST_F(DiskEncryptedTest, ZeroFileSize)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     /// Write nothing to a file.
     {
@@ -238,7 +238,7 @@ TEST_F(DiskEncryptedTest, AnotherFolder)
 {
     /// Encrypted disk will store its files at the path "folder1/folder2/".
     local_disk->createDirectories("folder1/folder2");
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk, "folder1/folder2/");
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk, "folder1/folder2/");
 
     /// Write a file.
     {
@@ -259,7 +259,7 @@ TEST_F(DiskEncryptedTest, AnotherFolder)
 
 TEST_F(DiskEncryptedTest, RandomIV)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     /// Write two files with the same contents.
     {
@@ -306,7 +306,7 @@ TEST_F(DiskEncryptedTest, RandomIV)
 /// and a file could be removed after checking its existence but before getting its size.
 TEST_F(DiskEncryptedTest, RemoveFileDuringWriting)
 {
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
 
     size_t n = 100000;
     std::thread t1{[&]
@@ -464,7 +464,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), nullptr, *config, "");
 
-    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_blobs);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
 
@@ -477,8 +477,8 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 
 TEST_F(DiskEncryptedTest, DoubleEncrypted)
 {
-    auto single_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
-    auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
+    auto single_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, local_disk);
+    auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, SensitiveString{"1234567890123456"}, single_encrypted_disk);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
 }

@@ -23,7 +23,7 @@ InterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, c
 
     /// They both can be empty
     auto user = config.getString(root_tag + ".user", "");
-    auto password = config.getString(root_tag + ".password", "");
+    SensitiveString password(config.getString(root_tag + ".password", ""));
 
     auto store = parseCredentialsFromConfig(user, password, config, root_tag);
 
@@ -32,7 +32,7 @@ InterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, c
 
 InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredentialsFromConfig(
     const std::string & current_user_,
-    const std::string & current_password_,
+    const SensitiveString & current_password_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & root_tag)
 {
@@ -57,7 +57,7 @@ InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredenti
             std::string old_user_name = config.getString(full_prefix + ".user");
             LOG_DEBUG(log, "Adding credentials for old user {}", old_user_name);
 
-            std::string old_user_password =  config.getString(full_prefix + ".password");
+            SensitiveString old_user_password(config.getString(full_prefix + ".password"));
 
             store.emplace_back(old_user_name, old_user_password);
         }
@@ -81,9 +81,9 @@ InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const Us
     return {"", true};
 }
 
-InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const std::string & user, const std::string & password) const
+InterserverCredentials::CheckResult InterserverCredentials::isValidUser(std::string_view user, std::string_view password) const
 {
-    return isValidUser(std::make_pair(user, password));
+    return isValidUser(UserWithPassword(std::string(user), SensitiveString(password)));
 }
 
 }

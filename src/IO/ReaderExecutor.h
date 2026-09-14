@@ -9,6 +9,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/SensitiveString.h>
 #include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
@@ -90,7 +91,7 @@ public:
 
     String getFileName() const { return log_file_path; }
 
-    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+    using KeyFinderFunc = std::function<SensitiveString(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     /// Add a decryption layer (callable multiple times for layered encryption); no-op without SSL.
     void addDecryptionLayer(String path, KeyFinderFunc key_finder);

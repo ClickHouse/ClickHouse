@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/Priority.h>
+#include <Common/SensitiveString.h>
 
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Timespan.h>
@@ -128,7 +129,7 @@ public:
         UInt16 stateless_worker_port{0};
         UInt16 streaming_exchange_port{0};
         String user;
-        String password;
+        SensitiveString password;
         String proto_send_chunked = "notchunked";
         String proto_recv_chunked = "notchunked";
         String quota_key;
@@ -160,7 +161,7 @@ public:
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
             const String & cluster_,
-            const String & cluster_secret_,
+            std::string_view cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
 
@@ -276,7 +277,7 @@ public:
     /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
     std::vector<Strings> getHostIDs() const;
 
-    const String & getSecret() const { return secret; }
+    const SensitiveString & getSecret() const { return secret; }
 
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
@@ -323,7 +324,7 @@ private:
         bool internal_replication = false);
 
     /// Inter-server secret
-    String secret;
+    SensitiveString secret;
 
     /// Description of the cluster shards.
     ShardsInfo shards_info;

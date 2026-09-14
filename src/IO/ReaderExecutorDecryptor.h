@@ -28,7 +28,7 @@ namespace DB
 class ReaderExecutorDecryptor
 {
 public:
-    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+    using KeyFinderFunc = std::function<SensitiveString(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     /// Add a decryption layer. Call `parseHeaders` once after all layers.
     void addLayer(String path, KeyFinderFunc key_finder);
@@ -61,7 +61,7 @@ private:
         /// Resolves the header's key fingerprint to the key; cleared once `parseHeaders` resolves `key`.
         KeyFinderFunc key_finder;
         /// Populated by `parseHeaders`.
-        String key;
+        SensitiveString key;
     };
 
     VectorWithMemoryTracking<Layer> layers;

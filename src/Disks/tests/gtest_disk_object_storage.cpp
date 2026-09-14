@@ -1161,7 +1161,7 @@ try
     auto disk = getDiskObjectStorage();
 
     /// Wrap with encryption.
-    String key = "1234567890123456"; /// 16 bytes = AES-128-CTR
+    DB::SensitiveString key{"1234567890123456"}; /// 16 bytes = AES-128-CTR
     auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
     enc_settings->wrapped_disk = disk;
     enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
