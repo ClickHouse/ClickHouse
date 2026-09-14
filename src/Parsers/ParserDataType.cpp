@@ -195,6 +195,23 @@ private:
             return true;
         }
 
+        /// DEFAULT PATH TYPE SomeType
+        if (ParserKeyword(Keyword::DEFAULT).ignore(pos))
+        {
+            if (!ParserKeyword(Keyword::PATH).ignore(pos) || !ParserKeyword(Keyword::TYPE).ignore(pos))
+                return false;
+
+            ParserDataType type_parser;
+            ASTPtr type;
+            if (!type_parser.parse(pos, type, expected))
+                return false;
+
+            argument->default_path_type = type;
+            argument->children.push_back(argument->default_path_type);
+            node = argument;
+            return true;
+        }
+
         ParserCompoundIdentifier compound_identifier_parser;
         ASTPtr identifier;
         if (!compound_identifier_parser.parse(pos, identifier, expected))
