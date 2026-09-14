@@ -19,7 +19,7 @@ External data can be uploaded using the command-line client (in non-interactive 
 In the command-line client, you can specify a parameters section in the format
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
 ```
 
 You may have multiple sections like this, for the number of tables being transmitted.
@@ -30,6 +30,7 @@ Only a single table can be retrieved from stdin.
 
 The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
+**–scalar** – Send the data as a scalar instead of a temporary table. The data must contain exactly one row; if it contains multiple columns, they are packed into a single tuple. The value is accessible in the query via `__getScalar('name')`.
 
 One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
@@ -47,6 +48,8 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
+$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
+42
 ```
 
 When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The `query_string` is passed the parameters `name_format`, `name_types`, and `name_structure`, where `name` is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.

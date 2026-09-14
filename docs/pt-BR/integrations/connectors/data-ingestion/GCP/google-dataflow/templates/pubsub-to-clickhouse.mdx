@@ -154,7 +154,7 @@ Isso facilita reprocessar mensagens com falha assim que o problema subjacente de
   ## Executando o template
 </div>
 
-O template Pub/Sub to ClickHouse está disponível no Google Cloud Console.
+O template Pub/Sub para ClickHouse está disponível no Google Cloud Console.
 
 <Note>
   Revise este documento, especialmente as seções acima, para entender plenamente os requisitos de configuração e os pré-requisitos do template.
@@ -167,20 +167,20 @@ Faça login no Google Cloud Console e pesquise por Dataflow.
 
 2. Quando o formulário do template abrir, insira um nome para o job e selecione a região desejada.
 
-   {/* PLACEHOLDER: add screenshot of the Pub/Sub to ClickHouse template initial form (job name + region) */}
+   {/* PLACEHOLDER: add screenshot of the Pub/Sub para ClickHouse template initial form (job name + region) */}
 
-3. No campo `Dataflow Template`, digite `ClickHouse` ou `Pub/Sub` e selecione o template `Pub/Sub to ClickHouse`.
+3. No campo `Dataflow Template`, digite `ClickHouse` ou `Pub/Sub` e selecione o template `Pub/Sub para ClickHouse`.
 
-   {/* PLACEHOLDER: add screenshot of selecting the "Pub/Sub to ClickHouse" template from the dropdown */}
+   {/* PLACEHOLDER: add screenshot of selecting the "Pub/Sub para ClickHouse" template from the dropdown */}
 
 4. Depois de selecionado, o formulário se expande. Preencha:
 
    * A assinatura de entrada do Pub/Sub, no formato `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.
    * A URL do endpoint do ClickHouse — para o ClickHouse Cloud, use `https://<HOST>:8443`.
    * O banco de dados do ClickHouse, a tabela de destino, o nome de usuário e a senha.
-   * Pelo menos um destino de dead-letter: uma tabela do ClickHouse ou um tópico do Pub/Sub (ou ambos).
+   * Pelo menos um destino dead-letter: uma tabela do ClickHouse ou um tópico do Pub/Sub (ou ambos).
 
-   {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub to ClickHouse template form showing the required fields and the dead-letter section */}
+   {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub para ClickHouse template form showing the required fields and the dead-letter section */}
 
 5. Opcionalmente, personalize os parâmetros de agrupamento em lotes (`windowSeconds`, `batchRowCount`) e os parâmetros de ajuste do `ClickHouseIO`, conforme detalhado na seção [Template parameters](#template-parameters).
 
@@ -190,7 +190,7 @@ Faça login no Google Cloud Console e pesquise por Dataflow.
 
 Acesse a [aba Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) no Google Cloud Console para monitorar o status do job. Nela, você encontrará os detalhes do job, incluindo o progresso e eventuais erros:
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Console do Dataflow mostrando um job do Pub/Sub para o ClickHouse em execução" />
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Console do Dataflow mostrando um job do Pub/Sub para ClickHouse em execução" />
 
 O template também emite as seguintes métricas personalizadas no espaço de nomes `PubSubToClickHouse`, visíveis na página do job do Dataflow:
 

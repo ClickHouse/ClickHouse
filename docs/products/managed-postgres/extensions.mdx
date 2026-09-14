@@ -7,11 +7,11 @@ keywords: ['postgres extensions', 'postgis', 'pgvector', 'pg_cron', 'postgresql 
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
 
-Managed Postgres includes a curated set of extensions to extend the functionality of your database. Below is the list of available extensions.
+ClickHouse Managed Postgres includes a curated set of extensions to extend the functionality of your database. Below is the list of available extensions.
 
 ## Installing extensions {#installing-extensions}
 
@@ -135,14 +135,14 @@ SELECT * FROM pg_available_extensions;
 
 ## pg_clickhouse extension {#pg-clickhouse}
 
-The `pg_clickhouse` extension is pre-installed on every Managed Postgres instance. It allows you to query ClickHouse databases directly from PostgreSQL, enabling a unified query layer for both transactions and analytics.
+The `pg_clickhouse` extension is pre-installed on every ClickHouse Managed Postgres instance. It allows you to query ClickHouse databases directly from PostgreSQL, enabling a unified query layer for both transactions and analytics.
 
 See the [pg_clickhouse documentation](/products/managed-postgres/extensions/pg_clickhouse/introduction) for setup instructions and usage details.
 
 ## pg_stat_ch extension {#pg-stat-ch}
 
-The `pg_stat_ch` extension powers query-level observability for your Managed Postgres instance. It captures per-query telemetry (timings, rows, buffers, WAL, errors) and ships it into the ClickHouse Cloud UI, where it surfaces as the slow-query, error, and workload views. No setup required.
+The `pg_stat_ch` extension powers query-level observability for your ClickHouse Managed Postgres instance. It captures per-query telemetry (timings, rows, buffers, WAL, errors) and ships it into the ClickHouse Cloud UI, where it surfaces as the slow-query, error, and workload views. No setup required.
 
 ## pg_re2 extension {#pg-re2}
 
-The `pg_re2` extension adds ClickHouse-compatible regex functions to Managed Postgres, backed by Google's RE2 engine. Useful when porting queries between the two or running hybrid workloads that need identical pattern-matching semantics on both sides.
+The `pg_re2` extension adds ClickHouse-compatible regex functions to ClickHouse Managed Postgres, backed by Google's RE2 engine. Useful when porting queries between the two or running hybrid workloads that need identical pattern-matching semantics on both sides.

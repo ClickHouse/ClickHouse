@@ -42,7 +42,8 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    /// Column was dropped by a pending mutation (data in part is stale)
+    /// Column was dropped by a pending mutation (data in part is stale).
+    /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
@@ -76,24 +77,33 @@ private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
 
+    /// The commands of the on-fly chain a read task needs, and the storage columns that chain reads.
+    struct MutationChainForRead
+    {
+        MutationCommands commands;
+        Names read_columns;
+    };
+
+    MutationChainForRead buildMutationChainForRead(
+        const NamesAndTypesList & read_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context) const;
+
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
     /// that affect columns from @read_columns.
     std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
-        const NamesAndTypesList & read_columns,
+        MutationChainForRead chain,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    /// Adds source columns of expressions of MATERIALIZED columns from @read_columns if any.
-    void addColumnsRequiredForMaterialized(
+    /// Returns only mutations commands that affect columns from set, extending the set with the
+    /// columns those commands read.
+    MutationCommands filterMutationCommands(
         Names & read_columns,
         NameSet & read_columns_set,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context) const;
-
-    /// Returns only mutations commands that affect columns from set.
-    MutationCommands filterMutationCommands(Names & read_columns, NameSet read_columns_set) const;
+        const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;

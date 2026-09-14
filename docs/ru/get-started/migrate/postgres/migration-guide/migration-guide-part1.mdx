@@ -16,7 +16,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Набор данных
 </div>
 
-В качестве примера, демонстрирующего типичную migration из Postgres в ClickHouse, мы используем набор данных Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема PostgreSQL для этих данных показана ниже:
+В качестве примера, демонстрирующего типичную миграцию из Postgres в ClickHouse, мы используем набор данных Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема PostgreSQL для этих данных показана ниже:
 
 <Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Схема Stack Overflow в PostgreSQL" />
 
@@ -26,40 +26,40 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Мы перенесем каждую из этих концепций в их эквиваленты в ClickHouse.
 
-Для пользователей, которые хотят загрузить этот набор данных в экземпляр PostgreSQL, чтобы протестировать шаги migration, мы предоставили данные в формате `pg_dump` для скачивания вместе с DDL, а ниже приведены последующие команды загрузки данных:
+Для пользователей, которые хотят загрузить этот набор данных в экземпляр PostgreSQL, чтобы протестировать шаги миграции, мы предоставили данные в формате `pg_dump` для скачивания вместе с DDL, а ниже приведены последующие команды загрузки данных:
 
 ```bash
-# пользователи
+# users
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/users.sql.gz
 gzip -d users.sql.gz
 psql < users.sql
 
-# посты
+# posts
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posts.sql.gz
 gzip -d posts.sql.gz
 psql < posts.sql
 
-# история постов
+# posthistory
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posthistory.sql.gz
 gzip -d posthistory.sql.gz
 psql < posthistory.sql
 
-# комментарии
+# comments
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/comments.sql.gz
 gzip -d comments.sql.gz
 psql < comments.sql
 
-# голоса
+# votes
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/votes.sql.gz
 gzip -d votes.sql.gz
 psql < votes.sql
 
-# значки
+# badges
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/badges.sql.gz
 gzip -d badges.sql.gz
 psql < badges.sql
 
-# ссылки на посты
+# postlinks
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/postlinks.sql.gz
 gzip -d postlinks.sql.gz
 psql < postlinks.sql
@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse будет проталкивать на сервер PostgreSQL простые условия из секции `WHERE`, такие как `=`, `!=`, `>`,`>=`, `<`, `<=` и IN. Поэтому инкрементальные загрузки можно сделать эффективнее, если убедиться, что на столбцах, используемых для определения набора изменений, есть индекс.
+> ClickHouse будет проталкивать в PostgreSQL server простые предложения `WHERE`, такие как `=`, `!=`, `>`,`>=`, `<`, `<=` и IN. Поэтому инкрементальные загрузки можно сделать эффективнее, если убедиться, что на столбцах, используемых для определения набора изменений, есть индекс.
 
-> Один из возможных способов обнаруживать операции UPDATE при использовании репликации запросов — использовать [системный столбец `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (идентификаторы транзакций) как водяную метку: изменение этого столбца указывает на изменение данных, и соответствующие изменения можно применять к целевой таблице. Пользователям, использующим этот подход, следует учитывать, что значения `XMIN` могут циклически переполняться, а сравнения требуют полного сканирования таблицы, что усложняет отслеживание изменений.
+> Один из возможных способов обнаружения операций UPDATE при использовании репликации запросов — использовать [системный столбец `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (идентификаторы транзакций) в качестве водяной метки: изменение этого столбца указывает на наличие изменения и, следовательно, может быть применено к целевой таблице. Пользователям, использующим этот подход, следует учитывать, что значения `XMIN` могут переполняться по кругу, а сравнения требуют полного сканирования таблицы, из-за чего отслеживание изменений усложняется.
 
-[Нажмите здесь, чтобы перейти к части 2](/ru/get-started/migrate/postgres/migration-guide/migration-guide-part2)
+[Нажмите здесь, чтобы перейти к Part 2](/ru/get-started/migrate/postgres/migration-guide/migration-guide-part2)

@@ -89,13 +89,25 @@ echo
 echo "Will download ${URL} into ${clickhouse}"
 echo
 curl "${URL}" -o "${clickhouse}" && chmod a+x "${clickhouse}" || exit 1
+
+# Highlight the commands with increased intensity when the output is a terminal,
+# in the same style as `clickhouse install` does.
+if [ -t 1 ]
+then
+    HILITE="$(printf '\033[1m')"
+    END_HILITE="$(printf '\033[0m')"
+else
+    HILITE=""
+    END_HILITE=""
+fi
+
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ./${clickhouse}"
+    ${HILITE}./${clickhouse}${END_HILITE}"
 
 echo
 echo "You can also install it:
-sudo ./${clickhouse} install"
+${HILITE}sudo ./${clickhouse} install${END_HILITE}"
 
 # Also install clickhousectl, the CLI for ClickHouse local and Cloud.
 # Set CLICKHOUSE_ONLY=1 to skip.

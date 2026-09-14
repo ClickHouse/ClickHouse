@@ -10,9 +10,10 @@ integration:
    - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -67,11 +68,17 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
 4. Completa los datos de conexión de tu base de datos MongoDB de origen que configuraste en el paso de requisitos previos.
 
 <Info>
-  Antes de empezar a agregar los datos de conexión, asegúrate de haber permitido las direcciones IP de ClickPipes en las reglas de tu firewall. En la siguiente página puedes encontrar una [lista de direcciones IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips).
+  Antes de empezar a agregar los datos de conexión, asegúrate de haber permitido las direcciones IP de ClickPipes en las reglas de tu firewall. En la siguiente página puedes encontrar una [lista de direcciones IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips).
   Para obtener más información, consulta las guías de configuración de MongoDB de origen enlazadas [al inicio de esta página](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Completa los datos de conexión" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Cambiar la configuración de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (Opcional) Configurar la tunelización SSH
@@ -90,7 +97,7 @@ Puede especificar los detalles de la tunelización SSH si su base de datos Mongo
 4. Haga clic en &quot;Verificar conexión&quot; para verificar la conexión.
 
 <Note>
-  Asegúrese de permitir las [dirección IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
+  Asegúrese de permitir las [dirección IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
 </Note>
 
 Una vez completados los detalles de la conexión, haga clic en `Siguiente`.
@@ -138,4 +145,3 @@ Estas son algunas consideraciones que debes tener en cuenta al usar este conecto
 * Requerimos MongoDB versión 5.1.0 o superior.
 * Usamos la API nativa de Change Streams de MongoDB para CDC, que se basa en el oplog de MongoDB para capturar cambios en tiempo real.
 * Los documentos de MongoDB se replican en ClickHouse como JSON type de forma predeterminada. Esto permite una gestión flexible del schema y hace posible usar el amplio conjunto de operadores JSON de ClickHouse para realizar consultas y análisis. Puedes obtener más información sobre cómo consultar datos JSON [aquí](/es/reference/data-types/newjson).
-* La configuración de PrivateLink de autoservicio no está disponible actualmente. Si usas AWS y necesitas PrivateLink, ponte en contacto con db-integrations-support@clickhouse.com o crea un ticket de soporte; trabajaremos contigo para habilitarlo.

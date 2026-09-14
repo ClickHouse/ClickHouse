@@ -1,4 +1,9 @@
 const ReleaseSchedule = ({ releases = [] }) => {
+  const groupStartStyle = {
+    borderLeft: "1px solid rgba(128, 128, 128, 0.35)",
+    paddingLeft: 16,
+  };
+
   const StatusIndicator = ({ status }) => {
     const color =
       status === "green" ? "#22c55e" :
@@ -17,57 +22,79 @@ const ReleaseSchedule = ({ releases = [] }) => {
   };
 
   const DateCell = ({ date, note, status }) => (
-    <span>
-      <StatusIndicator status={status} />
-      {date}
-      {note && <Tooltip tip={note}><Icon icon="circle-info" size={12} /></Tooltip>}
+    <span style={{ whiteSpace: "nowrap" }}>
+      {status && <StatusIndicator status={status} />}
+      {note ? <Tooltip tip={note}>{date}</Tooltip> : date}
     </span>
   );
 
   return (
     <table>
+      <colgroup />
+      <colgroup span={2} />
+      <colgroup span={2} />
+      <colgroup span={2} />
       <thead>
         <tr>
-          <th rowSpan={2}>버전</th>
-          <th colSpan={2}>
+          <th rowSpan={2} scope="col">버전</th>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/docs/manage/updates#fast-release-channel-early-upgrades">빠른 채널</a>
           </th>
-          <th colSpan={2}>
-            <a href="/docs/manage/updates#regular-release-channel">일반 채널</a>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
+            <a href="/docs/manage/updates#regular-release-channel">정규 채널</a>
           </th>
-          <th colSpan={2}>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">느린 채널</a>
           </th>
         </tr>
         <tr>
-          <th>배포 시작</th>
-          <th>배포 종료</th>
-          <th>배포 시작</th>
-          <th>배포 종료</th>
-          <th>배포 시작</th>
-          <th>배포 종료</th>
+          <th scope="col" style={groupStartStyle}>시작</th>
+          <th scope="col">종료</th>
+          <th scope="col" style={groupStartStyle}>시작</th>
+          <th scope="col">종료</th>
+          <th scope="col" style={groupStartStyle}>시작</th>
+          <th scope="col">종료</th>
         </tr>
       </thead>
       <tbody>
-        {releases.map((release, idx) => (
-          <tr key={idx}>
-            <td>
-              {release.changelog_link ? (
-                <a href={release.changelog_link} target="_blank" rel="noopener noreferrer">
-                  {release.version}
-                </a>
+        {releases.map((release, idx) => {
+          const isCompleted = [
+            release.fast_start_date,
+            release.fast_end_date,
+            release.regular_start_date,
+            release.regular_end_date,
+            release.slow_start_date,
+            release.slow_end_date,
+          ].every((date) => date === "Completed");
+
+          return (
+            <tr key={idx}>
+              <th scope="row">
+                {release.changelog_link ? (
+                  <a href={release.changelog_link} target="_blank" rel="noopener noreferrer">
+                    {release.version}
+                  </a>
+                ) : (
+                  release.version
+                )}
+              </th>
+              {isCompleted ? (
+                <td colSpan={6} style={{ textAlign: "center" }}>
+                  <DateCell date="Completed" status="green" />
+                </td>
               ) : (
-                release.version
+                <>
+                  <td style={groupStartStyle}><DateCell date={release.fast_start_date} note={release.fast_delay_note} status={release.fast_progress} /></td>
+                  <td><DateCell date={release.fast_end_date} status={release.fast_progress} /></td>
+                  <td style={groupStartStyle}><DateCell date={release.regular_start_date} note={release.regular_delay_note} status={release.regular_progress} /></td>
+                  <td><DateCell date={release.regular_end_date} status={release.regular_progress} /></td>
+                  <td style={groupStartStyle}><DateCell date={release.slow_start_date} note={release.slow_delay_note} status={release.slow_progress} /></td>
+                  <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
+                </>
               )}
-            </td>
-            <td><DateCell date={release.fast_start_date} note={release.fast_delay_note} status={release.fast_progress} /></td>
-            <td><DateCell date={release.fast_end_date} status={release.fast_progress} /></td>
-            <td><DateCell date={release.regular_start_date} note={release.regular_delay_note} status={release.regular_progress} /></td>
-            <td><DateCell date={release.regular_end_date} status={release.regular_progress} /></td>
-            <td><DateCell date={release.slow_start_date} note={release.slow_delay_note} status={release.slow_progress} /></td>
-            <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
-          </tr>
-        ))}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

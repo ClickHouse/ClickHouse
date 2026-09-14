@@ -20,9 +20,7 @@ doc_type: 'guide'
 * 모든 원시 행을 다시 스캔하지 않고도 **안정적으로 1초 미만의 읽기 성능**을 원합니다.
 
 <Steps>
-  <Step>
-    ## 원시 이벤트 테이블 생성
-
+  <Step title="원시 이벤트 테이블 생성" id="create-raw-events-table">
     ```sql
     CREATE TABLE events_raw
     (
@@ -46,16 +44,14 @@ doc_type: 'guide'
     * `TTL`은 90일 후 원시 데이터를 정리합니다(보존 요구 사항에 맞게 조정하세요).
   </Step>
 
-  <Step>
-    ## 롤업(집계된) 테이블 설계
-
+  <Step title="롤업(집계된) 테이블 설계" id="design-rollup">
     **시간별**로 미리 집계합니다.
     가장 자주 사용하는 분석 윈도우에 맞춰 세분화 수준을 선택하십시오.
 
     ```sql
     CREATE TABLE events_rollup_1h
     (
-        bucket_start  DateTime,            -- 시간 단위 버킷의 시작
+        bucket_start  DateTime,            -- start of the hour
         country       LowCardinality(String),
         event_type    LowCardinality(String),
         users_uniq    AggregateFunction(uniqExact, UInt64),
@@ -71,9 +67,7 @@ doc_type: 'guide'
     부분 집계를 간결하게 표현하고 나중에 머지하거나 최종 계산할 수 있는 **집계 상태(aggregate states)**(예: `AggregateFunction(sum, ...)`)를 저장합니다.
   </Step>
 
-  <Step>
-    ## 롤업을 채우는 materialized view 생성
-
+  <Step title="롤업을 채우는 materialized view 생성" id="create-materialized-view-to-populate-rollup">
     이 materialized view는 `events_raw`에 삽입이 발생하면 자동으로 실행되어 롤업에 **집계 상태(aggregate states)**를 기록합니다.
 
     ```sql
@@ -93,9 +87,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 샘플 데이터를 삽입합니다
-
+  <Step title="샘플 데이터를 삽입합니다" id="insert-some-sample-data">
     샘플 데이터를 삽입합니다:
 
     ```sql
@@ -107,9 +99,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 롤업 쿼리하기
-
+  <Step title="롤업 쿼리하기" id="querying-the-rollup">
     상태를 읽기 시점에 **머지**하거나 **확정**할 수 있습니다:
 
     <Tabs>
@@ -157,9 +147,7 @@ doc_type: 'guide'
     </Tip>
   </Step>
 
-  <Step>
-    ## 최상의 성능을 위해 프라이머리 키 필드로 필터링
-
+  <Step title="최상의 성능을 위해 프라이머리 키 필드로 필터링" id="filtering-performance">
     `EXPLAIN` 명령을 사용하면 인덱스가 데이터를 어떻게 가지치기하는지 확인할 수 있습니다:
 
     ```sql title="Query"
@@ -204,9 +192,7 @@ doc_type: 'guide'
     최적의 필터링 성능을 얻으려면 쿼리가 프라이머리 키 필드를 사용해 불필요한 데이터를 제외하도록 해야 합니다.
   </Step>
 
-  <Step>
-    ## 일반적인 변형
-
+  <Step title="일반적인 변형" id="common-variations">
     * **다양한 집계 단위**: 일별 롤업을 추가합니다:
 
     ```sql
@@ -248,16 +234,12 @@ doc_type: 'guide'
     * **백필**: 과거 데이터를 로드할 때는 `events_raw`에 삽입하고 materialized view가 롤업을 자동으로 생성하도록 합니다. 기존 행에 대해서는 적절한 경우 materialized view 생성 시 `POPULATE`를 사용하거나 `INSERT SELECT`를 사용합니다.
   </Step>
 
-  <Step>
-    ## 정리 및 보존
-
+  <Step title="정리 및 보존" id="clean-up-and-retention">
     * 원시 데이터의 TTL(예: 30/90일)은 늘리고, 롤업은 더 오래(예: 1년) 유지합니다.
     * 티어링이 활성화된 경우 **TTL을 사용해** 오래된 파트를 더 저렴한 스토리지로 이동할 수도 있습니다.
   </Step>
 
-  <Step>
-    ## 문제 해결
-
+  <Step title="문제 해결" id="troubleshooting">
     * materialized view가 업데이트되지 않습니까? 삽입이 **events&#95;raw**로 들어가는지(롤업 테이블이 아닌지), 그리고 materialized view 대상이 올바른지(`TO events_rollup_1h`) 확인하세요.
     * 쿼리가 느립니까? 롤업을 사용하고 있는지(롤업 테이블을 직접 쿼리) 확인하고, 시간 필터가 롤업 단위와 일치하는지 점검하세요.
     * 백필 결과가 맞지 않습니까? `SYSTEM FLUSH LOGS`를 사용한 뒤 `system.query_log` / `system.parts`를 확인하여 삽입과 머지를 검증하세요.

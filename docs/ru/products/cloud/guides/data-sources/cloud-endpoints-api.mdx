@@ -13,7 +13,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## API статических IP-адресов
 </div>
 
-Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как ingress/egress IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
+Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как входящие/исходящие IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
+
+Для регионов, в которых доступен [ClickPipes](/ru/integrations/clickpipes/home), каждая запись также включает поле `clickpipes_egress_ips` со списком статических NAT IP-адресов, используемых ClickPipes для исходящего трафика к вашим источникам данных. При приёме данных через ClickPipes добавьте их в список разрешённых источника. Подробнее см. в [списке статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips).
 
 Если вы используете интеграцию, такую как MySQL или движок PostgreSQL, вам может потребоваться разрешить ClickHouse Cloud доступ к вашим инстансам. С помощью этого API можно получить публичные IP-адреса и настроить их в `firewalls` или `Authorized networks` в GCP, в `Security Groups` для Azure и AWS либо в любой другой системе управления исходящим трафиком, которую вы используете в своей инфраструктуре.
 
@@ -24,6 +26,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 {
   "aws": [
     {
+      "clickpipes_egress_ips": [
+        "13.203.140.189",
+        "13.232.213.12",
+        "13.235.145.208",
+        "35.154.167.40",
+        "65.0.39.245",
+        "65.1.225.89"
+      ],
       "egress_ips": [
         "3.110.39.68",
         "15.206.7.77",

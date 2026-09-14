@@ -169,8 +169,12 @@ CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
 {
+    /// Both the autodetection gate below and the uncompressed fallback must agree on the spelling.
+    std::string hint_lower = hint;
+    boost::algorithm::to_lower(hint_lower);
+
     std::string file_extension;
-    if (hint.empty() || hint == "auto")
+    if (hint_lower.empty() || hint_lower == "auto")
     {
         auto pos = path.find_last_of('.');
         if (pos != std::string::npos)
@@ -180,7 +184,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
     std::string method_str;
 
     if (file_extension.empty())
-        method_str = hint;
+        method_str = hint_lower;
     else
         method_str = std::move(file_extension);
 
@@ -202,7 +206,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Bzip2;
     if (method_str == "snappy")
         return CompressionMethod::Snappy;
-    if (hint.empty() || hint == "auto" || hint == "none")
+    if (hint_lower.empty() || hint_lower == "auto" || hint_lower == "none")
         return CompressionMethod::None;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "

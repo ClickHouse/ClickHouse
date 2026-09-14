@@ -15,9 +15,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 在 Snowflake 与 ClickHouse 之间迁移数据时，需要使用对象存储 (例如 S3) 作为传输过程中的中间存储。迁移过程还依赖于 Snowflake 的 `COPY INTO` 命令和 ClickHouse 的 `INSERT INTO SELECT` 命令。
 
 <Steps>
-  <Step>
-    ## 从 Snowflake 导出数据
-
+  <Step title="从 Snowflake 导出数据" id="1-exporting-data-from-snowflake">
     <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="从 Snowflake 迁移到 ClickHouse" />
 
     如上图所示，从 Snowflake 导出数据需要借助外部 stage。
@@ -54,9 +52,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     对于一个约 5TB 的 dataset，如果最大文件大小为 150MB，并使用与 S3 bucket 位于同一 AWS `us-east-1` 区域的 2X-Large Snowflake 仓库，复制数据大约需要 30 分钟。
   </Step>
 
-  <Step>
-    ## 导入到 ClickHouse
-
+  <Step title="导入到 ClickHouse" id="2-importing-to-clickhouse">
     当数据已暂存到中间对象存储后，就可以使用 ClickHouse 函数 (例如 [s3 table function](/zh/reference/functions/table-functions/s3)) 将数据写入表中，如下所示。
 
     本示例使用适用于 AWS S3 的 [s3 table function](/zh/reference/functions/table-functions/s3)；如果使用 Google Cloud Storage，则可以使用 [gcs table function](/zh/reference/functions/table-functions/gcs)；如果使用 Azure Blob 存储，则可以使用 [azureBlobStorage table function](/zh/reference/functions/table-functions/azureBlobStorage)。
@@ -104,9 +100,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## 测试数据是否已成功导出
-
+  <Step title="测试数据是否已成功导出" id="3-testing-successful-data-export">
     要验证数据是否已正确写入，只需对新表运行一条 `SELECT` 查询：
 
     ```sql

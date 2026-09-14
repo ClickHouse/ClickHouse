@@ -61,6 +61,22 @@ def zk_stop_and_close(zk):
         zk.close()
 
 
+# ZooKeeper checks delete against the PARENT's ACL, and its setACL leaves the
+# outstanding change record carrying the old ACL (duplicate() copies acl verbatim
+# and updates only stat.aversion), so a delete issued right after a widening
+# setACL can still be authorized against the pre-setACL ACL and get NoAuthError.
+def zk_delete_after_acl_change(zk, path, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            zk.delete(path)
+            return
+        except NoAuthError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_remove_acl(started_cluster, get_zk):
     auth_connection = None
@@ -412,7 +428,9 @@ def test_partial_auth(started_cluster, get_zk):
         )
         auth_connection.set_acls("/test_partial_acl_delete", acls=[acl])
         auth_connection.set_acls("/test_partial_acl_delete/subnode", acls=[acl])
-        auth_connection.delete("/test_partial_acl_delete/subnode")
+        zk_delete_after_acl_change(auth_connection, "/test_partial_acl_delete/subnode")
+        # Authorized against "/", whose ACL this test never touches, so a
+        # NoAuthError here would be a real problem: do not retry it.
         auth_connection.delete("/test_partial_acl_delete")
         zk_stop_and_close(auth_connection)
 

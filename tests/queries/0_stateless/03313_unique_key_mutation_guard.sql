@@ -2,10 +2,12 @@
 -- UNIQUE KEY: mutation-guard coverage.
 --
 -- `MergeTreeData::checkMutationIsPossible` must reject every mutation-class
--- operation that rewrites stored column bytes for a UNIQUE KEY column,
--- because those operations bypass `MergeTreeSinkUniqueKeyCommit::run` and
--- would create duplicate live keys. Covers ALTER DELETE / ALTER UPDATE /
--- MATERIALIZE COLUMN / CLEAR COLUMN.
+-- operation that rewrites stored column bytes on a UNIQUE KEY table, because
+-- those operations bypass `MergeTreeSinkUniqueKeyCommit::run` (duplicate live
+-- keys) and/or rewrite the whole part and drop the per-part dense-index SST.
+-- MATERIALIZE COLUMN / CLEAR COLUMN are rejected for ANY column (UK or not),
+-- since the rewrite loses the SST regardless of the target column. Covers
+-- ALTER DELETE / ALTER UPDATE / MATERIALIZE COLUMN / CLEAR COLUMN.
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
@@ -62,18 +64,23 @@ ALTER TABLE uk_mut_guard CLEAR COLUMN a IN PARTITION ID 'all'; -- { serverError 
 SELECT 'clear_uk_b' AS step;
 ALTER TABLE uk_mut_guard CLEAR COLUMN b IN PARTITION ID 'all'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
--- Non-UK columns must still allow MATERIALIZE / CLEAR (c is in ORDER BY so
--- materialize on c is meaningless in practice but not forbidden by the UK
--- guard; d is a plain column with a DEFAULT, no restrictions apply).
+-- MATERIALIZE / CLEAR of a NON-UK column must also be rejected: the whole part
+-- is rewritten regardless of which column is targeted, dropping the per-part
+-- UNIQUE KEY dense-index SST. (`d` is a plain column with a DEFAULT.)
 SET mutations_sync = 2;
 SELECT 'materialize_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d;
+ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'clear_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all';
+ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
 
--- State: cleared `d` means its values are now reset to the default;
--- count is preserved.
+-- CLEAR COLUMN of a missing column with IF EXISTS is a no-op (no part rewrite),
+-- so the UNIQUE KEY guard must NOT fire — it only rejects an existing physical
+-- column. This must succeed silently (no serverError).
+SELECT 'clear_missing_if_exists_noop' AS step;
+ALTER TABLE uk_mut_guard CLEAR COLUMN IF EXISTS nope IN PARTITION ID 'all';
+
+-- State: the two rejected rewrites plus the IF EXISTS no-op leave data intact.
 SELECT count() FROM uk_mut_guard;  -- 2
 
 DROP TABLE uk_mut_guard;

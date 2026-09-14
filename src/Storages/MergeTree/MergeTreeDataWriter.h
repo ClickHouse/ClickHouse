@@ -9,7 +9,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -70,8 +69,16 @@ public:
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
+      * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
+      * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
+      * source row to the partition it landed in.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(
+        Block && block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        IColumn::Selector * out_selector = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -79,15 +86,21 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
+      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
+    MergeTreeTemporaryPartPtr writeTempPart(
+        BlockWithPartition & block,
+        StorageMetadataPtr metadata_snapshot,
+        ContextPtr context,
+        bool may_have_leftover = true);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
-        ContextPtr context);
+        PatchPartIndex patch_part_index,
+        ContextPtr context,
+        bool may_have_leftover = true);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -95,23 +108,28 @@ public:
     }
 
     /// For insertion.
+    /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
+    /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         bool merge_is_needed,
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
+    /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         size_t block_num,
+        bool use_selected_codec,
+        bool is_explicit_recompression,
         ContextPtr context);
 
     static Block mergeBlock(
@@ -126,20 +144,23 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
-        UInt64 block_number);
+        UInt64 block_number,
+        bool may_have_leftover);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
+        CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        bool try_adaptive_codec,
+        bool use_selected_codec = false);
 
     MergeTreeData & data;
     LoggerPtr log;

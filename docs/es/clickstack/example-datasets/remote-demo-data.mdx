@@ -53,148 +53,128 @@ Esta demo usa un [fork de la demo oficial de OpenTelemetry mantenido por ClickSt
 **Hemos instrumentado esta demo con [SDKs de ClickStack](/es/clickstack/ingesting-data/sdks/index), con los servicios desplegados en Kubernetes, de los que también se han recopilado métricas y logs.**
 
 <Steps>
-  <Step>
-    ### Conéctese al servidor de demostración
-
+  <Step title="Conectarse al servidor de demostración" id="connect-to-the-demo-server">
     <Info>
       **Modo solo local**
 
-      Este paso puede omitirse si hizo clic en `Connect to Demo Server` al desplegar en el modo local. Si usa este modo, las fuentes tendrán el prefijo `Demo_`, por ejemplo, `Demo_Logs`
+      Este paso puede omitirse si hiciste clic en `Connect to Demo Server` al desplegar en `Local Mode`. Si usas este modo, las fuentes tendrán el prefijo `Demo_`, por ejemplo, `Demo_Logs`
     </Info>
 
-    Vaya a `Team Settings` y haga clic en `Edit` en la `Local Connection`:
+    Ve a `configuración del equipo` y haz clic en `Edit` para `Local Connection`:
 
     <Image img="/images/use-cases/observability/edit_connection.webp" alt="Editar conexión" size="lg" />
 
-    Cambie el nombre de la conexión a `Demo` y complete el siguiente formulario con los datos de conexión del servidor de demostración:
+    Cambia el nombre de la conexión a `Demo` y completa el siguiente formulario con estos datos de conexión del servidor de demostración:
 
     * `Connection Name`: `Demo`
     * `Host`: `https://sql-clickhouse.clickhouse.com`
     * `Username`: `otel_demo`
-    * `Password`: Déjelo vacío
+    * `Password`: Déjalo vacío
 
     <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp" alt="Editar conexión de demostración" size="lg" />
   </Step>
 
-  <Step>
-    ### Modifica las fuentes
-
+  <Step title="Modifica las fuentes" id="modify-sources">
     <Info>
-      **Modo solo local**
+      **Modo exclusivamente local**
 
-      Puedes omitir este paso si hiciste clic en `Connect to Demo Server` al desplegar en modo local. Si usas este modo, las fuentes tendrán el prefijo `Demo_`; por ejemplo, `Demo_Logs`
+      Puedes omitir este paso si hiciste clic en `Connect to Demo Server` al desplegar en Local Mode. Si usas este modo, las fuentes tendrán el prefijo `Demo_`; por ejemplo, `Demo_Logs`
     </Info>
 
     Desplázate hacia arriba hasta `Sources` y modifica cada una de las fuentes (`Logs`, `Traces`, `Metrics` y `Sessions`) para que usen la base de datos `otel_v2`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="Editar fuente de demostración" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="Editar fuente Demo" size="lg" />
 
     <Note>
-      Puede que tengas que recargar la página para asegurarte de que en cada fuente se muestre la lista completa de bases de datos.
+      Puede que tengas que recargar la página para asegurarte de que en cada fuente aparezca la lista completa de bases de datos.
     </Note>
   </Step>
 
-  <Step>
-    ### Ajuste del intervalo de tiempo
-
-    Ajuste el intervalo para mostrar todos los datos del `1 day` anterior usando el selector de tiempo de la esquina superior derecha.
+  <Step title="Ajustar el intervalo de tiempo" id="adjust-the-timeframe">
+    Ajuste el tiempo para mostrar todos los datos del `1 day` anterior con el selector de tiempo de la esquina superior derecha.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_2.webp" alt="Paso 2" size="lg" />
 
-    Puede ver una pequeña diferencia en el número de errores en el gráfico de barras de la vista general, con un pequeño aumento en rojo en varias barras consecutivas.
+    Puede notar una pequeña diferencia en el número de errores en el gráfico de barras de resumen, con un ligero aumento del color rojo en varias barras consecutivas.
 
     <Note>
-      La ubicación de las barras variará en función de cuándo consulte el conjunto de datos.
+      La posición de las barras variará según cuándo consulte el conjunto de datos.
     </Note>
   </Step>
 
-  <Step>
-    ### Filtrar errores
-
-    Para resaltar los errores, usa el filtro `SeverityText` y selecciona `error` para mostrar solo las entradas con nivel de error.
+  <Step title="Filtrar para ver solo errores" id="filter-to-errors">
+    Para resaltar los errores, use el filtro `SeverityText` y seleccione `error` para mostrar solo las entradas de nivel de error.
 
     El error debería verse más claramente:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="Paso 3" size="lg" />
   </Step>
 
-  <Step>
-    ### Identifica los patrones de error
+  <Step title="Identifique patrones de error" id="identify-error-patterns">
+    Con la función Clustering de HyperDX, puedes identificar errores automáticamente y agruparlos en patrones significativos. Esto acelera el análisis al trabajar con grandes volúmenes de logs y trazas. Para usarla, selecciona `Event Patterns` en el menú `Analysis Mode` del panel izquierdo.
 
-    Con la función Clustering de HyperDX, puedes identificar automáticamente los errores y agruparlos en patrones significativos. Esto agiliza el análisis al trabajar con grandes volúmenes de logs y trazas. Para usarla, selecciona `Event Patterns` en el menú `Analysis Mode` del panel izquierdo.
-
-    Los clústeres de errores revelan problemas relacionados con pagos fallidos, incluido un patrón llamado `Failed to place order`. Otros clústeres también indican problemas al cobrar tarjetas y cachés saturadas.
+    Las agrupaciones de errores revelan problemas relacionados con pagos fallidos, entre ellos un patrón llamado `Failed to place order`. Otras agrupaciones también indican problemas al cobrar tarjetas y cachés saturadas.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="Paso 4" size="lg" />
 
-    Ten en cuenta que estos clústeres de errores probablemente se originan en distintos servicios.
+    Ten en cuenta que estas agrupaciones de errores probablemente se originan en diferentes servicios.
   </Step>
 
-  <Step>
-    ### Explora un patrón de error
+  <Step title="Explora un patrón de error" id="explore-error-pattern">
+    Haz clic en los clústeres de errores más evidentes que se correlacionan con nuestro issue reportado de que los usuarios pueden completar pagos: `Failed to place order`.
 
-    Haz clic en los clústeres de errores más evidentes que se correlacionan con el problema reportado de que los usuarios pueden completar pagos: `Failed to place order`.
-
-    Esto mostrará una lista de todas las ocurrencias de este error asociadas al servicio `frontend`:
+    Esto mostrará una lista de todas las ocurrencias de este error asociadas con el servicio `frontend`:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="Paso 5" size="lg" />
 
-    Selecciona cualquiera de los errores resultantes. Los metadatos de los logs se mostrarán en detalle. Al revisar tanto `Overview` como `Column Values`, se aprecia un problema con el cobro de las tarjetas debido a una caché:
+    Selecciona cualquiera de los errores resultantes. Los metadatos de los logs se mostrarán en detalle. Al revisar tanto `Overview` como `Column Values`, todo apunta a un issue con el cargo a las tarjetas debido a la caché:
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="Paso 6" size="lg" />
   </Step>
 
-  <Step>
-    ### Explora la infraestructura
+  <Step title="Explora la infraestructura" id="explore-the-infrastructure">
+    Hemos identificado un error relacionado con la caché que probablemente esté causando fallos en los pagos. Aún necesitamos identificar dónde se origina este problema en nuestra arquitectura de microservicios.
 
-    Hemos identificado un error relacionado con la caché que probablemente esté causando fallos en los pagos. Aún tenemos que identificar en qué punto se origina este problema dentro de nuestra arquitectura de microservicios.
-
-    Dado el problema con la caché, tiene sentido investigar la infraestructura subyacente: ¿podría haber un problema de memoria en los pods asociados? En ClickStack, los logs y las métricas están unificados y se muestran en contexto, lo que facilita detectar rápidamente la causa raíz.
+    Dado el problema de la caché, tiene sentido investigar la infraestructura subyacente; quizá tengamos un problema de memoria en los pods asociados. En ClickStack, los logs y las métricas están unificados y se muestran en contexto, lo que facilita identificar rápidamente la causa raíz.
 
     Selecciona la pestaña `Infrastructure` para ver las métricas asociadas a los pods subyacentes del servicio `frontend` y amplía el intervalo de tiempo a `1d`:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_7.webp" alt="Paso 7" size="lg" />
 
-    El problema no parece estar relacionado con la infraestructura: ninguna métrica ha cambiado de forma apreciable en ese período, ni antes ni después del error. Cierra la pestaña `Infrastructure`.
+    El problema no parece estar relacionado con la infraestructura; ninguna métrica ha cambiado de forma apreciable durante ese período, ni antes ni después del error. Cierra la pestaña Infrastructure.
   </Step>
 
-  <Step>
-    ### Explorar una traza
+  <Step title="Explorar una traza" id="explore-a-trace">
+    En ClickStack, las traces también se correlacionan automáticamente tanto con los logs como con las métricas. Exploremos la trace vinculada al log seleccionado para identificar el servicio responsable.
 
-    En ClickStack, las trazas también se correlacionan automáticamente tanto con los logs como con las métricas. Exploremos la traza vinculada al log seleccionado para identificar el servicio responsable.
-
-    Selecciona `Trace` para visualizar la traza asociada. Al desplazarnos hacia abajo en la vista siguiente, podemos ver cómo HyperDX visualiza la traza distribuida a través de los microservicios, conectando los spans de cada servicio. Un pago implica claramente varios microservicios, incluidos los que realizan el checkout y las conversiones de divisas.
+    Selecciona `Trace` para visualizar la trace asociada. Al desplazarnos hacia abajo por la vista siguiente, podemos ver cómo HyperDX visualiza la trace distribuida a través de los microservicios, conectando los spans de cada servicio. Un pago claramente implica varios microservicios, incluidos los que realizan el checkout y las conversiones de divisas.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="Paso 8" size="lg" />
 
-    Al desplazarnos hasta la parte inferior de la vista, podemos ver que el servicio `payment` está causando el error, que a su vez se propaga por la cadena de llamadas.
+    Al desplazarnos hasta la parte inferior de la vista, podemos ver que el servicio `payment` está provocando el error, que a su vez se propaga de vuelta por la cadena de llamadas.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="Paso 9" size="lg" />
   </Step>
 
-  <Step>
-    ### Búsqueda de trazas
+  <Step title="Buscar trazas" id="searching-traces">
+    Hemos comprobado que los usuarios no pueden completar las compras debido a un problema de caché en el servicio de pagos. Examinemos las trazas de este servicio con más detalle para ver si podemos identificar mejor la causa raíz.
 
-    Hemos determinado que los usuarios no consiguen completar las compras debido a un problema de caché en el servicio de pagos. Exploremos las trazas de este servicio con más detalle para ver si podemos obtener más información sobre la causa raíz.
-
-    Cambia a la vista principal de `Search` seleccionando `Search`. Cambia la fuente de datos a `Traces` y selecciona la vista `Results table`. **Asegúrate de que el intervalo de tiempo siga configurado en el último día.**
+    Cambia a la vista principal de Búsqueda seleccionando `Búsqueda`. Cambia la fuente de datos a `Traces` y selecciona la vista `Results table`. **Asegúrate de que el intervalo de tiempo siga cubriendo el último día.**
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_10.webp" alt="Paso 10" size="lg" />
 
-    Esta vista muestra todas las trazas del último día. Sabemos que el problema se origina en nuestro servicio de pagos, así que aplica el filtro `payment` en `ServiceName`.
+    Esta vista muestra todas las trazas del último día. Sabemos que el problema se origina en nuestro servicio de pagos, así que aplica el filtro `payment` a `ServiceName`.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_11.webp" alt="Paso 11" size="lg" />
 
-    Si aplicamos la agrupación de eventos a las trazas seleccionando `Event Patterns`, podremos ver de inmediato el problema de caché en el servicio `payment`.
+    Si agrupamos los eventos de las trazas seleccionando `Event Patterns`, podemos ver de inmediato el problema de caché en el servicio `payment`.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_12.webp" alt="Paso 12" size="lg" />
   </Step>
 
-  <Step>
-    ### Explora la infraestructura de una traza
-
+  <Step title="Explore la infraestructura asociada a una traza" id="explore-infrastructure-for-a-trace">
     Cambia a la vista de resultados haciendo clic en `Results table`. Filtra los errores con el filtro `StatusCode` y el valor `Error`.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="Paso 13" size="lg" />
@@ -203,48 +183,44 @@ Esta demo usa un [fork de la demo oficial de OpenTelemetry mantenido por ClickSt
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="Paso 14" size="lg" />
 
-    Al correlacionar las trazas con las métricas, podemos ver que el uso de memoria y CPU aumentó en el servicio `payment` antes de caer a `0` (algo que podemos atribuir al reinicio de un pod de Kubernetes), lo que sugiere que el problema de caché provocó problemas de recursos. Es razonable esperar que esto haya afectado a los tiempos de finalización de los pagos.
+    Al correlacionar trazas con métricas, podemos ver que la memoria y la CPU aumentaron en el servicio `payment` antes de caer a `0` (podemos atribuirlo al reinicio de un pod de Kubernetes), lo que sugiere que el problema de caché provocó problemas de recursos. Es de esperar que esto haya afectado a los tiempos de finalización de los pagos.
   </Step>
 
-  <Step>
-    ### Event deltas para una resolución más rápida
+  <Step title="Event deltas para resolver más rápido" id="event-deltas-for-faster-resolution">
+    Event Deltas ayudan a detectar anomalías al atribuir cambios en el rendimiento o en las tasas de error a subconjuntos específicos de datos, lo que facilita identificar rápidamente la causa raíz.
 
-    Event Deltas ayuda a detectar anomalías al atribuir cambios en el rendimiento o en las tasas de error a subconjuntos específicos de datos, lo que facilita identificar rápidamente la causa raíz.
+    Aunque sabemos que el servicio `payment` tiene un problema de caché que provoca un aumento del consumo de recursos, todavía no hemos identificado por completo la causa raíz.
 
-    Aunque sabemos que el servicio `payment` tiene un problema de caché que está provocando un aumento en el consumo de recursos, todavía no hemos identificado por completo la causa raíz.
-
-    Vuelve a la vista de la tabla de resultados y selecciona el periodo de tiempo que contiene los errores para limitar los datos. Asegúrate de seleccionar también varias horas anteriores a los errores y, si es posible, posteriores (puede que el problema siga ocurriendo):
+    Vuelve a la vista de la tabla de resultados y selecciona el periodo de tiempo que contiene los errores para limitar los datos. Asegúrate de seleccionar varias horas antes de los errores y, si es posible, también después (el problema puede seguir ocurriendo):
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="Paso 15" size="lg" />
 
-    Elimina el filtro de errores y selecciona `Event Deltas` en el menú izquierdo `Analysis Mode`.
+    Quita el filtro de errores y selecciona `Event Deltas` en el menú `Analysis Mode` de la izquierda.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="Paso 16" size="lg" />
 
-    El panel superior muestra la distribución de los tiempos, con colores que indican la densidad de eventos (número de spans). El subconjunto de eventos fuera de la concentración principal suele ser el que merece la pena investigar.
+    El panel superior muestra la distribución de tiempos, con colores que indican la densidad de eventos (número de spans). El subconjunto de eventos fuera de la concentración principal suele ser el que vale la pena investigar.
 
-    Si seleccionamos los eventos con una duración superior a `1ms` y aplicamos el filtro `Filter by selection`, podemos analizar las diferencias entre los eventos &quot;normales&quot; y el grupo de spans de alta densidad con una duración de ~0ms:
+    Si seleccionamos los eventos con una duración superior a `1ms` y aplicamos el filtro `Filter by selection`, podemos analizar las diferencias entre los eventos &quot;normales&quot; y el grupo de alta densidad de spans con una duración de ~0ms:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="Paso 17" size="lg" />
 
-    Con el análisis realizado sobre el subconjunto de datos, podemos ver que los spans de &quot;background&quot; fuera de la selección son en su mayoría transacciones de Visa, asociadas a respuestas de 0ms debido a errores de caché.
+    Con el análisis realizado sobre el subconjunto de datos, podemos ver que los spans de &quot;Fondo&quot; fuera de la selección son en su mayoría transacciones de Visa, asociadas a respuestas de 0ms debido a errores de caché.
   </Step>
 
-  <Step>
-    ### Uso de gráficos para obtener más contexto
+  <Step title="Usar gráficos para tener más contexto" id="using-charts-for-more-context">
+    En ClickStack, podemos graficar cualquier valor numérico de logs, trazas o métricas para obtener más contexto.
 
-    En ClickStack, podemos crear gráficos con cualquier valor numérico de logs, traces o metrics para tener más contexto.
-
-    Hemos establecido lo siguiente:
+    Hemos determinado lo siguiente:
 
     * El problema está en el servicio de pagos
-    * La caché está llena
+    * Una caché está llena
     * Esto provocó un aumento en el consumo de recursos
-    * El problema impidió que se completaran los pagos con Visa, o al menos hizo que tardaran mucho en completarse.
+    * El problema impidió que los pagos con Visa se completaran, o al menos hizo que tardaran mucho en completarse.
 
     <br />
 
-    Selecciona `Chart Explorer` en el menú de la izquierda. Completa los siguientes valores para graficar el tiempo que tardan en completarse los pagos:
+    Selecciona `Chart Explorer` en el menú de la izquierda. Completa los siguientes valores para graficar, por tipo de tarjeta, el tiempo que tardan en completarse los pagos:
 
     * `Data Source`: `Traces`
     * `Metric`: `Maximum`
@@ -254,21 +230,19 @@ Esta demo usa un [fork de la demo oficial de OpenTelemetry mantenido por ClickSt
 
     <br />
 
-    Al hacer clic en `▶️`, se mostrará cómo el rendimiento de los pagos fue degradándose con el tiempo.
+    Al hacer clic en `▶️`, se mostrará cómo fue empeorando el rendimiento de los pagos con el tiempo.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="Paso 18" size="lg" />
 
-    Si configuramos `Group By` como `SpanAttributes['app.payment.card_type']` (solo escribe `card` para autocompletar), podremos ver cómo se degradó el rendimiento del servicio para las transacciones de Visa frente a Mastercard:
+    Si configuramos `Group By` como `SpanAttributes['app.payment.card_type']` (solo tienes que escribir `card` para usar el autocompletado), podemos ver cómo el rendimiento del servicio empeoró en las transacciones de Visa en comparación con Mastercard:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_19.webp" alt="Paso 19" size="lg" />
 
-    Ten en cuenta que, una vez que se produce el error, las respuestas vuelven en `0s`.
+    Ten en cuenta que, una vez que se produce el error, las respuestas pasan a devolverse en `0s`.
   </Step>
 
-  <Step>
-    ### Explorar métricas para obtener más contexto
-
-    Por último, grafiquemos el tamaño de la caché como una métrica para ver cómo evolucionó con el tiempo y así obtener más contexto.
+  <Step title="Más contexto para explorar métricas" id="exploring-metrics-for-more-context">
+    Por último, representemos el tamaño de la caché como una métrica para ver cómo evolucionó a lo largo del tiempo y obtener así más contexto.
 
     Completa los siguientes valores:
 
@@ -278,50 +252,45 @@ Esta demo usa un [fork de la demo oficial de OpenTelemetry mantenido por ClickSt
     * `Where`: `ServiceName: payment`
     * `Group By`: `<empty>`
 
-    Podemos ver cómo el tamaño de la caché aumentó durante un período de 4-5 horas (probablemente después de un despliegue de software) antes de alcanzar un tamaño máximo de `100,000`. En `Sample Matched Events` podemos ver que nuestros errores se correlacionan con el momento en que la caché alcanza este límite y, después de eso, queda registrada con un tamaño de `0`, con respuestas que también vuelven en `0s`.
+    Podemos ver cómo el tamaño de la caché aumentó durante un período de 4-5 h (probablemente después de un despliegue de software) antes de alcanzar un tamaño máximo de `100,000`. En los `Sample Matched Events` podemos ver que nuestros errores se correlacionan con el momento en que la caché alcanza este límite y, a partir de ahí, se registra con un tamaño de `0`, mientras que las respuestas también pasan a devolverse en `0s`.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_20.webp" alt="Paso 20" size="lg" />
 
-    En resumen, al explorar logs, trazas y, por último, métricas, hemos concluido:
+    En resumen, al explorar logs, trazas y, por último, métricas, hemos llegado a las siguientes conclusiones:
 
     * El problema está en el servicio de pagos
-    * Un cambio en el comportamiento del servicio, probablemente debido a un despliegue, provocó un aumento gradual de una caché de Visa durante un período de 4-5 horas, hasta alcanzar un tamaño máximo de `100,000`.
+    * Un cambio en el comportamiento del servicio, probablemente debido a un despliegue, provocó un aumento gradual de una caché de Visa durante un período de 4-5 h, hasta alcanzar un tamaño máximo de `100,000`.
     * Esto provocó un aumento en el consumo de recursos a medida que la caché crecía, probablemente debido a una implementación deficiente
-    * A medida que la caché crecía, el rendimiento de los pagos con Visa se degradaba
-    * Al alcanzar el tamaño máximo, la caché rechazó pagos y reportó un tamaño de `0`.
+    * A medida que la caché crecía, el rendimiento de los pagos con Visa se degradó
+    * Al alcanzar el tamaño máximo, la caché rechazó pagos e informó que su tamaño era `0`.
   </Step>
 
-  <Step>
-    ### Uso de las sesiones
+  <Step title="Uso de sesiones" id="using-sessions">
+    Las sesiones nos permiten reproducir la experiencia del usuario y ofrecen un registro visual de cómo se produjo un error desde su perspectiva. Aunque normalmente no se usan para diagnosticar la causa raíz, son valiosas para confirmar problemas reportados al equipo de soporte y pueden servir como punto de partida para una investigación más profunda.
 
-    Las sesiones nos permiten reproducir la experiencia del usuario y ofrecen un registro visual de cómo se produjo un error desde su perspectiva. Aunque normalmente no se utilizan para diagnosticar la causa raíz, son muy útiles para confirmar problemas reportados al equipo de soporte y pueden servir como punto de partida para una investigación más profunda.
+    En HyperDX, las sesiones están vinculadas a traces y logs, lo que proporciona una visión completa de la causa subyacente.
 
-    En HyperDX, las sesiones están vinculadas a trazas y logs, lo que proporciona una visión completa de la causa subyacente.
+    Por ejemplo, si el equipo de soporte proporciona el correo electrónico de un usuario que tuvo un problema con un pago, `Ronny.Windler@gmail.com`, a menudo es más eficaz empezar por su sesión en lugar de buscar directamente en los logs o traces.
 
-    Por ejemplo, si el equipo de soporte proporciona el correo electrónico de un usuario que tuvo un problema con un pago, `Ronny.Windler@gmail.com`, a menudo es más eficaz empezar por su sesión que buscar directamente en logs o trazas.
-
-    Ve a la pestaña `Client Sessions` en el menú de la izquierda y asegúrate de que la fuente de datos esté configurada como `Sessions` y de que el período de tiempo esté establecido en `Last 1 day`:
+    Ve a la pestaña `Client Sessions` desde el menú de la izquierda y asegúrate de que la fuente de datos esté configurada como `Sessions` y el período de tiempo como `Last 1 day`:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_21.webp" alt="Paso 21" size="lg" />
 
-    Busca `SpanAttributes.userEmail: Ronny.Windler` para encontrar la sesión de nuestro cliente. Al seleccionar la sesión, verás a la izquierda los eventos del navegador y los spans asociados a la sesión del cliente, mientras que a la derecha se volverá a representar la experiencia del usuario en el navegador:
+    Busca `SpanAttributes.userEmail: Ronny.Windler` para encontrar la sesión de nuestro cliente. Al seleccionar la sesión, a la izquierda se mostrarán los eventos del navegador y los spans asociados a la sesión del cliente, mientras que a la derecha se volverá a mostrar la experiencia del usuario en el navegador:
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_22.webp" alt="Paso 22" size="lg" />
   </Step>
 
-  <Step>
-    ### Reproducción de sesiones
+  <Step title="Reproducción de sesiones" id="replaying-sessions">
+    Las sesiones se pueden reproducir pulsando el botón ▶️. Alternar entre `Highlighted` y `All Events` permite ver distintos niveles de granularidad de los spans; la primera opción destaca los eventos clave y los errores.
 
-    Las sesiones pueden reproducirse pulsando el botón ▶️. Cambiar entre `Highlighted` y `All Events` permite ajustar el nivel de granularidad de los spans; la primera opción resalta los eventos clave y los errores.
-
-    Si nos desplazamos hasta la parte inferior de los spans, podemos ver un error `500` asociado a `/api/checkout`. Al seleccionar el botón ▶️ de este span concreto, la reproducción salta a ese punto de la sesión, lo que nos permite confirmar la experiencia del cliente: el pago simplemente parece no funcionar y no se muestra ningún error.
+    Si nos desplazamos hasta la parte inferior de los spans, podemos ver un error `500` asociado a `/api/checkout`. Al seleccionar el botón ▶️ de este span concreto, la reproducción salta a ese punto de la sesión, lo que nos permite confirmar la experiencia del cliente: el pago simplemente no funciona y no se muestra ningún error.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_23.webp" alt="Paso 23" size="lg" />
 
-    Al seleccionar el span, podemos confirmar que la causa fue un error interno. Al hacer clic en la pestaña `Trace` y desplazarnos por los spans conectados, podemos confirmar que el cliente efectivamente fue víctima de nuestro problema de caché.
+    Al seleccionar el span, podemos confirmar que se debió a un error interno. Al hacer clic en la pestaña `Trace` y desplazarnos por los spans conectados, podemos confirmar que el cliente efectivamente fue víctima de nuestro problema de caché.
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_24.webp" alt="Paso 24" size="lg" />
   </Step>
 </Steps>
 
-Esta demo presenta un incidente real relacionado con pagos fallidos en una aplicación de comercio electrónico y muestra cómo ClickStack ayuda a descubrir las causas raíz de forma unificada mediante logs, trazas, métricas y reproducciones de sesiones; explora nuestras [otras guías de primeros pasos](/es/clickstack/example-datasets/index) para profundizar en funciones específicas.

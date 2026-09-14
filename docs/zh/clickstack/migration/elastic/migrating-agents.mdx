@@ -56,9 +56,9 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 
 我们建议使用 [Vector](https://vector.dev) 来执行这一转换。它是一款轻量级、高性能的可观测性数据管道，并支持一种功能强大的转换语言，称为 Vector Remap Language (VRL)。
 
-如果你的 Filebeat agent 已配置为将数据发送到 Kafka (这是 Beats 支持的一种输出方式) ，Vector 可以从 Kafka 中消费这些事件，使用 VRL 进行 schema 转换，然后通过 OTLP 将其转发到 ClickStack 随附的 OpenTelemetry Collector。
+如果你的 Filebeat agent 已配置为将数据发送到 Kafka - 这是 Beats 支持的一种输出方式 - Vector 可以从 Kafka 中消费这些事件，使用 VRL 进行 schema 转换，然后通过 OTLP 将其转发到 ClickStack 随附的 OpenTelemetry Collector。
 
-或者，Vector 也支持通过 Logstash 使用的 Lumberjack 协议接收事件。这使得 Beats agent 可以直接将数据发送到 Vector，在那里执行相同的转换流程，然后再通过 OTLP 转发到 ClickStack OpenTelemetry collector。
+或者，Vector 也支持通过 Logstash 使用的 Lumberjack 协议接收事件。这使得 Beats agent 可以直接将数据发送到 Vector，在那里执行相同的转换流程，然后再通过 OTLP 转发到 ClickStack OpenTelemetry Collector。
 
 下面我们将展示这两种架构。
 
@@ -67,9 +67,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 在下面的示例中，我们给出了将 Vector 配置为通过 Lumberjack 协议从 Filebeat 接收日志事件的初始步骤。我们还提供了用于将入站 ECS 事件映射到 OTel 规范的 VRL，然后再通过 OTLP 将其发送到 ClickStack OpenTelemetry collector。从 Kafka 消费事件的用户可以将 Vector 的 Logstash source 替换为 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)，其余步骤保持不变。
 
 <Steps>
-  <Step>
-    ### 安装 Vector
-
+  <Step title="安装 Vector" id="install-vector">
     使用[官方安装指南](https://vector.dev/docs/setup/installation/)安装 Vector。
 
     可将其安装在与你的 Elastic Stack OTel collector 相同的实例上。
@@ -77,9 +75,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
     你可以在[将 Vector 迁移到生产环境](https://vector.dev/docs/setup/going-to-prod/)时，遵循架构和安全方面的最佳实践。
   </Step>
 
-  <Step>
-    ### 配置 vector
-
+  <Step title="配置 vector" id="configure-vector">
     需要将 Vector 配置为通过 Lumberjack 协议接收事件，以模拟 Logstash 实例。可通过为 Vector 配置 [`logstash` source](https://vector.dev/docs/reference/configuration/sources/logstash/) 来实现：
 
     ```yaml
@@ -88,8 +84,8 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # 如果使用 TLS，请设置为 true
-          # 以下文件由 https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs 中的步骤生成
+          enabled: false  # Set to true if you're using TLS
+          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -116,29 +112,29 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 
     <Accordion title="VRL - ECS 转 OTel">
       ```javascript
-      # 定义根级别需要忽略的键
+      # Define keys to ignore at root level
       ignored_keys = ["@metadata"]
 
-      # 定义资源键前缀
+      # Define resource key prefixes
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # 为资源字段和日志记录字段分别创建对象
+      # Create separate objects for resource and log record fields
       resource_obj = {}
       log_record_obj = {}
 
-      # 将所有未被忽略的根键复制到对应的对象中
+      # Copy all non-ignored root keys to appropriate objects
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # 检查是否为资源字段
+                  # Check if this is a resource field
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # 添加到对应的对象中
+                  # Add to appropriate object
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -148,11 +144,11 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
           }
       }
 
-      # 分别对两个对象进行扁平化处理
+      # Flatten both objects separately
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # 处理资源属性
+      # Process resource attributes
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -170,7 +166,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
           }
       }
 
-      # 处理日志记录属性
+      # Process log record attributes
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -188,14 +184,14 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
           }
       }
 
-      # 获取 timeUnixNano 的时间戳（转换为纳秒）
+      # Get timestamp for timeUnixNano (convert to nanoseconds)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # 获取 message/body 字段
+      # Get message/body field
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -204,7 +200,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
           ""
       }
 
-      # 创建 OpenTelemetry 结构
+      # Create the OpenTelemetry structure
       . = {
           "resourceLogs": [
               {
@@ -239,10 +235,10 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # 从 remap transform 接收事件 - 见下文
+        inputs: [remap_filebeat] # receives events from a remap transform - see below
         protocol:
-          type: http  # 端口 4317 请使用 "grpc"
-          uri: http://localhost:4318/v1/logs # OTel collector 的日志端点 
+          type: http  # Use "grpc" for port 4317
+          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
           method: post
           encoding:
             codec: json
@@ -265,7 +261,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # 如果使用 TLS，请设置为 true
+          enabled: false  # Set to true if you're using TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -282,7 +278,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # 如需使用端口 4317，请改用 "grpc"
+          type: http  # Use "grpc" for port 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -294,25 +290,23 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
     ```
   </Step>
 
-  <Step>
-    ### 配置 Filebeat
-
+  <Step title="配置 Filebeat" id="configure-filebeat">
     现有的 Filebeat 安装只需稍作修改，将事件发送到 Vector 即可。这需要配置 Logstash 输出；同样，TLS 也可按需配置：
 
     ```yaml
-    # ------------------------------ Logstash 输出 -------------------------------
+    # ------------------------------ Logstash Output -------------------------------
     output.logstash:
-      # Logstash 主机
+      # The Logstash hosts
       hosts: ["localhost:5044"]
 
-      # 可选的 SSL，默认关闭。
-      # 用于 HTTPS 服务器验证的根证书列表
+      # Optional SSL. By default is off.
+      # List of root certificates for HTTPS server verifications
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # 用于 SSL 客户端身份验证的证书
+      # Certificate for SSL client authentication
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # 客户端证书密钥
+      # Client Certificate Key
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -336,28 +330,24 @@ Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [E
 </div>
 
 <Steps>
-  <Step>
-    #### 安装并配置 Vector
-
+  <Step title="安装并配置 Vector" id="install-configure-vector">
     按照从 Filebeat 迁移部分文档中的[相同步骤](#install-vector)安装并配置 Vector。
   </Step>
 
-  <Step>
-    #### 配置 Elastic Agent
-
+  <Step title="配置 Elastic Agent" id="configure-elastic-agent">
     需要将 Elastic Agent 配置为通过 Logstash 的 Lumberjack 协议发送数据。这是一种[受支持的部署模式](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge)，既可以集中配置；如果是不使用 Fleet 的部署方式，也可以[通过 agent 配置文件 `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output) 进行配置。
 
     要在 Kibana 中进行集中配置，可以[向 Fleet 添加一个 Output](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)。
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="添加 Logstash Output" size="md" />
+    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="添加 Logstash 输出" size="md" />
 
     然后即可在 [agent policy](https://www.elastic.co/docs/reference/fleet/agent-policy) 中使用此 Output。这意味着，所有使用该策略的 agent 都会自动将其数据发送到 Vector。
 
     <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent 设置" size="md" />
 
-    由于这需要配置基于 TLS 的安全通信，我们建议参考指南[“为 Logstash Output 配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)。按照该指南操作时，可将用户的 Vector 实例视为充当 Logstash 角色。
+    由于这需要配置基于 TLS 的安全通信，我们建议参考指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)。按照该指南操作时，可将用户的 Vector 实例视为充当 Logstash 角色。
 
-    请注意，这还要求用户将 Vector 中的 Logstash source 也配置为 mutual TLS。使用[该指南中生成的](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) 密钥和证书，正确配置输入端。
+    请注意，这还要求用户将 Vector 中的 Logstash source 也配置为双向 TLS。使用[该指南中生成的](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs)密钥和证书，正确配置输入端。
 
     ```yaml
     sources:
@@ -391,7 +381,7 @@ Elastic agent 内嵌了 EDOT Collector，让您只需为应用程序和基础设
 
 ```yaml
 exporters:
-  # 将日志和指标发送到 Elasticsearch Managed OTLP Input 的导出器
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -403,7 +393,7 @@ exporters:
 <Info>
   **托管 ClickStack**
 
-  默认情况下，如果以独立方式为托管 ClickStack 运行 OpenTelemetry Collector，则无需 API 摄取密钥。不过，也可以通过指定 OTLP 身份验证令牌来保护摄取。请参阅[“保护收集器”](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+  默认情况下，如果以独立方式为托管 ClickStack 运行 OpenTelemetry collector，则无需 API 摄取密钥。不过，也可以通过指定 OTLP 身份验证令牌来保护摄取。请参阅[“保护 collector”](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
 </Info>
 
 此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI 的 `Team Settings → API Keys` 中找到该密钥。
@@ -414,7 +404,7 @@ exporters:
 
 ```yaml
 exporters:
-  # 将日志和指标发送到 Elasticsearch Managed OTLP Input 的导出器
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

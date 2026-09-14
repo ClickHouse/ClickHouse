@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Introduzido em: v20.1.0
 
-Calcula um [quantil](https://en.wikipedia.org/wiki/Quantile) aproximado de uma sequência de dados numéricos usando o algoritmo [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
+Calcula um [quantil](https://en.wikipedia.org/wiki/Quantile) aproximado de uma sequência de valores numéricos usando o algoritmo [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
 A função leva em consideração o peso de cada elemento da sequência.
 
 O erro máximo é de 1%.
@@ -47,12 +47,12 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **Argumentos**
 
-* `expr` — Expressão aplicada aos valores da coluna que resulta em tipos de dados numéricos, Date ou DateTime. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `expr` — Expressão aplicada aos valores da coluna que resulta em tipos de dados numéricos, `Date` ou `DateTime`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
 * `weight` — Coluna com os pesos dos elementos da sequência. O peso é o número de ocorrências do valor. [`UInt*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
 
-Quantil aproximado do nível especificado. [`Float64`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+Quantil aproximado do nível especificado. Para entradas `Date` e `DateTime`, o formato de saída corresponde ao formato de entrada. [`Float32`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
 
 **Exemplos**
 
@@ -64,7 +64,7 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
 
 ```response title=Response
 ┌─quantileTDigestWeighted(number, 1)─┐
-│                                4.5 │
+│                                  4 │
 └────────────────────────────────────┘
 ```
 

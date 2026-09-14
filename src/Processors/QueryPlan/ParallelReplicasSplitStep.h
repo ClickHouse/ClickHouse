@@ -16,9 +16,8 @@ namespace DB
 class ParallelReplicasSplitStep final : public ITransformingStep
 {
 public:
-    explicit ParallelReplicasSplitStep(SharedHeader input_header_, ContextPtr context_)
+    explicit ParallelReplicasSplitStep(SharedHeader input_header_)
         : ITransformingStep(input_header_, input_header_, {})
-        , context(context_)
     {
     }
 
@@ -27,12 +26,8 @@ public:
     /// Pass-through when executed directly (no split was applied). Out-of-line to anchor the vtable.
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    const ContextPtr & getContext() const { return context; }
-
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
-
-    ContextPtr context;
 };
 
 }

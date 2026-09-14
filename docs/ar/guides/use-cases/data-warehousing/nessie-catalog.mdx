@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -20,7 +20,7 @@ import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/Experim
 
 يدعم ClickHouse التكامل مع عدة كتالوجات ‏(Unity وGlue وREST وPolaris وغيرها). يوضح لك هذا الدليل خطوات الاستعلام عن بياناتك باستخدام ClickHouse وكتالوج [Nessie](https://projectnessie.org/).
 
-Nessie هو كتالوج معاملات مفتوح المصدر لبحيرات البيانات، ويوفر ما يلي:
+Nessie هو كتالوج معاملاتي مفتوح المصدر لبحيرات البيانات، ويوفر ما يلي:
 
 * **تحكم في إصدارات البيانات مستوحى من Git** باستخدام الفروع وعمليات commit
 * **معاملات عابرة للجداول** وضمانات الرؤية
@@ -47,10 +47,10 @@ Nessie هو كتالوج معاملات مفتوح المصدر لبحيرات �
 2. **إعداد نموذجي**: يمكنك استخدام إعداد docker-compose الرسمي لـ Nessie
 
 <div id="setting-up-local-nessie-catalog">
-  ### إعداد كتالوج Nessie محليًا
+  ### إعداد كتالوج Nessie المحلي
 </div>
 
-يمكنك استخدام [إعداد docker-compose الرسمي لـ Nessie](https://projectnessie.org/guides/setting-up/) الذي يوفّر بيئة متكاملة تضم Nessie، ومستودع إصدارات داخل الذاكرة، وMinIO لتخزين الكائنات.
+يمكنك استخدام [إعداد docker-compose الرسمي لـ Nessie](https://projectnessie.org/guides/) الذي يوفّر بيئة متكاملة تضم Nessie، ومستودع إصدارات داخل الذاكرة، وMinIO لتخزين الكائنات.
 
 **الخطوة 1:** أنشئ مجلدًا جديدًا لتشغيل المثال فيه، ثم أنشئ ملفًا باسم `docker-compose.yml` بالتكوين التالي:
 
@@ -149,7 +149,7 @@ docker-compose logs -f
 ```
 
 <Note>
-  يستخدم إعداد Nessie مخزن إصدارات في الذاكرة، ويتطلب تحميل البيانات التجريبية إلى جداول Iceberg أولًا. تأكد من أن البيئة قد أنشأت الجداول وعبّأتها بالبيانات قبل محاولة الاستعلام عنها من خلال ClickHouse.
+  يستخدم إعداد Nessie مستودع إصدارات داخل الذاكرة، ويتطلب تحميل البيانات التجريبية إلى جداول Iceberg أولًا. تأكد من أن البيئة قد أنشأت الجداول وعبّأتها بالبيانات قبل محاولة الاستعلام عنها من خلال ClickHouse.
 </Note>
 
 <div id="connecting-to-local-nessie-catalog">

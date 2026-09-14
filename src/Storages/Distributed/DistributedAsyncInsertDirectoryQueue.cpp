@@ -122,7 +122,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     const std::string & relative_path_,
     ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
-    BackgroundSchedulePool & bg_pool)
+    const BackgroundSchedulePoolPtr & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , disk(disk_)
@@ -151,7 +151,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
 
     initializeFilesFromDisk();
 
-    task_handle = bg_pool.createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
+    task_handle = bg_pool->createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
 }
 
@@ -394,7 +394,10 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            {
                 broken_bytes_count += fs::file_size(file_path);
+                broken_files++;
+            }
             else
                 LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
         }

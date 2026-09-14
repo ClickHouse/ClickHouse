@@ -25,45 +25,41 @@ ClickStack prend en charge deux façons complémentaires de créer des alertes 
   ### 1. Alertes de recherche
 </div>
 
-Les alertes de recherche vous permettent de déclencher des notifications en fonction des résultats d&#39;une recherche enregistrée. Elles vous aident à détecter lorsque des événements ou des schémas spécifiques se produisent plus (ou moins) fréquemment que prévu.
+Les alertes de recherche vous permettent de déclencher des notifications en fonction des résultats d’une recherche enregistrée. Elles vous aident à détecter lorsque des événements ou des motifs spécifiques se produisent plus (ou moins) fréquemment que prévu.
 
-Une alerte est déclenchée lorsque le nombre de résultats correspondants, dans une fenêtre de temps définie, dépasse ou passe sous un seuil spécifié.
+Une alerte est déclenchée lorsque le nombre de résultats correspondants dans une fenêtre de temps définie dépasse ou passe en dessous d’un seuil spécifié.
 
 Pour créer une alerte de recherche :
 
-Pour qu&#39;une alerte puisse être créée pour une recherche, celle-ci doit être enregistrée. Vous pouvez soit créer l&#39;alerte pour une recherche enregistrée existante, soit enregistrer la recherche pendant le processus de création de l&#39;alerte. Dans l&#39;exemple ci-dessous, nous partons du principe que la recherche n&#39;est pas enregistrée.
+Pour qu’une alerte puisse être créée pour une recherche, celle-ci doit être enregistrée. Vous pouvez soit créer l’alerte pour une recherche enregistrée existante, soit enregistrer la recherche pendant le processus de création de l’alerte. Dans l’exemple ci-dessous, nous partons du principe que la recherche n’est pas enregistrée.
 
 <Steps>
-  <Step>
-    #### Ouvrir la boîte de dialogue de création d&#39;alerte
-
-    Commencez par saisir une [recherche](/fr/clickstack/features/search), puis cliquez sur le bouton `Alerts` dans l&#39;angle supérieur droit de la page `Search`.
+  <Step title="Ouvrir la boîte de dialogue de création d’alerte" id="open-dialog">
+    Commencez par saisir une [recherche](/fr/clickstack/features/search), puis cliquez sur le bouton `Alerts` dans l’angle supérieur droit de la page `Search`.
 
     <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Vue Search des alertes" size="lg" />
   </Step>
 
-  <Step>
-    #### Créer l&#39;alerte
+  <Step title="Créer l’alerte" id="create-the-alert">
+    Depuis le panneau de création d’alerte, vous pouvez :
 
-    Depuis le panneau de création d&#39;alerte, vous pouvez :
-
-    * Attribuer un nom à la recherche enregistrée associée à l&#39;alerte.
-    * Définir un seuil et préciser combien de fois il doit être atteint sur une période donnée. Les seuils peuvent également servir de bornes supérieures ou inférieures. La période détermine également la fréquence de déclenchement de l&#39;alerte.
-    * Spécifier une valeur `grouped by`. Cela permet de soumettre la recherche à une agrégation, par exemple `ServiceName`, et donc de déclencher plusieurs alertes à partir de la même recherche.
+    * Attribuer un nom à la recherche enregistrée associée à l’alerte.
+    * Définir un seuil et préciser combien de fois il doit être atteint sur une période donnée. Les seuils peuvent également servir de bornes supérieures ou inférieures. La période détermine également la fréquence de déclenchement de l’alerte.
+    * Spécifier une valeur `grouped by`. Cela permet d’appliquer une agrégation à la recherche, par exemple `ServiceName`, et donc de déclencher plusieurs alertes à partir de la même recherche.
     * Choisir une destination webhook pour les notifications. Vous pouvez ajouter un nouveau webhook directement depuis cette vue. Voir [Ajouter un webhook](#add-webhook) pour plus de détails.
 
-    Avant d&#39;enregistrer, ClickStack visualise la condition de seuil afin que vous puissiez vérifier qu&#39;elle se comportera comme prévu.
+    Avant d’enregistrer, ClickStack visualise la condition de seuil afin que vous puissiez vérifier qu’elle se comportera comme prévu.
 
     <Image img="/images/use-cases/observability/search_alert.webp" alt="Alertes de recherche" size="lg" />
   </Step>
 </Steps>
 
-Notez que plusieurs alertes peuvent être ajoutées à une recherche. Si vous répétez le processus ci-dessus, vous verrez les alertes actuelles sous forme d&#39;onglets en haut de la boîte de dialogue de modification d&#39;alerte, chaque alerte étant associée à un numéro.
+Notez que plusieurs alertes peuvent être ajoutées à une recherche. Si vous répétez le processus ci-dessus, vous verrez les alertes actuelles sous forme d’onglets en haut de la boîte de dialogue de modification d’alerte, chaque alerte étant associée à un numéro.
 
 <Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Alertes multiples" size="md" />
 
 <div id="dashboard-alerts">
-  ### 2. Alertes de graphiques sur tableau de bord
+  ### 2. Dashboard chart alerts
 </div>
 
 Les alertes sur tableau de bord étendent l’alerte aux graphiques.
@@ -81,25 +77,19 @@ Pour ajouter une alerte sur tableau de bord :
 Les alertes peuvent être créées pendant le processus de création du graphique, lors de l’ajout d’un graphique à un tableau de bord, ou sur des graphiques existants. Dans l’exemple ci-dessous, nous supposons que le graphique existe déjà sur le tableau de bord.
 
 <Steps>
-  <Step>
-    #### Ouvrir la boîte de dialogue de modification du graphique
-
+  <Step title="Ouvrir la boîte de dialogue de modification du graphique" id="open-chart-dialog">
     Ouvrez le menu de configuration du graphique et sélectionnez le bouton d’alerte. La boîte de dialogue de modification du graphique s’affiche.
 
     <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
   </Step>
 
-  <Step>
-    #### Ajouter l’alerte
-
+  <Step title="Ajouter l’alerte" id="add-chart-alert">
     Sélectionnez **Add Alert**.
 
     <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Ajouter une alerte au graphique" size="lg" />
   </Step>
 
-  <Step>
-    #### Définir les conditions de l’alerte
-
+  <Step title="Définir les conditions de l’alerte" id="define-alert-conditions">
     Définissez la condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), le seuil, la durée et le webhook. La durée détermine également la fréquence de déclenchement de l’alerte.
 
     <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Créer une alerte pour le graphique" size="lg" />
@@ -126,7 +116,7 @@ Cela ouvre la boîte de dialogue de création du webhook, dans laquelle vous pou
 
 Un nom de webhook est requis, tandis que la description est facultative. Les autres paramètres à renseigner dépendent du type de service.
 
-Notez que les types de service disponibles diffèrent entre ClickStack Open Source et ClickStack Cloud. Voir [Service type integrations](#integrations).
+Notez que les types de service disponibles diffèrent entre ClickStack Open Source et ClickStack Cloud. Voir [intégration par type de service](#integrations).
 
 <div id="integrations">
   ### Intégrations par type de service
@@ -223,9 +213,7 @@ Les autres types de graphiques SQL (Table, Pie, Heatmap, etc.) ne prennent pas e
 Pour créer une alerte sur un graphique SQL :
 
 <Steps>
-  <Step>
-    #### Créer ou ouvrir un graphique SQL sur un tableau de bord
-
+  <Step title="Créer ou ouvrir un graphique SQL sur un tableau de bord" id="open-sql-chart">
     À partir d’un tableau de bord enregistré, [créez un nouveau graphique avec le mode **SQL**](/fr/clickstack/features/dashboards/sql-visualizations) ou ouvrez un graphique SQL existant pour le modifier.
 
     Choisissez **Line**, **Stacked Bar** ou **Number** comme type d’affichage.
@@ -233,9 +221,7 @@ Pour créer une alerte sur un graphique SQL :
     <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Créer un graphique SQL" size="lg" />
   </Step>
 
-  <Step>
-    #### Ajouter l’alerte
-
+  <Step title="Ajouter l’alerte" id="add-sql-alert">
     Sélectionnez **Add Alert** dans la section des alertes de l’éditeur de graphique. Configurez :
 
     * **Threshold type** : `>=` (supérieur ou égal à), `>` (supérieur à), `<=` (inférieur ou égal à), `<` (inférieur à), `=` (égal à), `!=` (différent de), `<= x >=` (entre) ou `> or <` (en dehors de)
@@ -246,15 +232,13 @@ Pour créer une alerte sur un graphique SQL :
     <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
 
     <Warning>
-      **Alert Time Range**
+      **intervalle de temps de l’alerte**
 
       En règle générale, les requêtes d’alerte sont exécutées une fois par intervalle. Cependant, si un ou plusieurs intervalles sont sautés en raison d’erreurs ou de requêtes lentes, l’exécution suivante utilisera un intervalle de temps qui inclut les intervalles manqués. Dans ce cas, les paramètres d’intervalle de la requête resteraient définis sur la période configurée pour l’alerte, tandis que les paramètres d’intervalle de temps refléteraient cette plage plus longue.
     </Warning>
   </Step>
 
-  <Step>
-    #### Enregistrer le tableau de bord
-
+  <Step title="Enregistrer le tableau de bord" id="save-sql-dashboard">
     Enregistrez le tableau de bord pour activer l’alerte. L’alerte commencera à être évaluée selon l’intervalle configuré.
   </Step>
 </Steps>

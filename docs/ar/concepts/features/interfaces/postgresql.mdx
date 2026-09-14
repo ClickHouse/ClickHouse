@@ -6,17 +6,17 @@ title: 'واجهة PostgreSQL'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 <Tip>
-  اطّلع على خدمة [Managed Postgres](/ar/products/managed-postgres/overview) لدينا. وبفضل تخزين NVMe الموجود فعليًا إلى جانب موارد المعالجة، توفّر أداءً أسرع بما يصل إلى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
+  اطّلع على خدمة [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) لدينا. وبفضل تخزين NVMe الموجود فعليًا إلى جانب موارد المعالجة، توفّر أداءً أسرع بما يصل إلى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
 </Tip>
 
-يدعم ClickHouse بروتوكول PostgreSQL الشبكي، مما يتيح لك استخدام عملاء Postgres للاتصال بـ ClickHouse. وبمعنى ما، يمكن لـ ClickHouse أن يتظاهر بأنه مثيل PostgreSQL، ما يتيح لك توصيل تطبيق عميل PostgreSQL بـ ClickHouse إذا لم يكن مدعومًا مباشرةً من ClickHouse أصلًا (على سبيل المثال، Amazon Redshift).
+يدعم ClickHouse بروتوكول PostgreSQL الشبكي، مما يتيح لك استخدام عملاء PostgreSQL للاتصال بـ ClickHouse. وبمعنى ما، يمكن لـ ClickHouse أن يتظاهر بأنه مثيل PostgreSQL، ما يتيح لك توصيل تطبيق عميل PostgreSQL بـ ClickHouse إذا لم يكن مدعومًا مباشرةً من ClickHouse أصلًا (على سبيل المثال، Amazon Redshift).
 
-لتمكين بروتوكول PostgreSQL الشبكي، أضِف الإعداد [postgresql&#95;port](/ar/reference/settings/server-settings/settings#postgresql_port) إلى ملف تهيئة الخادم. على سبيل المثال، يمكنك تحديد المنفذ في ملف XML جديد داخل مجلد `config.d`:
+لتمكين بروتوكول PostgreSQL الشبكي، أضِف الإعداد [postgresql&#95;port](/ar/reference/settings/server-settings/settings/postgresql#postgresql_port) إلى ملف تهيئة الخادم. على سبيل المثال، يمكنك تحديد المنفذ في ملف XML جديد داخل مجلد `config.d`:
 
 ```xml
 <clickhouse>

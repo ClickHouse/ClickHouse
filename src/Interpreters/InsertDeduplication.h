@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Core/Block_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 #include <Common/Logger.h>
 #include <base/defines.h>
@@ -64,6 +65,10 @@ protected:
     /// src/Storages/MergeTree/tests/gtest_async_inserts.cpp
     friend std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes);
     friend std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes);
+    friend std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<size_t> offsets);
+    friend std::vector<String> testPrewarmFilterToPartition(std::vector<String> data, std::vector<size_t> token_offsets, std::vector<UInt64> row_to_partition, size_t num_partitions, bool prewarm);
+    friend bool testPrewarmPopulatesCache(std::vector<String> data, std::vector<size_t> token_offsets, std::vector<UInt64> row_to_partition, size_t num_partitions);
+    friend bool testPrewarmDisabledIsNoop(std::vector<String> data, std::vector<size_t> token_offsets);
 
 public:
     using Ptr = std::shared_ptr<DeduplicationInfo>;
@@ -91,7 +96,16 @@ public:
     FilterResult deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const;
     FilterResult deduplicateBlock(const std::vector<std::string> & existing_block_ids, const std::string & partition_id, ContextPtr context) const;
 
+    /// `deduplication_enabled` mirrors the flag the sink passes to `deduplicateSelf`: when the target
+    /// table does not deduplicate, no token is attributed to a partition and the drift check inside
+    /// must not reject the insert. It is trailing and defaults to the fail-close value (`true`, the
+    /// check active) so that the signature stays source-compatible with the previous one - the unit
+    /// tests are compiled against the code without this fix by the bugfix validation job.
+    Ptr filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index, bool deduplication_enabled = true) const;
+
     std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
+
+    void prewarmDataHashes() const;
 
     size_t getCount() const;
     size_t getRows() const;
@@ -110,13 +124,40 @@ public:
     void setInsertDependencies(InsertDependenciesBuilderConstPtr insert_dependencies_);
     void updateOriginalBlock(const Chunk & chunk, SharedHeader header);
 
+    /// Compute and cache the data hashes of all tokens while `original_block` still matches
+    /// `offsets`. Must be called before handing the info to a nested INSERT pipeline (an `Alias`
+    /// hop) whose squashing and `AddDeduplicationInfoTransform` re-anchor `original_block` to the
+    /// chunks of that pipeline: a dependent view with a row-count-changing inner query makes those
+    /// chunks differ from the rows the offsets describe, and a hash computed after such
+    /// re-anchoring would read out of the block's bounds.
+    void cacheDataHashes() const;
+
+    /// Memoizing overload for the `Alias` hop. `RestoreChunkInfosTransform` clones the same
+    /// source-level info onto every output chunk of a row-count-changing view, and the clones do
+    /// not share `data_hash_batch` (tokens are copied by value). Caching per chunk would re-hash
+    /// the whole source block once per emitted chunk - O(source_rows * output_chunks). All those
+    /// clones carry the same `original_block` and `offsets` and differ only in view-block numbers,
+    /// which do not affect the hashed range, so the per-token hashes are computed once for a given
+    /// block and reused across its clones.
+    struct DataHashCache
+    {
+        std::shared_ptr<Block> block;
+        std::vector<size_t> offsets;
+        std::vector<std::optional<UInt128>> hashes;
+    };
+    void cacheDataHashes(DataHashCache & cache) const;
+
     const std::vector<StorageIDMaybeEmpty> & getVisitedViews() const;
 
 private:
     explicit DeduplicationInfo(bool async_insert_);
 
-    /// Column-major hash: for each column, hash the row range. Used by the unified path.
-    UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
+    /// Column-major hash of every token that still needs one, in a single pass over the columns.
+    void calculateDataHashes() const;
+
+    /// The token's column-major data hash, computing the batch on first demand. Used by the
+    /// unified path for the tokens which carry no user token.
+    UInt128 getDataHash(size_t offset) const;
     DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
 
 
@@ -135,6 +176,7 @@ private:
     size_t getTokenEnd(size_t pos) const;
     size_t getTokenRows(size_t pos) const;
 
+    std::vector<std::pair<UInt128, std::vector<size_t>>> buildOffsetsMapImpl(const std::string & partition_id) const;
     std::unordered_map<std::string, std::vector<size_t>> buildBlockIdToOffsetsMap(const std::string & partition_id) const;
 
     enum class Level

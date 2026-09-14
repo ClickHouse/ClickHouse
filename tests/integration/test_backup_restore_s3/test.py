@@ -922,17 +922,13 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
-def test_backup_to_zip(cluster):
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
-
-
 def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
     node = cluster.instances["node"]
     backup_name = new_backup_name()
-    archive_key = f"data/backups/{backup_name}.zip"
+    # Use a tar archive here: zip backups on S3 are now rejected up front (see
+    # test_backup_to_s3_zip_not_supported), and this test only needs some archive whose
+    # exact object key must not be confused with a similarly-prefixed sibling object.
+    archive_key = f"data/backups/{backup_name}.tar"
     data = b"not a backup archive"
     cluster.minio_client.put_object(
         "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
@@ -1354,3 +1350,53 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
+
+
+def test_backup_to_s3_zip_not_supported(cluster):
+    # Zip backups require seeking, which makes each read a separate HTTP request
+    # on object storage. They must be rejected early with a clear error (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for S3 backups" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")
+
+
+def test_restore_from_s3_zip_not_supported(cluster):
+    # RESTORE from a zip archive on S3 is the slow path reported in issue #53483: reading the
+    # central directory requires seeking, and every seek is a separate HTTP request. The rejection
+    # must fire up front, by file extension, before the archive is opened - so a non-existent
+    # `.zip` object is enough to prove the seek-heavy read path is never reached.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_source = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_source}"
+    )
+    assert "Zip archive format is not supported for S3 backups" in error, error
+
+
+def test_backup_to_object_storage_disk_zip_not_supported(cluster):
+    # A `Disk` destination backed by object storage (here the `s3`-typed `disk_s3`) has the same
+    # seek-heavy zip read path as a direct `S3(...)` destination, so it must be rejected too (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"Disk('disk_s3', '{backup_name}.zip')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for backups on disk" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")

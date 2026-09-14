@@ -316,7 +316,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### رؤى سجلّ الاستعلامات
 </div>
 
-تجعل واجهة Query Insights الجديدة لدينا في Cloud Console استخدام سجلّ الاستعلامات المضمّن في ClickHouse أسهل بكثير. ويُعد جدول `system.query_log` في ClickHouse مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعُنقود وأدائه. لكن هناك ملاحظة واحدة: مع أكثر من 70 حقلًا وتسجيل عدة سجلات لكل استعلام، فإن فهم سجلّ الاستعلامات ينطوي على منحنى تعلّم حاد. يقدّم هذا الإصدار الأولي من Query Insights تصورًا للعمل المستقبلي الهادف إلى تبسيط استكشاف أخطاء الاستعلامات وتحسينها. ويسعدنا تلقّي ملاحظاتكم بينما نواصل تطوير هذه الميزة، لذا يُرجى التواصل معنا — سنقدّر مساهماتكم كثيرًا.
+تجعل واجهة Query Insights الجديدة لدينا في Cloud Console استخدام سجلّ الاستعلامات المضمّن في ClickHouse أسهل بكثير. ويُعد جدول `system.query_log` في ClickHouse مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعُنقود وأدائه. لكن هناك ملاحظة واحدة: مع أكثر من 70 حقلًا وتعدد السجلات لكل استعلام، فإن فهم سجلّ الاستعلامات ينطوي على منحنى تعلّم حاد. يقدّم هذا الإصدار الأولي من Query Insights تصورًا للعمل المستقبلي الهادف إلى تبسيط استكشاف أخطاء الاستعلامات وتحسينها. ويسعدنا تلقّي ملاحظاتكم بينما نواصل تطوير هذه الميزة، لذا يُرجى التواصل معنا — سنقدّر مساهماتكم كثيرًا.
 
 <Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="واجهة Query Insights في ClickHouse Cloud تعرض مقاييس أداء الاستعلامات وتحليلها" border />
 
@@ -395,14 +395,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ملاحظة: خدمات **Development** على Azure غير مدعومة في الوقت الحالي.
 
 <div id="set-up-private-link-via-the-cloud-console">
-  ### إعداد Private Link عبر وحدة تحكم ClickHouse Cloud
+  ### إعداد Private Link عبر Cloud Console
 </div>
 
-تتيح لك ميزة Private Link ربط خدمات ClickHouse Cloud الخاصة بك بالخدمات الداخلية ضمن حسابك لدى موفر السحابة، من دون الحاجة إلى توجيه حركة المرور عبر الإنترنت العام، مما يقلل التكاليف ويعزز الأمان. في السابق، كان إعداد ذلك صعبًا ويتطلب استخدام ClickHouse Cloud API.
+تتيح لك ميزة Private Link ربط خدمات ClickHouse Cloud الخاصة بك بالخدمات الداخلية ضمن حسابك لدى موفر السحابة، من دون الحاجة إلى توجيه حركة المرور عبر الإنترنت العام، مما يقلل التكاليف ويعزز الأمان. في السابق، كان إعداد ذلك صعبًا ويتطلب استخدام واجهة برمجة تطبيقات ClickHouse Cloud.
 
-يمكنك الآن تهيئة private endpoints ببضع نقرات فقط مباشرةً من وحدة تحكم ClickHouse Cloud. ما عليك سوى الانتقال إلى **Settings** الخاصة بخدمتك، ثم إلى قسم **Security** والنقر على **Set up private endpoint**.
+يمكنك الآن تهيئة نقاط النهاية الخاصة ببضع نقرات فقط مباشرةً من Cloud Console. ما عليك سوى الانتقال إلى **Settings** الخاصة بخدمتك، ثم إلى قسم **Security** والنقر على **Set up private endpoint**.
 
-<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="تعرض وحدة تحكم ClickHouse Cloud واجهة إعداد نقطة نهاية خاصة ضمن إعدادات الأمان" border />
+<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="تعرض Cloud Console واجهة إعداد نقطة نهاية خاصة ضمن إعدادات الأمان" border />
 
 <div id="may-17-2024">
   ## 17 مايو 2024
@@ -510,18 +510,18 @@ ClickPipes هي خدمة حصرية توفّرها ClickHouse Cloud لإدخال
 </div>
 
 <div id="introducing-the-new-clickhouse-cloud-console">
-  ### تقديم وحدة تحكم ClickHouse Cloud الجديدة
+  ### تقديم ClickHouse Cloud Console الجديدة
 </div>
 
-يقدّم هذا الإصدار معاينة خاصة لوحدة تحكم Cloud الجديدة.
+يقدّم هذا الإصدار معاينة خاصة لـ Cloud Console الجديدة.
 
 في ClickHouse، نفكّر باستمرار في كيفية تحسين تجربة المطورين. وندرك أن توفير أسرع مستودع بيانات آني لا يكفي وحده، بل يجب أيضًا أن يكون سهل الاستخدام والإدارة.
 
-ينفّذ آلاف مستخدمي ClickHouse Cloud مليارات الاستعلامات عبر SQL Console كل شهر، لذلك قررنا زيادة استثمارنا في وحدة تحكم بمستوى عالمي لتسهيل التفاعل مع خدمات ClickHouse Cloud أكثر من أي وقت مضى. وتجمع تجربة وحدة تحكم Cloud الجديدة بين SQL Editor المستقل ووحدة التحكم الإدارية في واجهة مستخدم واحدة بديهية.
+ينفّذ آلاف مستخدمي ClickHouse Cloud مليارات الاستعلامات عبر SQL Console كل شهر، لذلك قررنا زيادة استثمارنا في وحدة تحكم بمستوى عالمي لتسهيل التفاعل مع خدمات ClickHouse Cloud أكثر من أي وقت مضى. وتجمع تجربة Cloud Console الجديدة بين SQL Editor المستقل ووحدة التحكم الإدارية في واجهة مستخدم واحدة بديهية.
 
-سيحصل عدد محدود من العملاء على معاينة لتجربة وحدة تحكم Cloud الجديدة — وهي طريقة موحّدة وغامرة لاستكشاف بياناتك وإدارتها في ClickHouse. يُرجى التواصل معنا عبر support@clickhouse.com إذا كنت ترغب في الحصول على وصول ذي أولوية.
+سيحصل عدد محدود من العملاء على معاينة لتجربة Cloud Console الجديدة — وهي طريقة موحّدة وغامرة لاستكشاف بياناتك وإدارتها في ClickHouse. يُرجى التواصل معنا عبر support@clickhouse.com إذا كنت ترغب في الحصول على وصول ذي أولوية.
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="رسم متحرك يوضح واجهة وحدة تحكم ClickHouse Cloud الجديدة مع SQL Editor مدمج وميزات إدارية" border />
+<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="رسم متحرك يوضح واجهة ClickHouse Cloud Console الجديدة مع SQL Editor مدمج وميزات إدارية" border />
 
 <div id="march-28-2024">
   ## 28 مارس 2024
@@ -739,4 +739,4 @@ ClickPipes هي خدمة حصرية توفّرها ClickHouse Cloud لإدخال
   ### تغييرات الموثوقية
 </div>
 
-* تغيير غير متوافق مع الإصدارات السابقة ويمسّ المستخدمين: في السابق، كان يمكن لميزتين ([is&#95;deleted](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) و`OPTIMIZE CLEANUP`) في ظروف معيّنة أن تتسببا في تلف البيانات في ClickHouse. ولحماية سلامة بيانات مستخدمينا مع الحفاظ على جوهر هذه الوظيفة، عدّلنا طريقة عمل هذه الميزة. وتحديدًا، أصبح إعداد MergeTree `clean_deleted_rows` مهملًا الآن ولم يعد له أي تأثير. كما أن الكلمة المفتاحية `CLEANUP` غير مسموح بها افتراضيًا (ولاستخدامها، ستحتاج إلى تفعيل `allow_experimental_replacing_merge_with_cleanup`). وإذا قررت استخدام `CLEANUP`، فعليك التأكد من أنها تُستخدم دائمًا مع `FINAL`، ويجب أن تضمن عدم إدراج أي صفوف بإصدارات أقدم بعد تشغيل `OPTIMIZE FINAL CLEANUP`.
+* تغيير غير متوافق مع الإصدارات السابقة يؤثر على المستخدمين: سابقًا، كان من الممكن أن تؤدي ميزتان ([is&#95;deleted](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) و`OPTIMIZE CLEANUP`) في ظروف معيّنة إلى تلف البيانات في ClickHouse. ولحماية سلامة بيانات مستخدمينا مع الحفاظ على جوهر هذه الوظيفة، عدّلنا طريقة عمل هذه الميزة. وتحديدًا، أصبح إعداد MergeTree `clean_deleted_rows` الآن متوقفًا عن الاستخدام ولم يعد له أي تأثير. كما أن الكلمة المفتاحية `CLEANUP` غير مسموح بها افتراضيًا (ولاستخدامها، ستحتاج إلى تفعيل `allow_experimental_replacing_merge_with_cleanup`). وإذا قررت استخدام `CLEANUP`، فعليك التأكد من استخدامها دائمًا مع `FINAL`، ويجب أن تضمن عدم إدراج أي صفوف بإصدارات أقدم بعد تشغيل `OPTIMIZE FINAL CLEANUP`.

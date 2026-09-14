@@ -128,60 +128,59 @@ Azure Data Factory مُعدّ بالفعل، فيمكنك تخطي هذه الخ
 Data Factory الجديد.
 
 <div id="-creating-new-rest-based-linked-service">
-  ## إنشاء خدمة مرتبطة جديدة مستندة إلى REST
+  ## إنشاء خدمة مرتبطة جديدة تستند إلى REST
 </div>
 
 1. سجّل الدخول إلى Microsoft Azure Portal وافتح مثيل Data Factory الخاص بك.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="الصفحة الرئيسية لـ Azure Portal مع Data Factory" border />
 
 2. في صفحة **Overview** الخاصة بـ Data Factory، انقر على **Launch Studio**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="صفحة Azure Portal Data Factory" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="صفحة Data Factory في Azure Portal" border />
 
-3. من القائمة اليمنى، اختر **Manage**، ثم انتقل إلى **Linked services**،
+3. من القائمة الجانبية اليسرى، اختر **Manage**، ثم انتقل إلى **Linked services**،
    وانقر على **+ New** لإنشاء خدمة مرتبطة جديدة.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="زر Azure Data Factory New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="زر خدمة مرتبطة جديدة في Azure Data Factory" border />
 
-4. في **شريط البحث New linked service**، اكتب **REST**، ثم اختر **REST**، وانقر على **Continue**
-   لإنشاء مثيل
-   [لموصل REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="بحث Azure Data Factory New Linked Service" border />
+4. في **شريط البحث عن خدمة مرتبطة جديدة**، اكتب **REST**، ثم اختر **REST**، وانقر على **Continue**
+   لإنشاء مثيل [لموصل REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="البحث عن خدمة مرتبطة جديدة في Azure Data Factory" border />
 
-5. في جزء تكوين الخدمة المرتبطة، أدخل اسمًا لخدمتك الجديدة،
-   ثم انقر على حقل **Base URL**، وبعد ذلك انقر على **Add dynamic content** (لا يظهر هذا الرابط
-   إلا عند تحديد الحقل).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="جزء New Lined Service" border />
+5. في جزء تكوين الخدمة المرتبطة، أدخل اسمًا للخدمة الجديدة،
+   ثم انقر على حقل **Base URL**، وبعد ذلك انقر على **Add dynamic content** (لا يظهر هذا الرابط إلا
+   عند تحديد الحقل).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="جزء الخدمة المرتبطة الجديدة" border />
 
-6. في جزء المحتوى الديناميكي، يمكنك إنشاء عنوان URL مُعلَّم بالمعلمات، ما
-   يتيح لك تحديد الاستعلام لاحقًا عند إنشاء datasets لجداول
-   مختلفة — وهذا يجعل الخدمة المرتبطة قابلة لإعادة الاستخدام.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="عنوان URL الأساسي الفارغ لـ New Linked Service" border />
+6. في جزء المحتوى الديناميكي، يمكنك إنشاء URL مُعلَّمًا بمعلمات، مما
+   يتيح لك تحديد استعلام لاحقًا عند إنشاء datasets لجدوال
+   مختلفة، وهذا يجعل الخدمة المرتبطة قابلاً لإعادة الاستخدام.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Base URL فارغ لـ الخدمة المرتبطة الجديدة" border />
 
-7. انقر على **&quot;+&quot;** بجانب حقل التصفية وأضف parameter جديدًا، وسمّه
-   `pQuery`، واضبط النوع على String، واضبط القيمة الافتراضية على `SELECT 1`.
+7. انقر على **&quot;+&quot;** بجوار حقل filter وأضف parameter جديدًا، وسمّه
+   `pQuery`، واضبط النوع على String، واضبط default value على `SELECT 1`.
    ثم انقر على **Save**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Parameters الخاصة بـ New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Parameters الخاصة بـ الخدمة المرتبطة الجديدة" border />
 
 8. في حقل expression، أدخل ما يلي ثم انقر على **OK**. استبدل
    `your-clickhouse-url.com` بالعنوان الفعلي لمثيل ClickHouse
-   الخاص بك.
+   لديك.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="حقل Expression الممتلئ لـ New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="حقل expression المعبأ لـ الخدمة المرتبطة الجديدة" border />
 
-9. بالعودة إلى النموذج الرئيسي، اختر Basic authentication، ثم أدخل username و
-   password المستخدمَين للاتصال بـ واجهة ClickHouse HTTP، ثم انقر على **Test
+9. بالعودة إلى النموذج الرئيسي، اختر basic authentication، ثم أدخل username
+   وpassword المستخدمين للاتصال بـ ClickHouse HTTP interface، وانقر على **Test
    connection**. إذا كان كل شيء مُعدًّا بشكل صحيح، فستظهر لك رسالة
    نجاح.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="فحص الاتصال لـ New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="التحقق من الاتصال لـ الخدمة المرتبطة الجديدة" border />
 
 10. انقر على **Create** لإكمال الإعداد.
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="قائمة Linked Services" border />
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="قائمة Linked services" border />
 
-يجب أن ترى الآن خدمتك المرتبطة الجديدة المستندة إلى REST ضمن القائمة.
+يُفترض الآن أن يظهر الخدمة المرتبطة الجديد المستند إلى REST في القائمة.
 
 <div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
-  ## إنشاء مجموعة بيانات جديدة لـ واجهة ClickHouse HTTP
+  ## إنشاء مجموعة بيانات جديدة لواجهة ClickHouse HTTP
 </div>
 
 الآن وبعد أن أصبح لدينا خدمة مرتبطة مُعَدًّا لواجهة ClickHouse HTTP،
@@ -193,7 +192,7 @@ ClickHouse.
 
 1. افتح وحدة استعلامات ClickHouse التي تفضّلها — وقد تكون ClickHouse Cloud web UI،
    أو عميل CLI، أو أي واجهة أخرى تستخدمها
-   لتشغيل الاستعلامات — ثم أنشئ target table:
+   لتشغيل الاستعلامات — ثم أنشئ الجدول الهدف:
    ```sql
    CREATE TABLE sensors
    (

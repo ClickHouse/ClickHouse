@@ -1,0 +1,26 @@
+--- A TopK read must not reuse a plain WHERE entry when the gate is off
+04628_prime	0
+04628_topk_after_prime	0
+04628_plain_reuse	1
+--- TopK still returns the planted row
+10000
+--- A skip-index-only TopK read must not reuse a plain WHERE entry either
+04628_si_prime	0
+04628_si_topk_after_prime	0
+04628_si_plain_reuse	1
+--- Skip-index-only TopK still returns the planted row
+10000
+--- A TopK read with an existing PREWHERE must not reuse a plain PREWHERE entry either
+04628_pw_prime	0
+04628_pw_topk_after_prime	0
+04628_pw_plain_reuse	1
+--- PREWHERE TopK still returns the planted row
+30000
+--- A PREWHERE TopK read must not write any QCC entry either
+0
+04628_pw_topk_write_1	0
+04628_pw_topk_write_2	0
+--- A TopK read must not write any QCC entry when the gate is off
+0
+04628_topk_write_1	0
+04628_topk_write_2	0

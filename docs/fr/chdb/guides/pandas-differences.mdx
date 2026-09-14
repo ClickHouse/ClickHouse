@@ -1,0 +1,456 @@
+---
+title: 'Principales différences avec pandas'
+sidebarTitle: 'Principales différences'
+slug: /chdb/guides/pandas-differences
+description: 'Différences importantes entre DataStore et pandas'
+keywords: ['chdb', 'datastore', 'pandas', 'différences', 'comportement']
+doc_type: 'guide'
+---
+
+Bien que DataStore soit largement compatible avec pandas, il existe des différences importantes à connaître.
+
+<div id="summary">
+  ## Tableau récapitulatif
+</div>
+
+| Aspect               | pandas                        | DataStore                                                                                            |
+| -------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Exécution**        | immédiat (immédiate)             | différé (différée)                                                                                      |
+| **Types de retour**  | DataFrame/Series              | DataStore/ColumnExpr                                                                                 |
+| **Ordre des lignes** | Préservé                      | Préservé (automatiquement) ; non garanti en [mode performance](/fr/chdb/configuration/performance-mode) |
+| **inplace**          | Pris en charge                | Non pris en charge                                                                                   |
+| **Index**            | Entièrement pris en charge    | Simplifié                                                                                            |
+| **Mémoire**          | Toutes les données en mémoire | Données conservées à la source                                                                       |
+
+***
+
+<div id="lazy-execution">
+  ## 1. Exécution différée vs immédiate
+</div>
+
+<div id="pandas-eager">
+  ### pandas (immédiat)
+</div>
+
+Les opérations s’exécutent immédiatement :
+
+```python
+import pandas as pd
+
+df = pd.read_csv("data.csv")  # Loads entire file NOW
+result = df[df['age'] > 25]   # Filters NOW
+grouped = result.groupby('city')['salary'].mean()  # Aggregates NOW
+```
+
+<div id="datastore-lazy">
+  ### DataStore (différé)
+</div>
+
+Les opérations sont reportées jusqu’au moment où les résultats sont nécessaires :
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")  # Just records the source
+result = ds[ds['age'] > 25]   # Just records the filter
+grouped = result.groupby('city')['salary'].mean()  # Just records
+
+# Execution happens here:
+print(grouped)        # Executes when displaying
+df = grouped.to_df()  # Or when converting to pandas
+```
+
+<div id="why-lazy">
+  ### Pourquoi c’est important
+</div>
+
+L’exécution différée permet :
+
+* **Optimisation des requêtes** : plusieurs opérations sont compilées en une seule requête SQL
+* **Sélection des colonnes utiles** : seules les colonnes nécessaires sont lues
+* **Application des filtres à la source** : les filtres sont appliqués à la source
+* **Utilisation efficace de la mémoire** : ne chargez pas les données dont vous n’avez pas besoin
+
+***
+
+<div id="return-types">
+  ## 2. Types de retour
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df['col']           # Returns pd.Series
+df[['a', 'b']]      # Returns pd.DataFrame
+df[df['x'] > 10]    # Returns pd.DataFrame
+df.groupby('x')     # Returns DataFrameGroupBy
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+```python
+ds['col']           # Returns ColumnExpr (lazy)
+ds[['a', 'b']]      # Returns DataStore (lazy)
+ds[ds['x'] > 10]    # Returns DataStore (lazy)
+ds.groupby('x')     # Returns LazyGroupBy
+```
+
+<div id="converting-to-pandas-types">
+  ### Conversion vers les types pandas
+</div>
+
+```python
+# Get pandas DataFrame
+df = ds.to_df()
+df = ds.to_pandas()
+
+# Get pandas Series from column
+series = ds['col'].to_pandas()
+
+# Or trigger execution
+print(ds)  # Automatically converts for display
+```
+
+***
+
+<div id="triggers">
+  ## 3. Déclencheurs d’exécution
+</div>
+
+DataStore s’exécute lorsque vous avez besoin des valeurs effectives :
+
+| Déclencheur          | Exemple            | Remarques                         |
+| -------------------- | ------------------ | --------------------------------- |
+| `print()` / `repr()` | `print(ds)`        | L’affichage requiert des données  |
+| `len()`              | `len(ds)`          | Requiert le nombre de lignes      |
+| `.columns`           | `ds.columns`       | Requiert les noms de colonnes     |
+| `.dtypes`            | `ds.dtypes`        | Requiert les informations de type |
+| `.shape`             | `ds.shape`         | Requiert les dimensions           |
+| `.values`            | `ds.values`        | Requiert les données effectives   |
+| `.index`             | `ds.index`         | Requiert l’index                  |
+| `to_df()`            | `ds.to_df()`       | Conversion explicite              |
+| Itération            | `for row in ds`    | Requiert une itération            |
+| `equals()`           | `ds.equals(other)` | Requiert une comparaison          |
+
+<div id="stay-lazy">
+  ### Opérations qui restent différées
+</div>
+
+| Opération        | Renvoie     |
+| ---------------- | ----------- |
+| `filter()`       | DataStore   |
+| `select()`       | DataStore   |
+| `sort()`         | DataStore   |
+| `groupby()`      | LazyGroupBy |
+| `join()`         | DataStore   |
+| `ds['col']`      | ColumnExpr  |
+| `ds[['a', 'b']]` | DataStore   |
+| `ds[condition]`  | DataStore   |
+
+***
+
+<div id="row-order">
+  ## 4. Ordre des lignes
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+L’ordre des lignes est toujours conservé :
+
+```python
+df = pd.read_csv("data.csv")
+print(df.head())  # Always same order as file
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+L’ordre des lignes est **automatiquement conservé** pour la plupart des opérations :
+
+```python
+ds = pd.read_csv("data.csv")
+print(ds.head())  # Matches file order
+
+# Filter preserves order
+ds_filtered = ds[ds['age'] > 25]  # Same order as pandas
+```
+
+DataStore enregistre automatiquement en interne la position d’origine des lignes (à l’aide de `rowNumberInAllBlocks()`) afin de garantir un ordre cohérent avec pandas.
+
+<div id="order-preserved">
+  ### Lorsque l’ordre est préservé
+</div>
+
+* Sources basées sur des fichiers (CSV, Parquet, JSON, etc.)
+* Sources de type pandas DataFrame
+* Opérations de filtrage
+* Sélection de colonnes
+* Après utilisation explicite de `sort()` ou `sort_values()`
+* Opérations qui définissent l’ordre (`nlargest()`, `nsmallest()`, `head()`, `tail()`)
+
+<div id="order-may-differ">
+  ### Quand l’ordre peut différer
+</div>
+
+* Après les agrégations `groupby()` (utilisez `sort_values()` pour garantir un ordre cohérent)
+* Après `merge()` / `join()` avec certains types de JOIN
+* En **mode performance** (`config.use_performance_mode()`) : l’ordre des lignes n’est pas garanti, quelle que soit l’opération. Voir [Mode Performance](/fr/chdb/configuration/performance-mode).
+
+***
+
+<div id="no-inplace">
+  ## 5. Pas de paramètre inplace
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df.drop(columns=['col'], inplace=True)  # Modifies df
+df.fillna(0, inplace=True)              # Modifies df
+df.rename(columns={'old': 'new'}, inplace=True)
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+`inplace=True` n’est pas pris en charge. Affectez toujours le résultat :
+
+```python
+ds = ds.drop(columns=['col'])           # Returns new DataStore
+ds = ds.fillna(0)                       # Returns new DataStore
+ds = ds.rename(columns={'old': 'new'})  # Returns new DataStore
+```
+
+<div id="why-no-inplace">
+  ### Pourquoi pas d’inplace ?
+</div>
+
+DataStore s’appuie sur des opérations immuables, ce qui permet :
+
+* La construction de requêtes (évaluation différée)
+* Une meilleure sûreté en multithreading
+* Un débogage simplifié
+* Un code plus propre
+
+***
+
+<div id="index">
+  ## 6. Prise en charge des index
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Prise en charge complète des index :
+
+```python
+df = df.set_index('id')
+df.loc['user123']           # Label-based access
+df.loc['a':'z']             # Label-based slicing
+df.reset_index()
+df.index.name = 'user_id'
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Gestion simplifiée des index :
+
+```python
+# Basic operations work
+ds.loc[0:10]               # Integer position
+ds.iloc[0:10]              # Same as loc for DataStore
+
+# For pandas-style index operations, convert first
+df = ds.to_df()
+df = df.set_index('id')
+df.loc['user123']
+```
+
+<div id="datastore-source-matters">
+  ### Le type de source du DataStore est important
+</div>
+
+* **Source DataFrame** : conserve l’index pandas
+* **Source File** : utilise un index entier simple
+
+***
+
+<div id="comparison">
+  ## 7. Comportement des comparaisons
+</div>
+
+<div id="comparing-with-pandas">
+  ### Comparaison avec pandas
+</div>
+
+pandas ne reconnaît pas les objets DataStore :
+
+```python
+import pandas as pd
+from chdb import datastore as ds
+
+pdf = pd.DataFrame({'a': [1, 2, 3]})
+dsf = ds.DataFrame({'a': [1, 2, 3]})
+
+# This doesn't work as expected
+pdf == dsf  # pandas doesn't know DataStore
+
+# Solution: convert DataStore to pandas
+pdf.equals(dsf.to_pandas())  # True
+```
+
+<div id="using-equals">
+  ### Utiliser equals()
+</div>
+
+```python
+# DataStore.equals() also works
+dsf.equals(pdf)  # Compares with pandas DataFrame
+```
+
+***
+
+<div id="types">
+  ## 8. Inférence de types
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Utilise les types numpy/pandas :
+
+```python
+df['col'].dtype  # int64, float64, object, datetime64, etc.
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Peut utiliser des types ClickHouse :
+
+```python
+ds['col'].dtype  # Int64, Float64, String, DateTime, etc.
+
+# Types are converted when going to pandas
+df = ds.to_df()
+df['col'].dtype  # Now pandas type
+```
+
+<div id="explicit-casting">
+  ### Conversion explicite de type
+</div>
+
+```python
+# Force specific type
+ds['col'] = ds['col'].astype('int64')
+```
+
+***
+
+<div id="memory">
+  ## 9. Modèle mémoire
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Toutes les données sont en mémoire :
+
+```python
+df = pd.read_csv("huge.csv")  # 10GB in memory!
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Les données restent à la source jusqu’à ce qu’elles soient nécessaires :
+
+```python
+ds = pd.read_csv("huge.csv")  # Just metadata
+ds = ds.filter(ds['year'] == 2024)  # Still just metadata
+
+# Only filtered result is loaded
+df = ds.to_df()  # Maybe only 1GB now
+```
+
+***
+
+<div id="errors">
+  ## 10. Messages d’erreur
+</div>
+
+<div id="different-error-sources">
+  ### Différentes sources d’erreurs
+</div>
+
+* **erreurs pandas** : issues de la bibliothèque pandas
+* **erreurs DataStore** : issues de chDB ou de ClickHouse
+
+```python
+# May see ClickHouse-style errors
+# "Code: 62. DB::Exception: Syntax error..."
+```
+
+<div id="debugging-tips">
+  ### Conseils de débogage
+</div>
+
+```python
+# View the SQL to debug
+print(ds.to_sql())
+
+# See execution plan
+ds.explain()
+
+# Enable debug logging
+from chdb.datastore.config import config
+config.enable_debug()
+```
+
+***
+
+<div id="checklist">
+  ## Checklist de migration
+</div>
+
+Lors d’une migration depuis pandas :
+
+* [ ] Modifier l’instruction d’import
+* [ ] Supprimer les paramètres `inplace=True`
+* [ ] Ajouter explicitement `to_df()` lorsqu’un pandas DataFrame est requis
+* [ ] Ajouter un tri si l’ordre des lignes est important
+* [ ] Utiliser `to_pandas()` pour les tests de comparaison
+* [ ] Tester avec des volumes de données représentatifs
+
+***
+
+<div id="quick-ref">
+  ## Référence rapide
+</div>
+
+| pandas                  | DataStore                          |
+| ----------------------- | ---------------------------------- |
+| `df[condition]`         | Identique (renvoie un DataStore)   |
+| `df.groupby()`          | Identique (renvoie un LazyGroupBy) |
+| `df.drop(inplace=True)` | `ds = ds.drop()`                   |
+| `df.equals(other)`      | `ds.to_pandas().equals(other)`     |
+| `df.loc['label']`       | `ds.to_df().loc['label']`          |
+| `print(df)`             | Identique (déclenche l’exécution)  |
+| `len(df)`               | Identique (déclenche l’exécution)  |

@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
 #include <Backups/SettingsFieldOptionalUInt64.h>
@@ -165,6 +166,7 @@ namespace
     };
 
     using SettingFieldRestoreUDFCreationMode = SettingFieldRestoreAccessCreationMode;
+    using SettingFieldRestoreWorkloadsAndResourcesCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
 /// List of restore settings except base_backup_name and cluster_host_ids.
@@ -172,6 +174,9 @@ namespace
     M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
+    M(OptionalBool, restore_table_data) \
+    M(OptionalBool, restore_access_entities) \
+    M(OptionalBool, restore_functions) \
     M(RestoreTableCreationMode, create_table) \
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \
@@ -187,6 +192,7 @@ namespace
     M(Bool, restore_access_entities_with_current_grants) \
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
+    M(RestoreWorkloadsAndResourcesCreationMode, create_workloads_and_resources) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
@@ -310,6 +316,13 @@ std::map<String, String> RestoreSettings::getSerializedSettings() const
 
     LIST_OF_RESTORE_SETTINGS(SERIALIZE_RESTORE_SETTING)
 #undef SERIALIZE_RESTORE_SETTING
+
+    /// The three granular restore settings default to the effective inverse of `structure_only`.
+    /// Log those effective values rather than the unset optional values so `system.backups` and
+    /// `system.backup_log` accurately describe the behavior of a restore operation.
+    res["restore_table_data"] = shouldRestoreTableData() ? "1" : "0";
+    res["restore_access_entities"] = shouldRestoreAccessEntities() ? "1" : "0";
+    res["restore_functions"] = shouldRestoreFunctions() ? "1" : "0";
 
     /// Never expose the password; drop purely internal fields that are not user-facing settings
     /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).

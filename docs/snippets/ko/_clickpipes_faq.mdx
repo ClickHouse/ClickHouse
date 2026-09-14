@@ -11,14 +11,18 @@ title: ClickPipes FAQ
   스트리밍 ClickPipes의 경우, ClickPipes 레플리카는 원격 데이터 소스(예: Kafka 브로커)에 액세스하여
   데이터를 가져오고, 처리한 뒤 대상 ClickHouse 서비스로 수집합니다.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes 레플리카 - 스트리밍 ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="ClickPipes 레플리카 - 스트리밍 ClickPipes" />
+  </Frame>
 
   객체 스토리지 ClickPipes의 경우,
   ClickPipes 레플리카가 데이터 로딩 작업을 오케스트레이션합니다
   (복사할 파일 식별, 상태 유지, 파티션 이동).
   반면 데이터는 ClickHouse 서비스가 직접 가져옵니다.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes 레플리카 - 객체 스토리지 ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="ClickPipes 레플리카 - 객체 스토리지 ClickPipes" />
+  </Frame>
 </Accordion>
 
 <Accordion title="기본 레플리카 수와 크기는 얼마입니까?">
@@ -38,11 +42,13 @@ title: ClickPipes FAQ
   Kafka ClickPipes의 경우 Kafka 브로커 파티션도 그에 맞게 스케일링해야 한다는 점에 유의하십시오.
   스케일링 제어 옵션은 각 스트리밍 ClickPipe의 &quot;설정&quot; 아래에서 사용할 수 있습니다.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes 레플리카 - ClickPipes 레플리카는 몇 개가 필요합니까?" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="ClickPipes 레플리카 - ClickPipes 레플리카는 몇 개가 필요합니까?" />
+  </Frame>
 </Accordion>
 
 <Accordion title="ClickPipes 요금 구조는 어떻게 됩니까?">
-  이는 두 가지 차원으로 구성됩니다.
+  이는 두 가지 차원으로 구성됩니다:
 
   * **컴퓨트**: 유닛당 시간별 가격
     컴퓨트는 데이터를 실제로 수집하는지 여부와 관계없이 ClickPipes 레플리카 파드를 실행하는 비용을 의미합니다.
@@ -55,12 +61,12 @@ title: ClickPipes FAQ
 </Accordion>
 
 <Accordion title="ClickPipes의 공개 가격은 얼마입니까?">
-  * Compute: 시간당 유닛당 $0.20 (레플리카당 시간당 $0.05)
-  * 수집된 데이터: GB당 $0.04
+  * Compute: $0.20 per unit per hour ($0.05 per replica per hour)
+  * 수집된 데이터: $0.04 per GB
 </Accordion>
 
 <Accordion title="예시로 보면 어떻습니까?">
-  예를 들어 단일 레플리카(0.25 컴퓨트 유닛)를 사용해 24시간 동안 Kafka connector로 1 TB의 데이터를 수집하는 비용은 다음과 같습니다.
+  예를 들어 단일 레플리카(0.25 컴퓨트 유닛)를 사용해 24시간 동안 Kafka connector로 1 TB의 데이터를 수집하는 비용은 다음과 같습니다:
 
   $$
   (0.25 \times 0.20 \times 24) + (0.04 \times 1000) = $41.2

@@ -11,7 +11,8 @@ namespace DB
 
 class ServerUUID
 {
-    inline static UUID server_uuid = UUIDHelpers::Nil;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static UUID server_uuid;
 
 public:
     /// Returns persistent UUID of current clickhouse-server or clickhouse-keeper instance.

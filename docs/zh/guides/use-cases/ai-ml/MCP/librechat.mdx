@@ -14,9 +14,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 > 并将其连接到 ClickHouse 示例数据集。
 
 <Steps>
-  <Step>
-    ## 安装 Docker
-
+  <Step title="安装 Docker" id="install-docker">
     你需要使用 Docker 来运行 LibreChat 和 MCP Server。获取 Docker 的步骤如下：
 
     1. 访问 [docker.com](https://www.docker.com/products/docker-desktop)
@@ -29,9 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     更多信息请参阅 [Docker 文档](https://docs.docker.com/get-docker/)。
   </Step>
 
-  <Step>
-    ## 克隆 LibreChat 代码仓库
-
+  <Step title="克隆 LibreChat 代码仓库" id="clone-librechat-repo">
     打开终端 (命令提示符、终端或 PowerShell) ，然后使用以下命令克隆
     LibreChat 代码仓库：
 
@@ -41,9 +37,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 创建并编辑 .env 文件
-
+  <Step title="创建并编辑 .env 文件" id="create-and-edit-env-file">
     将示例配置文件 `.env.example` 复制为 `.env`：
 
     ```bash
@@ -70,9 +64,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## 创建 librechat.yaml 文件
-
+  <Step title="创建 librechat.yaml 文件" id="create-librechat-yaml-file">
     运行以下命令，创建新的 `librechat.yaml` 文件：
 
     ```bash
@@ -82,9 +74,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     这将为 LibreChat 创建主[配置文件](https://www.librechat.ai/docs/configuration/librechat_yaml)。
   </Step>
 
-  <Step>
-    ## 将 ClickHouse MCP 服务器添加到 Docker Compose
-
+  <Step title="将 ClickHouse MCP 服务器添加到 Docker Compose" id="add-clickhouse-mcp-server-to-docker-compose">
     接下来，我们将 ClickHouse MCP 服务器添加到 LibreChat 的 Docker Compose 文件中，
     以便 LLM 能够与
     [ClickHouse SQL playground](https://sql.clickhouse.com/)
@@ -119,9 +109,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Card>
   </Step>
 
-  <Step>
-    ## 在 librechat.yaml 中配置 MCP 服务器
-
+  <Step title="在 librechat.yaml 中配置 MCP 服务器" id="configure-mcp-server-in-librechat-yaml">
     打开 `librechat.yaml`，并将以下配置添加到文件末尾：
 
     ```yml
@@ -146,9 +134,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 使用 Ollama 添加本地 LLM (可选)
-
+  <Step title="使用 Ollama 添加本地 LLM (可选)" id="add-local-llm-using-ollama">
     ### 安装 Ollama
 
     前往 [Ollama 官网](https://ollama.com/download)，安装适用于你系统的 Ollama。
@@ -187,9 +173,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 启动所有服务
-
+  <Step title="启动所有服务" id="start-all-services">
     在 LibreChat 项目文件夹的根目录下，运行以下命令以启动所有服务：
 
     ```bash
@@ -199,9 +183,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     等待所有服务全部启动并正常运行。
   </Step>
 
-  <Step>
-    ## 在浏览器中打开 LibreChat
-
+  <Step title="在浏览器中打开 LibreChat" id="open-librechat-in-browser">
     当所有服务都启动并正常运行后，打开浏览器并访问 `http://localhost:3080/`
 
     如果你还没有免费的 LibreChat 账户，请先创建一个并登录。现在，你应该
@@ -215,7 +197,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     现在，你可以让 LLM 探索 ClickHouse 示例数据集。试试看：
 
     ```text title="Prompt"
-    你可以访问哪些数据集？
+    What datasets do you have access to?
     ```
   </Step>
 </Steps>

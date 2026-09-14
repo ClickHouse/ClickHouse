@@ -2,54 +2,60 @@
 slug: /use-cases/observability/clickstack/getting-started/oss
 title: 'Primeros pasos con ClickStack Open Source'
 sidebarTitle: 'Código abierto'
-description: 'Primeros pasos con ClickStack Open Source'
+description: 'Ejecute ClickStack Open Source localmente, envíe datos de prueba y confirme que la ingestión funciona'
 doc_type: 'guide'
-keywords: ['ClickStack Open Source', 'primeros pasos', 'implementación con Docker', 'UI de HyperDX', 'implementación local']
+keywords: ['ClickStack Open Source', 'primeros pasos', 'despliegue con Docker', 'OpenTelemetry', 'despliegue local']
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Para implementar **ClickStack Open Source**, donde ejecuta y gestiona ClickHouse y la UI de ClickStack por su cuenta, ofrecemos imágenes de Docker precompiladas que agrupan la UI, un colector de OpenTelemetry y ClickHouse en un único contenedor, lo que facilita empezar con el desarrollo local, las pruebas y las implementaciones autogestionadas.
+Ejecute ClickStack Open Source de forma local, envíe un evento de prueba a través de su OpenTelemetry Collector y confirme que el evento está disponible en la UI de ClickStack.
+
+Con ClickStack Open Source, puede ejecutar y administrar el backend de ClickHouse, la UI de ClickStack y el pipeline de ingestión. La imagen todo en uno incluye estos componentes junto con MongoDB en un único contenedor Docker para realizar evaluaciones y pruebas locales.
 
 <Tip>
-  También hay disponible una versión gestionada de ClickStack; consulte [Managed ClickStack](/es/clickstack/getting-started/managed).
+  También está disponible una versión administrada de ClickStack; consulte [Managed ClickStack](/es/clickstack/getting-started/managed).
 </Tip>
 
-Estas imágenes se basan en el paquete oficial de ClickHouse para Debian y están disponibles en varias distribuciones para adaptarse a distintos casos de uso.
+Los pasos siguientes utilizan la imagen todo en uno autenticada. Si desea una UI local sin crear una cuenta, siga la [guía del modo local con Docker](/es/clickstack/deployment/local-mode-only).
 
-La opción más sencilla es una **distribución de imagen única** que incluye todos los componentes principales de la pila en un solo paquete:
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
 
-* **UI de HyperDX**
-* **colector de OpenTelemetry (OTel)**
-* **ClickHouse**
+Instala [Docker](https://docs.docker.com/get-docker/) y confirma que los siguientes puertos estén disponibles:
 
-Esta imagen todo en uno le permite iniciar toda la pila con un solo comando, por lo que es ideal para pruebas, experimentación o implementaciones locales rápidas.
+* `8080` para la UI de ClickStack
+* `4317` para OTLP mediante gRPC
+* `4318` para OTLP mediante HTTP
+* `8123` para la interfaz HTTP de ClickHouse
 
-<Steps>
-  <Step>
-    ## Implementar la pila con docker
+Para cargas de trabajo sostenidas o en producción, consulta las [opciones de implementación de código abierto](/es/clickstack/deployment/oss) y [Pasar a producción](/es/clickstack/managing/production).
 
-    Lo siguiente ejecutará un colector de OpenTelemetry (en los puertos 4317 y 4318), la UI de HyperDX (en el puerto 8080) y ClickHouse (8123).
+<div id="set-up-clickstack-open-source">
+  ## Configura ClickStack Open Source con la imagen todo en uno
+</div>
+
+<Steps titleSize="h3">
+  <Step title="Inicia ClickStack" id="deploy-stack-with-docker">
+    Ejecuta la imagen todo en uno:
 
     ```shell
-    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    docker run \
+      --name clickstack \
+      -p 8123:8123 \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
     ```
 
-    <Info>
-      **Actualización del nombre de la imagen**
+    El contenedor se ejecuta en primer plano. Deja esta terminal abierta y usa una segunda terminal para ejecutar los comandos restantes de esta guía.
 
-      Las imágenes de ClickStack ahora se publican como `clickhouse/clickstack-*` (antes `docker.hyperdx.io/hyperdx/*`).
-    </Info>
-
-    <Tip>
-      **Persistencia de datos y configuración**
-
-      Para conservar los datos y la configuración entre reinicios del contenedor, puede modificar el comando de docker anterior para montar las rutas `/data/db`, `/var/lib/clickhouse` y `/var/log/clickhouse-server`.
-
-      Por ejemplo:
+    <Accordion title="Conserva los datos y la configuración">
+      Para conservar la configuración de ClickStack, los datos y los logs de ClickHouse después de eliminar el contenedor, ejecuta este comando en su lugar:
 
       ```shell
-      # modificar el comando para montar rutas
       docker run \
         --name clickstack \
         -p 8123:8123 \
@@ -61,87 +67,152 @@ Esta imagen todo en uno le permite iniciar toda la pila con un solo comando, por
         -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
         clickhouse/clickstack-all-in-one:latest
       ```
-    </Tip>
+
+      `$(pwd)` se resuelve como tu directorio actual. Este comando almacena los archivos persistentes en el directorio `.volumes` de esa ubicación.
+    </Accordion>
   </Step>
 
-  <Step>
-    ## Vaya a la UI de ClickStack
+  <Step title="Abre ClickStack" id="navigate-to-hyperdx-ui">
+    Cuando ClickStack se inicie, abre [http://localhost:8080](http://localhost:8080) y crea una cuenta.
 
-    Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de ClickStack (HyperDX).
+    ClickStack se conecta automáticamente a la instancia de ClickHouse incluida y crea fuentes de datos para logs, trazas, métricas y sesiones.
 
-    Cree un usuario e introduzca un nombre de usuario y una contraseña que cumplan los requisitos de complejidad.
+    #### Copia el API key de ingestión
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
-
-    HyperDX se conectará automáticamente al clúster local y creará fuentes de datos para logs, traces, metrics y sessions, lo que le permitirá explorar el producto de inmediato.
+    En la sección **Primeros pasos** del menú izquierdo, selecciona **Agregar datos** y copia el **API key de ingestión**. La telemetría enviada al OpenTelemetry Collector incluido debe incluir esta clave en el header `authorization`.
   </Step>
 
-  <Step>
-    ## Explore el producto
-
-    Con la pila implementada, pruebe uno de nuestros conjuntos de datos de ejemplo.
-
-    Para seguir usando el clúster local:
-
-    * [Example dataset](/es/clickstack/example-datasets/sample-data) - Cargue un conjunto de datos de ejemplo desde nuestra demo pública. Diagnostique un problema sencillo.
-    * [Local files and metrics](/es/clickstack/example-datasets/local-data) - Cargue archivos locales y supervise el sistema en OSX o Linux usando un colector de OpenTelemetry local.
-
-    <br />
-
-    Como alternativa, puede conectarse a un clúster de demostración donde podrá explorar un conjunto de datos más grande:
-
-    * [Remote demo dataset](/es/clickstack/example-datasets/remote-demo-data) - Explore un conjunto de datos de demostración en nuestro servicio de demostración de ClickHouse.
-  </Step>
-</Steps>
-
-<div id="alternative-deployment-models">
-  ## Modelos de implementación alternativos
-</div>
-
-<div id="local-mode">
-  ### Modo local
-</div>
-
-El modo local es una forma de implementar HyperDX sin necesidad de autenticarse.
-
-**No se admite la autenticación**.
-
-Este modo está pensado para pruebas rápidas, desarrollo, demos y tareas de depuración en las que no se necesita autenticación ni persistencia de la configuración.
-
-Para obtener más información sobre este modelo de implementación, consulte [&quot;Solo modo local&quot;](/es/clickstack/deployment/local-mode-only).
-
-<div id="hosted-version">
-  ### Versión alojada
-</div>
-
-Puede usar una versión alojada de ClickStack, disponible en modo local, en [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
-
-<div id="self-hosted-version">
-  ### Versión autohospedada
-</div>
-
-<Steps>
-  <Step>
-    ### Ejecutar con Docker
-
-    La imagen del modo local autohospedado incluye un colector de OpenTelemetry, la UI de ClickStack y un servidor ClickHouse ya preconfigurados. Esto facilita la ingesta de datos de telemetría desde sus aplicaciones y su visualización con una configuración externa mínima. Para empezar con la versión autohospedada, simplemente ejecute el contenedor de Docker con los puertos adecuados mapeados:
+  <Step title="Envía datos de prueba" id="send-test-data">
+    En la segunda terminal, exporta el API key de ingestión:
 
     ```shell
-    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
     ```
 
-    A diferencia de la imagen &quot;All in one&quot;, no se le pedirá que cree un usuario, ya que **el modo local no incluye autenticación**.
+    Envía un log OTLP con la marca de tiempo actual:
+
+    ```shell
+    NOW_NANO="$(date +%s)000000000"
+
+    curl -i "http://localhost:4318/v1/logs" \
+      -H "Content-Type: application/json" \
+      -H "authorization: ${CLICKSTACK_API_KEY}" \
+      --data-binary @- <<EOF
+    {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [{
+            "key": "service.name",
+            "value": {"stringValue": "clickstack-docs-test"}
+          }]
+        },
+        "scopeLogs": [{
+          "scope": {"name": "clickstack-docs-test"},
+          "logRecords": [{
+            "timeUnixNano": "${NOW_NANO}",
+            "severityText": "INFO",
+            "body": {"stringValue": "ClickStack ingestion test"}
+          }]
+        }]
+      }]
+    }
+    EOF
+    ```
+
+    Una solicitud correcta devuelve `HTTP/1.1 200 OK`.
   </Step>
 
-  <Step>
-    ### Complete las credenciales de conexión
+  <Step title="Confirma la ingestión" id="confirm-ingestion">
+    Abre la vista **Búsqueda** en ClickStack y busca `ClickStack ingestion test`.
 
-    Para conectarse a su propio **clúster externo de ClickHouse**, puede introducir manualmente sus credenciales de conexión.
+    El resultado debería incluir el evento de prueba con el nombre de servicio `clickstack-docs-test`.
 
-    Como alternativa, si quiere explorar rápidamente el producto, también puede hacer clic en **Conectarse al servidor Demo** para acceder a datasets precargados y probar ClickStack sin necesidad de configuración.
-
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Credenciales" size="md" />
-
-    Si se conecta al servidor Demo, puede explorar el dataset con las [instrucciones del dataset de demostración](/es/clickstack/example-datasets/remote-demo-data).
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="Vista de logs de ClickStack Open Source que muestra el evento de prueba de ingestión de ClickStack" border />
   </Step>
 </Steps>
+
+Ahora tienes una instancia local de ClickStack, un endpoint de ingestión operativo y un evento de prueba que puedes inspeccionar en ClickStack.
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+<div id="send-application-and-infrastructure-data">
+  ### Envíe datos de aplicaciones e infraestructura
+</div>
+
+Elija una guía según los datos que desee enviar a ClickStack:
+
+<CardGroup cols={2}>
+  <Card title="Instrumente una aplicación" icon="code" href="/es/clickstack/ingesting-data/sdks/index">
+    Envíe trazas y logs de aplicaciones con un SDK de OpenTelemetry compatible.
+  </Card>
+
+  <Card title="Recopile logs del host" icon="server" href="/es/clickstack/integration-examples/host-logs">
+    Reenvíe logs del host desde un OpenTelemetry Collector que se ejecuta con el rol de agente.
+  </Card>
+
+  <Card title="Supervise Kubernetes" icon="cubes" href="/es/clickstack/integration-examples/kubernetes">
+    Recopile logs, métricas y trazas de un clúster de Kubernetes.
+  </Card>
+
+  <Card title="Explore otras integraciones" icon="plug" href="/es/clickstack/integration-examples/index">
+    Encuentre guías para aplicaciones y fuentes de telemetría adicionales.
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### Explorar datos de ejemplo
+</div>
+
+Use un conjunto de datos de ejemplo para explorar ClickStack con telemetría más completa:
+
+<CardGroup cols={2}>
+  <Card title="Logs, trazas y métricas de ejemplo" href="/es/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    Cargue datos de la demo pública y diagnostique un issue.
+  </Card>
+
+  <Card title="Logs y métricas locales" href="/es/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    Recopile archivos locales y métricas del sistema en macOS o Linux.
+  </Card>
+</CardGroup>
+
+Para explorar datos precargados sin instalar Docker, use la [demo alojada de ClickStack](/es/clickstack/example-datasets/remote-demo-data).
+
+<div id="generate-synthetic-data">
+  ### Generar datos sintéticos
+</div>
+
+Use un generador para probar la ingestión sin necesidad de una aplicación o un conjunto de datos existentes:
+
+<CardGroup cols={2}>
+  <Card title="Generar datos con otelgen" icon="terminal" href="/es/clickstack/example-datasets/otelgen">
+    Envíe una breve ráfaga de logs, trazas y métricas sintéticos mediante OTLP.
+  </Card>
+
+  <Card title="Generar datos con telemetrygen" icon="terminal" href="/es/clickstack/example-datasets/telemetrygen">
+    Genere señales configurables de OpenTelemetry en varios servicios.
+  </Card>
+</CardGroup>
+
+Consulte [todos los datos de ejemplo y las demos de ClickStack](/es/clickstack/example-datasets/index).
+
+<div id="prepare-for-production">
+  ### Preparación para producción
+</div>
+
+Revise las recomendaciones de implementación y producción antes de usar ClickStack con cargas de trabajo sostenidas:
+
+<CardGroup cols={2}>
+  <Card title="Pasar a producción" icon="shield" href="/es/clickstack/managing/production">
+    Revise las credenciales de ingestión, la seguridad, la retención y las recomendaciones operativas.
+  </Card>
+
+  <Card title="Elegir un modelo de implementación" icon="server" href="/es/clickstack/deployment/oss">
+    Compare las opciones de implementación de código abierto para su entorno.
+  </Card>
+</CardGroup>

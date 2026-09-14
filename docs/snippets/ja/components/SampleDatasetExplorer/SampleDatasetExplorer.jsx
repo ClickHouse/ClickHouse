@@ -1,6 +1,6 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = "#FAFF69"
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // Each category: id, title (shown beneath the banner image), an icon used for
@@ -24,6 +24,18 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ja/get-started/sample-datasets/brown-benchmark",
           imgLight: "/images/sample-datasets-grid/brown-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
+        },
+        {
+          title: "Criteo terabyte click logs",
+          href: "/ja/get-started/sample-datasets/criteo",
+          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
+          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+        },
+        {
+          title: "JOB benchmark",
+          href: "/ja/get-started/sample-datasets/job",
+          imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
+          imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
         },
         {
           title: "Star Schema Benchmark (SSB)",
@@ -76,6 +88,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
+          title: "What's on the Menu? (NYPL)",
+          href: "/ja/get-started/sample-datasets/menus",
+          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
+          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
+        },
+        {
           title: "NYPD complaint data",
           href: "/ja/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
@@ -92,12 +110,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ja/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
-        },
-        {
-          title: "What's on the Menu? (NYPL)",
-          href: "/ja/get-started/sample-datasets/menus",
-          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
-          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         }
       ]
     },
@@ -115,7 +127,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/environmental-sensors-dark.jpg"
         },
         {
-          title: "NOAA 全球歴史気候学ネットワーク",
+          title: "NOAA Global Historical Climatology Network",
           href: "/ja/get-started/sample-datasets/noaa",
           imgLight: "/images/sample-datasets-grid/noaa-light.jpg",
           imgDark: "/images/sample-datasets-grid/noaa-dark.jpg"
@@ -125,12 +137,13 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ja/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
-        }
+        },
+        { title: "WikiStat", href: "/ja/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
       id: "vector-search",
-      title: "Vector search and embeddings",
+      title: "Vector search & embeddings",
       icon: "search",
       imgLight: "/images/sample-datasets-grid/vector-search-light.jpg",
       imgDark: "/images/sample-datasets-grid/vector-search-dark.jpg",
@@ -148,22 +161,22 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
-          title: "LAION 5B dataset",
-          href: "/ja/get-started/sample-datasets/laion5b",
-          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
-          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
-        },
-        {
           title: "Laion-400M dataset",
           href: "/ja/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
+        },
+        {
+          title: "LAION 5B dataset",
+          href: "/ja/get-started/sample-datasets/laion5b",
+          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
+          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
       ]
     },
     {
       id: "web-social",
-      title: "Web and social analytics",
+      title: "Web & social analytics",
       icon: "globe",
       imgLight: "/images/sample-datasets-grid/web-social-analytics-light.jpg",
       imgDark: "/images/sample-datasets-grid/web-social-analytics-dark.jpg",
@@ -175,22 +188,16 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
-          title: "Analyzing Stack Overflow data",
-          href: "/ja/get-started/sample-datasets/stackoverflow",
-          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
-          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
-        },
-        {
           title: "Anonymized web analytics",
           href: "/ja/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
-          title: "Criteo terabyte click logs",
-          href: "/ja/get-started/sample-datasets/criteo",
-          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
-          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+          title: "Querying GitHub data",
+          href: "/ja/get-started/sample-datasets/github",
+          imgLight: "/images/sample-datasets-grid/github-light.jpg",
+          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "GitHub events dataset",
@@ -205,12 +212,11 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
-          title: "Querying GitHub data",
-          href: "/ja/get-started/sample-datasets/github",
-          imgLight: "/images/sample-datasets-grid/github-light.jpg",
-          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
+          title: "Analyzing Stack Overflow data",
+          href: "/ja/get-started/sample-datasets/stackoverflow",
+          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
+          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
-        { title: "WikiStat", href: "/ja/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" },
         {
           title: "YouTube dataset of dislikes",
           href: "/ja/get-started/sample-datasets/youtube-dislikes",
@@ -221,23 +227,31 @@ export const SampleDatasetExplorer = ({ categories }) => {
     }
   ]
 
-  const cats = categories || CATEGORIES
+  // Keep the explorer in the same order as the sidebar. The playground is a
+  // standalone page link above the explorer, followed by these categories.
+  const categoryOrder = ["benchmarks", "vector-search", "web-social", "geo-location", "time-series-sensors", "public-records"]
+  const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
 
   const [selectedId, setSelectedId] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
 
-  // Theme visibility is handled by explicit `.dark` descendant selectors in the
-  // <style> block below (Mintlify's class strategy — same approach as
-  // IntegrationGrid). Tailwind `dark:` utilities are NOT reliable here: they
-  // compile against the OS media query, so they'd ignore the in-app light/dark
-  // toggle. Note the reversed-colour scheme: light mode shows the *dark* (black)
-  // banner art, dark mode shows the *light* (yellow) art.
-  const Banner = ({ cat, className }) => (
-    <>
-      <img className={`sde-img-dark ${className || ""}`} src={withBase(cat.imgDark)} alt={cat.title} />
-      <img className={`sde-img-light ${className || ""}`} src={withBase(cat.imgLight)} alt={cat.title} />
-    </>
+  // The colour scheme is intentionally reversed: light mode shows the dark
+  // artwork and dark mode shows the light artwork. CSS keys directly off the
+  // docs theme class during SSR and only resolves the active custom-property
+  // URL, so a theme override cannot cause both variants to download.
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, ".webp"))
+  const ThemeImage = ({ item, className }) => (
+    <span
+      className={`sde-theme-image ${className || ""}`}
+      role="img"
+      aria-label={item.title}
+      style={{
+        "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+      }}
+    />
   )
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />
 
   return (
     <div className="sde-root my-8">
@@ -253,12 +267,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           to   { opacity: 1; }
         }
         .sde-view { animation: sde-fade 0.25s ease both; }
-        /* Reversed scheme: dark (black) art in light mode, light (yellow) art in dark mode.
-           Use explicit .dark selectors — Tailwind dark: utilities follow the OS here. */
-        .sde-root .sde-img-dark { display: block; }
-        .sde-root .sde-img-light { display: none; }
-        .dark .sde-root .sde-img-dark { display: none; }
-        .dark .sde-root .sde-img-light { display: block; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -286,12 +294,17 @@ export const SampleDatasetExplorer = ({ categories }) => {
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
-        .sde-tile img {
+        .sde-theme-image {
+          display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          margin: 0;
+          background-image: var(--sde-image-light-mode);
+          background-position: center;
+          background-size: cover;
           pointer-events: none;
+        }
+        .dark .sde-root .sde-theme-image {
+          background-image: var(--sde-image-dark-mode);
         }
         /* hover hint: translucent strip along the bottom of the image */
         .sde-tile-hint {
@@ -367,12 +380,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
                     <span className="sde-count">
-                      {cat.datasets.length} dataset{cat.datasets.length === 1 ? "" : "s"}
+                      {cat.datasets.length} 件のデータセット
                     </span>
                     <span className="sde-explore">
                       詳細を見る
@@ -394,7 +407,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              All categories
+              すべてのカテゴリ
             </button>
           </div>
 
@@ -402,10 +415,9 @@ export const SampleDatasetExplorer = ({ categories }) => {
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {selected.datasets.map((ds, i) => (
-              <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
+              <a key={ds.href} href={withBase(ds.href)} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
-                  {ds.imgDark && <img className="sde-img-dark" src={withBase(ds.imgDark)} alt={ds.title} />}
-                  {ds.imgLight && <img className="sde-img-light" src={withBase(ds.imgLight)} alt={ds.title} />}
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
                     <span className="sde-explore">
                       データセットを表示

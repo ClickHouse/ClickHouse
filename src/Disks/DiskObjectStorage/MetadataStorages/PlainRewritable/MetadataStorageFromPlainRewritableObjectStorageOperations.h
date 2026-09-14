@@ -1,16 +1,32 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
+
+class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
+{
+private:
+    const std::shared_ptr<Preconditions> preconditions;
+    const std::shared_ptr<FsSnapshot> fs_tree;
+
+public:
+    MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
+        std::shared_ptr<Preconditions> preconditions_,
+        std::shared_ptr<FsSnapshot> fs_tree_);
+
+    void execute() override;
+};
 
 class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : public IMetadataOperation
 {
@@ -18,20 +34,20 @@ private:
     const bool recursive;
     const std::filesystem::path path;
     const std::string directory_remote_path;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
-    bool created_directory = false;
+    bool write_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         bool recursive_,
         std::filesystem::path path_,
         std::string directory_remote_path_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
 
@@ -44,14 +60,13 @@ class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public
 private:
     const std::filesystem::path path_from;
     const std::filesystem::path path_to;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
     std::unordered_set<std::string> changed_paths;
-    bool moved_in_memory = false;
 
     std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_content);
     void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, WriteBuffer & buffer);
@@ -60,8 +75,8 @@ public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
 
@@ -73,8 +88,8 @@ class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : publ
 {
 private:
     const std::filesystem::path path;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
@@ -84,8 +99,8 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
         std::filesystem::path path_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
 
@@ -98,24 +113,21 @@ class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMe
 private:
     const std::filesystem::path path;
     const StoredObject object;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-
-    bool written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         std::string path_,
         StoredObject object_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
-    void undo() override;
 };
 
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
@@ -123,25 +135,23 @@ class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : p
 private:
     const std::filesystem::path path;
     const bool if_exists;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
-    std::optional<FileRemoteInfo> file_remote_info;
     bool copy_started = false;
     bool remove_started = false;
-    bool remove_finished = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
         std::filesystem::path path_,
         bool if_exists_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
         StoredObjects & removed_objects_);
@@ -157,8 +167,8 @@ class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMet
 private:
     const std::filesystem::path path_from;
     const std::filesystem::path path_to;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
@@ -170,8 +180,8 @@ public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
 
@@ -190,8 +200,8 @@ private:
     bool replaceable{false};
     const std::filesystem::path path_from;
     const std::filesystem::path path_to;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     StoredObjects & removed_objects;
@@ -201,10 +211,8 @@ private:
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
-    std::optional<FileRemoteInfo> file_to_remote_info;
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
-    bool created_target_file{false};
     bool moved_file{false};
 
 public:
@@ -212,8 +220,8 @@ public:
         bool replaceable_,
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
         StoredObjects & removed_objects_);
@@ -246,8 +254,8 @@ class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : publ
 {
 private:
     const std::filesystem::path path;
+    const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     StoredObjects & removed_objects;
@@ -256,13 +264,14 @@ private:
 
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
+    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_remote_info;
     bool move_tried = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
         std::filesystem::path path_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
         StoredObjects & removed_objects_);

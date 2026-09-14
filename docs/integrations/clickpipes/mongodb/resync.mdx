@@ -23,12 +23,10 @@ Resync involves the following operations in order:
 
 All the settings of the original ClickPipe are retained in the resync ClickPipe. The statistics of the original ClickPipe are cleared in the UI.
 
-### Use cases for resyncing a ClickPipe {#use-cases-mongodb-resync}
-
-Here are a few scenarios:
-
-1. You may need to perform major schema changes on the source tables which would break the existing ClickPipe and you would need to restart. You can just click Resync after performing the changes.
-2. Specifically for Clickhouse, maybe you needed to change the ORDER BY keys on the target tables. You can Resync to re-populate data into the new table with the right sorting key.
+<Note>
+You can resync multiple times, however please account for the load on the source database when you resync,
+since initial load with parallel threads is involved each time.
+</Note>
 
 ### Resync ClickPipe Guide {#guide-mongodb-resync}
 
