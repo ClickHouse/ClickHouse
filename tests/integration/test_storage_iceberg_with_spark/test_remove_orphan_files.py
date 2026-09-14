@@ -168,6 +168,22 @@ class OrphanTestEnv:
                 self.cluster.minio_bucket, f"{base}/{dst_name}",
                 io.BytesIO(payload), len(payload),
             )
+
+    def remove_metadata_file(self, name):
+        """Delete one metadata object."""
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+            self.instance.exec_in_container(["bash", "-c", f"rm -f {path}"])
+        elif self.storage_type == "azure":
+            blob_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{self.table_name}/metadata/{name}"
+            self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).delete_blob()
+        else:
+            self.cluster.minio_client.remove_object(
+                self.cluster.minio_bucket, f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
+            )
+
     # -- storage queries ----------------------------------------------------
 
     def exists(self, subdir, filename):
@@ -951,4 +967,34 @@ def test_remove_orphan_files_refuses_last_updated_ms_tie(
         "remove_orphan_files refused but deleted objects anyway.\n"
         f"  Before: {files_before}\n  After:  {files_after}"
     )
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_insert_refuses_undeclared_scheme(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """With no pointer declaring the scheme, a foreign-scheme file can outrank the committed
+    metadata, so a write rooted there would drop every snapshot after it. INSERT must refuse."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_insert_undeclared_scheme")
+    env.populate(3)
+
+    newest = env.newest_metadata_version()
+    assert not env.exists("metadata", "version-hint.text"), "a hint would declare the scheme"
+
+    foreign_name = f"{newest + 1:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest - 1}.metadata.json", foreign_name)
+    assert env.metadata_files_with_version(newest + 1) == [foreign_name]
+
+    files_before = sorted(env.list_files())
+    with pytest.raises(Exception, match="nothing declares which of the two schemes"):
+        env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
+    assert sorted(env.list_files()) == files_before, "refused INSERT left objects behind"
+
+    # Control: unambiguous again once the foreign file is gone, so a binary that rejects
+    # every INSERT does not pass.
+    env.remove_metadata_file(foreign_name)
+    env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
+    env._n_rows = 4
+    assert env.newest_metadata_version() > newest
     env.assert_data_intact()
