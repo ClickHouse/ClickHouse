@@ -995,7 +995,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
-    PreparedSetsCachePtr prepared_sets_cache)
+    PreparedSetsCachePtr prepared_sets_cache,
+    bool recoverable_build)
 {
     dropTotalsAndExtremes();
     resize(1);
@@ -1005,7 +1006,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             res_header,
             std::move(set_and_key),
             limits,
-            std::move(prepared_sets_cache));
+            std::move(prepared_sets_cache),
+            recoverable_build);
 
     pipe.addTransform(std::move(transform));
 }

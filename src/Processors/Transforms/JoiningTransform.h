@@ -33,15 +33,29 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
-/// Sums the match totals reported by each probe stream as it drains.
+/// Sums the match totals reported by each probe stream as it drains. A stream that counted no matches
+/// reports nothing, and then the sum counts no matches either.
 class RightRowsMatchCounter
 {
 public:
-    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
-    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+    void add(std::optional<size_t> matched_right_rows_)
+    {
+        if (matched_right_rows_)
+            matched_right_rows.fetch_add(*matched_right_rows_, std::memory_order_relaxed);
+        else
+            counted_every_match.store(false, std::memory_order_relaxed);
+    }
+
+    std::optional<size_t> get() const
+    {
+        if (!counted_every_match.load(std::memory_order_relaxed))
+            return {};
+        return matched_right_rows.load(std::memory_order_relaxed);
+    }
 
 private:
     std::atomic_size_t matched_right_rows{0};
+    std::atomic_bool counted_every_match{true};
 };
 
 using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
@@ -109,7 +123,7 @@ private:
     size_t max_block_size;
 
     RightRowsMatchCounterPtr match_counter;
-    size_t matched_right_rows = 0;
+    std::optional<size_t> matched_right_rows = 0;
 
     Block readExecute(Chunk & chunk);
 };
