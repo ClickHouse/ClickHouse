@@ -303,6 +303,133 @@ FROM
 
 DROP TABLE quantize_lazy_off_final SYNC;
 
+-- ReplacingMergeTree is the only engine whose FINAL lazy materialization accepts, and a filter that reads the vector
+-- there can be deferred until after the merge (`apply_row_policy_after_final`, `apply_prewhere_after_final`), which
+-- copies the filter into a second field rather than replacing it. Each arm below asserts that the deferral fired AND
+-- that the rewrite declined, so a force-keep set that saw only the deferred copy would fail it.
+DROP TABLE IF EXISTS quantize_lazy_off_replacing;
+CREATE TABLE quantize_lazy_off_replacing
+(
+    id UInt32,
+    tag UInt8,
+    vec Array(Float32) CODEC(Quantized('rabitq', 64))
+)
+ENGINE = ReplacingMergeTree ORDER BY id;
+
+INSERT INTO quantize_lazy_off_replacing
+SELECT number, number % 3, arrayMap(j -> toFloat32(if(j = 0, number + 1, 1)), range(64))
+FROM numbers(1000);
+
+-- In-range control: nothing forces the vector eager here, so this FINAL keeps both the rewrite and the lazy read. The
+-- two arms below would pass vacuously if FINAL on this engine declined outright.
+SELECT 'final_on_replacing_merge_tree',
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_replacing FINAL
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_replacing WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+CREATE ROW POLICY quantize_lazy_off_replacing_policy ON quantize_lazy_off_replacing USING notEmpty(vec) TO ALL;
+
+SELECT 'final_row_policy_deferred_after_final',
+    countIf(explain ILIKE '%Deferred row level filter column%') > 0,
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_replacing FINAL
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_replacing WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS apply_row_policy_after_final = 1
+);
+
+DROP ROW POLICY quantize_lazy_off_replacing_policy ON quantize_lazy_off_replacing;
+
+-- Control pinning the arm above to the COLUMN and not to the deferral: a deferred policy that does not read the vector
+-- leaves it deferrable, so the rewrite must still engage. Declining on any deferred filter would pass the arm above.
+CREATE ROW POLICY quantize_lazy_off_replacing_tag_policy ON quantize_lazy_off_replacing USING tag < 3 TO ALL;
+
+SELECT 'final_row_policy_deferred_not_reading_vector',
+    countIf(explain ILIKE '%Deferred row level filter column%') > 0,
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_replacing FINAL
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_replacing WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS apply_row_policy_after_final = 1
+);
+
+DROP ROW POLICY quantize_lazy_off_replacing_tag_policy ON quantize_lazy_off_replacing;
+
+SELECT 'final_prewhere_deferred_after_final',
+    countIf(explain ILIKE '%Deferred prewhere filter column%') > 0,
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_replacing FINAL PREWHERE notEmpty(vec)
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_replacing WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS apply_prewhere_after_final = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1
+);
+
+-- The same control for the deferred PREWHERE.
+SELECT 'final_prewhere_deferred_not_reading_vector',
+    countIf(explain ILIKE '%Deferred prewhere filter column%') > 0,
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_replacing FINAL PREWHERE tag = 1
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_replacing WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS apply_prewhere_after_final = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1
+);
+
+DROP TABLE quantize_lazy_off_replacing SYNC;
+
+-- The FINAL merge runs below the deferred read and needs its sorting-key inputs in that read, so a table sorted by the
+-- vector column keeps the vector eager under FINAL even on ReplacingMergeTree. This carrier is the sorting key rather
+-- than a filter, and the paired query without FINAL keeps the rewrite.
+DROP TABLE IF EXISTS quantize_lazy_off_vec_sorting_key;
+CREATE TABLE quantize_lazy_off_vec_sorting_key
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 64))
+)
+ENGINE = ReplacingMergeTree ORDER BY vec;
+
+INSERT INTO quantize_lazy_off_vec_sorting_key
+SELECT number, arrayMap(j -> toFloat32(if(j = 0, number + 1, 1)), range(64))
+FROM numbers(1000);
+
+SELECT 'final_sorting_key_reads_vector',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_vec_sorting_key FINAL
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_vec_sorting_key WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+SELECT 'vec_sorting_key_without_final',
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_vec_sorting_key
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_vec_sorting_key WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+DROP TABLE quantize_lazy_off_vec_sorting_key SYNC;
+
 -- A sampled read: lazy materialization declines on the read step, because the sample is applied while reading and the
 -- ranges captured for the deferred read are not the ones the sample will produce.
 DROP TABLE IF EXISTS quantize_lazy_off_sample;

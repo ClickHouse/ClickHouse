@@ -29,6 +29,13 @@ analyzer_off_declines	0
 analyzer_off_reads_no_more_than_exact_scan	1
 final_on_summing_merge_tree	0
 summing_merge_tree_without_final	1
+final_on_replacing_merge_tree	1	1
+final_row_policy_deferred_after_final	1	0
+final_row_policy_deferred_not_reading_vector	1	1	1
+final_prewhere_deferred_after_final	1	0
+final_prewhere_deferred_not_reading_vector	1	1	1
+final_sorting_key_reads_vector	0
+vec_sorting_key_without_final	1	1
 sample_declines	0
 sample_table_without_sample_clause	1
 patch_parts_control_before_update	1
