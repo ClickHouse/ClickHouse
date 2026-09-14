@@ -340,26 +340,19 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
-    /// Both `start` and `startReplicated` refuse to resume a view whose coordination is permanently
-    /// unavailable, each checking under `mutex`. Checking it here too would only be a racy
-    /// duplicate: `unavailable` is also written by the scheduling thread
+    /// Both `markReady` and `startReplicated` refuse to resume a view whose coordination is
+    /// permanently unavailable, each checking under `mutex`. Checking it here too would only be a
+    /// racy duplicate: `unavailable` is also written by the scheduling thread
     /// (markCoordinationUnavailable), so it can be set right after an unlocked read here.
     if (coordination.coordinated)
         startReplicated();
     else
-        start();
+        markReady(/*resume=*/ true);
 }
 
 void RefreshTask::finalizeCreateOrReplace(bool stay_stopped)
 {
-    if (!stay_stopped)
-    {
-        start();
-        return;
-    }
-    std::lock_guard guard(mutex);
-    scheduling.not_ready = false;
-    scheduleRefresh(guard);
+    markReady(/*resume=*/ !stay_stopped);
 }
 
 void RefreshTask::shutdown()
@@ -544,8 +537,21 @@ void RefreshTask::start()
         return;
     if (!std::exchange(scheduling.stop_requested, false))
         return;
-    scheduling.not_ready = false;
     scheduling.unexpected_error = std::nullopt;
+    scheduleRefresh(guard);
+}
+
+void RefreshTask::markReady(bool resume)
+{
+    std::lock_guard guard(mutex);
+    scheduling.not_ready = false;
+    if (resume && !coordination.unavailable)
+    {
+        scheduling.stop_requested = false;
+        scheduling.unexpected_error = std::nullopt;
+    }
+    /// Unconditionally, unlike `start`: a `SYSTEM START` that arrived while the barrier still held
+    /// has already cleared `stop_requested`, so nothing else would wake the scheduler.
     scheduleRefresh(guard);
 }
 

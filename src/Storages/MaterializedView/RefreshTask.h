@@ -448,6 +448,7 @@ private:
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);
+    void markReady(bool resume);
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 
