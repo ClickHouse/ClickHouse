@@ -29,6 +29,9 @@
                 <value>unicode_short</value>
                 <value>mixed_50_16</value>
                 <value>unicode_16</value>
+                <value>unicode_16_late</value>
+                <value>mixed_50_16_late</value>
+                <value>mixed_01_block_tail</value>
             </values>
         </substitution>
     </substitutions>
@@ -48,7 +51,10 @@
             mixed_50_short_hashed String,
             unicode_short String,
             mixed_50_16 String,
-            unicode_16 String
+            unicode_16 String,
+            unicode_16_late String,
+            mixed_50_16_late String,
+            mixed_01_block_tail String
         ) ENGINE = Memory
     </create_query>
 
@@ -67,7 +73,10 @@
             if(cityHash64(number) % 2 = 0, unicode_short, ascii_short),
             unicode_short,
             if(number % 2 = 0, unicode_16, ascii_16),
-            unicode_16
+            unicode_16,
+            unicode_16_late,
+            if(number % 2 = 0, unicode_16_late, ascii_16),
+            if(number % 65536 >= 65472, unicode, ascii)
         FROM
         (
             SELECT
@@ -82,7 +91,8 @@
                 'Ab' AS ascii_short,
                 'AbCdEfGhIjKlMnOp' AS ascii_16,
                 'é' AS unicode_short,
-                repeat('é', 8) AS unicode_16
+                repeat('é', 8) AS unicode_16,
+                concat(repeat('A', 14), 'é') AS unicode_16_late
             FROM numbers(500000)
         )
     </fill_query>
