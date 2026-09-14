@@ -571,6 +571,7 @@ def test_write_cast_upgrade_compatibility(started_cluster):
     write = {
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
+        "async_insert": 0,
     }
 
     try:
