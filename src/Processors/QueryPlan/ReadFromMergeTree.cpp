@@ -6131,6 +6131,14 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
 {
     const bool calculate_subcolumn_sizes
         = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+
+    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
+    /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
+    /// of measuring every part and column again, exactly as before pruned parts were taken into account.
+    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
+    if (parts.size() == parts_before_pruning)
+        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
     IStorage::ColumnSizeByName result;
     for (const auto & part : parts)
     {
