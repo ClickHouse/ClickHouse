@@ -1282,7 +1282,20 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 part = part.substr(bracket_pos + 1);
                 boost::trim(part);
                 buf << '(';
-                buf << doubleQuoteStringPostgreSQL(part);
+                /// A single-column subset carries both brackets in one element, so the closing one is
+                /// here rather than in a later element.
+                if (part.ends_with(')'))
+                {
+                    is_column = false;
+                    part = part.substr(0, part.size() - 1);
+                    boost::trim(part);
+                    buf << doubleQuoteStringPostgreSQL(part);
+                    buf << ')';
+                }
+                else
+                {
+                    buf << doubleQuoteStringPostgreSQL(part);
+                }
             }
             else if (part.back() == ')')
             {

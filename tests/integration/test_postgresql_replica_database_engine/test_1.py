@@ -941,6 +941,7 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
     quoted_name = '"' + cols_quoted_name_table.replace('"', '""') + '"'
     outer_table = "pg_inj_outer"
     target_table = "pg_inj_target"
+    single_table = "pg_inj_single"
     try:
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
@@ -1112,6 +1113,44 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
 
         cursor.execute(f'INSERT INTO "{target_table}" VALUES (5, 105, 905)')
         wait_for_rows(f"`test_database`.`{target_table}`", 6)
+
+        # 8. A subset that names one column keeps both brackets in a single element of the setting, so
+        #    the closing bracket is part of that element rather than of a later one. Quoted along with
+        #    the column name it becomes `"t"("a""b)"`, which PostgreSQL rejects when the publication is
+        #    created, and nothing replicates at all.
+        pg_manager.drop_materialized_db()
+        cursor.execute(f'DROP TABLE IF EXISTS "{single_table}"')
+        cursor.execute(
+            f'CREATE TABLE "{single_table}" ("a""b" integer PRIMARY KEY, extra integer NOT NULL)'
+        )
+        cursor.execute(
+            f'INSERT INTO "{single_table}" SELECT i, 900 + i FROM generate_series(0, 4) AS i'
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{single_table}(a\"b)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, single_table)
+        wait_for_rows(f"`test_database`.`{single_table}`", 5)
+
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{single_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", 'a"b'], (
+            "the single-column subset was not applied to the nested table, so the requested column "
+            f"list did not survive quoting: {replicated}"
+        )
+
+        cursor.execute(f'INSERT INTO "{single_table}" VALUES (5, 905)')
+        wait_for_rows(f"`test_database`.`{single_table}`", 6)
     finally:
         for ch_table in ch_tables:
             instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
@@ -1120,6 +1159,7 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
         cursor.execute(f'DROP TABLE IF EXISTS "{outer_table}"')
         cursor.execute(f'DROP TABLE IF EXISTS "{target_table}"')
+        cursor.execute(f'DROP TABLE IF EXISTS "{single_table}"')
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
