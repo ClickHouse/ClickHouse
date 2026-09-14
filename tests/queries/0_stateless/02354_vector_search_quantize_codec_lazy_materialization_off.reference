@@ -1,6 +1,7 @@
 control_rewrite_engages_and_defers	1	1
 lazy_materialization_off	0
 shortlist_above_max_limit_for_lazy_materialization	0
+shortlist_cap_zero_is_unbounded	1
 prewhere_reads_vector	0
 prewhere_not_reading_vector	1	1
 where_reads_vector_outside_prewhere	0
@@ -23,5 +24,7 @@ exact_results_where_reads_vector	4
 codes_without_deferral_reads_no_more_than_exact_scan	1
 final_on_summing_merge_tree	0
 summing_merge_tree_without_final	1
+sample_declines	0
+sample_table_without_sample_clause	1
 patch_parts_control_before_update	1
 patch_parts_after_update	0

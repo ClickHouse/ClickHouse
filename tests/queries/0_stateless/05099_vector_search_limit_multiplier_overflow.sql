@@ -36,6 +36,10 @@ DROP TABLE tab;
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
+-- The rewrite runs only where the lazy read it depends on is available, and `tests/clickhouse-test` randomizes
+-- `query_plan_optimize_lazy_materialization`. Without this pin the two queries below skip the rewrite entirely,
+-- the multiplication under test never runs, and both still pass on the exact scan.
+SET query_plan_optimize_lazy_materialization = 1;
 
 DROP TABLE IF EXISTS tab_quantized;
 

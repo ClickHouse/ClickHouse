@@ -72,6 +72,18 @@ FROM
     LIMIT 5 SETTINGS query_plan_max_limit_for_lazy_materialization = 4
 );
 
+-- Control for the arm above: `query_plan_max_limit_for_lazy_materialization = 0` means unbounded, not a cap of zero, so
+-- the shortlist is still built and the check must not read it as a bail-out.
+SELECT 'shortlist_cap_zero_is_unbounded',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS query_plan_max_limit_for_lazy_materialization = 0
+);
+
 -- A PREWHERE that reads the vector column: its inputs are read for every row before the shortlist limit, so the
 -- vector cannot be deferred even though lazy materialization does run.
 SELECT 'prewhere_reads_vector',
@@ -209,6 +221,44 @@ FROM
 );
 
 DROP TABLE quantize_lazy_off_final SYNC;
+
+-- A sampled read: lazy materialization declines on the read step, because the sample is applied while reading and the
+-- ranges captured for the deferred read are not the ones the sample will produce.
+DROP TABLE IF EXISTS quantize_lazy_off_sample;
+CREATE TABLE quantize_lazy_off_sample
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 64))
+)
+ENGINE = MergeTree ORDER BY id SAMPLE BY id;
+
+INSERT INTO quantize_lazy_off_sample
+SELECT number, arrayMap(j -> toFloat32(if(j = 0, number + 1, 1)), range(64))
+FROM numbers(1000);
+
+SELECT 'sample_declines',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_sample SAMPLE 0.5
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_sample WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+-- Control: the same table without the SAMPLE clause still gets the rewrite, so the arm above is about the clause and not
+-- about the table having a sampling key.
+SELECT 'sample_table_without_sample_clause',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off_sample
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off_sample WHERE id = 0)) ASC
+    LIMIT 5
+);
+
+DROP TABLE quantize_lazy_off_sample SYNC;
 
 -- Patch parts, the trigger the issue was reported with: one lightweight UPDATE of an unrelated column is enough to
 -- disable lazy materialization for the whole table.

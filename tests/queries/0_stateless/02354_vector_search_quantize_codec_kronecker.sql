@@ -6,8 +6,11 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
--- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
--- the test harness randomizes the latter, which would shrink the full-coverage shortlist and make the exact check flaky. Pin it.
+-- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization,
+-- and the rewrite runs at all only when lazy materialization is on. The test harness randomizes both: a smaller clamp
+-- shrinks the full-coverage shortlist and makes the exact check flaky, and the boolean leaves the checks on a plain exact
+-- scan, which satisfies them while exercising nothing. Pin both.
+SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_kron;
