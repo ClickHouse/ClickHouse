@@ -49,6 +49,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
+    extern const SettingsBool iceberg_tolerate_conflicting_manifest_schemas;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -533,8 +534,16 @@ static bool writeConsolidatedManifestFile(
         }
 
         /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
+        ///
+        /// The current manifests were already walked above (`getManifestFileEntriesHandle`), so their
+        /// header copies of the schemas are registered first. This is the authoritative metadata.json
+        /// copy and must replace a divergent header copy under the current operation's
+        /// `iceberg_tolerate_conflicting_manifest_schemas`, exactly like the read path does.
         for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
+            persistent_table_components.schema_processor->addIcebergTableSchema(
+                schemas->getObject(i),
+                IcebergSchemaProcessor::SchemaSource::Metadata,
+                context->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
 
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {

@@ -314,6 +314,36 @@ TEST(IcebergSchemaProcessor, TolerantMetadataFirstThenStrictManifestRejected)
     EXPECT_THROW(processor.addIcebergTableSchema(from_manifest, FROM_MANIFEST, STRICT), DB::Exception);
 }
 
+/// `OPTIMIZE TABLE ... MANIFEST` registers the header copy of every current manifest first and only
+/// then preloads *all* schemas of metadata.json, historical ones included, to derive the partition
+/// value types. Under the current operation's tolerance the preload must replace every degraded
+/// header copy and accept every agreeing one; a strict preload must fail on the conflict.
+TEST(IcebergSchemaProcessor, CompactionRegistersManifestHeadersBeforeAllMetadataSchemas)
+{
+    auto historical_header = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto current_header = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"v","required":false,"type":"int"}]})json");
+    auto historical_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto current_metadata = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"v","required":false,"type":"int"}]})json");
+
+    {
+        IcebergSchemaProcessor processor;
+        processor.addIcebergTableSchema(historical_header, FROM_MANIFEST, TOLERANT);
+        processor.addIcebergTableSchema(current_header, FROM_MANIFEST, TOLERANT);
+        EXPECT_NO_THROW(processor.addIcebergTableSchema(historical_metadata, FROM_METADATA, TOLERANT));
+        EXPECT_NO_THROW(processor.addIcebergTableSchema(current_metadata, FROM_METADATA, TOLERANT));
+        EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+        EXPECT_EQ(processor.getClickHouseTableSchemaById(1)->size(), 2u);
+    }
+    {
+        IcebergSchemaProcessor processor;
+        processor.addIcebergTableSchema(historical_header, FROM_MANIFEST, STRICT);
+        processor.addIcebergTableSchema(current_header, FROM_MANIFEST, STRICT);
+        EXPECT_THROW(processor.addIcebergTableSchema(historical_metadata, FROM_METADATA, STRICT), DB::Exception);
+        /// The agreeing current schema is unaffected by the conflict of the historical one.
+        EXPECT_NO_THROW(processor.addIcebergTableSchema(current_metadata, FROM_METADATA, STRICT));
+    }
+}
+
 /// Two manifest headers may disagree with each other before any metadata.json copy of the id has
 /// been seen. Neither is authoritative; a tolerant walk keeps the first and metadata.json settles it.
 TEST(IcebergSchemaProcessor, ConflictingManifestCopiesSettledByMetadataSchema)
