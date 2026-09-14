@@ -278,10 +278,18 @@ namespace
                     }
 
                     char byte = 1;
+                    ssize_t written = 0;
+                    /// A signal (the query profiler, `system.stack_trace`) can interrupt the write
+                    /// before anything is written. Dropping the expiration then would leave the timer
+                    /// silent forever, so retry instead of losing it.
+                    do
+                    {
+                        written = ::write(it->first, &byte, sizeof(byte));
+                    } while (written < 0 && errno == EINTR);
+
                     /// The descriptor is non-blocking. A full pipe means an earlier expiration has not
                     /// been drained, so the timer already reads as expired and losing this byte changes
                     /// nothing.
-                    [[maybe_unused]] ssize_t written = ::write(it->first, &byte, sizeof(byte));
                     it = deadlines.erase(it);
                 }
             }
