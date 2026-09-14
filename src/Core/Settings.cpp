@@ -2035,20 +2035,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, enable_aggregation_top_k_threshold_merge, true, R"(
-Enable the top-K threshold merge (Fagin's Threshold Algorithm) for `GROUP BY keys ORDER BY <aggregate> LIMIT K` queries where the aggregate is `count`, `sum` of unsigned integers, or `uniqExact` (descending order), or `min`/`max` (either order).
-
-For these functions the value of a merged aggregation state can be bounded from the values of the per-thread partial states without merging them: `count`, unsigned `sum` and `uniqExact` are bounded by the sum of the partial values, and `min`/`max` are exactly their extremum. When the final merge of parallel aggregation combines the per-thread hash tables, it walks the groups in the order of their partial values and stops as soon as no unseen group can rank among the top `K`, so only the candidate groups are merged and materialized instead of every group. The result is exactly the same as without the optimization.
-
-The optimization engages during the merge of two-level (high-cardinality) aggregation states. The extremum bounds of `min`/`max` converge right after the top `K` candidates are found, for any number of per-thread tables. The summing bound of `count`/`uniqExact` engages when the states to merge sit in a single table (e.g. a lone aggregation thread, or the adaptive aggregator drained everything into one), where it is a pure selection of the top `K` groups; across several tables it cannot be trusted to converge (near-uniform values split across threads keep the threshold open), so the ordinary merge is taken. A walk budget with a shared verdict backstops the remaining non-convergent cases.
-
-The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `LIMIT WITH TIES`, `ROLLUP`/`CUBE`/`GROUPING SETS`, an `ORDER BY` of more than one column, a `COLLATE`, `exact_rows_before_limit`, nullable or low-cardinality group keys, a nullable, floating-point, `String` or `FixedString` ordering value, and when the ordering aggregate is wrapped in a combinator - except `If` and `Null` over the sum-bounded functions (e.g. `countIf`, or `uniqExact` of a nullable argument), which keep the bound: an untouched nested state contributes 0, consistent with a sum.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-)", 0) \
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
 For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
 
@@ -6759,7 +6745,10 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
-Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, materializes only each two-level bucket's best n groups in that order during the aggregation's final conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+
+For ordering by `count`, the optimization can select the best groups during the final conversion. For aggregates whose merged values can be bounded from their partial states, it can instead use a threshold merge (Fagin's Threshold Algorithm), which skips merging groups that cannot reach the top n. This supports `count`, `sum` of unsigned integers, and `uniqExact` in descending order, and `min`/`max` in either order for supported non-nullable, fixed-width types other than floating point. The algorithm is chosen automatically according to the aggregate, query shape, and distribution of partial states.
+
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:

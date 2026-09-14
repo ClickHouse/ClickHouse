@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -53,7 +52,7 @@ bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
 
 }
 
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
 {
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
     /// or more pass-through expressions over a final aggregation, and the sort column is one of
@@ -136,7 +135,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// walk) and stands down in a few other cases (single-level tables, dataflow statistics
         /// collection).
         bool threshold_top_k_enabled = false;
-        if (settings.aggregation_top_k_threshold_merge && !description.front().collator)
+        if (!description.front().collator)
         {
             const auto bound = aggregate.function->getMergedValueBound();
             /// The `Subadditive` bound serves only the descending order. It is one-sided (see
@@ -158,9 +157,6 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
                 threshold_top_k_enabled = true;
             }
         }
-
-        if (!settings.aggregation_bucket_top_k)
-            return 0;
 
         /// Any lone `count`: `count()`, and `count(x)` in both of its forms (the plain one for a
         /// non-nullable argument, `AggregateFunctionCountNotNullUnary` for a nullable one). All three

@@ -29,7 +29,7 @@ SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET serialize_query_plan = 0;
-SET enable_aggregation_top_k_threshold_merge = 1;
+SET query_plan_aggregation_bucket_top_k = 1;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS threshold_top_k_events;
@@ -86,7 +86,7 @@ SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC, k
     SETTINGS log_comment = '05043_ttkm_l_two_columns' FORMAT Null;
 -- The optimization is off.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_m_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_m_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
 
 -- Shard-local final aggregation with the query plan serialized. The parameter is not on the wire,
 -- and does not need to be: the optimization is a property of the plan shape, and the side that
