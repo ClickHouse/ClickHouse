@@ -114,6 +114,9 @@ def wait_for_socket_send(process, query_id):
         FORMAT JSONEachRow
     """
     deadline = time.monotonic() + 20
+    # The profiler temporarily masks the signal used by `system.stack_trace`.
+    # Keep the first confirmed send across missing observations, and still
+    # require a later send observation with additional profiler runs.
     first_runs = None
     samples = []
     while (remaining := deadline - time.monotonic()) > 0:
@@ -129,8 +132,6 @@ def wait_for_socket_send(process, query_id):
                 first_runs = runs
             if runs >= first_runs + 10:
                 return
-        else:
-            first_runs = None
         time.sleep(0.01)
     raise AssertionError(f"ordinary query did not remain in a socket send while sampled: {samples}")
 
