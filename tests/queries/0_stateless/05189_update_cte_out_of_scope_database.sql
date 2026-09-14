@@ -20,7 +20,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src VALUES (2);
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.u (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.u VALUES (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (8, 0), (99, 0),
-    (21, 0), (22, 0), (23, 0), (24, 0), (25, 0), (26, 0), (27, 0);
+    (21, 0), (22, 0), (23, 0), (24, 0), (25, 0), (26, 0), (27, 0), (28, 0);
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -170,6 +170,17 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
             SETTINGS enable_scopes_for_with_statement = 1))
     WHERE id = 27 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 27;
+
+-- The predicate is expanded by its own call, so the alias carrier is asserted there too: with the
+-- alias hidden the identifier names the table of the updated database, which holds the row the
+-- predicate looks for, and the row is updated. Substituting the array instead makes the conjunct
+-- false and leaves the row at 0.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
+    SET v = 28
+    WHERE id = 28 AND (WITH [7] AS src
+        SELECT (SELECT toUInt8(2 IN src) SETTINGS enable_global_with_statement = 0))
+    SETTINGS enable_analyzer = 1;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 28;
 
 DROP TABLE src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
