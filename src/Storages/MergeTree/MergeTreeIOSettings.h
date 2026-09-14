@@ -65,6 +65,8 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
+    UInt64 query_condition_cache_settings_salt = 0;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
     /// Identity of the schema the read runs with: a hash of the column list of the metadata
