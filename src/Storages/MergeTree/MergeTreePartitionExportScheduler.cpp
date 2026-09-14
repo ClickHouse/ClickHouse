@@ -297,10 +297,17 @@ bool MergeTreePartitionExportScheduler::run()
     /// stopped, or memory pressure), keep the scheduler awake so it retries on the next tick.
     const auto available_move_executors = storage.background_moves_assignee.getAvailableMoveExecutors();
     if (available_move_executors == 0)
+    {
+        LOG_INFO(storage.log, "ExportPartition: no move executors available, skipping run on plain");
         return true;
+    }
+        
 
     if (storage.parts_mover.moves_blocker.isCancelled())
+    {
+        LOG_INFO(storage.log, "ExportPartition: moves cancelled, skipping run on plain");
         return true;
+    }
 
     /// Respect the background memory soft-limit like the per-part export path does.
     if (!canEnqueueBackgroundTask())
@@ -324,19 +331,33 @@ bool MergeTreePartitionExportScheduler::run()
                 /// All parts exported: commit (or retry a previously-failed commit). tryCommit
                 /// itself takes the committing lease; skip if a commit is already in flight.
                 if (!entry.committing)
-                    tasks_to_commit.push_back(descriptor.transaction_id);
+                    {
+                        LOG_DEBUG(storage.log, "ExportPartition: all parts exported for task {}, committing", descriptor.transaction_id);
+                        tasks_to_commit.push_back(descriptor.transaction_id);
+                    }
                 continue;
             }
 
             for (const auto & part : descriptor.parts)
             {
                 if (scheduled >= available_move_executors)
+                {
+                    LOG_DEBUG(storage.log, "ExportPartition: no move executors available, skipping part export for task {}", descriptor.transaction_id);
                     break;
+                }
+
                 if (part.done || entry.in_flight_parts.contains(part.part_name))
+                {
+                    LOG_DEBUG(storage.log, "ExportPartition: part {} already exported or in flight for task {}, skipping", part.part_name, descriptor.transaction_id);
                     continue;
+                }
+
                 if (const auto backoff_it = entry.part_backoff.find(part.part_name);
                     backoff_it != entry.part_backoff.end() && now < backoff_it->second.next_retry_time)
+                {
+                    LOG_DEBUG(storage.log, "ExportPartition: part {} backoff time not reached for task {}, skipping", part.part_name, descriptor.transaction_id);
                     continue;
+                }
 
                 entry.in_flight_parts.insert(part.part_name);
                 parts_to_schedule.emplace_back(descriptor.transaction_id, part.part_name);
