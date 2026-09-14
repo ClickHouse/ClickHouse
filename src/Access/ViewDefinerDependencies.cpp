@@ -26,14 +26,13 @@ void ViewDefinerDependencies::addViewDependency(const String & definer, const St
 {
     std::lock_guard lock(mutex);
 
-    /// Remove any existing mapping for this view to a different definer
-    auto existing_definer_it = view_to_definer.find(view_id);
-    if (existing_definer_it != view_to_definer.end() && existing_definer_it->second != definer)
+    auto view_it = view_to_definer.find(view_id);
+    if (view_it != view_to_definer.end())
     {
-        auto & old_views = definer_to_views[existing_definer_it->second];
-        old_views.erase(view_id);
-        if (old_views.empty())
-            definer_to_views.erase(existing_definer_it->second);
+        if (view_it->second == definer)
+            return;
+
+        unregisterView(view_id);
     }
 
     definer_to_views[definer].insert(view_id);
@@ -43,29 +42,33 @@ void ViewDefinerDependencies::addViewDependency(const String & definer, const St
 void ViewDefinerDependencies::removeViewDependencies(const StorageID & view_id)
 {
     std::lock_guard lock(mutex);
+    unregisterView(view_id);
+}
 
+void ViewDefinerDependencies::unregisterView(const StorageID & view_id)
+{
     auto view_it = view_to_definer.find(view_id);
-    if (view_it != view_to_definer.end())
-    {
-        const auto & definer = view_it->second;
-        auto definer_it = definer_to_views.find(definer);
-        if (definer_it != definer_to_views.end())
-        {
-            definer_it->second.erase(view_id);
-            if (definer_it->second.empty())
-            {
-                if (definer.ends_with(":definer"))
-                {
-                    auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
-                    if (const auto uuid = access_control.find<User>(definer))
-                        access_control.tryRemove(*uuid);
-                }
+    if (view_it == view_to_definer.end())
+        return;
 
-                definer_to_views.erase(definer_it);
+    const auto & definer = view_it->second;
+    auto definer_it = definer_to_views.find(definer);
+    if (definer_it != definer_to_views.end())
+    {
+        definer_it->second.erase(view_id);
+        if (definer_it->second.empty())
+        {
+            if (definer.ends_with(":definer"))
+            {
+                auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
+                if (const auto uuid = access_control.find<User>(definer))
+                    access_control.tryRemove(*uuid);
             }
+
+            definer_to_views.erase(definer_it);
         }
-        view_to_definer.erase(view_it);
     }
+    view_to_definer.erase(view_it);
 }
 
 std::vector<StorageID> ViewDefinerDependencies::getViewsForDefiner(const String & definer) const
