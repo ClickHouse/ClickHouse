@@ -1520,7 +1520,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     res->async_read_counters = std::make_shared<AsyncReadCounters>();
-    res->query_execution_counters = std::make_shared<QueryExecutionCounters>();
     return res;
 }
 

@@ -15,6 +15,13 @@ namespace DB
 namespace
 {
 
+/// The state below describes one assembly of one pipeline, which is thread-local, and it takes
+///
+/// Several assemblies running on several threads at once are a different thing and are expected: that is
+/// what `parallel_view_processing` does to the `SELECT` of a materialized view. Each thread numbers its
+/// own assembly from zero, and they meet only in `joins_of_repeated_builds`, which the mutex of the
+/// counters guards.
+
 /// The pipeline that is being built by this thread, when it is one that is built more than once for the
 /// same query, empty otherwise, which is the usual case. See `RepeatedPipelineBuildScope`.
 thread_local String repeated_pipeline_build_scope;
