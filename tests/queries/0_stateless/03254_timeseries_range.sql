@@ -25,6 +25,20 @@ SELECT
     result
 FROM
 (
+    SELECT timeSeriesFromGrid(
+        toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Tokyo'),
+        toDateTime64('2025-01-01 00:00:02', 3, 'Asia/Tokyo'),
+        1,
+        [toUInt64(100), toUInt64(200), toUInt64(300)]
+    ) AS result
+)
+SETTINGS session_timezone = 'UTC';
+
+SELECT
+    toTypeName(result),
+    result
+FROM
+(
     SELECT timeSeriesRange(
         toDateTime('2025-01-01 00:00:00', 'Asia/Tokyo'),
         toDateTime('2025-01-01 00:00:01', 'Asia/Tokyo'),
