@@ -58,7 +58,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
-    extern const SettingsBool allow_experimental_delta_lake_writes;
+    extern const SettingsBool allow_delta_lake_writes;
     extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
@@ -633,7 +633,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
@@ -726,10 +726,10 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     }
 
     /// A fresh CREATE must write the initial commit, which requires delta lake writes; fail when they are off.
-    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+    if (!local_context->getSettingsRef()[Setting::allow_delta_lake_writes])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Creating a new Delta Lake table requires allow_experimental_delta_lake_writes = 1");
+            "Creating a new Delta Lake table requires allow_delta_lake_writes = 1");
 
     /// PARTITION BY is rejected earlier by `StorageFactory` (the DeltaLake engine does not set
     /// `supports_sort_order`), so `partition_by` cannot be non-null here.

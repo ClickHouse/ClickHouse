@@ -61,9 +61,9 @@ CREATE TABLE t_dl_nokernel (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOKE
 # no `_delta_log` must fail rather than silently reporting success while writing no initial commit.
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 0;
+SET allow_delta_lake_writes = 0;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_nowrites (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOWRITES}', Parquet);
-" 2>&1 | grep -q "requires allow_experimental_delta_lake_writes"; then echo "fresh create with writes off rejected"; else echo "fresh create with writes off NOT rejected"; fi
+" 2>&1 | grep -q "requires allow_delta_lake_writes"; then echo "fresh create with writes off rejected"; else echo "fresh create with writes off NOT rejected"; fi
 
 rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL" "$TABLE_PATH_NOWRITES"
