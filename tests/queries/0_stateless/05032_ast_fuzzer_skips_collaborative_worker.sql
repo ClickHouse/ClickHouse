@@ -73,33 +73,33 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'worker_before', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_worker_src');
 INSERT INTO t05032_events
 SELECT 'declared_before', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_declared_src');
 INSERT INTO t05032_events
 SELECT 'cluster_before', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0;
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0;
 INSERT INTO t05032_events
 SELECT 'view_before', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_view_src');
 INSERT INTO t05032_events
 SELECT 'plain_before', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05032_plain_control');
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05032_plain_control');
 -- A fuzz run executes its mutated copy of the statement internally, so the copy has an initiating
 -- row of its own carrying is_internal and naming the source the original read. Counting those rows
 -- is how an arm tells a server that fuzzed it from one that did not.
 INSERT INTO t05032_events
 SELECT 'worker_fuzz_copies_before', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_worker_src');
 -- Each arm brackets its own statement with the counter the skip increments, so an arm whose workers
 -- stop reaching the guard fails on its own line instead of being covered by another arm. The counter
@@ -130,7 +130,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'worker_after', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_worker_src');
 
 -- The statement really did run as a distributed read: it produced worker queries against this arm's
@@ -146,7 +146,7 @@ SELECT 'workers_ran',
 INSERT INTO t05032_events
 SELECT 'worker_fuzz_copies_after', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_worker_src');
 
 SELECT 'initiator_was_fuzzed',
@@ -158,10 +158,10 @@ SELECT 'workers_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
-             WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+             WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
                AND has(tables, currentDatabase() || '.t05032_worker_src')
                AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                        WHERE is_initial_query = 1 AND is_internal = 0
+                                        WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
@@ -175,11 +175,11 @@ SELECT 'worker_skips_recorded',
 -- which folds literal and setting mutations together, so it holds whatever the fuzzer produced.
 SELECT 'worker_no_internal_workers',
        (SELECT count() FROM system.query_log
-        WHERE is_initial_query = 0 AND is_internal = 1
+        WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND has(databases, currentDatabase())
           AND has(tables, currentDatabase() || '.t05032_worker_src')
           AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                   WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
 -- Every source row arrived, so declining to fuzz the workers did not disturb the statement itself.
@@ -203,7 +203,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'plain_after', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05032_plain_control');
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05032_plain_control');
 
 SELECT 'plain_query_no_workers',
       (SELECT workers FROM t05032_events WHERE label = 'plain_after')
@@ -220,7 +220,7 @@ SELECT 'skips_before_declared',
 INSERT INTO t05032_events
 SELECT 'declared_fuzz_copies_before', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_declared_src');
 
 INSERT INTO t05032_dst SELECT id, v FROM t05032_declared_src
@@ -238,7 +238,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'declared_after', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_declared_src');
 
 SELECT 'declared_spelling_workers_ran',
@@ -251,7 +251,7 @@ SELECT 'declared_spelling_workers_ran',
 INSERT INTO t05032_events
 SELECT 'declared_fuzz_copies_after', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_declared_src');
 
 SELECT 'declared_initiator_was_fuzzed',
@@ -262,10 +262,10 @@ SELECT 'declared_spelling_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
-             WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+             WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
                AND has(tables, currentDatabase() || '.t05032_declared_src')
                AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                        WHERE is_initial_query = 1 AND is_internal = 0
+                                        WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
@@ -276,11 +276,11 @@ SELECT 'declared_skips_recorded',
 
 SELECT 'declared_no_internal_workers',
        (SELECT count() FROM system.query_log
-        WHERE is_initial_query = 0 AND is_internal = 1
+        WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND has(databases, currentDatabase())
           AND has(tables, currentDatabase() || '.t05032_declared_src')
           AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                   WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
 -- A cluster table function marks its workers with the same context field, but hands them a task
@@ -306,7 +306,7 @@ SELECT 'skips_before_cluster',
 INSERT INTO t05032_events
 SELECT 'cluster_fuzz_copies_before', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
   AND (position(query, '_t05032_cluster_src.csv') > 0
        OR has(tables, '_table_function.fileCluster'));
 
@@ -324,7 +324,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'cluster_after', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0;
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0;
 
 SELECT 'cluster_function_workers_ran',
       (SELECT workers FROM t05032_events WHERE label = 'cluster_after')
@@ -333,7 +333,7 @@ SELECT 'cluster_function_workers_ran',
 INSERT INTO t05032_events
 SELECT 'cluster_fuzz_copies_after', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1 AND current_database = currentDatabase()
   AND (position(query, '_t05032_cluster_src.csv') > 0
        OR has(tables, '_table_function.fileCluster'));
 
@@ -347,10 +347,10 @@ SELECT 'cluster_function_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
-             WHERE is_initial_query = 0
+             WHERE event_date >= yesterday() AND is_initial_query = 0
                AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0
                AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                        WHERE is_initial_query = 1 AND is_internal = 0
+                                        WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
@@ -361,10 +361,10 @@ SELECT 'cluster_skips_recorded',
 
 SELECT 'cluster_no_internal_workers',
        (SELECT count() FROM system.query_log
-        WHERE is_initial_query = 0 AND is_internal = 1
+        WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND position(query, '\'' || currentDatabase() || '_t05032_cluster_src.csv\'') > 0
           AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                   WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
 -- A read through a view whose definer is resolved on a rebuilt context. Two properties: the read
@@ -385,7 +385,7 @@ SELECT 'skips_before_view',
 INSERT INTO t05032_events
 SELECT 'view_fuzz_copies_before', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_view');
 
 SELECT 'view_read', sum(v) FROM t05032_view
@@ -401,7 +401,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
 SELECT 'view_after', count()
 FROM system.query_log
-WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05032_view_src');
 
 SELECT 'view_workers_ran',
@@ -411,7 +411,7 @@ SELECT 'view_workers_ran',
 INSERT INTO t05032_events
 SELECT 'view_fuzz_copies_after', count()
 FROM system.query_log
-WHERE is_initial_query = 1 AND is_internal = 1
+WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 1
   AND has(tables, currentDatabase() || '.t05032_view');
 
 SELECT 'view_initiator_was_fuzzed',
@@ -422,10 +422,10 @@ SELECT 'view_not_fuzzed',
        (SELECT count() > 0 AND max(shapes) <= 1 FROM
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
-             WHERE is_initial_query = 0 AND has(databases, currentDatabase())
+             WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
                AND has(tables, currentDatabase() || '.t05032_view_src')
                AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                        WHERE is_initial_query = 1 AND is_internal = 0
+                                        WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
              GROUP BY initial_query_id));
 
@@ -436,11 +436,11 @@ SELECT 'view_skips_recorded',
 
 SELECT 'view_no_internal_workers',
        (SELECT count() FROM system.query_log
-        WHERE is_initial_query = 0 AND is_internal = 1
+        WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND has(databases, currentDatabase())
           AND has(tables, currentDatabase() || '.t05032_view_src')
           AND initial_query_id IN (SELECT query_id FROM system.query_log
-                                   WHERE is_initial_query = 1 AND is_internal = 0
+                                   WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
 -- Server is alive after every arm above.
