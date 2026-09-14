@@ -289,6 +289,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// does not set itself. The inherited values are not recorded in `settings_changes`: the projection
     /// definition stays as written, and the policy is taken from the table again whenever the projection
     /// metadata is rebuilt from it (on load, with `compatibility` or server configuration applied).
+    ///
+    /// Only the per-column-kind policies are inherited. `add_minmax_index_for_block_number_column` and
+    /// `add_minmax_index_for_block_offset_column` are off by default and index the `_block_number` and
+    /// `_block_offset` virtual columns of the table itself; a projection keeps its own policy for them
+    /// (in a `commit_order` projection these columns are the sorting key, so a min-max index over them
+    /// would only duplicate the primary key).
     if (parent_metadata)
     {
         const auto inherit = [&](const auto & setting, bool parent_value)
@@ -299,8 +305,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, parent_metadata->add_minmax_index_for_numeric_columns);
         inherit(MergeTreeSetting::add_minmax_index_for_string_columns, parent_metadata->add_minmax_index_for_string_columns);
         inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, parent_metadata->add_minmax_index_for_temporal_columns);
-        inherit(MergeTreeSetting::add_minmax_index_for_block_number_column, parent_metadata->add_minmax_index_for_block_number_column);
-        inherit(MergeTreeSetting::add_minmax_index_for_block_offset_column, parent_metadata->add_minmax_index_for_block_offset_column);
     }
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
