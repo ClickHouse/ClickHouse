@@ -97,6 +97,24 @@ SELECT 'UInt64 threshold',
     has(materialize(range(64)::Array(UInt64)), toUInt64(0)),
     indexOf(materialize(range(64)::Array(UInt64)), toUInt64(0));
 
+-- Exercise a match in the middle of the first 32-byte vector for each supported width.
+
+SELECT 'UInt8 first vector middle',
+    has(materialize(range(64)::Array(UInt8)), toUInt8(16)),
+    indexOf(materialize(range(64)::Array(UInt8)), toUInt8(16));
+
+SELECT 'UInt16 first vector middle',
+    has(materialize(range(32)::Array(UInt16)), toUInt16(8)),
+    indexOf(materialize(range(32)::Array(UInt16)), toUInt16(8));
+
+SELECT 'UInt32 first vector middle',
+    has(materialize(range(16)::Array(UInt32)), toUInt32(4)),
+    indexOf(materialize(range(16)::Array(UInt32)), toUInt32(4));
+
+SELECT 'UInt64 first vector middle',
+    has(materialize(range(32)::Array(UInt64)), toUInt64(2)),
+    indexOf(materialize(range(32)::Array(UInt64)), toUInt64(2));
+
 SELECT 'UInt16 lane equality',
     has(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
     indexOf(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
