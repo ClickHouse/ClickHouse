@@ -72,7 +72,7 @@ CREATE NAMED COLLECTION 05029_nats_existing_sql_collection AS
     nats_startup_connect_tries = 0, nats_reconnect_wait = 1;
 -- A full-definition `ATTACH` tolerates a failing connection attempt, so the table exists afterwards
 -- and its metadata can be replayed. All of its settings come from the named collection, so the stored
--- definition carries no `SETTINGS` clause at all.
+-- definition must carry no `SETTINGS` clause at all.
 ATTACH TABLE nats_certificates_from_existing_sql_collection UUID 'c6d2423a-9ab2-4a37-8e56-10e479542002' (key UInt64)
 ENGINE = NATS(05029_nats_existing_sql_collection);
 DETACH TABLE nats_certificates_from_existing_sql_collection;
