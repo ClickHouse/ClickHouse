@@ -1102,7 +1102,6 @@ def print_summary():
         ("Status", "ok", 6, True),
     ]
     seconds = ("load", "merge", "index", "truth_set", "latency_ms")
-    per_variant = ("variant", "recall", "latency_ms", "read_mib")
 
     def render(row, key):
         value = row[key]
@@ -1125,17 +1124,12 @@ def print_summary():
     logger("Summary of all runs:")
     print(header)
     print("-" * len(header))
-    previous = None
     for row in SUMMARY_ROWS:
-        # Repeat the per-table columns only on the first variant of each table
-        cells = [
-            " " * width
-            if previous == row["table"] and key not in per_variant
-            else pad(render(row, key), width, left)
-            for _, key, width, left in columns
-        ]
-        print("  ".join(cells).rstrip())
-        previous = row["table"]
+        print(
+            "  ".join(
+                pad(render(row, key), width, left) for _, key, width, left in columns
+            ).rstrip()
+        )
 
 
 def run_single_test(test_name, dataset, test_params):
