@@ -52,6 +52,7 @@ public:
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
+        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool cleanup = false,
         bool enable_vertical_final_ = false,
@@ -64,6 +65,8 @@ public:
 private:
     ssize_t is_deleted_column_number = -1;
     ssize_t version_column_number = -1;
+    /// The position of the row filter column if one is set, -1 otherwise.
+    ssize_t filter_column_position = -1;
     bool cleanup = false;
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
@@ -87,8 +90,12 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
+    bool hasFilter() const { return filter_column_position != -1; }
+    bool isSelectedRowSkipped() const;
     void insertRow();
     void insertRowImpl();
+    void flushCurrentRowSources(bool keep_selected_row);
+    void insertChunk(size_t source_num, Chunk chunk);
 
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them

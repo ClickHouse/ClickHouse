@@ -120,6 +120,8 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
     auto filter_data = ColumnUInt8::create(num_rows, UInt8(1));
     auto & filter_vec = filter_data->getData();
 
+    auto chunk_infos = std::move(chunk.getChunkInfos());
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & entry : shared_state->entries)
@@ -148,6 +150,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
     chunk = Chunk(block.getColumns(), num_rows);
     chunk.addColumn(std::move(filter_data));
+    chunk.setChunkInfos(std::move(chunk_infos));
 }
 
 }

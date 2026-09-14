@@ -1359,7 +1359,8 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
-    if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+    if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary
+        && global_ctx.merging_params.mode != MergeTreeData::MergingParams::Replacing)
         return false;
 
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
@@ -2905,8 +2906,8 @@ public:
             case MergeTreeData::MergingParams::Replacing:
                 merged_transform = std::make_shared<ReplacingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size,
-                    cleanup);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    blocks_are_granules_size, cleanup);
                 break;
 
             case MergeTreeData::MergingParams::Coalescing:

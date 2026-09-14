@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 
 namespace DB
@@ -14,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 static IMergingAlgorithm::Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false)
@@ -40,6 +42,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     size_t max_block_size_bytes,
     std::optional<size_t> max_dynamic_subcolumns_,
     WriteBuffer * out_row_sources_buf_,
+    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool cleanup_,
     bool enable_vertical_final_,
@@ -52,6 +55,15 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
 
     if (!version_column.empty())
         version_column_number = header_->getPositionByName(version_column);
+
+    if (filter_column_name_)
+    {
+        filter_column_position = header_->getPositionByName(*filter_column_name_);
+        const auto & filter_type = header_->getByPosition(filter_column_position).type;
+        if (!WhichDataType(filter_type).isUInt8())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
+    }
 
     /// With a version or an is_deleted column every row of a run must be examined, and row
     /// sources for a vertical merge must be recorded per row. Without them the only effect of
@@ -78,17 +90,43 @@ void ReplacingSortedAlgorithm::initialize(Inputs inputs)
     skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
 }
 
+/// A whole key group is skipped when its winning row must not reach the output: `CLEANUP` skips a
+/// tombstone, and a row filter skips a row it rejects. The losing rows of the group were already
+/// skipped, so this is what a horizontal merge produces when it filters the merged stream.
+bool ReplacingSortedAlgorithm::isSelectedRowSkipped() const
+{
+    if (cleanup && is_deleted_column_number != -1
+        && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num])
+        return true;
+
+    return hasFilter()
+        && !assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[filter_column_position]).getData()[selected_row.row_num];
+}
+
+/// The gather stage replays one row source per input row, so a skipped key group is still written
+/// out in full - the file must stay in step with the rows that were read, not with the rows kept.
+void ReplacingSortedAlgorithm::flushCurrentRowSources(bool keep_selected_row)
+{
+    if (!out_row_sources_buf)
+        return;
+
+    /// Every entry of the group was pre-marked skipped; the winner is the only one to unskip.
+    if (keep_selected_row)
+        current_row_sources[max_pos].setSkipFlag(false);
+
+    out_row_sources_buf->write(reinterpret_cast<const char *>(current_row_sources.data()),
+                               current_row_sources.size() * sizeof(RowSourcePart));
+    current_row_sources.resize(0);
+}
+
 void ReplacingSortedAlgorithm::insertRow()
 {
-    if (is_deleted_column_number != -1)
-    {
-        if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
-            insertRowImpl();
-    }
+    /// Leave `selected_row` alone when the group is skipped: `saveChunkForSkippingFinalFromSelectedRow`
+    /// below still needs it to decide whether the chunk it owns can be emitted.
+    if (isSelectedRowSkipped())
+        flushCurrentRowSources(/*keep_selected_row=*/ false);
     else
-    {
         insertRowImpl();
-    }
 
     /// insertRowImpl() may has not been called
     saveChunkForSkippingFinalFromSelectedRow();
@@ -96,15 +134,7 @@ void ReplacingSortedAlgorithm::insertRow()
 
 void ReplacingSortedAlgorithm::insertRowImpl()
 {
-    if (out_row_sources_buf)
-    {
-        /// true flag value means "skip row"
-        current_row_sources[max_pos].setSkipFlag(false);
-
-        out_row_sources_buf->write(reinterpret_cast<const char *>(current_row_sources.data()),
-                                   current_row_sources.size() * sizeof(RowSourcePart));
-        current_row_sources.resize(0);
-    }
+    flushCurrentRowSources(/*keep_selected_row=*/ true);
 
     if (enable_vertical_final)
     {
@@ -124,6 +154,46 @@ void ReplacingSortedAlgorithm::insertRowImpl()
     }
 
     selected_row.clear();
+}
+
+/// Emit a chunk whose keys are known to be free of duplicates, so it needs no merging at all.
+/// A row filter still applies per row, exactly as in `MergingSortedAlgorithm::insertChunk`.
+/// Only reachable while the source chunks still carry their part level; without it the merge falls
+/// back to the per-row path, which returns the same rows more slowly.
+void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
+{
+    const size_t num_rows = chunk.getNumRows();
+
+    if (!hasFilter())
+    {
+        if (out_row_sources_buf)
+        {
+            RowSourcePart row_source(source_num);
+            for (size_t i = 0; i < num_rows; ++i)
+                out_row_sources_buf->write(row_source.data);
+        }
+
+        merged_data->insertChunk(std::move(chunk), num_rows);
+        return;
+    }
+
+    auto columns = chunk.detachColumns();
+    const auto & filter = assert_cast<const ColumnUInt8 &>(*columns[filter_column_position]).getData();
+
+    if (out_row_sources_buf)
+    {
+        RowSourcePart row_source(source_num, false);
+        RowSourcePart row_source_skipped(source_num, true);
+
+        for (size_t i = 0; i < num_rows; ++i)
+            out_row_sources_buf->write(filter[i] ? row_source.data : row_source_skipped.data);
+    }
+
+    for (auto & column : columns)
+        column = column->filter(filter, -1);
+
+    const size_t num_kept_rows = columns.empty() ? 0 : columns.front()->size();
+    merged_data->insertChunk(Chunk(std::move(columns), num_kept_rows), num_kept_rows);
 }
 
 IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
@@ -184,7 +254,6 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             size_t source_num = current->order;
             auto current_chunk = std::move(*sources[source_num].chunk);
-            size_t chunk_num_rows = current_chunk.getNumRows();
 
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
@@ -197,17 +266,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 return status;
             }
 
-            merged_data->insertChunk(std::move(current_chunk), chunk_num_rows);
+            insertChunk(source_num, std::move(current_chunk));
             sources[source_num].chunk = {};
-
-            /// Write order of rows for other columns this data will be used in gather stream
-            if (out_row_sources_buf)
-            {
-                /// All rows are not skipped.
-                RowSourcePart row_source(source_num);
-                for (size_t i = 0; i < chunk_num_rows; ++i)
-                    out_row_sources_buf->write(row_source.data);
-            }
 
             Status status(merged_data->pull());
             status.required_source = source_num;
