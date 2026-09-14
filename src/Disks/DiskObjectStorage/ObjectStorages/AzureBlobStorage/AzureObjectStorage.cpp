@@ -725,7 +725,7 @@ catch (const Azure::Storage::StorageException & e)
     throw;
 }
 
-void AzureObjectStorage::copyObject( /// NOLINT
+String AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -777,7 +777,8 @@ void AzureObjectStorage::copyObject( /// NOLINT
 
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
 
-    copyAzureBlobStorageFile(
+    /// The generation the copy created is the one the response to the write names; see `copyObject`.
+    return copyAzureBlobStorageFile(
         client_ptr,
         client_ptr,
         connection_params.getContainer(),

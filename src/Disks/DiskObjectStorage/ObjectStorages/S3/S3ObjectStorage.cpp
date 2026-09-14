@@ -737,7 +737,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
-void S3ObjectStorage::copyObject( // NOLINT
+String S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -755,8 +755,9 @@ void S3ObjectStorage::copyObject( // NOLINT
     /// A source that carries an `ETag` names the generation the caller has seen (a queue copies the
     /// generation it ingested); the copy is pinned to it and transfers that generation or fails with
     /// `S3_OBJECT_CHANGED_DURING_READ`. The read-and-write fallback reads the source through
-    /// `readObject`, which pins its `GET`s to the same `ETag`.
-    copyS3File(
+    /// `readObject`, which pins its `GET`s to the same `ETag`. The generation the copy created is
+    /// the one the response to the write names; see `copyObject`.
+    return copyS3File(
         /*src_s3_client=*/current_client,
         /*src_bucket=*/src_bucket,
         /*src_key=*/src_key,

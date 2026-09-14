@@ -164,7 +164,8 @@ public:
         bool refuse_range_past_the_data_ = false,
         bool blob_missing_ = false,
         bool a_blob_is_at_the_key_a_write_creates_ = false,
-        bool no_etag_on_head_after_a_copy_ = false)
+        bool no_etag_in_the_copy_response_ = false,
+        std::optional<std::string> replace_the_destination_right_after_the_copy_ = {})
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
@@ -176,7 +177,8 @@ public:
         , refuse_range_past_the_data(refuse_range_past_the_data_)
         , blob_missing(blob_missing_)
         , a_blob_is_at_the_key_a_write_creates(a_blob_is_at_the_key_a_write_creates_)
-        , no_etag_on_head_after_a_copy(no_etag_on_head_after_a_copy_)
+        , no_etag_in_the_copy_response(no_etag_in_the_copy_response_)
+        , replace_the_destination_right_after_the_copy(std::move(replace_the_destination_right_after_the_copy_))
     {
     }
 
@@ -212,13 +214,22 @@ public:
             natively_copied_generations.push_back(current_etag);
             a_copy_was_served = true;
 
+            /// The response names the generation the copy wrote with its `ETag` header - unless the
+            /// endpoint is one that does not.
             auto accepted = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Accepted, "Accepted");
             accepted->SetHeader("Content-Length", "0");
-            accepted->SetHeader("ETag", current_etag);
+            if (!no_etag_in_the_copy_response)
+                accepted->SetHeader("ETag", current_etag);
             accepted->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
             accepted->SetHeader("x-ms-copy-id", "copy-id");
             accepted->SetHeader("x-ms-copy-status", "success");
             accepted->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+
+            /// Another writer replaces the destination before the response is delivered: from here
+            /// on the endpoint holds that generation, and every request that looks at the key
+            /// (a `HEAD`, a delete) sees it instead of the one the copy wrote.
+            if (replace_the_destination_right_after_the_copy)
+                overwritten_etag = *replace_the_destination_right_after_the_copy;
             return accepted;
         }
 
@@ -253,7 +264,7 @@ public:
                 return notFound();
             auto properties = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Ok, "OK");
             properties->SetHeader("Content-Length", std::to_string(blob_size));
-            if (send_etag && !(no_etag_on_head_after_a_copy && a_copy_was_served))
+            if (send_etag)
                 properties->SetHeader("ETag", current_etag);
             properties->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
             properties->SetHeader("x-ms-creation-time", "Wed, 21 Oct 2015 07:28:00 GMT");
@@ -296,6 +307,9 @@ public:
 
             a_copy_was_served = true;
 
+            /// The SDK reads the `ETag` of every `Put Blob` and `Put Block List` response
+            /// unconditionally (`headers.at("ETag")`), so an endpoint that omits it cannot be modelled
+            /// here: the write itself would fail in the SDK, and no blob would be reported as written.
             auto created = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Created, "Created");
             created->SetHeader("Content-Length", "0");
             created->SetHeader("ETag", current_etag);
@@ -303,6 +317,13 @@ public:
             /// The SDK reads this header unconditionally from every upload response.
             created->SetHeader("x-ms-request-server-encrypted", "false");
             created->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+
+            /// A `Put Blob` or a `Put Block List` creates the blob, the way a copy does (a `Put Block`
+            /// only stages a block), so the writer that replaces the destination right after the
+            /// copy replaces it right after this response too.
+            const bool creates_the_blob = comp == query.end() || comp->second == "blocklist";
+            if (creates_the_blob && replace_the_destination_right_after_the_copy)
+                overwritten_etag = *replace_the_destination_right_after_the_copy;
             return created;
         }
 
@@ -448,9 +469,13 @@ private:
     bool refuse_range_past_the_data;
     bool blob_missing;
     bool a_blob_is_at_the_key_a_write_creates;
-    /// An endpoint that answers `Get Properties` of a blob a write has just put there without an
-    /// `ETag`: the generation of that blob cannot be named, however well the write itself went.
-    bool no_etag_on_head_after_a_copy;
+    /// An endpoint that answers a copy without the `ETag` of the blob it wrote: the generation the
+    /// copy created cannot be named, however well the copy itself went (a `HEAD` of the key would
+    /// still be answered with an `ETag` - of whatever generation is there by then).
+    bool no_etag_in_the_copy_response;
+    /// The generation another writer puts at the destination right after a write that creates a
+    /// blob (a copy, a `Put Blob`, a `Put Block List`), before the response to it is delivered.
+    std::optional<std::string> replace_the_destination_right_after_the_copy;
     bool a_copy_was_served = false;
     size_t responses_sent = 0;
     bool saw_create_if_absent = false;
@@ -776,17 +801,22 @@ std::shared_ptr<DB::AzureBlobStorage::ContainerClient> containerClientOver(const
     return std::make_shared<DB::AzureBlobStorage::ContainerClient>(blobContainerClientOver(transport), /* blob_prefix */ "");
 }
 
-/// An `AzureObjectStorage` over the shared endpoint `transport`.
-std::unique_ptr<DB::AzureObjectStorage> objectStorageOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+/// An `AzureObjectStorage` over the shared endpoint `transport`. Its copies are read-and-write ones
+/// by default (the default of `use_native_copy`); with `use_native_copy`, they are the native
+/// `Copy Blob From URL`, which transfers nothing through the client.
+std::unique_ptr<DB::AzureObjectStorage> objectStorageOver(const std::shared_ptr<MisbehavingRangeTransport> & transport, bool use_native_copy = false)
 {
     /// The delete path creates a `BlobStorageLogWriter`, which looks the log up in the global context.
     getContext();
+
+    auto settings = std::make_unique<DB::AzureBlobStorage::RequestSettings>();
+    settings->use_native_copy = use_native_copy;
 
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
         DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::make_unique<DB::AzureBlobStorage::ContainerClient>(blobContainerClientOver(transport), /* blob_prefix */ ""),
-        std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
+        std::move(settings),
         DB::AzureBlobStorage::ConnectionParams{},
         /* object_namespace */ "container",
         /* description */ "http://azure.invalid/container",
@@ -996,11 +1026,11 @@ PlainRewritableMoveOutcome movePlainRewritableFile(
 
 /// Drives the sequence a `plain_rewritable` metadata operation performs when it makes a hard link
 /// (`createHardLink`, a copy of the blob of the source to the key of the target) and the
-/// transaction it belongs to is then rolled back: copy, name the generation the copy wrote
-/// (`nameTheGenerationThatWasJustWritten`, the production helper), and delete exactly that
-/// generation. With `recreate_between_copy_and_rollback`, somebody else replaces the blob at the
-/// key of the target before the rollback runs. With `pin` disabled, the delete addresses the blob
-/// by path alone, the way `undo` did before it was pinned.
+/// transaction it belongs to is then rolled back: copy, name the generation the copy wrote from the
+/// `ETag` the copy reported (`nameTheGenerationThatWasJustWritten`, the production helper), and
+/// delete exactly that generation. With `recreate_between_copy_and_rollback`, somebody else
+/// replaces the blob at the key of the target before the rollback runs. With `pin` disabled, the
+/// delete addresses the blob by path alone, the way `undo` did before it was pinned.
 PlainRewritableMoveOutcome rollBackPlainRewritableHardLink(bool recreate_between_copy_and_rollback, bool pin = true)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
@@ -1011,12 +1041,13 @@ PlainRewritableMoveOutcome rollBackPlainRewritableHardLink(bool recreate_between
     std::optional<int> error_code;
     try
     {
-        object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+        const std::string etag_the_copy_reported
+            = object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
 
         DB::StoredObject destination("linked/blob");
         if (pin)
         {
-            const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "linked/blob");
+            const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "linked/blob", etag_the_copy_reported, 100);
             if (!named)
                 throw DB::Exception(DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "The generation the copy wrote cannot be named");
             destination = *named;
@@ -3332,10 +3363,13 @@ TEST(AzurePlainRewritableRollback, TheDestinationDeleteIsPinnedToWhatTheCopyWrot
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto object_storage = objectStorageOver(transport);
 
-    const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob");
+    /// The generation is named from the `ETag` the response to the copy reported; no request is made.
+    const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob", ETagBehaviour::first_generation, 100);
     ASSERT_TRUE(named.has_value());
     const DB::StoredObject & destination = *named;
     ASSERT_EQ(destination.etag, ETagBehaviour::first_generation);
+    ASSERT_EQ(destination.bytes_size, 100u);
+    ASSERT_EQ(transport->headRequests(), 0u);
 
     transport->overwriteObject(ETagBehaviour::second_generation);
 
@@ -3370,31 +3404,74 @@ TEST(AzurePlainRewritableRollback, AnUnpinnedDestinationDeleteTakesAwayTheNewGen
     ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::second_generation});
 }
 
-/// An endpoint that answers without an `ETag` names no generation for the blob the copy has just
-/// written, so nothing is returned and the move refuses to go on. Returning the bare object instead
-/// would hand `undo` a delete by path alone, which is the delete of the test above - the one that
-/// takes away whatever another writer has put at the key since.
+/// An endpoint that answers the copy without an `ETag` names no generation for the blob the copy has
+/// just written, so nothing is returned and the move refuses to go on. Returning the bare object
+/// instead would hand `undo` a delete by path alone, which is the delete of the test above - the one
+/// that takes away whatever another writer has put at the key since. A `HEAD` of the key is not made
+/// to make up for it: the endpoint here would answer one with an `ETag`, of whatever generation is
+/// there by then, and that is not the generation the copy wrote.
 TEST(AzurePlainRewritableRollback, ADestinationWithoutAGenerationIsNotNamed)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
-        100, 100, 100, /* send_etag */ false, /* reported_length */ std::nullopt, /* ignore_range */ false,
-        ETagBehaviour{.etag = "", .etag_after_first = "", .honour_if_match = false});
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto object_storage = objectStorageOver(transport);
 
-    ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob").has_value());
+    ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob", /* etag_the_copy_reported */ "", 100).has_value());
+    ASSERT_EQ(transport->headRequests(), 0u);
 }
 
-/// The same, for a blob that the `HEAD` after the copy does not find at all: a key that holds
-/// nothing now can hold a generation of somebody else's by the time the rollback runs.
-TEST(AzurePlainRewritableRollback, ADestinationThatIsNotThereIsNotNamed)
+/// `copyObject` reports the generation it created: the `ETag` header of the response to the native
+/// copy, which is what the helper above is then given.
+TEST(AzurePlainRewritableRollback, ANativeCopyReportsTheGenerationItCreated)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport, /* use_native_copy */ true);
+
+    const std::string etag_the_copy_reported
+        = object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+
+    ASSERT_EQ(etag_the_copy_reported, ETagBehaviour::first_generation);
+    ASSERT_EQ(transport->nativelyCopiedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
+    ASSERT_TRUE(transport->uploadedData().empty());
+}
+
+/// The same for a copy that reads and writes: the `ETag` is the one of the response to the
+/// `Put Blob` that created the destination.
+TEST(AzurePlainRewritableRollback, AReadAndWriteCopyReportsTheGenerationItCreated)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    const std::string etag_the_copy_reported
+        = object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+
+    ASSERT_EQ(etag_the_copy_reported, ETagBehaviour::first_generation);
+    ASSERT_TRUE(transport->nativelyCopiedGenerations().empty());
+    ASSERT_EQ(transport->uploadedData().size(), 100u);
+}
+
+/// The same copy against an endpoint that omits the `ETag` from the response to it reports nothing,
+/// and the operations then refuse to go on (see `ADestinationWhoseGenerationCannotBeNamedIsRefused`).
+TEST(AzurePlainRewritableRollback, ACopyWhoseResponseCarriesNoETagReportsNoGeneration)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
-        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false, /* blob_missing */ true);
-    auto object_storage = objectStorageOver(transport);
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
+        /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
+        /* no_etag_in_the_copy_response */ true);
+    auto object_storage = objectStorageOver(transport, /* use_native_copy */ true);
 
-    ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob").has_value());
+    const std::string etag_the_copy_reported
+        = object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+
+    ASSERT_TRUE(etag_the_copy_reported.empty());
+    ASSERT_EQ(transport->nativelyCopiedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
 }
 
 /// Rolling back a transaction that made a hard link has to take the blob the copy wrote back out,
@@ -3485,14 +3562,16 @@ struct PlainRewritableHardLinkFixture
 TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRefused)
 {
     /// The copy itself goes through - the source is named and the endpoint honours the precondition -
-    /// and only the `HEAD` of the blob the copy wrote comes back without an `ETag`.
+    /// and only the response to the copy comes back without the `ETag` of the blob it wrote. A `HEAD`
+    /// of the key would be answered with one, and the operation does not ask: the response to the
+    /// copy is the only thing that names what the copy wrote.
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
         /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
         /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
-        /* no_etag_on_head_after_a_copy */ true);
-    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport);
+        /* no_etag_in_the_copy_response */ true);
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport, /* use_native_copy */ true);
 
     PlainRewritableHardLinkFixture fixture;
     DB::MetadataStorageFromPlainObjectStorageCopyFileOperation operation(
@@ -3513,6 +3592,8 @@ TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRef
     /// The aborted hard link is not a file of the disk.
     ASSERT_FALSE(fixture.fs_tree->existsFile("to"));
     ASSERT_TRUE(transport->deletedGenerations().empty());
+    /// The one `HEAD` is the one that names the source before the copy.
+    ASSERT_EQ(transport->headRequests(), 1u);
 
     /// The rollback takes the blob the copy wrote back out of the key of the file, by the key alone,
     /// since the generation could not be named: `load` rebuilds a directory from every blob under
@@ -3533,8 +3614,8 @@ TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefused
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
         /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
         /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
-        /* no_etag_on_head_after_a_copy */ true);
-    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport);
+        /* no_etag_in_the_copy_response */ true);
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport, /* use_native_copy */ true);
 
     PlainRewritableHardLinkFixture fixture;
     DB::StoredObjects removed_objects;
@@ -3559,9 +3640,11 @@ TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefused
 
     operation.undo();
 
-    /// The one delete is the one of the destination, by its key alone.
-    ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
-    ASSERT_EQ(transport->deleteIfMatchHeaders(), std::vector<std::string>{std::string{}});
+    /// The first delete is the one of the destination, by its key alone; the deletes that follow it
+    /// clean up the blob the move had copied aside once the source is confirmed in place.
+    ASSERT_FALSE(transport->deletedGenerations().empty());
+    ASSERT_EQ(transport->deletedGenerations().front(), ETagBehaviour::first_generation);
+    ASSERT_EQ(transport->deleteIfMatchHeaders().front(), std::string{});
 }
 
 /// The same hard link against an endpoint that names the generation of the blob the copy wrote:
@@ -3581,6 +3664,59 @@ TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationIsNamedIsRecorded)
     operation.execute();
 
     ASSERT_TRUE(fixture.fs_tree->existsFile("to"));
+}
+
+/// Another writer replaces the destination right after the copy, before any request of the operation
+/// could look at the key again. The rollback still deletes exactly the generation the copy wrote,
+/// because it is named by the response to the copy and not by a `HEAD` of the key afterwards, which
+/// would have named the newer generation and bound it to the operation: the delete carries the copy's
+/// `ETag`, the endpoint refuses it with `412`, and the newer generation stays.
+namespace
+{
+
+void theDestinationDeleteIsPinnedToWhatTheCopyWroteWhenTheKeyIsReplacedRightAfterTheCopy(bool use_native_copy)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
+        /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
+        /* no_etag_in_the_copy_response */ false,
+        /* replace_the_destination_right_after_the_copy */ ETagBehaviour::second_generation);
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport, use_native_copy);
+
+    PlainRewritableHardLinkFixture fixture;
+    DB::MetadataStorageFromPlainObjectStorageCopyFileOperation operation(
+        "from", "to", fixture.fs_tree, object_storage, fixture.layout, fixture.metrics);
+
+    operation.execute();
+
+    ASSERT_TRUE(fixture.fs_tree->existsFile("to"));
+    if (use_native_copy)
+        ASSERT_EQ(transport->nativelyCopiedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
+    else
+        ASSERT_EQ(transport->uploadedData().size(), 100u);
+    /// The one `HEAD` is the one that names the source before the copy: the destination is named
+    /// without a request of its own.
+    ASSERT_EQ(transport->headRequests(), 1u);
+
+    /// The refusal is logged, not thrown: the rollback has done what it safely could.
+    operation.undo();
+
+    ASSERT_EQ(transport->deleteIfMatchHeaders(), std::vector<std::string>{ETagBehaviour::first_generation});
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+}
+
+}
+
+TEST(AzurePlainRewritableHardLinkRollback, TheDestinationDeleteIsPinnedToWhatANativeCopyWroteWhenTheKeyIsReplacedRightAfterIt)
+{
+    theDestinationDeleteIsPinnedToWhatTheCopyWroteWhenTheKeyIsReplacedRightAfterTheCopy(/* use_native_copy */ true);
+}
+
+TEST(AzurePlainRewritableHardLinkRollback, TheDestinationDeleteIsPinnedToWhatAReadAndWriteCopyWroteWhenTheKeyIsReplacedRightAfterIt)
+{
+    theDestinationDeleteIsPinnedToWhatTheCopyWroteWhenTheKeyIsReplacedRightAfterTheCopy(/* use_native_copy */ false);
 }
 
 /// The blobs an operation writes aside to be able to roll itself back are not files of the disk:

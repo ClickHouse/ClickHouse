@@ -48,19 +48,21 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
 /// storage that does not pin, see above) is not measured either, and passes.
 void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t recorded_size, const std::filesystem::path & path);
 
-/// Names the generation of a blob that was just written, so that a rollback that takes it back out
-/// is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
-/// generation that somebody else has written since. The `HEAD` runs right after the write, so the
-/// generation it reports is the one that was written unless another writer got in between the two
-/// requests; a copy that reported the generation it created would close that window, and the
-/// `IObjectStorage` copy does not report one.
+/// Names the generation of a blob that a copy has just written, so that a rollback that takes it
+/// back out is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
+/// generation that somebody else has written since. `etag_the_copy_reported` is what `copyObject`
+/// returned: the `ETag` from the response to the request that created the blob, which names exactly
+/// the generation the copy wrote. No request is made here - a `HEAD` of the key after the copy
+/// would name whatever generation is there by then, and a writer that replaced the key between the
+/// copy and that `HEAD` would have its generation bound to the operation instead. `bytes_size` is
+/// the size of the generation that was copied, which is the size of the one written.
 ///
-/// Nothing is returned when the blob is on Azure or on S3 and the generation of it cannot be named
-/// at all - the `HEAD` does not find the blob, or the endpoint answers without an `ETag`. A delete
-/// by path alone is exactly the cross-generation loss the pinning exists to prevent, so the caller
-/// has to fail closed rather than fall back to one. For every other object storage the object is
-/// returned as it was and not a single extra request is made.
-std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+/// Nothing is returned when the blob is on Azure or on S3 and the copy reported no `ETag`, so the
+/// generation cannot be named at all. A delete by path alone is exactly the cross-generation loss
+/// the pinning exists to prevent, so the caller has to fail closed rather than fall back to one.
+/// For every other object storage the object is returned by its key, as it was.
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(
+    const IObjectStorage & object_storage, const std::filesystem::path & remote_path, const String & etag_the_copy_reported, size_t bytes_size);
 
 /// Puts the blob that a rollback saved aside at `remote_tmp_path` back at `remote_path`, without
 /// ever writing over what is at that key. Asking whether the key is free and then copying over it
@@ -248,10 +250,11 @@ private:
     /// Set between the copy and everything that follows it: the blob is at the destination from
     /// that point on, whatever happens next, so `undo` has to take it back out.
     bool copied_to_destination = false;
-    /// The generation the copy wrote, so that the delete in `undo` is pinned to it and cannot take
-    /// away a generation another writer has put at the same key since. When the endpoint names no
-    /// generation for it, `destination` is the bare key and `undo` deletes by it: a blob left under
-    /// the key of a file would be loaded as that file on the next start (see `load`).
+    /// The generation the copy wrote, as the response to the copy named it, so that the delete in
+    /// `undo` is pinned to it and cannot take away a generation another writer has put at the same
+    /// key since. When the endpoint names no generation for it, `destination` is the bare key and
+    /// `undo` deletes by it: a blob left under the key of a file would be loaded as that file on the
+    /// next start (see `load`).
     StoredObject destination;
     bool destination_generation_is_named = false;
 
@@ -304,8 +307,9 @@ private:
     /// `MetadataStorageFromPlainRewritableObjectStorage::load` rebuilds the files of a directory
     /// from the blobs that are in the bucket, so leaving it there resurrects `path_to` on restart.
     bool copied_to_destination{false};
-    /// The generation of the destination blob as it was right after the copy wrote it, so that the
-    /// delete in `undo` is pinned to it and cannot take away a generation written by somebody else.
+    /// The generation of the destination blob that the copy wrote, as the response to the copy named
+    /// it, so that the delete in `undo` is pinned to it and cannot take away a generation written by
+    /// somebody else.
     StoredObject destination;
     /// Whether `destination` names a generation. The execute side refuses to go on without one, so
     /// `undo` only ever sees it unset for a move that was refused for exactly that reason, and it

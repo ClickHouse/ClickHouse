@@ -352,8 +352,16 @@ public:
         const StoredObjects & object,
         StoredObjects * successful_objects = nullptr) = 0;
 
-    /// Copy object with different attributes if required
-    virtual void copyObject( /// NOLINT
+    /// Copy object with different attributes if required.
+    ///
+    /// Returns the `ETag` of the generation the copy created at `object_to`, as the endpoint reported
+    /// it in the response to the write that created it (the `CopyObject`, `PutObject` or
+    /// `CompleteMultipartUpload` on S3, the `Copy Blob`, `Put Blob` or `Put Block List` on Azure), or
+    /// an empty string when the endpoint reported none or the object storage does not name
+    /// generations. A caller that has to address exactly that generation afterwards - a rollback
+    /// that deletes what the copy wrote - uses it instead of a `HEAD` of the key, which names
+    /// whatever generation is there by the time it runs.
+    virtual String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,

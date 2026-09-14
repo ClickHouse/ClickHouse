@@ -119,7 +119,14 @@ namespace
 
         virtual ~UploadHelper() = default;
 
+        /// The `ETag` of the generation the upload or copy created at `dest_key`, as the response
+        /// to the request that created it reported it; empty until then, and when the endpoint
+        /// reported none.
+        const String & createdETag() const { return created_etag; }
+
     protected:
+        String created_etag;
+
         std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
@@ -246,6 +253,7 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
+                    created_etag = outcome.GetResult().GetETag();
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     break;
                 }
@@ -574,6 +582,7 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
+                    created_etag = outcome.GetResult().GetETag();
                     Int64 object_size = request.GetContentLength();
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
@@ -687,7 +696,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
+            std::function<String()> fallback_method_,
             bool is_ranged_copy_)
             : UploadHelper(
                 client_ptr_,
@@ -738,7 +747,7 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
-                fallback_method();
+                created_etag = fallback_method();
                 return;
             }
 
@@ -768,7 +777,8 @@ namespace
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        std::function<void()> fallback_method;
+        /// The read-and-write copy; returns the `ETag` of the generation it created, like this class does.
+        std::function<String()> fallback_method;
 
         void performSingleOperationCopy()
         {
@@ -832,6 +842,7 @@ namespace
                 auto outcome = client_ptr->CopyObject(request);
                 if (outcome.IsSuccess())
                 {
+                    created_etag = outcome.GetResult().GetCopyObjectResultDetails().GetETag();
                     LOG_TRACE(
                         log,
                         "Single operation copy has completed. Bucket: {}, Key: {}, Object size: {}",
@@ -861,7 +872,7 @@ namespace
                             dest_bucket,
                             dest_key,
                             size);
-                        fallback_method();
+                        created_etag = fallback_method();
                         break;
                     }
 
@@ -914,7 +925,7 @@ namespace
                     throw;
 
                 tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                fallback_method();
+                created_etag = fallback_method();
             }
         }
 
@@ -977,7 +988,7 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 }
 
 
-void copyDataToS3File(
+String copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
@@ -1001,6 +1012,7 @@ void copyDataToS3File(
         schedule,
         blob_storage_log};
     helper.performCopy();
+    return helper.createdETag();
 }
 
 
@@ -1008,7 +1020,7 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
+    String copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
@@ -1030,9 +1042,9 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<void()> fallback_method = [&] mutable
+        std::function<String()> fallback_method = [&] mutable
         {
-            copyDataToS3File(
+            return copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
                 src_size,
@@ -1048,8 +1060,7 @@ namespace
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
+            return fallback_method();
         }
 
         CopyFileHelper helper{
@@ -1070,10 +1081,11 @@ namespace
             std::move(fallback_method),
             is_ranged_copy};
         helper.performCopy();
+        return helper.createdETag();
     }
 }
 
-void copyS3File(
+String copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1089,7 +1101,7 @@ void copyS3File(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
@@ -1109,7 +1121,7 @@ void copyS3File(
         /* is_ranged_copy= */ false);
 }
 
-void copyS3FileRange(
+String copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1127,7 +1139,7 @@ void copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,

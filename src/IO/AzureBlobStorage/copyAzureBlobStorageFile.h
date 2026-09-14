@@ -34,7 +34,13 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// argument could only be honored by the read-write fallback and would be silently ignored whenever
 /// the native copy is enabled. Callers that need a range read the source themselves and use
 /// `copyDataToAzureBlobStorageFile()`.
-void copyAzureBlobStorageFile(
+///
+/// Returns the `ETag` of the generation the copy created at `dest_blob`, taken from the response to
+/// the request that created it (`Copy Blob From URL`, `Put Blob` or `Put Block List`; for an
+/// asynchronous `Copy Blob`, from the properties that report the copy it started as completed), or
+/// empty when the endpoint reported none. It names exactly what this copy wrote, which a `HEAD` of
+/// the blob afterwards does not: that names whatever generation is there by then.
+String copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -55,7 +61,8 @@ void copyAzureBlobStorageFile(
 /// however copyDataToS3File() is faster and spends less memory.
 /// The callback `create_read_buffer` can be called from multiple threads in parallel, so that should be thread-safe.
 /// The parameters `offset` and `size` specify a part in the source to copy.
-void copyDataToAzureBlobStorageFile(
+/// Returns the `ETag` of the created destination the same way as `copyAzureBlobStorageFile`.
+String copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,

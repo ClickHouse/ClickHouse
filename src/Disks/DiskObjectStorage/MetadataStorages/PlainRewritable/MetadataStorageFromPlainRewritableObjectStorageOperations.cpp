@@ -208,12 +208,20 @@ bool restoreTheSavedBlobWithoutWritingOver(
     }
 }
 
-std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(
+    const IObjectStorage & object_storage, const std::filesystem::path & remote_path, const String & etag_the_copy_reported, size_t bytes_size)
 {
-    if (!pinsGenerations(object_storage))
-        return StoredObject(remote_path);
+    StoredObject object(remote_path);
+    object.bytes_size = bytes_size;
 
-    return nameTheGenerationThatIsThereNow(object_storage, remote_path);
+    if (!pinsGenerations(object_storage))
+        return object;
+
+    if (etag_the_copy_reported.empty())
+        return {};
+
+    object.etag = etag_the_copy_reported;
+    return object;
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -667,16 +675,18 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
     refuseAGenerationOfAnotherSize(source, file_from_remote_info.bytes_size, path_from);
 
-    object_storage->copyObject(source, StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+    const String etag_the_copy_reported
+        = object_storage->copyObject(source, StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
 
     /// The destination blob is there from now on, so `undo` has to take it back out - and only it:
-    /// the generation that was just written is named here, so that the delete in `undo` is pinned
-    /// to it and cannot take away a generation another writer has put at the same key since. A copy
-    /// that threw before writing anything leaves nothing for `undo` to remove, which is why the
-    /// flag is set here rather than before the copy.
+    /// the generation the copy wrote is the one the response to the copy named, and the delete in
+    /// `undo` is pinned to it, so it cannot take away a generation another writer has put at the
+    /// same key since - not even one put there right after the copy, because no request of this
+    /// operation looks at the key again. A copy that threw before writing anything leaves nothing
+    /// for `undo` to remove, which is why the flag is set here rather than before the copy.
     copied_to_destination = true;
     destination = StoredObject(remote_path_to);
-    if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
+    if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to, etag_the_copy_reported, source.bytes_size))
     {
         destination = std::move(*named);
         destination_generation_is_named = true;
@@ -684,8 +694,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     else
         throw Exception(
             errorCodeOfAnUnnamedGeneration(*object_storage),
-            "Cannot copy '{}' to '{}': the generation of the blob at {} that the copy has just "
-            "written cannot be named, so a rollback of this copy cannot delete exactly that "
+            "Cannot copy '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that the "
+            "copy has just written, so a rollback of this copy cannot delete exactly that "
             "generation. The copy is refused here, before the file is recorded, and the rollback "
             "removes the blob the copy wrote by its key (see `undo`)",
             path_from.string(),
@@ -872,16 +882,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fiu_do_on(FailPoints::plain_object_storage_copy_fail_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
-        object_storage->copyObject(
+        const String etag_the_copy_reported = object_storage->copyObject(
             /*object_from=*/source, /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
 
         /// The destination blob is there from now on, whatever happens next, so `undo` has to take
         /// it back out: a blob of a move that was never committed resurrects `path_to` on restart,
         /// because the directory is rebuilt from the blobs that are in the bucket. The generation
-        /// that was just written is named here so that the delete in `undo` is pinned to it.
+        /// the copy wrote is the one the response to the copy named, and the delete in `undo` is
+        /// pinned to it; no request of this operation looks at the key again.
         copied_to_destination = true;
         destination = StoredObject(remote_path_to);
-        if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
+        if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to, etag_the_copy_reported, source.bytes_size))
         {
             destination = std::move(*named);
             destination_generation_is_named = true;
@@ -889,8 +900,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         else
             throw Exception(
                 errorCodeOfAnUnnamedGeneration(*object_storage),
-                "Cannot move '{}' to '{}': the generation of the blob at {} that the copy has just "
-                "written cannot be named, so a rollback of this move cannot delete exactly that "
+                "Cannot move '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that "
+                "the copy has just written, so a rollback of this move cannot delete exactly that "
                 "generation. The move is refused here, before the source is deleted, and the "
                 "rollback removes the blob the copy wrote by its key (see `undo`)",
                 path_from.string(),

@@ -79,7 +79,14 @@ namespace
 
         virtual ~UploadHelper() = default;
 
+        /// The `ETag` of the generation the upload created at `dest_blob`, as the response to the
+        /// `Put Blob` or `Put Block List` reported it; empty until then, and when the endpoint
+        /// reported none.
+        const String & createdETag() const { return created_etag; }
+
     protected:
+        String created_etag;
+
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
         std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
         size_t offset;
@@ -184,7 +191,8 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.Upload(stream);
+                auto response = block_blob_client.Upload(stream);
+                created_etag = AzureBlobStorage::getETagOrEmpty(response.Value.ETag);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -216,7 +224,8 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.CommitBlockList(block_ids);
+                auto response = block_blob_client.CommitBlockList(block_ids);
+                created_etag = AzureBlobStorage::getETagOrEmpty(response.Value.ETag);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -360,7 +369,7 @@ namespace
 }
 
 
-void copyDataToAzureBlobStorageFile(
+String copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
@@ -374,10 +383,11 @@ void copyDataToAzureBlobStorageFile(
     auto log = getLogger("copyDataToAzureBlobStorageFile");
     UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log};
     helper.performCopy();
+    return helper.createdETag();
 }
 
 
-void copyAzureBlobStorageFile(
+String copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -394,6 +404,9 @@ void copyAzureBlobStorageFile(
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
+    /// The generation the copy created at the destination, as the endpoint named it in the response
+    /// to the request that created it.
+    String created_etag;
 
     if (settings->use_native_copy)
     {
@@ -431,7 +444,8 @@ void copyAzureBlobStorageFile(
                 }
 
                 LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
-                block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+                auto response = block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+                created_etag = AzureBlobStorage::getETagOrEmpty(response.Value.ETag);
             }
             else
             {
@@ -445,6 +459,19 @@ void copyAzureBlobStorageFile(
 
                 Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
 
+                /// The copy is asynchronous: the generation it creates comes into being when it
+                /// completes, and the only report of it is the properties of the destination that
+                /// the poll below reads. Those properties are of whatever blob is at the key by then,
+                /// so they name the generation this copy created only if the copy they report on is
+                /// the one started here: a blob another writer put at the key in the meantime carries
+                /// another copy id, or none at all.
+                String started_copy_id;
+                {
+                    const auto & headers = operation.GetRawResponse().GetHeaders();
+                    if (auto it = headers.find("x-ms-copy-id"); it != headers.end())
+                        started_copy_id = it->second;
+                }
+
                 auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
                 auto properties_model = copy_response.Value;
 
@@ -455,6 +482,21 @@ void copyAzureBlobStorageFile(
                 if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
                 {
                     LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+
+                    const bool reports_the_started_copy = !started_copy_id.empty()
+                        && properties_model.CopyId.HasValue() && properties_model.CopyId.Value() == started_copy_id;
+                    if (!reports_the_started_copy)
+                        throw Exception(
+                            ErrorCodes::FILE_CHANGED_DURING_READ,
+                            "Copy from {} to {} was started (copy id {}), but the blob at the destination reports the copy "
+                            "{} as the one that wrote it: the destination was replaced by another writer while the copy "
+                            "was running, so the generation this copy created is not there",
+                            src_blob,
+                            dest_blob,
+                            started_copy_id,
+                            properties_model.CopyId.HasValue() ? properties_model.CopyId.Value() : String("<none>"));
+
+                    created_etag = AzureBlobStorage::getETagOrEmpty(properties_model.ETag);
                 }
                 else
                 {
@@ -522,7 +564,10 @@ void copyAzureBlobStorageFile(
 
         UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
+        created_etag = helper.createdETag();
     }
+
+    return created_etag;
 }
 
 }
