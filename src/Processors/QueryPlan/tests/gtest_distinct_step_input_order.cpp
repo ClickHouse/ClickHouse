@@ -9,8 +9,13 @@
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/tests/gtest_global_context.h>
@@ -72,57 +77,80 @@ QueryPlanStepPtr roundTrip(DistinctStep & step)
 
 }
 
-TEST(DistinctStepInputOrder, FinalOrderRequirementsOverrideParallelization)
+TEST(DistinctStepInputOrder, OnlyExplicitOrderRequirementsPreventParallelization)
 {
-    enum class Requirement
+    for (bool preserve_order : {false, true})
     {
-        Explicit,
-        InitialLimitHint,
-        UpdatedLimitHint,
-    };
-    for (bool disjoint : {false, true})
-    {
-        for (auto requirement : {Requirement::Explicit, Requirement::InitialLimitHint, Requirement::UpdatedLimitHint})
+        for (bool disjoint : {false, true})
         {
-            SCOPED_TRACE(::testing::Message() << "disjoint=" << disjoint << ", requirement=" << static_cast<int>(requirement));
-            DistinctStep step(makeHeader(), SizeLimits{}, requirement == Requirement::InitialLimitHint ? 10 : 0, Names{"k"}, false);
-            step.enableParallelDistinct();
-            if (disjoint)
-                step.skipStreamMerging();
-            if (requirement == Requirement::Explicit)
-                step.preserveInputOrder();
-            if (requirement == Requirement::UpdatedLimitHint)
-                step.updateLimitHint(10);
+            for (UInt64 initial_hint : {0, 10})
+            {
+                for (UInt64 updated_hint : {0, 5})
+                {
+                    SCOPED_TRACE(
+                        ::testing::Message() << "preserve_order=" << preserve_order << ", disjoint=" << disjoint
+                                             << ", initial_hint=" << initial_hint << ", updated_hint=" << updated_hint);
+                    DistinctStep step(makeHeader(), SizeLimits{}, initial_hint, Names{"k"}, false);
+                    step.enableParallelDistinct();
+                    if (disjoint)
+                        step.skipStreamMerging();
+                    if (preserve_order)
+                        step.preserveInputOrder();
+                    step.updateLimitHint(updated_hint);
 
-            expectPipeline(step, 1, 1, false);
-            auto clone = step.clone();
-            expectPipeline(static_cast<DistinctStep &>(*clone), 1, 1, false);
+                    const size_t streams = disjoint && !preserve_order ? 4 : 1;
+                    const size_t distincts = preserve_order ? 1 : 4;
+                    const bool scatters = !disjoint && !preserve_order;
+                    expectPipeline(step, streams, distincts, scatters);
+                    auto clone = step.clone();
+                    expectPipeline(static_cast<DistinctStep &>(*clone), streams, distincts, scatters);
+                }
+            }
         }
     }
 }
 
-TEST(DistinctStepInputOrder, DeserializedFinalStepsPreserveOrder)
+TEST(DistinctStepInputOrder, DeserializedStepsDeriveOrderFromTheirInput)
 {
     for (bool preliminary : {false, true})
     {
-        for (bool disjoint : {false, true})
+        for (bool sorted : {false, true})
         {
-            SCOPED_TRACE(::testing::Message() << "preliminary=" << preliminary << ", disjoint=" << disjoint);
-            DistinctStep step(makeHeader(), SizeLimits{}, 0, Names{"k"}, preliminary);
-            step.enableParallelDistinct();
-            if (disjoint)
-                step.skipStreamMerging();
-            expectPipeline(step, preliminary || disjoint ? 4 : 1, 4, !preliminary && !disjoint);
+            for (bool distinct_in_order : {false, true})
+            {
+                SCOPED_TRACE(
+                    ::testing::Message() << "preliminary=" << preliminary << ", sorted=" << sorted
+                                         << ", distinct_in_order=" << distinct_in_order);
+                const auto header = makeHeader();
+                DistinctStep step(header, SizeLimits{}, 0, Names{"k"}, preliminary);
+                auto restored = roundTrip(step);
+                auto * distinct = static_cast<DistinctStep *>(restored.get());
+                EXPECT_FALSE(distinct->mustPreserveInputOrder());
 
-            auto restored = roundTrip(step);
-            auto & distinct = static_cast<DistinctStep &>(*restored);
-            distinct.enableParallelDistinct();
-            if (disjoint)
-                distinct.skipStreamMerging();
-            expectPipeline(distinct, preliminary ? 4 : 1, preliminary ? 4 : 1, false);
+                QueryPlan plan;
+                plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(header))));
+                ContextPtr context = getContext().context;
+                if (sorted)
+                {
+                    SortDescription description;
+                    description.push_back(SortColumnDescription("k"));
+                    plan.addStep(
+                        std::make_unique<SortingStep>(header, std::move(description), 0, SortingStep::Settings(context->getSettingsRef())));
+                }
+                plan.addStep(std::move(restored));
 
-            auto clone = distinct.clone();
-            expectPipeline(static_cast<DistinctStep &>(*clone), preliminary ? 4 : 1, preliminary ? 4 : 1, false);
+                QueryPlanOptimizationSettings settings(context);
+                settings.distinct_in_order = distinct_in_order;
+                QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode());
+                EXPECT_EQ(distinct->mustPreserveInputOrder(), sorted && !preliminary);
+
+                if (!distinct_in_order)
+                {
+                    distinct->enableParallelDistinct();
+                    distinct->skipStreamMerging();
+                    expectPipeline(*distinct, sorted && !preliminary ? 1 : 4, sorted && !preliminary ? 1 : 4, false);
+                }
+            }
         }
     }
 }

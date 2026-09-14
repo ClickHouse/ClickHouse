@@ -3528,11 +3528,6 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
             columns,
             pre_distinct);
 
-        /// Positional limits can depend on the input order without supplying a limit hint. An outer
-        /// query can apply such a limit as well, so subqueries preserve their input order.
-        if (!pre_distinct && (query.limitLength() || query.limitOffset() || query.limitBy() || options.is_subquery))
-            distinct_step->preserveInputOrder();
-
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
 

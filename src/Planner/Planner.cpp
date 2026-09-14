@@ -1305,14 +1305,14 @@ bool limitByAlwaysReadsTillEnd(
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
 
-void addDistinctStep(QueryPlan & query_plan,
+void addDistinctStep(
+    QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const Names & column_names,
     const QueryNode & query_node,
     bool before_order,
-    bool pre_distinct,
-    bool is_subquery)
+    bool pre_distinct)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
@@ -1356,11 +1356,6 @@ void addDistinctStep(QueryPlan & query_plan,
         limit_hint_for_distinct,
         column_names,
         pre_distinct);
-
-    /// Positional limits can depend on the input order without supplying a limit hint. An outer query
-    /// can apply such a limit as well, so subqueries preserve their input order.
-    if (!pre_distinct && (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy() || is_subquery))
-        distinct_step->preserveInputOrder();
 
     if (pre_distinct)
         distinct_step->setStepDescription("Preliminary DISTINCT");
@@ -1812,14 +1807,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
       */
     if (query_node.hasLimit() && query_node.isDistinct())
     {
-        addDistinctStep(query_plan,
+        addDistinctStep(
+            query_plan,
             query_analysis_result,
             planner_context,
             expressions_analysis_result.getProjection().projection_column_names,
             query_node,
             false /*before_order*/,
-            false /*pre_distinct*/,
-            select_query_options.is_subquery);
+            false /*pre_distinct*/);
     }
 
     if (expressions_analysis_result.hasLimitBy())
@@ -2473,16 +2468,6 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
-        /// `SETTINGS limit` and `offset` are applied after the final set-operation DISTINCT.
-        /// They consume its stream order, so this DISTINCT must not repartition its input.
-        Field settings_limit;
-        Field settings_offset;
-        settings.tryGet("limit", settings_limit);
-        settings.tryGet("offset", settings_offset);
-        const bool has_settings_limit_offset = select_query_options.subquery_depth == 0
-            && !select_query_options.settings_limit_offset_done
-            && (settings_limit.safeGet<Float64>() > 0 || settings_offset.safeGet<Float64>() > 0);
-
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
         /// already narrow their output to one stream, so a preliminary step there is pure overhead.
@@ -2501,13 +2486,7 @@ void Planner::buildPlanForUnionNode()
         }
 
         auto distinct_step = std::make_unique<DistinctStep>(
-            query_plan.getCurrentHeader(),
-            limits,
-            0 /*limit hint*/,
-            query_plan.getCurrentHeader()->getNames(),
-            false /*pre distinct*/);
-        if (has_settings_limit_offset || select_query_options.is_subquery)
-            distinct_step->preserveInputOrder();
+            query_plan.getCurrentHeader(), limits, 0 /*limit hint*/, query_plan.getCurrentHeader()->getNames(), false /*pre distinct*/);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
@@ -2898,14 +2877,14 @@ void Planner::buildPlanForQueryNode()
 
                 if (query_node.isDistinct())
                 {
-                    addDistinctStep(query_plan,
+                    addDistinctStep(
+                        query_plan,
                         query_analysis_result,
                         planner_context,
                         expression_analysis_result.getProjection().projection_column_names,
                         query_node,
                         true /*before_order*/,
-                        true /*pre_distinct*/,
-                        false /*is_subquery*/);
+                        true /*pre_distinct*/);
                 }
 
                 if (expression_analysis_result.hasSort())
@@ -3002,14 +2981,14 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isDistinct())
             {
-                addDistinctStep(query_plan,
+                addDistinctStep(
+                    query_plan,
                     query_analysis_result,
                     planner_context,
                     expression_analysis_result.getProjection().projection_column_names,
                     query_node,
                     true /*before_order*/,
-                    true /*pre_distinct*/,
-                    false /*is_subquery*/);
+                    true /*pre_distinct*/);
             }
 
             if (expression_analysis_result.hasSort())
@@ -3064,14 +3043,14 @@ void Planner::buildPlanForQueryNode()
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
         if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
-            addDistinctStep(query_plan,
+            addDistinctStep(
+                query_plan,
                 query_analysis_result,
                 planner_context,
                 expression_analysis_result.getProjection().projection_column_names,
                 query_node,
                 false /*before_order*/,
-                false /*pre_distinct*/,
-                select_query_options.is_subquery);
+                false /*pre_distinct*/);
         }
 
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())

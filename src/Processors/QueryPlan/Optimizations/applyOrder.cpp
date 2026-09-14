@@ -102,17 +102,16 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
-        /// Nothing downstream relies on the order the final DISTINCT produces unless its input is
-        /// globally sorted (the case right below), so everywhere else it is free to deduplicate its
-        /// input streams in parallel, which reorders them.
-        if (optimization_settings.parallel_distinct && !distinct_step->isPreliminary()
-            && properties->sort_scope != SortingProperty::SortScope::Global
-            && !readsFromCommonBuffer(parent))
-            distinct_step->enableParallelDistinct();
-
-        /// Distinct never breaks global order
+        /// Preserve an established global ordering even when deduplication does not use that order.
         if (properties->sort_scope == SortingProperty::SortScope::Global)
+        {
+            if (!distinct_step->isPreliminary())
+                distinct_step->preserveInputOrder();
             return *properties;
+        }
+
+        if (optimization_settings.parallel_distinct && !distinct_step->isPreliminary() && !readsFromCommonBuffer(parent))
+            distinct_step->enableParallelDistinct();
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)

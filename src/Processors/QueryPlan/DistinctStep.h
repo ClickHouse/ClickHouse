@@ -66,10 +66,9 @@ public:
     /// `DISTINCT` columns. Input-order requirements and sorted deduplication take precedence.
     void enableParallelDistinct() { parallel_distinct = true; }
 
-    /// Keep final deduplication in a single stream when a consumer depends on the input order.
+    /// Preserve the established global ordering of the input during final deduplication.
     void preserveInputOrder() { preserve_input_order = true; }
-    /// A limit hint selects the first distinct values, so it also depends on the input order.
-    bool mustPreserveInputOrder() const { return preserve_input_order || limit_hint != 0; }
+    bool mustPreserveInputOrder() const { return preserve_input_order; }
 
 private:
     void updateOutputHeader() override;

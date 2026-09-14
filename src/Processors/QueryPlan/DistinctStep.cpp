@@ -222,8 +222,7 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, 
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Limit hints and downstream order requirements are not serialized. Deserialized steps preserve
-    /// input order because the follower may not have the consumers that established those requirements.
+    /// Ordering requirements are derived from input sorting properties during plan optimization.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
@@ -246,10 +245,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
     size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
 
-    auto step = std::make_unique<DistinctStep>(
-        ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
-    step->preserveInputOrder();
-    return step;
+    return std::make_unique<DistinctStep>(ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)

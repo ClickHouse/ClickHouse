@@ -347,10 +347,6 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 result_header->getNames(),
                 false);
 
-            /// Settings and outer queries can select rows by their position after the final `DISTINCT`.
-            if ((settings_limit_offset_needed && !options.settings_limit_offset_done) || options.is_subquery)
-                distinct_step->preserveInputOrder();
-
             query_plan.addStep(std::move(distinct_step));
         }
     }
