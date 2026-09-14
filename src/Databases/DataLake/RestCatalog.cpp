@@ -1797,8 +1797,8 @@ void RestCatalog::sendRequest(
     {
         out_stream_callback = [body_str, endpoint, request_body_written](std::ostream & os)
         {
-            /// No HTTP status and no body on the socket: models the transport failing to connect or
-            /// to write the headers, both of which happen after the request is counted.
+            /// No HTTP status and no body handed to the transport: models it failing to connect or to
+            /// write the headers, both of which happen after the request is counted.
             fiu_do_on(DB::FailPoints::iceberg_catalog_commit_net_fail_before_body,
             {
                 throw Poco::Net::NetException("Injected net failure before the body");
@@ -1834,6 +1834,9 @@ void RestCatalog::sendRequest(
 
             os << body_str;
 
+            /// The stream buffers, so these bytes need not be on the socket yet. The transport writes a
+            /// buffered request out on any usable socket, including while it unwinds, so the attempt can
+            /// take effect from here on.
             if (request_body_written)
                 *request_body_written = true;
 
@@ -2189,8 +2192,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const Poco::Exception & ex)
     {
-        /// No status, so the catalog never answered and only a body that reached the socket can have
-        /// applied: anything earlier keeps its own error and the caller's cleanup of its files.
+        /// No status, so the catalog never answered and only a request the transport already owns can
+        /// have applied: anything earlier keeps its own error and the caller's cleanup of its files.
         if (!commit_body_written)
             throw;
 

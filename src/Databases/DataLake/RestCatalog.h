@@ -224,8 +224,8 @@ protected:
 
     /// `read_settings` overrides the context's read settings for this one request. A caller that
     /// must know how many times the request reached the server pins `http_settings.max_tries`.
-    /// `request_body_written`, when not null, is set once the body reaches the socket: the transport
-    /// connects and writes the headers after the request is counted, so only this proves dispatch.
+    /// `request_body_written`, when not null, is set once the complete request has been handed to the
+    /// transport: from that point the attempt can take effect, however it is reported afterwards.
     virtual void sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
