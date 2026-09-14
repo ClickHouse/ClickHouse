@@ -13,7 +13,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
-#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -867,15 +866,6 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
-bool ActionsDAG::hasPlannerOnlyFilters() const
-{
-    for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base && isPlannerOnlyFilterFunction(*node.function_base))
-            return true;
-
-    return false;
-}
-
 bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     std::unordered_set<const Node *> used_inputs;
@@ -976,8 +966,9 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }
 
-                /// Constant folding.
-                if (allow_constant_folding && !node->children.empty() && node->column)
+                /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
+                /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
+                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();

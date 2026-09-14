@@ -10,7 +10,10 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=[
+        "configs/allow_experimental_time_series_table.xml",
+        "configs/select_join_settings.xml",
+    ],
 )
 
 
@@ -111,8 +114,8 @@ ALL_COLUMNS_EXPECTED = TSV([
 
 
 def test_select_all_columns():
-    """Reads all three target tables at once (the aggregated samples SEMI-joined to the "tags" table, the
-    "metrics" table FULL-joined on top): a series with metadata, a series whose family has no metadata
+    """Reads all three target tables using `INNER ANY JOIN` for samples/tags and `FULL JOIN` for metadata:
+    a series with metadata, a series whose family has no metadata
     (kept, with empty metadata columns), and a metadata-only family (kept, with empty series columns)."""
     insert_time_series()
 
@@ -433,10 +436,10 @@ def test_select_final():
 
 
 def test_select_pin_settings():
-    """The internal read must not depend on the caller's settings: it pins `join_use_nulls`,
-    `aggregate_functions_null_for_empty`, `join_algorithm` and `optimize_aggregation_in_order` on its
-    own context. Selecting all the columns with all of those settings set to wrong values must return
-    exactly the same result."""
+    """The internal read pins `join_use_nulls`,
+    `aggregate_functions_null_for_empty` and `optimize_aggregation_in_order` on its own context.
+    Selecting all the columns with those settings set to wrong values and a caller-selected merge
+    join must return exactly the same result."""
     insert_time_series()
 
     wrong_settings = (

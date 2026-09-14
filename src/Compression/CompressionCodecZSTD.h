@@ -15,6 +15,7 @@ public:
     CompressionCodecZSTD(int level_, int window_log);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
