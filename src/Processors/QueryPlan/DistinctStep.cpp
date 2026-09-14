@@ -165,10 +165,21 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 header, set_size_limits, limit_hint, columns, shared_set_size, allow_abandoning);
         });
 
-    /// The step is declared to return a single stream. Collecting the scattered streams back costs
-    /// nothing - they are already deduplicated, and no two of them hold the same key value.
     if (scattered)
+    {
+        /// The partition outputs are already disjoint, so merging them needs no further deduplication.
         pipeline.resize(1);
+        if (shared_set_size && set_size_limits.overflow_mode == OverflowMode::BREAK)
+        {
+            pipeline.addSimpleTransform(
+                [](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                {
+                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                        return nullptr;
+                    return std::make_shared<DistinctLimitTransform>(header);
+                });
+        }
+    }
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const

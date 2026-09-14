@@ -55,15 +55,11 @@ private:
     size_t new_indices_observed = 0;
 };
 
-/// When several `DistinctTransform`s deduplicate disjoint parts of one input in parallel, every one of
-/// them holds a set of its own, while `max_rows_in_distinct` and `max_bytes_in_distinct` limit the size
-/// of the whole `DISTINCT` set. The parts are disjoint, so their sizes add up to the size of the whole,
-/// and the transforms accumulate them here and check the limits against the total.
+/// Parallel final `DistinctTransform` instances accumulate the size of their disjoint sets here.
 struct DistinctSharedSetSize
 {
     std::atomic<UInt64> rows{0};
     std::atomic<UInt64> bytes{0};
-    std::atomic_bool limit_reached{false};
 };
 
 using DistinctSharedSetSizePtr = std::shared_ptr<DistinctSharedSetSize>;
@@ -138,12 +134,10 @@ private:
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
 
-    /// Set when this transform deduplicates one part of an input that is deduplicated in parallel;
-    /// then the limits above are checked against the size of the whole set rather than of this part.
+    /// Share counters with the other hash partitions to enforce limits on their combined set.
     DistinctSharedSetSizePtr shared_set_size;
 
-    /// The size of this transform's set that is already accounted for in `shared_set_size`.
-    UInt64 accounted_set_rows = 0;
+    /// Track bytes already included in `shared_set_size`; parallel final deduplication never frees its set.
     UInt64 accounted_set_bytes = 0;
 
     using LCDictionaryKey = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey;
@@ -195,4 +189,19 @@ private:
     void maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows);
 };
 
+/// Finish all partition inputs when a parallel `DISTINCT` reaches a global `BREAK` limit. This
+/// transform consumes the merged output so closing its input also stops partitions that emit no rows.
+class DistinctLimitTransform final : public ISimpleTransform
+{
+public:
+    explicit DistinctLimitTransform(const SharedHeader & header)
+        : ISimpleTransform(header, header, true)
+    {
+    }
+
+    String getName() const override { return "DistinctLimitTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+};
 }

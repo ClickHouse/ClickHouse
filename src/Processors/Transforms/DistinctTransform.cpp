@@ -23,6 +23,11 @@ namespace ErrorCodes
 namespace
 {
 
+/// The chunk containing the keys that reached a global `BREAK` limit must be emitted before stopping.
+struct DistinctLimitReached : public ChunkInfoCloneable<DistinctLimitReached>
+{
+};
+
 /// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
 /// the filter lazily on the first such row.
 void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
@@ -108,6 +113,7 @@ DistinctTransform::DistinctTransform(
     , shared_set_size(std::move(shared_set_size_))
     , skip_null_keys(skip_null_keys_)
 {
+    chassert(!shared_set_size || !allow_abandoning_);
     if (allow_abandoning_)
         abandon_controller.emplace();
 
@@ -268,15 +274,6 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
-    /// Another partition can reach a global `DISTINCT` limit while this partition is processing
-    /// only duplicate values. Do not keep reading an unbounded input in that case.
-    if (shared_set_size && shared_set_size->limit_reached.load(std::memory_order_relaxed))
-    {
-        chunk.clear();
-        stopReading();
-        return;
-    }
-
     if (abandon_controller && abandon_controller->isAbandoned())
         return;
 
@@ -393,7 +390,6 @@ void DistinctTransform::transform(Chunk & chunk)
     }
 
     const auto new_set_size = data->getTotalRowCount();
-    const auto new_set_bytes = data->getTotalByteCount();
     const size_t num_selected = new_set_size - old_set_size;
 
     maybeAbandonDeduplication(num_rows, num_selected);
@@ -402,19 +398,18 @@ void DistinctTransform::transform(Chunk & chunk)
     if (num_selected == 0)
         return;
 
-    /// The size of the whole DISTINCT set: this transform's own set, unless the set is deduplicated
-    /// in parallel, in which case the sizes of all the disjoint parts of it add up.
+    /// Only retained allocations count towards the byte limit; preliminary deduplication may have
+    /// released its set. Parallel final transforms keep disjoint sets whose sizes add up.
+    const auto new_set_bytes = data ? data->getTotalByteCount() : 0;
     UInt64 checked_rows = new_set_size;
     UInt64 checked_bytes = new_set_bytes;
     if (shared_set_size)
     {
-        /// The number of bytes is reported by the hash table and is not guaranteed to only grow.
-        const UInt64 new_rows = new_set_size - accounted_set_rows;
-        const UInt64 new_bytes = new_set_bytes > accounted_set_bytes ? new_set_bytes - accounted_set_bytes : 0;
-        accounted_set_rows = new_set_size;
+        chassert(new_set_bytes >= accounted_set_bytes);
+        const UInt64 new_bytes = new_set_bytes - accounted_set_bytes;
         accounted_set_bytes = new_set_bytes;
 
-        checked_rows = shared_set_size->rows.fetch_add(new_rows, std::memory_order_relaxed) + new_rows;
+        checked_rows = shared_set_size->rows.fetch_add(num_selected, std::memory_order_relaxed) + num_selected;
         checked_bytes = shared_set_size->bytes.fetch_add(new_bytes, std::memory_order_relaxed) + new_bytes;
     }
 
@@ -425,7 +420,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (!set_size_limits.check(checked_rows, checked_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
         if (shared_set_size)
-            shared_set_size->limit_reached.store(true, std::memory_order_relaxed);
+            chunk.getChunkInfos().add(std::make_shared<DistinctLimitReached>());
         stopReading();
     }
 
@@ -447,4 +442,9 @@ void DistinctTransform::transform(Chunk & chunk)
         stopReading();
 }
 
+void DistinctLimitTransform::transform(Chunk & chunk)
+{
+    if (chunk.getChunkInfos().extract<DistinctLimitReached>())
+        stopReading();
+}
 }
