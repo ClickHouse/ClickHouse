@@ -94,11 +94,10 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
     PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
     out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
 
-    const bool final_chunk = chunk.empty();
+    /// Only `writeEndOfStreamPacket` sets the end-of-stream flag: a chunk without rows and columns is
+    /// data too, and written as the marker it would end the stream early.
     auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
     UInt64 flags = 0;
-    if (final_chunk)
-        flags |= 1;
     if (agg_info)
         flags |= 2;
     writeVarUInt(flags, out);
@@ -146,6 +145,20 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
     return packet_offset;
 }
 
+size_t writeEndOfStreamPacket(WriteBuffer & out)
+{
+    /// The body is three one-byte varints: the end-of-stream flag, no rows, no columns.
+    constexpr UInt64 body_bytes = 3;
+    const size_t packet_offset = out.count();
+    PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = body_bytes};
+    out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
+    writeVarUInt(1, out);
+    writeVarUInt(0, out);
+    writeVarUInt(0, out);
+    chassert(out.count() - packet_offset == sizeof(packet_header) + body_bytes);
+    return packet_offset;
+}
+
 void finishDataPacket(char * packet, size_t packet_bytes)
 {
     const size_t packet_data_size = packet_bytes - sizeof(PacketHeader);
@@ -185,10 +198,10 @@ DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const
         readVarUInt(chunk_num, in);
     }
 
-    if (prefix.end_of_stream && (prefix.num_rows != 0 || num_columns != 0 || !in.eof()))
+    if (prefix.end_of_stream && (flags != 1 || prefix.num_rows != 0 || num_columns != 0 || !in.eof()))
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns, {} bytes after the fields",
-            stream_name, prefix.num_rows, num_columns, in.available());
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: flags 0x{:x}, {} rows, {} columns, {} bytes after the fields",
+            stream_name, flags, prefix.num_rows, num_columns, in.available());
     return prefix;
 }
 
@@ -206,12 +219,13 @@ DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const Str
     if (has_aggregated_chunk_info)
         readVarUInt(chunk_num, body);
 
-    /// The end-of-stream packet is empty. One carrying rows or columns would have them dropped once
-    /// the stream is finished, so reject it as a protocol violation.
-    if (end_of_stream && (num_rows != 0 || num_columns != 0))
+    /// The end-of-stream packet is the flag alone: no chunk number, no rows, no columns, nothing
+    /// after the fields. Anything else in it would be dropped once the stream is finished, so reject
+    /// it as a protocol violation. `readDataPacketPrefix` applies the same rule.
+    if (end_of_stream && (flags != 1 || num_rows != 0 || num_columns != 0 || !body.eof()))
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns",
-            stream_name, num_rows, num_columns);
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: flags 0x{:x}, {} rows, {} columns, {} bytes after the fields",
+            stream_name, flags, num_rows, num_columns, body.available());
 
     /// A data packet must carry exactly the header's columns, or values would be dropped while the
     /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.

@@ -17,9 +17,11 @@
 #include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -352,6 +354,73 @@ TEST(StreamingExchangeTransport, RowsWithoutColumnsCrossTheSocket)
     }
 }
 
+/// A chunk with no rows and no columns is data too. On a stream without columns a transform can
+/// emit such chunks, and the serializer must not write them as the end-of-stream marker, or the rows
+/// after them would never arrive.
+TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
+{
+    MainThreadStatus::getInstance();
+
+    /// Turns every one-row chunk into a chunk with no rows; a source cannot emit those itself.
+    class EmptyOneRowChunks : public ISimpleTransform
+    {
+    public:
+        explicit EmptyOneRowChunks(SharedHeader header_) : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ false) { }
+        String getName() const override { return "EmptyOneRowChunks"; }
+
+    protected:
+        void transform(Chunk & chunk) override
+        {
+            if (chunk.getNumRows() == 1)
+                chunk = Chunk(Columns{}, 0);
+        }
+    };
+
+    constexpr size_t rows_per_chunk = 1000;
+    auto header = std::make_shared<const Block>();
+
+    for (bool sink_takes_packets : {false, true})
+    {
+        for (bool source_hands_packets : {false, true})
+        {
+            SCOPED_TRACE(fmt::format("sink_takes_packets={} source_hands_packets={}", sink_takes_packets, source_hands_packets));
+
+            Chunks chunks;
+            chunks.emplace_back(Columns{}, rows_per_chunk);
+            chunks.emplace_back(Columns{}, 1);
+            chunks.emplace_back(Columns{}, rows_per_chunk);
+
+            LoopbackExchange exchange;
+            QueryPipelineBuilder builder;
+            builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+            builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<EmptyOneRowChunks>(stream_header); });
+            if (sink_takes_packets)
+                builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header); });
+            auto future_connection = exchange.connections->getConnection("query", "stream");
+            builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
+            {
+                return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets);
+            });
+            auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
+
+            auto sink = std::make_shared<CollectingSink>(header);
+            auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+            std::optional<int> sending_code;
+            std::thread sender([&] { sending_code = run(sending, 1); });
+            const auto receiving_code = run(receiving, 2);
+            sender.join();
+
+            EXPECT_EQ(sending_code, std::nullopt);
+            EXPECT_EQ(receiving_code, std::nullopt);
+            size_t rows = 0;
+            for (const auto & chunk : sink->chunks)
+                rows += chunk.getNumRows();
+            EXPECT_EQ(rows, 2 * rows_per_chunk);
+        }
+    }
+}
+
 /// A receiver that does not drain stalls the sender at its pending-bytes cap through the socket.
 /// The receiver is held back until the sender has certainly hit the cap; then everything must
 /// still arrive, with nothing lost and nobody stuck.
@@ -521,8 +590,9 @@ std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer &
 }
 
 /// What a real source does with packets a well-behaved sink never sends, in both of its modes: the
-/// end-of-stream marker with rows or truncated, a packet of an unknown type, an oversized body, and a
-/// connection cut in the middle of a packet. A proper packet followed by the marker ends cleanly.
+/// end-of-stream marker with rows, with an aggregation chunk number or truncated, a packet of an
+/// unknown type, an oversized body, and a connection cut in the middle of a packet. A proper packet
+/// followed by the marker ends cleanly.
 TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
 {
     MainThreadStatus::getInstance();
@@ -535,6 +605,11 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             /// flags, rows, columns: flag 1 is the end of stream.
             ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1, 5, 0})));
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "a marker with rows";
+        }
+        {
+            /// Flag 2 says an aggregation chunk number follows; the marker must not carry one.
+            ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1 | 2, 0, 0, /*chunk_num*/ 7})));
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "a marker with an aggregation chunk number";
         }
         {
             ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1, 0})));
@@ -556,11 +631,10 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             WriteBufferFromOwnString packets;
             const auto header = makeHeader();
             const size_t first = StreamingExchangeProtocol::writeDataPacket(makeChunk(0, 3), header, packets);
-            const size_t marker = StreamingExchangeProtocol::writeDataPacket(Chunk(), header, packets);
+            const size_t marker = StreamingExchangeProtocol::writeEndOfStreamPacket(packets);
             packets.finalize();
             std::string bytes = packets.str();
             StreamingExchangeProtocol::finishDataPacket(bytes.data() + first, marker - first);
-            StreamingExchangeProtocol::finishDataPacket(bytes.data() + marker, bytes.size() - marker);
 
             ExchangeTest::FakePeer peer(sendAfterHandshake(bytes));
             const auto [code, rows] = receiveFrom(peer, source_hands_packets);
@@ -570,9 +644,11 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
     }
 }
 
-/// A source that hands packets on drops the end-of-stream marker after reading only its fields, so
-/// the fields must prove that the marker is the empty one: rows or columns in it would be lost, and
-/// a truncated or overlong marker is a protocol violation.
+/// Both readers of a Data packet must prove that a final packet is the empty end-of-stream marker:
+/// the end-of-stream flag alone, no rows, no columns and nothing after the fields. A source that
+/// hands packets on drops the marker after reading only its fields; the deserializer and a source
+/// that deserializes itself read the whole body. Rows, columns or a chunk number in a marker would be
+/// lost, and a truncated or overlong marker is a protocol violation.
 TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
 {
     auto body_of = [](std::initializer_list<UInt64> fields, const String & trailing = {})
@@ -588,31 +664,48 @@ TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
     {
         return StreamingExchangeProtocol::readDataPacketPrefix(body.data(), body.size(), "test stream");
     };
-    auto expect_rejected = [&](const String & body, const char * what)
+    auto packet_of = [](const String & body)
+    {
+        ReadBufferFromMemory in(body.data(), body.size());
+        return StreamingExchangeProtocol::readDataPacketBody(in, Block{}, "test stream");
+    };
+    auto expect_rejected = [](auto && read, const char * what, const char * reader)
     {
         try
         {
-            prefix_of(body);
-            FAIL() << what << " was accepted as the end-of-stream marker";
+            read();
+            FAIL() << what << " was accepted by " << reader;
         }
         catch (const Exception & e)
         {
             EXPECT_TRUE(e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                << what << ": " << e.message();
+                << reader << ", " << what << ": " << e.message();
         }
     };
 
     /// flags, rows, columns; flag 1 = end of stream, flag 2 = an aggregation chunk number follows.
     EXPECT_TRUE(prefix_of(body_of({1, 0, 0})).end_of_stream);
-    EXPECT_TRUE(prefix_of(body_of({1 | 2, 0, 0, /*chunk_num*/ 7})).end_of_stream);
+    EXPECT_TRUE(packet_of(body_of({1, 0, 0})).end_of_stream);
     const auto data_prefix = prefix_of(body_of({0, 5, 1}, "block bytes"));
     EXPECT_FALSE(data_prefix.end_of_stream);
     EXPECT_EQ(data_prefix.num_rows, 5u);
+    /// Rows without columns are data, as on the input of a `count()`.
+    const auto rows_only = packet_of(body_of({0, 5, 0}));
+    EXPECT_FALSE(rows_only.end_of_stream);
+    EXPECT_EQ(rows_only.chunk.getNumRows(), 5u);
 
-    expect_rejected(body_of({1, 5, 0}), "a marker with rows");
-    expect_rejected(body_of({1, 0, 1}), "a marker with columns");
-    expect_rejected(body_of({1, 0}), "a marker without the column count");
-    expect_rejected(body_of({1, 0, 0}, "x"), "a marker with bytes after its fields");
+    const std::vector<std::pair<String, const char *>> bad_markers = {
+        {body_of({1, 5, 0}), "a marker with rows"},
+        {body_of({1, 0, 1}), "a marker with columns"},
+        {body_of({1 | 2, 0, 0, /*chunk_num*/ 7}), "a marker with an aggregation chunk number"},
+        {body_of({1, 0}), "a marker without the column count"},
+        {body_of({1, 0, 0}, "x"), "a marker with bytes after its fields"},
+    };
+    for (const auto & [body, what] : bad_markers)
+    {
+        expect_rejected([&] { prefix_of(body); }, what, "the prefix reader");
+        expect_rejected([&] { packet_of(body); }, what, "the body reader");
+    }
 }
 
 #endif

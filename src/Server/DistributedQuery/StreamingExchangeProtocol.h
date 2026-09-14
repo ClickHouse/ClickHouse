@@ -84,11 +84,17 @@ namespace StreamingExchangeProtocol
 
     /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
     /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
-    /// with the columns of `header`. A chunk without rows and columns becomes the end-of-stream packet.
+    /// with the columns of `header`. A chunk without rows or columns is a data packet too; only
+    /// `writeEndOfStreamPacket` ends the stream.
     /// The body size in the packet header is known only after the block is serialized; the caller
     /// fills it in with `finishDataPacket` once it can address the written bytes. Returns the offset
     /// of the packet in `out`.
     size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out);
+
+    /// Appends the end-of-stream packet to `out`: the end-of-stream flag, no rows, no columns and
+    /// nothing else. The packet is complete, its header carries the body size. Returns the offset of
+    /// the packet in `out`.
+    size_t writeEndOfStreamPacket(WriteBuffer & out);
 
     /// Writes the body size into the header of the packet that starts at `packet` and is
     /// `packet_bytes` long in total.
@@ -100,7 +106,8 @@ namespace StreamingExchangeProtocol
 
     /// The fields of a Data packet body that come before the block, read without deserializing the
     /// block. A source that hands packets on drops the end-of-stream marker after this read, so the
-    /// marker is checked completely here: no rows, no columns and nothing after the fields.
+    /// marker is checked completely here: the end-of-stream flag alone, no rows, no columns and
+    /// nothing after the fields.
     struct DataPacketPrefix
     {
         bool end_of_stream = false;
@@ -115,8 +122,9 @@ namespace StreamingExchangeProtocol
         bool end_of_stream = false;
     };
     /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
-    /// chunk number and the compressed Native block with the columns of `header`. `stream_name` is
-    /// for messages.
+    /// chunk number and the compressed Native block with the columns of `header`. A final packet must
+    /// be the empty end-of-stream marker, checked as in `readDataPacketPrefix`. `stream_name` is for
+    /// messages.
     DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
