@@ -194,7 +194,7 @@ dataset_laion_5b_10m_quantized_rabitq = {
     DIMENSION: 768,
 }
 
-# Same LAION 10m, with the 2 bits per coordinate `urboquant codes
+# Same LAION 10m, with the 2 bits per coordinate Turboquant codes
 dataset_laion_5b_10m_quantized_turboquant = {
     TABLE: "laion_10m_turboquant",
     S3_URLS: [
@@ -454,7 +454,6 @@ SUMMARY_ROWS = []
 
 
 class phase_timer:
-    """Records the wall time of a `with` block into `store[key]`."""
 
     def __init__(self, store, key):
         self._store = store
@@ -527,14 +526,13 @@ class RunTest:
     def search_variants(self):
         if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
             return [
-                (f"quantized codes, fetch multiplier {m}", m)
-                for m in self._test_params[FETCH_MULTIPLIERS]
+                (f"codes, mult {m}", m) for m in self._test_params[FETCH_MULTIPLIERS]
             ]
         if self._search_method == SEARCH_METHOD_QBIT:
             used_dims = self._test_params.get(QBIT_USED_DIMS)
             dims_label = "" if used_dims is None else f", {used_dims}/{self._dimension} dims"
             return [
-                (f"QBit, {p} bit precision{dims_label}", p)
+                (f"QBit {p}bit{dims_label}", p)
                 for p in self._test_params[QBIT_PRECISIONS]
             ]
         return [("vector similarity index", None)]
@@ -1059,16 +1057,18 @@ class RunTest:
         )
 
 
-def record_summary(test_name, test_runner, ok):
-    timings = test_runner._timings
-    variants = test_runner._variant_results or [("(no search ran)", None, None, None)]
+def record_summary(test_name, dataset, test_runner, ok):
+    timings = test_runner._timings if test_runner else {}
+    variants = (test_runner._variant_results if test_runner else None) or [
+        ("(no search ran)", None, None, None)
+    ]
     for label, recall, latency_ms, read_mib in variants:
         SUMMARY_ROWS.append(
             {
                 "test": test_name,
-                "table": test_runner._table,
-                "rows": test_runner._rows_inserted,
-                "size": getattr(test_runner, "_table_size", "-"),
+                "table": test_runner._table if test_runner else dataset[TABLE],
+                "rows": test_runner._rows_inserted if test_runner else 0,
+                "size": getattr(test_runner, "_table_size", "-") if test_runner else "-",
                 "load": timings.get("load"),
                 "merge": timings.get("merge"),
                 "index": timings.get("index"),
@@ -1083,53 +1083,67 @@ def record_summary(test_name, test_runner, ok):
 
 
 def print_summary():
+    """Two narrow tables: the log viewer wraps anything much wider than 100 columns."""
     if not SUMMARY_ROWS:
+        logger("Summary: no runs were recorded")
         return
 
-    # (header, key, width, left-aligned)
-    columns = [
-        ("Table", "table", 22, True),
-        ("Rows", "rows", 10, False),
-        ("Size", "size", 10, False),
-        ("Load s", "load", 8, False),
-        ("Merge s", "merge", 8, False),
-        ("Index s", "index", 8, False),
-        ("Truth s", "truth_set", 8, False),
-        ("Search variant", "variant", 38, True),
-        ("Recall", "recall", 8, False),
-        ("ms/query", "latency_ms", 9, False),
-        ("MiB/query", "read_mib", 10, False),
-        ("Status", "ok", 6, True),
-    ]
-    seconds = ("load", "merge", "index", "truth_set", "latency_ms")
-
-    def render(row, key):
-        value = row[key]
-        if key == "ok":
-            return "ok" if value else "FAIL"
-        if value is None:
-            return "-"
-        if key == "recall":
-            return f"{value:.4f}"
-        if key in seconds:
-            return f"{value:.1f}"
-        if key == "read_mib":
-            return f"{value:.1f}"
-        return str(value)
-
-    def pad(text, width, left):
-        return text.ljust(width) if left else text.rjust(width)
-
-    header = "  ".join(pad(name, width, left) for name, _, width, left in columns)
-    logger("Summary of all runs:")
-    print(header)
-    print("-" * len(header))
-    for row in SUMMARY_ROWS:
-        print(
-            "  ".join(
-                pad(render(row, key), width, left) for _, key, width, left in columns
-            ).rstrip()
+    def table(title, columns, rows):
+        header = "  ".join(
+            name.ljust(width) if left else name.rjust(width)
+            for name, _, width, left in columns
         )
+        logger(title)
+        print(header)
+        print("-" * len(header))
+        for row in rows:
+            cells = []
+            for _, key, width, left in columns:
+                value = row[key]
+                if key == "ok":
+                    text = "ok" if value else "FAIL"
+                elif value is None:
+                    text = "-"
+                elif key == "recall":
+                    text = f"{value:.4f}"
+                elif isinstance(value, float):
+                    text = f"{value:.1f}"
+                else:
+                    text = str(value)
+                cells.append(text.ljust(width) if left else text.rjust(width))
+            print("  ".join(cells).rstrip())
+        print()
+
+    datasets = []
+    for row in SUMMARY_ROWS:
+        if not datasets or datasets[-1]["table"] != row["table"]:
+            datasets.append(row)
+
+    table(
+        "Summary - datasets:",
+        [
+            ("Table", "table", 22, True),
+            ("Rows", "rows", 9, False),
+            ("Size", "size", 10, False),
+            ("Load s", "load", 7, False),
+            ("Merge s", "merge", 7, False),
+            ("Index s", "index", 7, False),
+            ("Truth s", "truth_set", 7, False),
+            ("Status", "ok", 6, True),
+        ],
+        datasets,
+    )
+    table(
+        "Summary - searches:",
+        [
+            ("Table", "table", 22, True),
+            ("Search variant", "variant", 24, True),
+            ("Recall", "recall", 6, False),
+            ("ms/query", "latency_ms", 8, False),
+            ("MiB/query", "read_mib", 9, False),
+        ],
+        SUMMARY_ROWS,
+    )
 
 
 def run_single_test(test_name, dataset, test_params):
@@ -1175,8 +1189,8 @@ def run_single_test(test_name, dataset, test_params):
         print(traceback.format_exc(), file=sys.stdout)
         result = False
     finally:
+        record_summary(test_name, dataset, test_runner, result)
         if test_runner is not None:
-            record_summary(test_name, test_runner, result)
             try:
                 test_runner.drop_table()
             except Exception:
