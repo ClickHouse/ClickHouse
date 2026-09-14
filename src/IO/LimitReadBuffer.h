@@ -19,6 +19,8 @@ public:
     {
         size_t read_no_less = 0;
         size_t read_no_more = std::numeric_limits<size_t>::max();
+        /// Throw instead of reporting EOF when the nested buffer still has data at the limit. Only for a
+        /// bounded nested buffer: the check probes it with `eof`, which blocks on a socket.
         bool expect_eof = false;
         std::string excetion_hint = {};
     };
