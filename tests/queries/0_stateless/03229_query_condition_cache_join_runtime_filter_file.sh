@@ -18,6 +18,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `enable_analyzer` has to be a session value, not a per-query one: a subquery may not change it
+# relative to the top level, and the plan assertions below read `EXPLAIN` from a subquery, so a
+# query-level pin fails outright wherever the session value is 0 (as in the `old analyzer` lane).
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer=1"
+
 DATA_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/03229_qcc_join_runtime_filter.parquet"
 
 # The row group size must be a table-level setting: the `File` sink writes with the format settings
@@ -43,10 +48,10 @@ ${CLICKHOUSE_CLIENT} --query "
 touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 
 JOIN_QUERY="SELECT count() FROM t_qcc_jrf_file AS p, t_qcc_jrf_dim AS d WHERE p.k = d.k AND p.val % 7 = 3"
-JOIN_SETTINGS="enable_analyzer = 1, use_query_condition_cache = 1, enable_join_runtime_filters = 1,
+JOIN_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 1,
     join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash',
     query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
-NO_RF_SETTINGS="enable_analyzer = 1, use_query_condition_cache = 1, enable_join_runtime_filters = 0,
+NO_RF_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 0,
     join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
     optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 
@@ -72,10 +77,10 @@ qid_live_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_live_hit"
 
 echo "cache engages on this file, run 1 (expect 1):"
 ${CLICKHOUSE_CLIENT} --query_id="$qid_live_miss" --query "
-    SELECT count() FROM t_qcc_jrf_file WHERE k = 5000 SETTINGS enable_analyzer = 1, use_query_condition_cache = 1"
+    SELECT count() FROM t_qcc_jrf_file WHERE k = 5000 SETTINGS use_query_condition_cache = 1"
 echo "cache engages on this file, run 2 (expect 1):"
 ${CLICKHOUSE_CLIENT} --query_id="$qid_live_hit" --query "
-    SELECT count() FROM t_qcc_jrf_file WHERE k = 5000 SETTINGS enable_analyzer = 1, use_query_condition_cache = 1"
+    SELECT count() FROM t_qcc_jrf_file WHERE k = 5000 SETTINGS use_query_condition_cache = 1"
 
 # The probe above uses a different predicate and no join, so it leaves open whether the shape the arm
 # below reads with reaches the cache at all. The same join with runtime filters off settles it: a read
@@ -99,10 +104,10 @@ ${CLICKHOUSE_CLIENT} --query_id="$qid_join" --query "$JOIN_QUERY SETTINGS $JOIN_
 # Both counts are printed rather than a boolean, so a reference diff shows which way it broke.
 echo "plain read of the same predicate, cache on (expect 1429):"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM t_qcc_jrf_file WHERE val % 7 = 3 SETTINGS enable_analyzer = 1, use_query_condition_cache = 1"
+    SELECT count() FROM t_qcc_jrf_file WHERE val % 7 = 3 SETTINGS use_query_condition_cache = 1"
 echo "plain read of the same predicate, cache off (expect 1429):"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM t_qcc_jrf_file WHERE val % 7 = 3 SETTINGS enable_analyzer = 1, use_query_condition_cache = 0"
+    SELECT count() FROM t_qcc_jrf_file WHERE val % 7 = 3 SETTINGS use_query_condition_cache = 0"
 
 # A PREWHERE the hash does cover must keep populating the cache, or the gate above is simply
 # switching file-level caching off. `val` is the only column the predicate names and `k` is read on
@@ -110,7 +115,7 @@ ${CLICKHOUSE_CLIENT} --query "
 qid_det_miss="${CLICKHOUSE_TEST_UNIQUE_NAME}_det_miss"
 qid_det_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_det_hit"
 DET_QUERY="SELECT sum(k) FROM t_qcc_jrf_file WHERE val = 5001"
-DET_SETTINGS="enable_analyzer = 1, use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+DET_SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 
 echo "deterministic PREWHERE reaches the file read (expect 1):"
 ${CLICKHOUSE_CLIENT} --query "
