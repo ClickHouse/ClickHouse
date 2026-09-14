@@ -808,6 +808,7 @@ class ClickHouseCluster:
         self.ldap_host = "openldap"
         self.ldap_container = None
         self.ldap_port = 1389
+        self.ldap_tls_port = 1636
         self._ldap_external_port = 0
         self.ldap_id = self.get_instance_docker_id(self.ldap_host)
 
