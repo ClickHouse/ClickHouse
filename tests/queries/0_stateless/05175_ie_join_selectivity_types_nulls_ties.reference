@@ -1,0 +1,21 @@
+-- a mostly-NULL key column: NULL rows fail the inequality, so the condition is the most selective
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < _CAST(__table2.b3, \'Nullable(UInt32)\'_String)
+5490	16903800
+5490	16903800
+-- different numeric types share one axis: UInt32 keys against Int64 keys with negative values
+Conditions: _CAST(__table1.a1, \'Int64\'_String) < __table2.b1 AND _CAST(__table1.a3, \'Int64\'_String) < __table2.b3
+45	135315
+45	135315
+-- identical estimates: the first two in syntax order
+Conditions: __table1.z < __table2.x AND __table1.y < __table2.y
+Conditions: __table1.x < __table2.z AND __table1.z < __table2.x
+499500
+499500
+-- a condition without an estimate disables the choice: Date against Date32
+Conditions: __table1.a2 < __table2.b2 AND _CAST(__table1.d, \'Date32\'_String) < __table2.d32
+499500
+499500
+-- a key behind an expression has no statistics: syntax order
+Conditions: _CAST(__table1.a2, \'Int64\'_String) < __table2.b2 AND negate(__table1.a1) < __table2.b1
+45
+45
