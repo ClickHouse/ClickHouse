@@ -3457,6 +3457,33 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
+    DECLARE(UInt64, max_bytes_before_external_limit_by, 0, R"(
+Enables or disables execution of `LIMIT BY` clauses in external memory.
+
+`LIMIT BY` keeps a hash table with one entry per distinct group, so its memory usage grows with the
+number of groups, not with the kept rows. Once the tracked memory usage of the query exceeds this
+threshold, the transform spills to disk instead of growing the hash table further.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by a single `LIMIT BY` operation.
+- `0` — the absolute threshold is disabled; automatic spilling may still happen through
+  [max_bytes_ratio_before_external_limit_by](#max_bytes_ratio_before_external_limit_by).
+
+Only the hash-based `LIMIT BY` spills. When the input is already sorted by the `LIMIT BY` keys the
+in-order implementation is used, which needs constant memory and never spills. Spilling reorders the
+rows that were not emitted before the spill, so it is not used when the step has to preserve the
+order of its input (a query with `ORDER BY` over different columns).
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_limit_by, 0.5, R"(
+The ratio of available memory that is allowed for `LIMIT BY`. Once reached, external memory is used.
+
+For example, if set to `0.6`, `LIMIT BY` will allow using `60%` of the available memory
+(to server/user/merges) at the beginning of the execution, after that, it starts spilling to disk.
+
+If both `max_bytes_before_external_limit_by` and `max_bytes_ratio_before_external_limit_by` are set,
+the smaller resulting threshold is used. Setting both to `0` disables external `LIMIT BY`.
+)", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.

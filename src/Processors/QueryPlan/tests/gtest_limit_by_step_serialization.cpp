@@ -28,7 +28,7 @@ SharedHeader makeHeader()
 
 std::unique_ptr<LimitByStep> makeStep(const SharedHeader & header, bool always_read_till_end)
 {
-    return std::make_unique<LimitByStep>(header, 2, 1, Names{"number"}, always_read_till_end);
+    return std::make_unique<LimitByStep>(header, 2, 1, Names{"number"}, LimitByStep::ExternalSettings{}, always_read_till_end);
 }
 
 String serializeStep(const IQueryPlanStep & step, UInt64 version)

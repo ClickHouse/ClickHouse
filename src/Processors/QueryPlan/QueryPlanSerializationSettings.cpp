@@ -35,6 +35,9 @@ namespace DB
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
     \
+    DECLARE(UInt64, max_bytes_before_external_limit_by, 0, "If the memory usage of the query exceeds this threshold in bytes, the hash-based LIMIT BY spills to disk. 0 disables the absolute threshold.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_limit_by, 0.5, "The ratio of available memory that is allowed for `LIMIT BY`. Once reached, external memory is used. Combined with the absolute `max_bytes_before_external_limit_by`, the smaller resulting threshold applies.", 0) \
+    \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, "Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.", 0) \
     DECLARE(Bool, aggregation_in_order_memory_bound_merging, true, "Enable memory bound merging strategy when in-order is applied.", 0) \
     DECLARE(Bool, aggregation_sort_result_by_bucket_number, true, "Send intermediate aggregation result in order of bucket number.", 0) \
