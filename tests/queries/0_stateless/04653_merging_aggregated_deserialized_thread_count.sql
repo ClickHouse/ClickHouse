@@ -22,6 +22,9 @@ SET max_parallel_replicas = 3;
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+-- The test verifies a plan packet on a same-version local cluster. Hedged connections retain
+-- the SQL fallback for a future, unverified rolling-upgrade peer, so avoid that unrelated route.
+SET use_hedged_requests = 0;
 
 -- The parallel replicas optimizer rewrite builds a `MergingAggregatedStep` from the params of a
 -- deserialized `AggregatingStep`, which carry the "resolve locally later" sentinel 0 as the thread
@@ -34,6 +37,11 @@ GROUP BY k ORDER BY k
 SETTINGS serialize_query_plan = 1,
          distributed_aggregation_memory_efficient = 0,
          enable_memory_bound_merging_of_aggregation_results = 0,
+         -- This test asserts the serialized-plan path itself. Keep plan-level limits at their
+         -- defaults: a hedged connection must deliberately use SQL instead when a future replica
+         -- could be an older peer that cannot receive serialized execution limits.
+         max_threads = 0,
+         use_concurrency_control = 0,
          -- Required by the second firing oracle below. It defaults true, but it flipped false to
          -- true in the 24.3 block of `SettingsChangesHistory.cpp`, so a `compatibility` draw
          -- below 24.3 turns it off and that oracle would silently read 0.

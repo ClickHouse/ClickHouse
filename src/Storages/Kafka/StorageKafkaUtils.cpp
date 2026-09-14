@@ -369,9 +369,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Kafka table engine
 
-:::tip
+<Tip>
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
-:::
+</Tip>
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -497,9 +497,9 @@ CREATE TABLE queue3 (
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -508,9 +508,9 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-:::info
+<Info>
 The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
-:::
+</Info>
 
 ## Description {#description}
 
@@ -617,9 +617,9 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
-:::note
+<Note>
 AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
-:::
+</Note>
 
 AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
 
@@ -866,6 +866,12 @@ As the new engine is experimental, it is not production ready yet. There are few
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
 - When using partition affinity, all shards must use the same `kafka_shard_count`; otherwise some partitions may be consumed by multiple shards or remain unconsumed.
+
+## Data durability {#data-durability}
+
+The `Kafka` engine can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumed offset is committed (to the broker, or to ClickHouse Keeper when `kafka_keeper_path` is set), which lets the consumer resume past those messages. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the offset is committed but before the target part is fsynced, the consumer resumes past those messages on restart, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
+
+For the recommended materialized-view consumption path (the offset is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the offset is committed, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. The mitigation also does not apply where the offset is committed before the insert has finished. That is the case with a direct `INSERT ... SELECT ... FROM <kafka_table>` and `kafka_commit_on_select = 1`, and on the broker-backed engine with `kafka_commit_every_batch = 1`; the latter setting is ignored when `kafka_keeper_path` is set, so it cannot cause an intermediate commit there.
 
 **See Also**
 

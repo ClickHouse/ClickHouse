@@ -83,6 +83,15 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    static SinkToStoragePtr createSink(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const StorageID & storage_id,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context);
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -157,7 +166,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 

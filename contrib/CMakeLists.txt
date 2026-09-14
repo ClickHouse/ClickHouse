@@ -114,7 +114,6 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
-add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -243,12 +242,15 @@ add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
-add_contrib (google-benchmark-cmake google-benchmark)
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_contrib (google-benchmark-cmake google-benchmark)
+endif ()
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+add_contrib (substrait-cmake substrait) # requires: google-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
@@ -283,12 +285,27 @@ add_contrib (bech32)
 
 add_contrib (libcotp-cmake libcotp)
 
+add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
+
+# cuDF and friends. Guarded by ENABLE_GPU inside each -cmake file, and listed in
+# dependency order: cccl before cuCollections, spdlog before rapids-logger before rmm.
+add_contrib (cccl-cmake cccl)
+add_contrib (cuCollections-cmake cuCollections)
+add_contrib (bs-thread-pool-cmake bs-thread-pool)
+add_contrib (dlpack-cmake dlpack)
+add_contrib (nvtx-cmake nvtx)
+add_contrib (spdlog-cmake spdlog)
+add_contrib (rapids-logger-cmake rapids-logger)
+add_contrib (rmm-cmake rmm)
+add_contrib (nanoarrow-cmake nanoarrow)
+add_contrib (kvikio-cmake kvikio)
+add_contrib (librtcx-cmake librtcx)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
