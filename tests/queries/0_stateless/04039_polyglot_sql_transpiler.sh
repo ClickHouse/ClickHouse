@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-POLYGLOT_OPTS="--allow_experimental_polyglot_dialect 1 --dialect polyglot"
+POLYGLOT_OPTS="--enable_polyglot_dialect 1 --dialect polyglot"
 
 # SQLite: TYPEOF() does not exist in ClickHouse
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \

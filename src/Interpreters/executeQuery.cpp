@@ -170,9 +170,9 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool enable_kusto_dialect;
+    extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -2311,7 +2311,7 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
             const char * kql_pos = begin;
-            if (!settings[Setting::allow_experimental_kusto_dialect])
+            if (!settings[Setting::enable_kusto_dialect])
             {
                 /// A plain `SET` passes even when the gate is off, so a session that is
                 /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
@@ -2319,7 +2319,7 @@ static BlockIO executeQueryImpl(
                 out_ast = tryParseKQLSetStatement(
                     kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 if (!out_ast)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'enable_kusto_dialect')");
             }
             else
                 out_ast = parseKQLQuery(
@@ -2327,8 +2327,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+            if (!settings[Setting::enable_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'enable_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -2351,7 +2351,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::max_parser_backtracks],
                 settings[Setting::polyglot_dialect],
                 end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
+                settings[Setting::enable_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::trino && !internal)

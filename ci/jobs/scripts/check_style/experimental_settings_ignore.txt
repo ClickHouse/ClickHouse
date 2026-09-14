@@ -96,3 +96,4 @@ allow_kafka_offsets_storage_in_keeper
 allow_correlated_subqueries
 allow_geo_types_in_iceberg
 allow_join_right_table_sorting
+allow_expire_snapshots
