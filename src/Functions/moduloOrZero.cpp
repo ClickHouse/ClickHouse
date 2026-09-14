@@ -21,9 +21,6 @@ struct ModuloOrZeroImpl
     {
         if constexpr (is_floating_point<ResultType>)
         {
-            if (unlikely(moduloLeadsToFPE(a, b)))
-                return 0;
-
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
         }
@@ -49,8 +46,8 @@ using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, 
 REGISTER_FUNCTION(ModuloOrZero)
 {
     FunctionDocumentation::Description description = R"(
-Like modulo but returns zero when the divisor is zero, as opposed to an
-exception with the modulo function.
+Like modulo but returns zero instead of an exception for integer results when the operation would otherwise raise an
+exception. For floating-point results, a zero divisor produces `NaN` according to IEEE 754.
     )";
     FunctionDocumentation::Syntax syntax = "moduloOrZero(a, b)";
     FunctionDocumentation::Arguments arguments =
@@ -58,8 +55,14 @@ exception with the modulo function.
         {"a", "The dividend.", {"(U)Int*", "Float*"}},
         {"b", "The divisor (modulus).", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the remainder of a % b, or `0` when the divisor is `0`."};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT moduloOrZero(5, 0)", "0"}};
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns the remainder of `a % b`. For integer results, returns `0` when the operation would otherwise raise an exception.
+For floating-point results, a zero divisor produces `NaN`.
+    )"};
+    FunctionDocumentation::Examples examples = {
+        {"Integer zero divisor", "SELECT moduloOrZero(5, 0)", "0"},
+        {"Floating-point zero divisor", "SELECT moduloOrZero(toFloat64(5), toFloat64(0))", "nan"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
