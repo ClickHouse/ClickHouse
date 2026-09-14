@@ -509,9 +509,6 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        /// Set once the `table_readonly` 1 -> 0 transition has begun starting background workers,
-        /// so that the rollback below knows it has to return them to the read-only state.
-        bool restoring_background_workers = false;
         try
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
@@ -528,16 +525,16 @@ void StorageMergeTree::alter(
             /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
             /// must never run them.
             ///
-            /// Start them *before* the metadata commit, inside this rollback unit: if either the start
-            /// or the commit throws, the setting is reverted to read-only below, and the workers that
-            /// did start are left in the same state as for a writable table that was made read-only.
-            /// Starting is idempotent, so a retried `ALTER` completes the transition. This avoids the
-            /// half-restored state where the table is writable but some workers are absent forever.
+            /// The restart is exception-safe as a unit. Everything that can throw (the allocation of
+            /// the scheduling tasks) happens here, before the metadata commit, and runs nothing: a
+            /// prepared worker cannot observe the temporarily writable setting, so a failed commit
+            /// leaves the table exactly as read-only as before, with no merge, mutation, or move
+            /// slipping through. The activation happens after the commit (see the end of this method)
+            /// and only flips the prepared tasks on. Preparing is idempotent, so a retried `ALTER`
+            /// completes the transition. This avoids the half-restored state where the table is
+            /// writable but some workers are absent forever.
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
-            {
-                restoring_background_workers = true;
-                startBackgroundWorkers();
-            }
+                prepareBackgroundWorkers();
 
             fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
             {
@@ -550,14 +547,9 @@ void StorageMergeTree::alter(
         catch (...)
         {
             /// Restore the settings and statistics metadata before propagating a failed commit.
+            /// Background workers prepared above stay inactive: there is nothing to roll back.
             changeSettings(old_metadata.settings_changes, table_lock_holder);
             setInMemoryMetadata(old_metadata);
-
-            /// The table is read-only again: cleanup must not run on it, whether it was started by
-            /// `startBackgroundWorkers` above or was still active from before. The other workers are
-            /// suppressed by the read-only setting itself, exactly as after a 0 -> 1 transition.
-            if (restoring_background_workers)
-                cleanup_thread.stop();
             throw;
         }
     }
@@ -852,13 +844,16 @@ void StorageMergeTree::alter(
         if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
             cleanup_thread.stop();
 
-        /// The background workers were started together with the settings commit above (see the
-        /// settings-alter branch). Now that the table is durably writable, do the disk cleanup that
-        /// `startup` performs for a writable table. This runs only after the commit because it
-        /// modifies the disk, and a failure here leaves the table in a consistent writable state
-        /// with every worker running.
+        /// The background workers were prepared before the settings commit above (see the
+        /// settings-alter branch). Now that the table is durably writable, activate them and do the
+        /// disk cleanup that `startup` performs for a writable table. Both run only after the commit:
+        /// an active worker could otherwise queue work on a table whose commit then fails, and the
+        /// cleanup modifies the disk. Activation only flips the prepared tasks on, and a failure in
+        /// the cleanup leaves the table in a consistent writable state with every worker running.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
         {
+            activateBackgroundWorkers();
+
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())
             {
@@ -3985,20 +3980,36 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
         background_moves_assignee.start();
 }
 
-void StorageMergeTree::startBackgroundWorkers()
+void StorageMergeTree::prepareBackgroundWorkers()
 {
-    cleanup_thread.start();
+    /// `cleanup_thread` and the outdated parts loading task allocate their scheduling tasks on
+    /// construction and on parts loading respectively, so only the assignees have anything to prepare.
+    background_operations_assignee.prepare();
 
-    /// Models a schedule-pool or allocation failure after some workers already started.
+    /// Models an allocation failure after some workers were already prepared.
     fiu_do_on(FailPoints::mt_alter_readonly_throw_in_start_background_workers,
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting background workers");
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while preparing background workers");
     });
 
+    background_streaming_assignee.prepare();
+    if (areBackgroundMovesNeeded())
+        background_moves_assignee.prepare();
+}
+
+void StorageMergeTree::activateBackgroundWorkers()
+{
+    cleanup_thread.start();
     background_operations_assignee.start();
     background_streaming_assignee.start();
     startBackgroundMovesIfNeeded();
     startOutdatedAndUnexpectedDataPartsLoadingTask();
+}
+
+void StorageMergeTree::startBackgroundWorkers()
+{
+    prepareBackgroundWorkers();
+    activateBackgroundWorkers();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

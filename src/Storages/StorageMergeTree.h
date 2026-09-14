@@ -361,6 +361,14 @@ private:
     /// Starts every background worker that a writable table runs. Called on startup of a writable
     /// table and again when `table_readonly` is turned back off, so that a table that was attached
     /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    ///
+    /// The start is split in two phases so that the `table_readonly` 1 -> 0 `ALTER` can be
+    /// exception-safe as a unit: `prepareBackgroundWorkers` performs every allocation and runs
+    /// nothing, so it may be called before the metadata commit and simply abandoned on rollback;
+    /// `activateBackgroundWorkers` only flips the prepared tasks on, so it runs after the commit and
+    /// no worker can observe the table as writable before the new setting is durable.
+    void prepareBackgroundWorkers();
+    void activateBackgroundWorkers();
     void startBackgroundWorkers();
 
     friend class MergeTreeSink;

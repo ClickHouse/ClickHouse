@@ -60,6 +60,11 @@ public:
     };
     Type type{Type::DataProcessing};
 
+    /// Allocates the scheduling task without activating it, so that the allocation (the only part
+    /// of `start` that can throw) can be done ahead of a point of no return, e.g. before a metadata
+    /// commit. A prepared assignee runs nothing until `start` is called. Idempotent.
+    void prepare();
+    /// Allocates the scheduling task if needed and activates it.
     void start();
     void trigger();
     void postpone();
@@ -103,6 +108,9 @@ private:
     BackgroundTaskSchedulingSettings sleep_settings;
 
     static String toString(Type type);
+
+    /// Must be called under `holder_mutex`.
+    void createHolderIfNeeded();
 
     /// Function that executes in background scheduling pool
     void threadFunc();

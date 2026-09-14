@@ -113,23 +113,33 @@ String BackgroundJobsAssignee::toString(Type type)
     }
 }
 
+void BackgroundJobsAssignee::createHolderIfNeeded()
+{
+    if (holder)
+        return;
+
+    switch (type)
+    {
+    case Type::DataProcessing:
+    case Type::Moving:
+        holder = getContext()->getSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
+    case Type::Streaming:
+        holder = getContext()->getStreamingSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
+    }
+}
+
+void BackgroundJobsAssignee::prepare()
+{
+    std::lock_guard lock(holder_mutex);
+    createHolderIfNeeded();
+}
+
 void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
-    if (!holder)
-    {
-        switch (type)
-        {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        }
-    }
-
+    createHolderIfNeeded();
     holder->activateAndSchedule();
 }
 
