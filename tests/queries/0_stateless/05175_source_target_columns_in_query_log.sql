@@ -9,9 +9,7 @@ ENGINE = MergeTree ORDER BY srcKey
 AS
 SELECT number, 'val-' || number FROM numbers(10);
 
-TRUNCATE system.query_log;
-
-INSERT INTO tgt (tgtKey, tgtVal) SELECT * FROM src;
+INSERT INTO tgt (tgtKey, tgtVal) SELECT * FROM src SETTINGS log_comment = '05175_source_target_columns' ;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -19,6 +17,8 @@ SELECT tables, columns
 FROM system.query_log
 WHERE query_kind = 'Insert'
   AND type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '05175_source_target_columns'
 FORMAT VERTICAL;
 
 
