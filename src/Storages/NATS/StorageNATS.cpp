@@ -639,12 +639,11 @@ void StorageNATS::streamingToViewsFunc()
     auto table_id = getStorageID();
 
     /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
-    /// so build a new connection and new consumers here. Only the connection: whether the new
-    /// consumers subscribe is decided below, the same way as for any other cycle. A stopped or
-    /// paused table must hold no subscription - with core NATS a message delivered to it is
-    /// dropped, and in a queue group it is taken away from the members which are still running -
-    /// but it does keep its connection, so it can still run the one-shot cycle a `SYSTEM REFRESH`
-    /// entitles it to, and `SYSTEM START` finds it ready.
+    /// so build a new connection and new consumers here, and subscribe them the way
+    /// `initializeConsumersFunc` subscribes the first ones. `NATSSource` subscribes a consumer it
+    /// finds unsubscribed only for the duration of its own cycle, and a cycle over a consumer
+    /// which has nothing buffered yet ends at once, so a consumer left unsubscribed here would
+    /// hold a subscription for a moment per cycle and never receive a message.
     ///
     /// No connection at all means a previous attempt dropped the closed one and then failed to
     /// connect, so try again.
@@ -658,6 +657,13 @@ void StorageNATS::streamingToViewsFunc()
         catch (...)
         {
             LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
+
+        if (!subscribeConsumers())
+        {
+            unsubscribeConsumers();
             streaming_task->scheduleAfter(RESCHEDULE_MS);
             return;
         }
