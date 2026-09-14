@@ -24,10 +24,9 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// positional deletes.
 ///
 /// Warning: we currently don't correctly update this info in most transforms. E.g. things like
-/// LimitTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
 /// have a mechanism to systematically find all code sites that would need to do that or to detect
-/// if one was missed. (FilterTransform can optionally update it, but only when explicitly told to
-/// via `update_row_numbers_info`; by default it leaves it untouched like the others.)
+/// if one was missed.
 /// So this is only used in a few specific situations, and the builder of query pipeline must be
 /// careful to never put a step that uses this info after a step that breaks it.
 ///

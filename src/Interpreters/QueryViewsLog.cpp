@@ -1,7 +1,6 @@
 #include <Interpreters/QueryViewsLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Block.h>
@@ -40,14 +39,12 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the last event of the view happened."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the view finished execution."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the view finished execution with microseconds precision."},
         {"view_duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of view execution (sum of its stages) in milliseconds."},
 
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
         {"view_name", std::make_shared<DataTypeString>(), "Name of the view."},
         {"view_uuid", std::make_shared<DataTypeUUID>(), "UUID of the view."},
         {"view_type", std::move(view_type_datatype), "Type of the view. Values: 'Default' = 1 — Default views. Should not appear in this log, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views."},
@@ -84,8 +81,6 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
