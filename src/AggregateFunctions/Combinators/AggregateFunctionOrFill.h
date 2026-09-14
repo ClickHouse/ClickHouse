@@ -90,6 +90,11 @@ public:
         return nested_function->isState();
     }
 
+    bool preservesNulls() const override
+    {
+        return nested_function->preservesNulls();
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
@@ -196,21 +201,23 @@ public:
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr __restrict place,
+    const IColumn ** columns,
+    const UInt8 * null_map,
+    Arena * arena,
+    ssize_t if_argument_pos = -1) const override
     {
+        const bool treat_null_rows_as_seen = nested_function->preservesNulls();
+
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (flags[i] && !null_map[i])
+                if (flags[i] && (treat_null_rows_as_seen || !null_map[i]))
                 {
                     place[size_of_data] = 1;
                     break;
@@ -222,12 +229,19 @@ public:
             if (row_end != row_begin)
             {
                 nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
-                for (size_t i = row_begin; i < row_end; ++i)
+                if (treat_null_rows_as_seen)
                 {
-                    if (!null_map[i])
+                    place[size_of_data] = 1;
+                }
+                else
+                {
+                    for (size_t i = row_begin; i < row_end; ++i)
                     {
-                        place[size_of_data] = 1;
-                        break;
+                        if (!null_map[i])
+                        {
+                            place[size_of_data] = 1;
+                            break;
+                        }
                     }
                 }
             }

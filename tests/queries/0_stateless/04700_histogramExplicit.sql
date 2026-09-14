@@ -198,3 +198,20 @@ SELECT finalizeAggregation(
     (SELECT histogramExplicitStateIf([50, 0, 100], 'zero', 'null', 'nan')(value, value > 3)
      FROM (SELECT arrayJoin([NULL, NULL, toNullable(-0.0), toNullable(0.0), cast('nan', 'Nullable(Float64)'), cast('-inf', 'Nullable(Float64)'), toNullable(50.0), toNullable(100.0), toNullable(150.0)]) AS value))
 );
+
+SELECT histogramExplicitOrNullIf([0, 10], 'null')(CAST(val AS Nullable(Int64)), cond) AS res_if,
+       histogramExplicitOrNull([0, 10], 'null')(CAST(val AS Nullable(Int64))) AS res_ornull
+FROM VALUES('val Nullable(Int64), cond UInt8', (NULL, 1), (NULL, 1), (null, 0));
+
+SELECT grp, histogramExplicitOrNull([0, 10], 'null')(CAST(val AS Nullable(Int64)))
+FROM VALUES('grp UInt8, val Nullable(Int64)',(1, NULL),(2, NULL))
+GROUP BY grp;
+
+SELECT histogramExplicitDistinct([0], 'null')(x)
+from (SELECT arrayJoin([1, 1, 2, 3, 0]) AS x);
+
+SELECT histogramExplicitDistinctIf([0, 5], 'null')(x, x IS null or x > 1)
+from (SELECT arrayJoin([1, 1, 2, 3, 5, 7, 0]) AS x); 
+
+
+

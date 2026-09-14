@@ -54,6 +54,7 @@ extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_PARAMETER;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -546,15 +547,33 @@ private:
     using Base::nested_function;
     using Base::nestedPlace;
 
-    const AggregateFunctionHistogramExplicit<T> & nestedTyped() const
+    const AggregateFunctionHistogramExplicit<T> * target_histogram = nullptr;
+    bool nested_is_direct_histogram = false;
+
+    static const AggregateFunctionHistogramExplicit<T> & resolveTarget(const IAggregateFunction & function)
     {
-        return assert_cast<const AggregateFunctionHistogramExplicit<T> &>(*nested_function);
+        const IAggregateFunction * probe = &function;
+        while (probe)
+        {
+            if (const auto * typed = dynamic_cast<const AggregateFunctionHistogramExplicit<T> *>(probe))
+                return *typed;
+            AggregateFunctionPtr next = probe->getNestedFunction();
+            probe = next.get();
+        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "AggregateFunctionHistogramExplicitNullAdapter: no histogramExplicit found in the nested function chain");
     }
+
+    ALWAYS_INLINE const AggregateFunctionHistogramExplicit<T> & nestedTyped() const { return *target_histogram; }
 
 public:
     AggregateFunctionHistogramExplicitNullAdapter(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : Base(std::move(nested_function_), arguments, params)
     {
+        target_histogram = &resolveTarget(*nested_function);
+
+        nested_is_direct_histogram = (nested_function.get() == static_cast<const IAggregateFunction *>(target_histogram));
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -592,6 +611,11 @@ public:
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** /*columns*/, size_t length, Arena * /*arena*/) const override
     {
+        if (!nested_is_direct_histogram)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "histogramExplicit's NULL adapter does not support addManyDefaults() when wrapped by another combinator");
+        }
         nestedTyped().addManyNulls(nestedPlace(place), length);
     }
 
@@ -620,6 +644,12 @@ public:
 
         const ConstAggregateDataPtr first_place = places[first] + place_offset;
         const size_t adjusted_place_offset = place_offset + static_cast<size_t>(nestedPlace(first_place) - first_place);
+
+        if (!nested_is_direct_histogram)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "histogramExplicit's NULL adapter does not support addBatch() when wrapped by another combinator");
+        }
 
         nestedTyped().addBatchNullable(
             row_begin,
