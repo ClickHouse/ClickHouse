@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 server_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
-inside="${server_path}disks/${name}"
+inside="${CLICKHOUSE_DISKS_FILES}/${name}"
 outside="${server_path}${name}_outside"
 s3_args="endpoint = 'http://localhost:11111/test/${name}/', access_key_id = 'clickhouse', secret_access_key = 'clickhouse'"
 
