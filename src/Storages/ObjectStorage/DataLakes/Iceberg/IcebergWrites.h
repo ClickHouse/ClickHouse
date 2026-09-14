@@ -72,7 +72,10 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true);
+    bool use_previous_snapshots = true,
+    /// Optional per-entry partition tuples parallel to `manifest_entry_names`; when non-empty each entry's
+    /// `partitions` field summary is written from its tuple, else the field is left null.
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
