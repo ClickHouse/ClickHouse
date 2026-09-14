@@ -178,6 +178,13 @@ def reload_config(node, config_name, content):
     node.query("SYSTEM RELOAD CONFIG", user="common_user", password="qwerty")
 
 
+def clear_ldap_cache(node):
+    """`SYSTEM RELOAD CONFIG` re-applies `ldap_servers` and drops every
+    `verification_cooldown` cache entry, so the next login is guaranteed to reach LDAP.
+    """
+    node.query("SYSTEM RELOAD CONFIG", user="common_user", password="qwerty")
+
+
 @pytest.fixture(scope="module", autouse=True)
 def ldap_cluster():
     docker_compose_ldap_strict = os.path.join(
@@ -269,6 +276,9 @@ def test_filter_injection_shaped_login_is_rejected(ldap_cluster):
 def test_role_mapping_runs_as_service_account(ldap_cluster):
     """`ou=groups` is unreadable for users (ACL `{1}` in setup_strict.sh): the mapped role
     can only appear because the search runs after the re-bind as the service account."""
+    # A cached login would reuse the role set of an earlier login without contacting LDAP.
+    clear_ldap_cache(instance)
+
     instance.query("DROP ROLE IF EXISTS role_1", user="common_user", password="qwerty")
     instance.query("CREATE ROLE role_1", user="common_user", password="qwerty")
     try:
@@ -342,7 +352,10 @@ def test_service_password_rotation(ldap_cluster):
     rotated_config = original_config.replace(LDAP_SERVICE_PASSWORD, "rotatedsecret")
     assert rotated_config != original_config
 
-    # Populate the cache entry of `janedoe`.
+    # Start from an empty cache so that this login creates the entry of `janedoe` (a cache
+    # hit does not refresh the timestamp, so an entry from an earlier test could expire
+    # in the middle of this test).
+    clear_ldap_cache(instance)
     assert instance.query(
         "SELECT currentUser()", user="janedoe", password="qwerty"
     ) == TSV([["janedoe"]])
