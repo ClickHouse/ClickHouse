@@ -659,7 +659,42 @@ OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0) \
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert).
+
+See also [exclude_materialize_statistics_on_merge](#exclude_materialize_statistics_on_merge) for more fine-grained control.
+)", 0) \
+    DECLARE(String, exclude_materialize_statistics_on_merge, "", R"(
+Excludes provided comma delimited list of columns from having statistics built and stored during merges. Has no effect if
+[materialize_statistics_on_merge](#materialize_statistics_on_merge) is false.
+
+The excluded columns' statistics will still be built and stored by an explicit
+[MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md) query or during INSERTs depending on
+the [materialize_statistics_on_insert](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert)
+session setting and [exclude_materialize_statistics_on_insert](/reference/settings/session-settings/materialize-statistics-on-insert#exclude_materialize_statistics_on_insert).
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS auto_statistics_types = 'basic', exclude_materialize_statistics_on_merge = 'b';
+
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100); -- setting has no effect on INSERTs
+
+-- statistics for column `b` will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+
+-- can exclude multiple columns by providing a list
+ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = 'b, c';
+
+-- default setting, no columns excluded from being updated during merge
+ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = '';
+```
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)

@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsString exclude_materialize_statistics_on_insert;
     extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
@@ -913,7 +914,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             const auto & all_columns = metadata_snapshot->getColumns();
-            statistics = ColumnsStatistics(all_columns);
+            statistics = collectStatisticsToMaterialize(
+                all_columns,
+                /*materialize_statistics=*/ true,
+                context->getSettingsRef()[Setting::exclude_materialize_statistics_on_insert].toString(),
+                context->getSettingsRef());
             /// A non-physical column is never present in a written block, so `build` below would
             /// reject it. Every other absence stays an error.
             std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });

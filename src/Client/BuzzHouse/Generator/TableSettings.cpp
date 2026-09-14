@@ -186,6 +186,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {},
          false)},
+    {"exclude_materialize_statistics_on_merge", CHSetting([](RandomGenerator &, FuzzConfig &) { return "''"; }, {"''"}, false)},
     {"execute_merges_on_single_replica_time_threshold", highRangeSetting},
     {"finished_mutations_to_keep", rowsRangeSetting},
     {"force_read_through_cache_for_merges", trueOrFalseSetting},
