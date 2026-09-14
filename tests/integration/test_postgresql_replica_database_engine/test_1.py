@@ -1163,6 +1163,31 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
+def wait_for_replicated_rows(ch_table, expected):
+    deadline = time.monotonic() + 120
+    last = None
+    while time.monotonic() < deadline:
+        try:
+            last = instance.query(f"SELECT count() FROM {ch_table}").strip()
+            if last == str(expected):
+                return
+        except Exception as e:
+            last = str(e)
+        time.sleep(1)
+    raise AssertionError(
+        f"{ch_table} did not reach {expected} rows within 120 seconds, last: {last}"
+    )
+
+
+def replicated_columns(table):
+    return sorted(
+        instance.query(
+            "SELECT name FROM system.columns WHERE database = 'test_database'"
+            f" AND table = '{table}'"
+        ).splitlines()
+    )
+
+
 def test_materialized_postgresql_attach_with_mismatched_publication_keeps_columns(
     started_cluster,
 ):
@@ -1180,29 +1205,6 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
 
     restricted = "attach_mismatch_cols"
     unpublished = "attach_mismatch_other"
-
-    def wait_for_rows(ch_table, expected):
-        deadline = time.monotonic() + 120
-        last = None
-        while time.monotonic() < deadline:
-            try:
-                last = instance.query(f"SELECT count() FROM {ch_table}").strip()
-                if last == str(expected):
-                    return
-            except Exception as e:
-                last = str(e)
-            time.sleep(1)
-        raise AssertionError(
-            f"{ch_table} did not reach {expected} rows within 120 seconds, last: {last}"
-        )
-
-    def replicated_columns(table):
-        return sorted(
-            instance.query(
-                "SELECT name FROM system.columns WHERE database = 'test_database'"
-                f" AND table = '{table}'"
-            ).splitlines()
-        )
 
     try:
         cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
@@ -1231,7 +1233,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
             ],
         )
         assert_nested_table_is_created(instance, restricted)
-        wait_for_rows(f"`test_database`.`{restricted}`", 5)
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 5)
         assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"]
 
         # The publication and the setting disagree from here on, which is reachable with a plain
@@ -1250,7 +1252,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         cursor.execute(f"INSERT INTO {restricted} VALUES (5, 105, 905)")
         instance.start_clickhouse()
 
-        wait_for_rows(f"`test_database`.`{restricted}`", 6)
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 6)
         assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"], (
             "the requested column subset was not applied on the attach path whose publication differs "
             "from the tables list"
@@ -1259,6 +1261,54 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         pg_manager.drop_materialized_db()
         cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
         cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+
+
+def test_materialized_postgresql_tables_list_with_schema_keeps_columns(started_cluster):
+    # A schema-qualified element carries a column subset the same way a bare one does, and both halves
+    # of the relation are quoted separately (`"schema"."table"`). Looked up by any other spelling the
+    # subset is dropped, and the nested table then covers a column the publication does not publish,
+    # which stops ongoing replication for that table.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    schema = "subset_schema"
+    table = "subset_cols"
+    nested = f"{schema}.{table}"
+    try:
+        cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        cursor.execute(f"CREATE SCHEMA {schema}")
+        cursor.execute(
+            f"CREATE TABLE {nested} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f"INSERT INTO {nested} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{nested}(key, val)'",
+                "materialized_postgresql_tables_list_with_schema = 1",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, table, schema_name=schema)
+        wait_for_replicated_rows(f"`test_database`.`{nested}`", 5)
+        assert replicated_columns(nested) == ["_sign", "_version", "key", "val"], (
+            "the column subset of a schema-qualified element was not applied: "
+            f"{replicated_columns(nested)}"
+        )
+
+        cursor.execute(f"INSERT INTO {nested} VALUES (5, 105, 905)")
+        wait_for_replicated_rows(f"`test_database`.`{nested}`", 6)
+    finally:
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
 
 
 def test_materialized_postgresql_tables_list_rejects_empty_element(started_cluster):
