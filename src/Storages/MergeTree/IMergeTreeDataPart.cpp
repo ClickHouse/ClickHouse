@@ -24,7 +24,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>

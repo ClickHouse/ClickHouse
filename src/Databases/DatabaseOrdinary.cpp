@@ -38,7 +38,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 
 namespace fs = std::filesystem;
 
@@ -540,7 +540,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    TransactionLog::increaseAsyncTablesLoadingJobNumber();
+    TransactionManager::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
@@ -548,7 +548,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
-            SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
+            SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
