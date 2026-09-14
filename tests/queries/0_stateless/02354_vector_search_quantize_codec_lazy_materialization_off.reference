@@ -2,9 +2,12 @@ control_rewrite_engages_and_defers	1	1
 lazy_materialization_off	0
 shortlist_above_max_limit_for_lazy_materialization	0
 shortlist_cap_zero_is_unbounded	1
+shortlist_at_max_limit_with_offset	1	1
+shortlist_above_max_limit_with_offset	0
 prewhere_reads_vector	0
 prewhere_not_reading_vector	1	1
 where_reads_vector_outside_prewhere	0
+where_not_reading_vector_outside_prewhere	1	1
 row_policy_reads_vector	0
 exact_results_lazy_off	0
 exact_results_lazy_off	1

@@ -84,6 +84,32 @@ FROM
     LIMIT 5 SETTINGS query_plan_max_limit_for_lazy_materialization = 0
 );
 
+-- The cap counts the rows the final top-k needs INCLUDING any OFFSET, and a shortlist exactly AT the cap is still
+-- deferred (the lazy pass declines only above it). `LIMIT 3 OFFSET 2` needs 5 rows, so cap 5 is the boundary that must
+-- still engage.
+SELECT 'shortlist_at_max_limit_with_offset',
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+    LIMIT 3 OFFSET 2 SETTINGS query_plan_max_limit_for_lazy_materialization = 5
+);
+
+-- One below that boundary the shortlist cannot be deferred, so the query is left exact. The pair differs only in the
+-- cap, and it is the OFFSET that makes the requirement 5: counting the LIMIT alone would leave this query rewritten.
+SELECT 'shortlist_above_max_limit_with_offset',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+    LIMIT 3 OFFSET 2 SETTINGS query_plan_max_limit_for_lazy_materialization = 4
+);
+
 -- A PREWHERE that reads the vector column: its inputs are read for every row before the shortlist limit, so the
 -- vector cannot be deferred even though lazy materialization does run.
 SELECT 'prewhere_reads_vector',
@@ -118,6 +144,20 @@ FROM
 (
     EXPLAIN actions = 1
     SELECT id FROM quantize_lazy_off WHERE notEmpty(vec)
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
+    LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+);
+
+-- Control pinning the arm above to the COLUMN and not to the presence of a filter step: the same forced non-PREWHERE
+-- filter, on an unrelated column, leaves the vector deferrable, so the rewrite must engage. Declining on any chain
+-- FilterStep would satisfy the arm above and fail here.
+SELECT 'where_not_reading_vector_outside_prewhere',
+    countIf(explain ILIKE '%quantized shortlist%') > 0,
+    countIf(explain ILIKE '%LazilyReadFromMergeTree%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_lazy_off WHERE tag = 1
     ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_lazy_off WHERE id = 0)) ASC
     LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
 );
