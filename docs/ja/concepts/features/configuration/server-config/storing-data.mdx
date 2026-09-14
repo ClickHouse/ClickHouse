@@ -633,7 +633,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -683,8 +683,9 @@ cache には `LRU` cache ポリシーが使用されます。
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 22.8より前のバージョンの設定例:
@@ -709,8 +710,9 @@ cache には `LRU` cache ポリシーが使用されます。
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 File Cache **ディスク設定**:

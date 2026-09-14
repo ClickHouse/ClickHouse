@@ -34,7 +34,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCOMPATIBLE_COLUMNS;
 }
 
@@ -180,51 +179,23 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
         write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
-
-        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
-            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
-        if (!write_path_raw)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
-
-        write_path = *write_path_raw;
     }
     else
     {
         /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
-        /// write schema and path directly; per-partition values are handled when committing.
+        /// write schema directly; per-partition values are handled when committing.
         write_schema = table_schema;
-        write_path = kernel_helper->getTableLocation();
     }
 
-    auto pos = write_path.find("://");
-    if (pos == std::string::npos)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unexpected path format: {}", write_path);
-    }
-    auto storage_type_str = write_path.substr(0, pos);
-    if (storage_type_str == "s3" || storage_type_str == "gcs")
-    {
-        auto pos_to_bucket = pos + std::strlen("://");
-        auto pos_to_path = write_path.substr(pos_to_bucket).find('/');
-        path_prefix = write_path.substr(pos_to_bucket + pos_to_path + 1);
-    }
-    else if (storage_type_str == "file")
-    {
-        auto pos_to_file = pos + std::strlen("://");
-        path_prefix = write_path.substr(pos_to_file);
-    }
-    else
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}",
-            storage_type_str);
-    }
+    /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
+    /// `ffi::get_write_path` would add nothing here: it returns the table root the transaction
+    /// was opened with (i.e. `getTableLocation`), and exists only for the unpartitioned context.
+    path_prefix = kernel_helper->getDataPath();
+    /// `add.path` is the written file path with the prefix cut off, which needs the separator.
+    if (!path_prefix.empty() && !path_prefix.ends_with('/'))
+        path_prefix += '/';
 
-    LOG_TEST(
-        log, "Write path: {}, data prefix: {} schema: {}",
-        write_path, path_prefix, write_schema.toString());
+    LOG_TEST(log, "Data prefix: {}, schema: {}", path_prefix, write_schema.toString());
 }
 
 void WriteTransaction::validateSchema(const DB::Block & header) const

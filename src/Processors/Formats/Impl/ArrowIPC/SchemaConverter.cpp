@@ -309,7 +309,7 @@ ArrowType parseType(const flatbuf::Field & field)
         /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
         /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
         /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
-        /// `skipField` can advance the node/buffer cursors past an *unrequested* column of this type and
+        /// `advanceField` can advance the node/buffer cursors past an *unrequested* column of this type and
         /// keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
             type.kind = TypeKind::Unsupported;
@@ -1128,7 +1128,7 @@ DataTypePtr fieldToCHType(
             {
                 if (child.type.kind == TypeKind::Null)
                     continue;
-                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false)));
+                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
             }
             result = std::make_shared<DataTypeVariant>(variants);
             break;
