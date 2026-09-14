@@ -100,6 +100,10 @@ public:
 
     explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
 
+    /// `tolerate_conflicting_manifest_schemas` is the value of the setting of the same name in the
+    /// operation registering this copy. It governs every conflict this call runs into, including one
+    /// between a metadata.json copy registered now and a manifest header copy registered earlier by
+    /// another operation, so it has to be passed for metadata.json copies as well.
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
         SchemaSource source = SchemaSource::Metadata,
@@ -143,19 +147,20 @@ private:
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
-    /// Schema-ids whose registered copy was taken from a manifest file header with
-    /// `iceberg_tolerate_conflicting_manifest_schemas` enabled and has not been confirmed by
-    /// metadata.json yet. Such a copy is provisional: a conflicting metadata.json copy of the same
-    /// id replaces it instead of failing, because manifest-walking entrypoints (the
-    /// `remove_orphan_files` and `expire_snapshots` commands, mutation validation) reach a manifest
-    /// file header on a table object whose shared processor is still empty, and a degraded header
-    /// registered there would otherwise poison the table object for every later read.
-    std::unordered_set<Int32> provisional_manifest_schema_ids TSA_GUARDED_BY(mutex);
+    /// Schema-ids whose registered copy was taken from a manifest file header and has not been
+    /// confirmed by metadata.json yet. Only the source is remembered, never the setting of the
+    /// operation that registered it: the processor is shared across queries, and each operation
+    /// decides under its own `iceberg_tolerate_conflicting_manifest_schemas` value whether a
+    /// conflict between such a copy and metadata.json replaces the copy or is an error. The
+    /// manifest-walking entrypoints (the `remove_orphan_files` and `expire_snapshots` commands,
+    /// mutation validation) reach a manifest file header on a table object whose shared processor
+    /// is still empty, so such a copy can be the first registration of its id.
+    std::unordered_set<Int32> manifest_only_schema_ids TSA_GUARDED_BY(mutex);
 
-    /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered provisional
-    /// copy of the same id when asked. Field names are validated before anything is dropped or
-    /// written, so a malformed schema cannot leave the id without a schema at all.
-    void addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_provisional) TSA_REQUIRES(mutex);
+    /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered copy of the
+    /// same id when asked. Field names are validated before anything is dropped or written, so a
+    /// malformed schema cannot leave the id without a schema at all.
+    void addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_existing) TSA_REQUIRES(mutex);
 
     /// Drops the schema registered for `schema_id` together with everything derived from it.
     void dropSchemaImpl(Int32 schema_id) TSA_REQUIRES(mutex);

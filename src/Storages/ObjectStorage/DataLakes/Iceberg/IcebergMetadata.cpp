@@ -130,6 +130,7 @@ extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsInt64 iceberg_timestamp_ms;
+extern const SettingsBool iceberg_tolerate_conflicting_manifest_schemas;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
@@ -323,7 +324,8 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
-    LoggerPtr metadata_logger)
+    LoggerPtr metadata_logger,
+    bool tolerate_conflicting_manifest_schemas)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
@@ -333,7 +335,7 @@ Int32 IcebergMetadata::parseTableSchema(
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-        schema_processor.addIcebergTableSchema(schema);
+        schema_processor.addIcebergTableSchema(schema, IcebergSchemaProcessor::SchemaSource::Metadata, tolerate_conflicting_manifest_schemas);
         return current_schema_id;
     }
     else
@@ -341,7 +343,7 @@ Int32 IcebergMetadata::parseTableSchema(
         try
         {
             auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
-            schema_processor.addIcebergTableSchema(schema);
+            schema_processor.addIcebergTableSchema(schema, IcebergSchemaProcessor::SchemaSource::Metadata, tolerate_conflicting_manifest_schemas);
             return current_schema_id;
         }
         catch (const Exception & first_error)
@@ -351,7 +353,7 @@ Int32 IcebergMetadata::parseTableSchema(
             try
             {
                 auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-                schema_processor.addIcebergTableSchema(schema);
+                schema_processor.addIcebergTableSchema(schema, IcebergSchemaProcessor::SchemaSource::Metadata, tolerate_conflicting_manifest_schemas);
                 LOG_WARNING(
                     metadata_logger,
                     "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 "
@@ -375,7 +377,10 @@ Int32 IcebergMetadata::parseTableSchema(
 }
 
 static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
-    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
+    Poco::JSON::Object::Ptr metadata_object,
+    Int64 snapshot_id,
+    IcebergSchemaProcessorPtr schema_processor,
+    bool tolerate_conflicting_manifest_schemas)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
@@ -385,7 +390,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
+        schema_processor->addIcebergTableSchema(schema, IcebergSchemaProcessor::SchemaSource::Metadata, tolerate_conflicting_manifest_schemas);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
@@ -449,7 +454,11 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 IcebergDataSnapshotPtr
 IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(
+        metadata_object,
+        snapshot_id,
+        persistent_components.schema_processor,
+        local_context->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
@@ -590,7 +599,11 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
+        auto schema_id = parseTableSchema(
+            metadata_object,
+            *persistent_components.schema_processor,
+            log,
+            local_context->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
@@ -932,7 +945,10 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
-        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
+        metadata_object,
+        *table_state_snapshot.snapshot_id,
+        persistent_components.schema_processor,
+        local_context->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
 
     return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }

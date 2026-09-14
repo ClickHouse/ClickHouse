@@ -399,10 +399,10 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
 {
     std::lock_guard lock(mutex);
 
-    Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+    Int32 schema_id = schema_ptr->getValue<int>(f_schema_id);
 
-    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
-    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
+    /// A manifest file header may carry a schema without any fields, e.g. a manifest of a
+    /// partitioned table written by AWS S3 Tables; there is nothing to register from it.
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
 
@@ -417,10 +417,10 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         }
         if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
-            /// The authoritative copy agrees with what a manifest file header registered, so that
-            /// registration is no longer provisional and a later metadata.json conflict is corruption.
+            /// The authoritative copy agrees with what a manifest file header registered, so the
+            /// registered copy is now confirmed and a later metadata.json conflict is corruption.
             if (source == SchemaSource::Metadata)
-                provisional_manifest_schema_ids.erase(schema_id);
+                manifest_only_schema_ids.erase(schema_id);
             return;
         }
 
@@ -439,11 +439,15 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         /// commands and mutation validation walk manifests on a table object whose shared processor
         /// is still empty. So the manifest-sourced copy has to lose the conflict in both directions,
         /// otherwise running maintenance once would poison the table object for every later read.
-        /// Nested rather than one condition on purpose: a manifest-sourced copy read with the
-        /// setting disabled must reach the throw below, not the provisional-replacement branch.
-        if (source == SchemaSource::ManifestFile)
+        ///
+        /// The processor is shared across queries, so it only remembers *where* each registered copy
+        /// came from. Whether a conflict with a manifest-sourced copy is tolerated is decided here,
+        /// from the setting of the operation that is registering right now, never from the setting
+        /// of whichever earlier operation happened to register the other copy.
+        bool conflict_involves_manifest_copy = source == SchemaSource::ManifestFile || manifest_only_schema_ids.contains(schema_id);
+        if (conflict_involves_manifest_copy && tolerate_conflicting_manifest_schemas)
         {
-            if (tolerate_conflicting_manifest_schemas)
+            if (source == SchemaSource::ManifestFile)
             {
                 LOG_WARNING(
                     getLogger("IcebergSchemaProcessor"),
@@ -453,16 +457,14 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
                     schema_id);
                 return;
             }
-        }
-        else if (provisional_manifest_schema_ids.contains(schema_id))
-        {
+
             LOG_WARNING(
                 getLogger("IcebergSchemaProcessor"),
-                "Iceberg schema-id {} was provisionally registered from a manifest file header and metadata.json binds "
-                "it to a different schema; replacing the provisional copy with the authoritative metadata.json schema "
+                "Iceberg schema-id {} was registered from a manifest file header and metadata.json binds it to a "
+                "different schema; replacing the manifest header copy with the authoritative metadata.json schema "
                 "(set `iceberg_tolerate_conflicting_manifest_schemas = 0` to make this an error)",
                 schema_id);
-            addSchemaImpl(schema_ptr, schema_id, /*replace_provisional=*/true);
+            addSchemaImpl(schema_ptr, schema_id, /*replace_existing=*/true);
             return;
         }
 
@@ -472,15 +474,15 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
             schema_id);
     }
 
-    addSchemaImpl(schema_ptr, schema_id, /*replace_provisional=*/false);
+    addSchemaImpl(schema_ptr, schema_id, /*replace_existing=*/false);
 
-    /// Registered with no authoritative copy to check it against, so metadata.json is still allowed
-    /// to bind this id to a different schema later.
-    if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas)
-        provisional_manifest_schema_ids.insert(schema_id);
+    /// Registered with no authoritative copy to check it against. A later metadata.json copy of this
+    /// id decides, under its own operation's setting, whether a conflict replaces it or is an error.
+    if (source == SchemaSource::ManifestFile)
+        manifest_only_schema_ids.insert(schema_id);
 }
 
-void IcebergSchemaProcessor::addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_provisional)
+void IcebergSchemaProcessor::addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_existing)
 {
     auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
@@ -495,7 +497,7 @@ void IcebergSchemaProcessor::addSchemaImpl(const Poco::JSON::Object::Ptr & schem
                 field->getValue<Int32>(f_id));
     }
 
-    if (replace_provisional)
+    if (replace_existing)
         dropSchemaImpl(schema_id);
 
     current_schema_id = schema_id;
@@ -521,7 +523,7 @@ void IcebergSchemaProcessor::dropSchemaImpl(Int32 schema_id)
 {
     iceberg_table_schemas_by_ids.erase(schema_id);
     clickhouse_table_schemas_by_ids.erase(schema_id);
-    provisional_manifest_schema_ids.erase(schema_id);
+    manifest_only_schema_ids.erase(schema_id);
 
     /// Per-field lookups and cached schema transformations are derived from the schema being dropped
     /// and are never rebuilt once populated, so a surviving entry would keep answering with the
