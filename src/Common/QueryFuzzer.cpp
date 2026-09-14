@@ -3220,8 +3220,10 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (!table.database_and_table_name)
         return;
 
+    /// A parameterized name (`{fuzz_param_N:Identifier}`) has empty name parts, and getTableId()
+    /// throws UNKNOWN_TABLE for such an identifier instead of returning an empty StorageID.
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
 
     /// Point the read at one of the table's live `__fuzz_N` clones
@@ -3460,7 +3462,7 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
     if (table.database_and_table_name)
     {
         const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-        if (!identifier)
+        if (!identifier || identifier->isParam())
             return;
         const auto table_id = identifier->getTableId();
         if (table_id.getTableName().empty())
@@ -3495,7 +3497,7 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
     const auto table_id = identifier->getTableId();
     const String table_name = table_id.getTableName();

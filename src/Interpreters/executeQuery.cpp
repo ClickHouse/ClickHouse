@@ -3497,14 +3497,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             break;
         }
 
+        /// A mutation that throws costs only its own run: the remaining runs re-fuzz `base_ast`,
+        /// the last AST that executed.
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
+        try
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();
+        }
+        catch (...) // Ok: skip a run whose mutation failed
+        {
+            tryLogCurrentException(logger, "Fuzzing the query failed");
+            continue;
         }
 
         /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
@@ -3733,9 +3741,9 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         }
         catch (...)
         {
-            /// A fuzzed copy can also fail with a Poco::Exception (a mutated URI argument reaches
-            /// Poco::URI) or a std::exception. This runs after the client's query has returned its
-            /// result, so an exception escaping here fails a query that was sent correctly.
+            /// A fuzzed copy can also fail with a Poco::Exception (a mutated URI argument reaching
+            /// Poco::URI) or a std::exception, and this runs after the client's query has already
+            /// returned its result.
             finish_iteration(/*succeeded=*/false);
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
