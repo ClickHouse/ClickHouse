@@ -52,7 +52,7 @@ Upcoming meetups
 * [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d) - September 14th, 2026
 * [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
 * [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
-* [DET New York](https://luma.com/xf3wghdh?tk=S0INUD) - September 17th, 2026
+* [DET New York](https://luma.com/xf3wghdh) - September 17th, 2026
 * [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
 * [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
 * [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026

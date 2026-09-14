@@ -1,0 +1,84 @@
+{
+	"meta":
+	[
+		{
+			"name": "ignore(number)",
+			"type": "UInt8"
+		},
+		{
+			"name": "count()",
+			"type": "UInt64"
+		},
+		{
+			"name": "k",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, 1, "grp"]
+	],
+
+	"totals": [0, 1000, "grp"],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "count()",
+			"type": "UInt64"
+		},
+		{
+			"name": "k",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[0, 1, 1]
+	],
+
+	"totals": [0, 1000, 1],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1
+}
+{
+	"meta":
+	[
+		{
+			"name": "g",
+			"type": "UInt8"
+		},
+		{
+			"name": "c",
+			"type": "UInt64"
+		},
+		{
+			"name": "k",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, 4, "grp"]
+	],
+
+	"totals": [0, 12, "grp"],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1
+}
