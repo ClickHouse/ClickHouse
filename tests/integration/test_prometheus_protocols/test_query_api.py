@@ -74,10 +74,10 @@ def start_cluster():
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         node.query(
             "CREATE TABLE prometheus_seconds "
-            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
         )
         node.query(
-            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
             " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
             " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
         )
