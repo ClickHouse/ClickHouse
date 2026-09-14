@@ -17,6 +17,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
@@ -571,6 +572,58 @@ static const ActionsDAG::Node & addCastImpl(
 const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
 {
     return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::nonAccurate);
+}
+
+const ActionsDAG::Node & ActionsDAG::addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context)
+{
+    const Node * res = &node;
+
+    /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
+    /// `Nothing` has no values to normalize.
+    auto nested_type = removeLowCardinalityAndNullable(node.result_type);
+    if (!isBool(nested_type) && !isNothing(nested_type))
+    {
+        if (node.column)
+        {
+            /// A constant is normalized by a cast, which folds it here and adds no node to the plan.
+            /// `and` cannot do it: it reads a constant through `FieldVisitorConvertToNumber`, which
+            /// throws on a value like -0.5. Through `Bool`, because `CAST(256, 'UInt8')` is 0.
+            DataTypePtr bool_type = DataTypeFactory::instance().get("Bool");
+            if (isNullableOrLowCardinalityNullable(node.result_type))
+                bool_type = makeNullable(bool_type);
+            res = &addCast(*res, bool_type, {}, context);
+        }
+        else
+        {
+            /// `and(x, true)` for an expression: the optimizer reads a condition through the functions
+            /// it knows, and a `_CAST` around one hides it from selectivity estimation.
+            auto uint8_type = std::make_shared<DataTypeUInt8>();
+            const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
+            FunctionOverloadResolverPtr func_builder_and
+                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+            res = &addFunction(func_builder_and, {res, &true_node}, {});
+        }
+    }
+
+    /// A NULL condition is not true, and casting a NULL to a non-Nullable type would throw.
+    if (isNullableOrLowCardinalityNullable(res->result_type) && !canContainNull(*result_type))
+    {
+        if (!context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Context is required to convert a Nullable condition to {}", result_type->getName());
+
+        auto uint8_type = std::make_shared<DataTypeUInt8>();
+        const auto & false_node = addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+        res = &addFunction(FunctionFactory::instance().get("ifNull", context), {res, &false_node}, {});
+    }
+
+    /// An already normalized condition is returned untouched: an extra `_CAST` around it hides the
+    /// predicate from selectivity estimation. Once a node has been added, match `result_type` by name
+    /// as well, because `Bool` compares equal to `UInt8` but prints `true` rather than 1.
+    const bool converted = res != &node;
+    if (converted ? res->result_type->getName() != result_type->getName() : !res->result_type->equals(*result_type))
+        res = &addCast(*res, result_type, {}, context);
+
+    return *res;
 }
 
 const ActionsDAG::Node & ActionsDAG::addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
@@ -3846,23 +3899,9 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             /// Fix the result type and add an alias.
             auto & child = new_children.front();
 
+            /// Preserve the original type if the column is needed in the result.
             if (!removes_filter)
-            {
-                /// Preserve the original type if the column is needed in the result.
-                /// A cast alone is not enough: `and` implicitly converts its arguments to booleans,
-                /// while a cast maps values like 256 or 0.1 to 0, which is inconsistent with e.g. "1 and 256".
-                /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
-                if (!isBool(removeLowCardinalityAndNullable(child->result_type)))
-                {
-                    auto uint8_type = std::make_shared<DataTypeUInt8>();
-                    const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
-                    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                    child = &addFunction(func_builder_and, {child, &true_node}, {});
-                }
-
-                if (!child->result_type->equals(*predicate->result_type))
-                    child = &addCast(*child, predicate->result_type, {}, nullptr);
-            }
+                child = &addBooleanCondition(*child, predicate->result_type, nullptr);
 
             Node node;
             node.type = ActionType::ALIAS;

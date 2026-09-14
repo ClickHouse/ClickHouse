@@ -69,6 +69,8 @@ public:
 
     String getName() const override { return "JoiningTransform"; }
 
+    const JoinPtr & getJoin() const { return join; }
+
     static Block transformHeader(Block header, const JoinPtr & join);
 
     OutputPort & getFinishedSignal();

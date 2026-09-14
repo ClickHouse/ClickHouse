@@ -312,6 +312,70 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /** Hand the buffered rows over before any database goes away.
+      *
+      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
+      * shut down one at a time in name order: a destination in an earlier-sorting database is already
+      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
+      * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
+      * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
+      * graceful shutdown.
+      *
+      * So drain every table of every database here, repeating while a pass still moves something -
+      * one pass per link of the longest chain. The number of tables bounds the number of passes; a
+      * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
+      */
+    {
+        size_t total_tables = 0;
+        std::vector<StoragePtr> buffered_tables;
+        for (const auto & database : current_databases)
+        {
+            /// Only user databases: enumerating a predefined one can materialize a lazily created
+            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+            if (isPredefinedDatabase(database.first))
+                continue;
+
+            try
+            {
+                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                {
+                    ++total_tables;
+                    buffered_tables.push_back(it->table());
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
+            }
+        }
+
+        for (size_t pass = 0; pass <= total_tables; ++pass)
+        {
+            size_t flushed = 0;
+            for (const auto & table : buffered_tables)
+            {
+                if (!table)
+                    continue;
+
+                try
+                {
+                    flushed += table->flushBufferedRowsBeforeShutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                }
+            }
+
+            if (flushed == 0)
+                break;
+
+            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+        }
+    }
+
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".

@@ -74,7 +74,9 @@ private:
     const String query_id;
     const bool use_external_buffer;
 
-    size_t read_until_position = 0;
+    /// `std::nullopt` means "no right bound". A plain `0` sentinel could not tell an unbounded read
+    /// apart from an empty range at the start of the file.
+    std::optional<size_t> read_until_position;
     size_t file_offset_of_buffer_end = 0;
 
     StoredObject current_object;

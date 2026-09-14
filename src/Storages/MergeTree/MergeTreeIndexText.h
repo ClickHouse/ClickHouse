@@ -10,7 +10,6 @@
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
@@ -22,6 +21,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 
 #include <algorithm>
 
@@ -236,7 +236,7 @@ private:
     std::variant<Inline, Large, Filtered> state;
 };
 
-using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = HashMap<PackedStringRef, PostingListBuilder>;
 
 struct SortedToken
 {
@@ -650,7 +650,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Posting list builders for each token.
     TokenToPostingsBuilderMap tokens_map;
-    /// Keys may be serialized into arena (see ArenaKeyHolder).
+    /// Keys may be serialized into arena (see ArenaPackedStringHolder).
     std::unique_ptr<Arena> arena;
     /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
     /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
