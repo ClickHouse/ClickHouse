@@ -43,3 +43,7 @@ SELECT number FROM numbers(1) WHERE mapExists((k, v) -> k IN (SELECT 1), map(1, 
 -- Nesting reaches the gate too: whether the set stays in the outer capture list or the inner lambda is
 -- hoisted out of it, what the outer lambda captures is not a foldable constant, so the row is returned.
 SELECT number FROM numbers(1) WHERE arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [1]), [1]);
+
+-- `arrayFold` is a separate implementation rather than an `arrayMap` sibling, and it does not forward the
+-- dry-run flag into its lambda, so this nesting aborted with `Not-ready Set`. Only 1 is in the set.
+SELECT arrayFilter(k -> arrayFold((acc, x) -> x IN (SELECT 1), [k], toUInt8(0)), [1, 2]);
