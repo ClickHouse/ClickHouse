@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
@@ -36,6 +37,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
@@ -525,8 +527,23 @@ void DatabaseOrdinary::loadTableLazy(
         return table;
     };
 
+    /// `RENAME DATABASE` asks every table whether it forbids the rename, via
+    /// `checkTableCanBeRenamedByDatabaseRename`. Answering it for a lazy table needs nothing from
+    /// the storage — see `DatabaseRenameGuardHint`, which resolves the answer from the `CREATE`
+    /// query available here at no cost. Without this the proxy would have to materialize (and
+    /// `startup()`) every table in the database on each rename. That is not a hypothetical cost: a
+    /// `ReplicatedMergeTree` cannot carry `leader_election` in its own `CREATE` query (that is
+    /// rejected at create), but it does inherit a server-wide `merge_tree` default, and under such
+    /// a default materializing it fails the whole `RENAME DATABASE`, because
+    /// `StorageReplicatedMergeTree` refuses to attach with the setting on.
+    auto may_need_database_rename_guard
+        = [hint = DatabaseRenameGuardHint::fromCreateQuery(query), global_context = local_context->getGlobalContext()]
+    {
+        return hint.mayNeedGuard(global_context);
+    };
+
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(columns), std::move(may_need_database_rename_guard));
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

@@ -30,6 +30,34 @@ std::pair<String, StoragePtr> createTableFromAST(
   */
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 
+/** Storage-free answer to "could `IStorage::checkTableCanBeRenamedByDatabaseRename` reject this
+  * table?", resolved from its `CREATE` query and the server-wide `merge_tree` defaults.
+  *
+  * `RENAME DATABASE` asks every table whether it forbids the rename. That hook is overridden only
+  * by `StorageMergeTree`, and there it throws only under `leader_election`, so answering it needs
+  * nothing from the storage object: only the engine name, which says whether the hook is that
+  * override at all, and the effective value of that one `MergeTree` setting. That makes the
+  * question answerable for a table with no storage object — a lazily loaded one, which must not be
+  * materialized just to be asked, and a detached one, whose metadata `RENAME DATABASE` renames too.
+  */
+struct DatabaseRenameGuardHint
+{
+    /// Whether the engine is one that `StorageMergeTree` backs: the `MergeTree` family minus the
+    /// `Replicated` (`StorageReplicatedMergeTree`) and `Shared` (Cloud) variants — the same test
+    /// `DatabaseReplicated` uses to recognize them. For every other engine the hook is `IStorage`'s
+    /// no-op, so the value of `leader_election` says nothing there.
+    bool engine_may_reject = true;
+
+    /// `leader_election` as spelled in the query's own `SETTINGS`, when it is spelled there.
+    std::optional<bool> leader_election_in_query;
+
+    static DatabaseRenameGuardHint fromCreateQuery(const ASTCreateQuery & query);
+
+    /// Reads the server-wide `merge_tree` default at call time, the same way the storage itself
+    /// would read it, so the answer follows a default changed since the hint was built.
+    bool mayNeedGuard(const ContextPtr & context) const;
+};
+
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
