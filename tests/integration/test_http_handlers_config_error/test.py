@@ -23,6 +23,15 @@ BAD_PREDEFINED_BODY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_p
 BAD_PREDEFINED_REQUEST_BODY_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/bad_predefined_request_body.xml"
 )
+BAD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_predefined_request_body_methods.xml"
+)
+BAD_PREDEFINED_REQUEST_BODY_SAFE_METHOD_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_predefined_request_body_safe_method.xml"
+)
+GOOD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/good_predefined_request_body_methods.xml"
+)
 LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
 NO_HTTP_PORT_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/no_http_port.xml"
 HTTPS_ONLY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/https_only.xml"
@@ -140,6 +149,49 @@ def test_predefined_handler_rejects_body_parameter_conflict(start_cluster):
         BAD_PREDEFINED_REQUEST_BODY_CONFIG_IN_CONTAINER,
         "the uploaded data would be silently lost",
     )
+
+
+def test_predefined_handler_rejects_body_query_without_methods(start_cluster):
+    # A body-consuming predefined handler must not match every HTTP method by omitting `<methods>`.
+    _assert_predefined_handler_config_error(
+        "bad_predefined_request_body_methods.xml",
+        BAD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER,
+        "its <methods> must list only POST, PUT, or DELETE",
+    )
+
+
+def test_predefined_handler_rejects_body_query_with_safe_method(start_cluster):
+    # A body-consuming predefined handler must not be reachable through a safe method such as GET.
+    _assert_predefined_handler_config_error(
+        "bad_predefined_request_body_safe_method.xml",
+        BAD_PREDEFINED_REQUEST_BODY_SAFE_METHOD_CONFIG_IN_CONTAINER,
+        "its <methods> must list only POST, PUT, or DELETE",
+    )
+
+
+def test_predefined_handler_accepts_all_body_carrying_methods(start_cluster):
+    node.stop_clickhouse()
+    config_name = "good_predefined_request_body_methods.xml"
+    node.copy_file_to_container(
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", config_name),
+        GOOD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER,
+    )
+    try:
+        node.start_clickhouse()
+        for method in ("POST", "PUT"):
+            response = node.http_request(
+                "good_predefined_request_body_methods",
+                method=method,
+                data=b"body",
+            )
+            assert response.status_code == 200, (method, response.content)
+            assert response.content == b"body\n", method
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", "rm -f " + GOOD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER],
+            user="root",
+        )
+        node.restart_clickhouse()
 
 
 def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_cluster):

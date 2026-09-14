@@ -61,6 +61,8 @@
 
 #include <Poco/Exception.h>
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/String.h>
+#include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -2118,6 +2120,35 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 
     const bool query_may_consume_request_body
         = queryConsumesRequestBody(*predefined_query_ast) || analyze_receive_params.contains("_request_body");
+
+    /// A body-consuming predefined handler must not be reachable through a safe method, or through a rule with no
+    /// method filter. Otherwise a GET request can match the rule and `_request_body` is silently bound to an empty
+    /// value. Config-defined rules do not have the SQL-defined handler's default GET restriction at this point.
+    const auto methods_path = config_prefix + ".methods";
+    bool has_only_body_carrying_methods = false;
+    if (query_may_consume_request_body && config.has(methods_path))
+    {
+        Poco::StringTokenizer methods(config.getString(methods_path), ",", Poco::StringTokenizer::TOK_TRIM);
+        has_only_body_carrying_methods
+            = methods.count() > 0
+            && std::all_of(
+                methods.begin(), methods.end(), [](const auto & method)
+                {
+                    const auto normalized_method = Poco::toUpper(method);
+                    return normalized_method == Poco::Net::HTTPRequest::HTTP_POST
+                        || normalized_method == Poco::Net::HTTPRequest::HTTP_PUT
+                        || normalized_method == Poco::Net::HTTPRequest::HTTP_DELETE;
+                });
+    }
+
+    if (query_may_consume_request_body && !has_only_body_carrying_methods)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Configured predefined query handler `{}` may consume the HTTP request body, so its <methods> must list "
+            "only POST, PUT, or DELETE.",
+            config_prefix);
+    }
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     connection_config.default_session_user = default_session_user;
