@@ -191,8 +191,8 @@ ProcessList::EntryPtr ProcessList::insert(
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        /// A query blocked on an asynchronously loading table is not executing, so it does not hold a
-        /// slot in the limits below.
+        /// A query blocked waiting for an asynchronous load or startup job is not executing, so it
+        /// does not hold a slot in the limits below.
         UInt64 waiting_queries = waiting_queries_amount.load();
         if (!is_unlimited_query && max_size && non_internal_processes >= addWaitingDiscount(max_size, waiting_queries))
         {

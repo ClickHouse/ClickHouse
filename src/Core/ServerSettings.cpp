@@ -593,7 +593,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
 Limit on total number of concurrently waiting queries, excluding internal queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases).
+Execution of a waiting query is blocked while an asynchronous load or startup job it needs is still running: loading a table, starting up a table or a database, or starting up the distributed DDL worker (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases)).
 
 <Note>
 Waiting queries are not counted when limits controlled by the following settings are checked:
