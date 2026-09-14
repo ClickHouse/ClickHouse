@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <string>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
@@ -49,6 +50,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool enable_prometheus_remote_write_v2;
     extern const SettingsUInt64 http_response_buffer_size;
 }
 
@@ -311,10 +313,12 @@ public:
         /// Unsupported content types and encodings get 415 Unsupported Media Type.
         const String content_type = request.get("Content-Type", "");
         const bool is_v2 = content_type.contains("proto=io.prometheus.write.v2.Request");
+        const bool is_explicit_v1 = content_type.contains("proto=prometheus.WriteRequest");
         const bool is_protobuf = (content_type == "application/x-protobuf") || content_type.starts_with("application/x-protobuf;");
-        if (!is_protobuf || (content_type.contains("proto=") && !is_v2))
+        if (!is_protobuf || (content_type.contains("proto=") && !is_v2 && !is_explicit_v1))
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
-                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf' or "
+                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf', "
+                "'application/x-protobuf;proto=prometheus.WriteRequest', or "
                 "'application/x-protobuf;proto=io.prometheus.write.v2.Request')", content_type);
 
         /// The remote-write 1.0 spec mandates snappy, but some senders can also compress with zstd.
@@ -327,6 +331,21 @@ public:
         else
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
+
+        const auto set_v2_written_headers = [&](size_t samples_written)
+        {
+            response.set("X-Prometheus-Remote-Write-Samples-Written", std::to_string(samples_written));
+            response.set("X-Prometheus-Remote-Write-Histograms-Written", "0");
+            response.set("X-Prometheus-Remote-Write-Exemplars-Written", "0");
+        };
+
+        if (is_v2)
+        {
+            set_v2_written_headers(0);
+            if (!context->getSettingsRef()[Setting::enable_prometheus_remote_write_v2])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED, "Setting `enable_prometheus_remote_write_v2` is not enabled");
+        }
 
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
@@ -341,7 +360,7 @@ public:
                     || v2_request.symbols().empty()
                     || !v2_request.symbols(0).empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
-                protocol.write(v2_request);
+                set_v2_written_headers(protocol.write(v2_request));
             }
             else
             {

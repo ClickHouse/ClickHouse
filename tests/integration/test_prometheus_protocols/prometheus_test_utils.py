@@ -18,6 +18,7 @@ import prompb.types_pb2 as types_pb2
 import prompb.io.prometheus.write.v2.types_pb2 as write_v2_pb2
 
 
+WRITE_V1_CONTENT_TYPE = "application/x-protobuf;proto=prometheus.WriteRequest"
 WRITE_V2_CONTENT_TYPE = "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 
 
@@ -190,6 +191,14 @@ def check_remote_write_response(response):
     if response.status_code != requests.codes.no_content:
         print(f"Response: {response.text}")
         raise Exception(f"Got unexpected status code {response.status_code}")
+
+
+def assert_remote_write_v2_written_headers(response, samples_written):
+    assert response.headers.get("X-Prometheus-Remote-Write-Samples-Written") == str(
+        samples_written
+    )
+    assert response.headers.get("X-Prometheus-Remote-Write-Histograms-Written") == "0"
+    assert response.headers.get("X-Prometheus-Remote-Write-Exemplars-Written") == "0"
 
 
 # Prepares a protobuf of type remote_pb2.ReadRequest to read time series via the RemoteRead protocol.

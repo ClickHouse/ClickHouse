@@ -452,8 +452,16 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 }
 
-void PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Request & request)
+size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Request & request)
 {
+    size_t samples_written = 0;
+    for (const auto & element : request.timeseries())
+    {
+        if (element.exemplars_size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 exemplars are not supported");
+        samples_written += element.samples_size();
+    }
+
     const auto storage_id = time_series_storage->getStorageID();
     const auto num_time_series = countFloatTimeSeries(request);
     LOG_TRACE(
@@ -470,6 +478,7 @@ void PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Reque
         "{}: {} time series written",
         storage_id.getNameForLogs(),
         num_time_series);
+    return samples_written;
 }
 
 }

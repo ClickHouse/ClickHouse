@@ -3,7 +3,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
+    WRITE_V1_CONTENT_TYPE,
     WRITE_V2_CONTENT_TYPE,
+    assert_remote_write_v2_written_headers,
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     convert_time_series_to_write_v2_protobuf,
@@ -336,16 +338,16 @@ def test_remote_write_v2_skips_unsupported_data():
     )
     histogram_series.histograms.add(timestamp=start_time * 1000)
 
-    send_protobuf_to_remote_write(
+    response = get_response_to_remote_write(
         node.ip_address,
         9093,
         "/write",
         protobuf,
-        headers={
-            "Content-Type": WRITE_V2_CONTENT_TYPE,
-            "X-Prometheus-Remote-Write-Version": "2.0.0",
-        },
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
     )
+    assert response.status_code == requests.codes.no_content
+    assert_remote_write_v2_written_headers(response, 1)
     series = _read_samples("rw2_float_data", start_time, start_time + 1)
     assert len(series) == 1
     assert series[0].samples[0].value == 42.0
@@ -365,6 +367,7 @@ def test_remote_write_v2_invalid_first_symbol():
         content_type=WRITE_V2_CONTENT_TYPE,
     )
     assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
     assert node.query(
         "SELECT count() FROM timeSeriesMetrics(prometheus) "
         f"WHERE metric_family_name = '{metric_name}'"
@@ -423,3 +426,101 @@ def test_remote_write_v2_unknown_proto_parameter():
     )
     assert response.status_code == requests.codes.unsupported_media_type
     assert "Content-Type" in response.text
+    assert "X-Prometheus-Remote-Write-Samples-Written" not in response.headers
+    assert "X-Prometheus-Remote-Write-Histograms-Written" not in response.headers
+    assert "X-Prometheus-Remote-Write-Exemplars-Written" not in response.headers
+
+
+def test_remote_write_v2_disabled_setting():
+    start_time = 1724118600
+    v2_request = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": "rw2_disabled_setting"}, {start_time: 1.0})]
+    )
+    v2_response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?enable_prometheus_remote_write_v2=0",
+        v2_request,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert v2_response.status_code != requests.codes.no_content
+    assert "enable_prometheus_remote_write_v2" in v2_response.text
+    assert_remote_write_v2_written_headers(v2_response, 0)
+    assert node.query(
+        "SELECT count() FROM timeSeriesData(prometheus) "
+        "WHERE id IN (SELECT id FROM timeSeriesTags(prometheus) "
+        "WHERE metric_name = 'rw2_disabled_setting')"
+    ) == "0\n"
+
+    v1_request = convert_time_series_to_protobuf(
+        [({"__name__": "rw1_with_v2_disabled"}, {start_time: 7.0})]
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?enable_prometheus_remote_write_v2=0",
+        v1_request,
+    )
+    series = _read_samples("rw1_with_v2_disabled", start_time, start_time + 1)
+    assert len(series) == 1
+    assert series[0].samples[0].value == 7.0
+
+
+def test_remote_write_explicit_v1_content_type():
+    start_time = 1724118700
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "rw1_explicit_proto"}, {start_time: 3.0})]
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        headers={"Content-Type": WRITE_V1_CONTENT_TYPE},
+    )
+    series = _read_samples("rw1_explicit_proto", start_time, start_time + 1)
+    assert len(series) == 1
+    assert series[0].samples[0].value == 3.0
+
+
+def test_remote_write_v2_written_sample_count():
+    start_time = 1724118800
+    samples = {start_time + i: float(i) for i in range(3)}
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": "rw2_written_count"}, samples)]
+    )
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert response.status_code == requests.codes.no_content
+    assert_remote_write_v2_written_headers(response, 3)
+    series = _read_samples("rw2_written_count", start_time, start_time + 3)
+    assert len(series) == 1
+    assert len(series[0].samples) == 3
+
+
+def test_remote_write_v2_rejects_exemplars():
+    start_time = 1724118900
+    metric_name = "rw2_exemplars"
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": metric_name}, {start_time: 1.0})]
+    )
+    protobuf.timeseries[0].exemplars.add(timestamp=start_time * 1000, value=1.0)
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
+    series = _read_samples(metric_name, start_time, start_time + 1)
+    assert series == []

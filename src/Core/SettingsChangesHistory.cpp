@@ -102,6 +102,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
+            {"enable_prometheus_remote_write_v2", false, false, "New setting to accept Prometheus Remote Write 2.0 (`io.prometheus.write.v2.Request`) on Prometheus write handlers. Added an alias `allow_experimental_prometheus_remote_write_v2`."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

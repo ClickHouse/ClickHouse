@@ -99,7 +99,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-For HTTP API requests, enable `enable_time_series_table` in the profile of the API user.
+For HTTP API requests, enable `enable_time_series_table` in the profile of the API user. To accept Remote Write 2.0, also enable `enable_prometheus_remote_write_v2` in that profile.
 
 ### Configure the Prometheus API {#configure-prometheus-api}
 
@@ -164,6 +164,14 @@ remote_write:
 ```
 
 Prometheus sends samples to the `prometheus.metrics` table.
+
+Remote Write 1.0 is enabled by default. To accept Remote Write 2.0 (`io.prometheus.write.v2.Request`), enable `enable_prometheus_remote_write_v2` for the API user:
+
+```sql
+SET enable_prometheus_remote_write_v2 = 1;
+```
+
+Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata. ClickHouse drops native histograms from mixed requests. Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so senders cannot omit those histograms. ClickHouse rejects the whole request when exemplars are present. Senders can set `send_exemplars: false`.
 
 To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
 
