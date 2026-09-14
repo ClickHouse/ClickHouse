@@ -58,7 +58,12 @@ void SerializationVariantElement::insertRowsForAbsentElement(IColumn & inner_col
         return;
     }
 
-    inner_column.insertManyDefaults(num_rows);
+    /// `insertManyDefaults` reserves `size() + length`, which for a tuple or a map reserves every field, so
+    /// the per-row caller must not go through it.
+    if (num_rows == 1)
+        inner_column.insertDefault();
+    else
+        inner_column.insertManyDefaults(num_rows);
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -202,7 +207,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     else
     {
         /// There is no discriminators stream, so the element is absent from every row of the range: it can
-        /// happen after ALTER TABLE ADD COLUMN. A null map still owes a value for each of them.
+        /// happen after `ALTER TABLE ADD COLUMN`. A null map still owes a value for each of them.
         if (selected_subcolumn_is_null_map)
             insertRowsForAbsentElement(result_column, limit);
         settings.path.pop_back();
@@ -227,7 +232,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     /// A Nullable wrapper added by the extraction is unknown to nested_serialization, so its null map
     /// is filled here from the discriminators. An intrinsic Nullable belongs to nested_serialization,
-    /// which reads the element's own null map; other variants' rows become NULL via insertRowsForAbsentElement.
+    /// which reads the element's own null map; other variants' rows become `NULL` via `insertRowsForAbsentElement`.
     IColumn * inner_column = &result_column;
     if (nullable_added_by_extraction && isColumnNullable(result_column))
     {
@@ -434,7 +439,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
         return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 
     /// A null map is the one selection whose value for an absent element is not its default: 0 reads as
-    /// "not null", but the element is not there, so the extracted value is NULL and the map owes 1.
+    /// "not null", but the element is not there, so the extracted value is `NULL` and the map owes 1.
     const bool fill_absent_rows_with_null = absenceGoesIntoNullMap() && checkAndGetColumn<ColumnUInt8>(prev.get());
 
     /// If this variant is empty, fill result column with default values.

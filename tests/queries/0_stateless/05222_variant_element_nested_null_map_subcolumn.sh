@@ -148,6 +148,24 @@ INSERT INTO t_shared VALUES (3, 'not a tuple');
 OPTIMIZE TABLE t_shared FINAL;
 SELECT 'control shared variant', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null FROM t_shared ORDER BY id;
 
+-- The in-memory twin of the case above: with the value in the shared variant, the extraction yields a
+-- column of only the matching rows, which the subcolumn creator expands rather than a stream read.
+CREATE TABLE t_shared_mem (id UInt64, value Dynamic(max_types = 0)) ENGINE = Memory;
+INSERT INTO t_shared_mem VALUES (1, CAST(tuple(CAST(1, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
+INSERT INTO t_shared_mem VALUES (2, CAST(tuple(CAST(NULL, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
+INSERT INTO t_shared_mem VALUES (3, 'not a tuple');
+SELECT 'memory shared variant', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a AS v,
+       v IS NULL AS is_null, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null AS null_sub
+FROM t_shared_mem ORDER BY id;
+
+-- No row holds the requested type and nothing is in the shared variant, so the subcolumn is built from
+-- nothing at all rather than expanded from a partial one.
+CREATE TABLE t_absent_mem (id UInt64, value Dynamic) ENGINE = Memory;
+INSERT INTO t_absent_mem VALUES (1, 'not a tuple'), (2, CAST(5, 'UInt32'));
+SELECT 'memory absent type', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a AS v,
+       v IS NULL AS is_null, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null AS null_sub
+FROM t_absent_mem ORDER BY id;
+
 -- A JSON typed path whose type is a Variant, and a JSON dynamic path with a type hint.
 CREATE TABLE t_json (id UInt64, value JSON(t Variant(Tuple(a Nullable(UInt32), b String), String)))
     ENGINE = MergeTree ORDER BY id

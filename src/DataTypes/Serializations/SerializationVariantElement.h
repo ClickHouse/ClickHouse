@@ -26,9 +26,9 @@ private:
     /// so it must be removed before recursing into it. False when the requested type is
     /// intrinsically nullable, in which case nested_serialization requires that nullability.
     bool nullable_added_by_extraction;
-    /// True when the subcolumn read through this element is a bare UInt8 null map. It is the one
+    /// True when the subcolumn read through this element is a bare `UInt8` null map. It is the one
     /// subcolumn whose value for an absent element is not its default: the element is not there, so the
-    /// extracted value is NULL and the map must read 1 rather than 0.
+    /// extracted value is `NULL` and the map must read 1 rather than 0.
     bool selected_subcolumn_is_null_map;
 
     SerializationVariantElement(
@@ -47,7 +47,7 @@ private:
     {
     }
 
-    /// Appends num_rows rows for rows whose discriminator is not this element's.
+    /// Appends `num_rows` rows for rows whose discriminator is not this element's.
     void insertRowsForAbsentElement(IColumn & inner_column, size_t num_rows) const;
 
 public:
@@ -60,8 +60,8 @@ public:
         bool nullable_added_by_extraction_,
         bool selected_subcolumn_is_null_map_ = false);
 
-    /// The null-map substreams hasSubcolumnForPath accepts. NullMapHidden is deliberately excluded there
-    /// and so is not one of them.
+    /// The null-map substreams `hasSubcolumnForPath` accepts. `NullMapHidden` is deliberately excluded
+    /// there and so is not one of them.
     static bool isNullMapSubstream(Substream::Type type);
     size_t allocatedBytes() const override;
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
@@ -112,8 +112,8 @@ public:
         bool selected_subcolumn_is_null_map;
 
         /// Absence of the element goes into the selection itself only when it is a null map and the
-        /// extraction did not wrap the element in Nullable, where absence is already expressed as NULL.
-        /// The callers additionally require the selection to still be a bare UInt8.
+        /// extraction did not wrap the element in `Nullable`, where absence is already expressed as `NULL`.
+        /// The callers additionally require the selection to still be a bare `UInt8`.
         bool absenceGoesIntoNullMap() const { return selected_subcolumn_is_null_map && !make_nullable; }
 
     public:

@@ -23,9 +23,9 @@ private:
     /// LowCardinality(Nullable). Only forwarded to the variant element serialization of the requested
     /// type; see SerializationVariantElement::nullable_added_by_extraction.
     bool nullable_added_by_extraction;
-    /// True when nested_subcolumn is a bare UInt8 null map of the requested type, e.g. `Tuple(a
-    /// Nullable(UInt32))`.a.null. Unlike is_null_map_subcolumn, which is the null map OF the element,
-    /// this one is read through the element; see SerializationVariantElement.
+    /// True when `nested_subcolumn` is a bare `UInt8` null map of the requested type, e.g. `Tuple(a
+    /// Nullable(UInt32))`.a.null. Unlike `is_null_map_subcolumn`, which is the null map OF the element,
+    /// this one is read through the element; see `SerializationVariantElement`.
     bool selected_subcolumn_is_null_map;
 
     SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)

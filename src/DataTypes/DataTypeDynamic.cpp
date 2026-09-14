@@ -1017,9 +1017,9 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
     /// nullability it will be handed at read time is that wrapper or the requested type's own.
     bool nullable_added_by_extraction
         = !isNullableOrLowCardinalityNullable(subcolumn_type_before_wrap) && isNullableOrLowCardinalityNullable(res->data.type);
-    /// A bare UInt8 null map read through the element is the one subcolumn whose absent value is not its
-    /// default: absence cannot be expressed as NULL here, so it must read 1. An element wrapped in
-    /// Nullable already expresses it, and an Array or Map below makes the map Array(UInt8), whose [] is right.
+    /// A bare `UInt8` null map read through the element is the one subcolumn whose absent value is not its
+    /// default: absence cannot be expressed as `NULL` here, so it must read 1. An element wrapped in
+    /// `Nullable` already expresses it, and an `Array` or `Map` below makes the map `Array(UInt8)`, whose [] is right.
     const bool selected_subcolumn_is_null_map
         = nested_selection_is_null_map && !make_subcolumn_nullable && isUInt8(subcolumn_type_before_wrap);
     res->data.serialization = SerializationDynamicElement::create(

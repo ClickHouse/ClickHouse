@@ -41,6 +41,11 @@ control absent part	3	0
 control shared variant	1	0
 control shared variant	2	1
 control shared variant	3	1
+memory shared variant	1	1	0	0
+memory shared variant	2	\N	1	1
+memory shared variant	3	\N	1	1
+memory absent type	1	\N	1	1
+memory absent type	2	\N	1	1
 json typed path	1	0
 json typed path	2	1
 json typed path	3	1

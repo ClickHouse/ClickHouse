@@ -151,7 +151,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization
 {
     auto result = std::make_unique<IDataType::SubcolumnInfo>();
     /// The selected leaf is the end of the whole path: when the rest of the name was resolved dynamically
-    /// it lives in nested, while path[prefix_len - 1] is only the prefix the dynamic type matched.
+    /// it lives in `nested`, while `path[prefix_len - 1]` is only the prefix the dynamic type matched.
     const ISerialization::Substream * selected_terminal
         = nested && !nested->substreams_path.empty() ? &nested->substreams_path.back() : nullptr;
     result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
@@ -212,7 +212,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                         if (auto creator = tmp_subpath[i].creator)
                         {
                             /// Offer the creator the leaf that was really selected, which lives at the end
-                            /// of the dynamically resolved path, not at prefix_len - 1 of this one.
+                            /// of the dynamically resolved path, not at `prefix_len - 1` of this one.
                             if (!dynamic_subcolumn_info->substreams_path.empty())
                             {
                                 if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn_info->substreams_path.back()))
