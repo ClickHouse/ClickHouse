@@ -19,6 +19,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
@@ -3237,6 +3238,80 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
+/// With a `Variant`, `Dynamic` or JSON argument the real function is built per stored alternative at
+/// execution time, so an alternative that only the opposite side holds throws there even when the
+/// function is total on every alternative this side holds.
+bool typeAdaptsPerRow(const DataTypePtr & type)
+{
+    bool adapts = false;
+    IDataType::ChildCallback check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        adapts = adapts || which.isVariant() || which.isDynamic() || which.isObject();
+    };
+    check(*type); /// `forEachChild` visits the nested types, not this one
+    type->forEachChild(check);
+    return adapts;
+}
+
+/// Total on its argument types, i.e. it has a value for every value of them and cannot throw.
+bool functionIsTotal(const ActionsDAG::Node & node)
+{
+    const auto & name = node.function_base->getName();
+
+    /// Read the boolean value and the null map only; a non-boolean argument is rejected for every row
+    /// alike, at analysis time.
+    if (name == "and" || name == "or" || name == "not")
+        return true;
+
+    /// Return `UInt8` for every argument type: they read a discriminator, a dictionary index or a null
+    /// map, never the value.
+    if (name == "isNull" || name == "isNotNull")
+        return true;
+
+    /// The JOIN runtime filter probes a set built from the same common type its key argument is cast to,
+    /// so its per-row set lookup neither parses nor narrows the value. It is total only while
+    /// `joinRuntimeFilter` keeps normalizing both sides to that one type.
+    if (name == "__applyFilter")
+        return true;
+
+    const bool is_comparison = name == "equals" || name == "notEquals" || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    /// A comparison across type domains parses one side per row and can fail there.
+    return is_comparison && node.children.size() == 2
+        && !comparisonCanThrow(node.children[0]->result_type, node.children[1]->result_type);
+}
+
+/// A conjunct that is safe to evaluate on values its own table never held.
+bool conjunctIsTotal(const ActionsDAG::Node * conjunct)
+{
+    std::vector<const ActionsDAG::Node *> to_visit{conjunct};
+    std::unordered_set<const ActionsDAG::Node *> visited{conjunct};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        /// Every function's arguments are visited as its children, so one check here covers them all.
+        if (typeAdaptsPerRow(node->result_type))
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!functionIsTotal(*node))
+                return false;
+        }
+        else if (node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ALIAS
+                 && node->type != ActionsDAG::ActionType::COLUMN)
+            return false;
+
+        for (const auto * child : node->children)
+            if (visited.insert(child).second)
+                to_visit.push_back(child);
+    }
+    return true;
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
@@ -3626,6 +3701,20 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+
+    /// A both-streams conjunct is copied to the opposite side with its key column substituted for the
+    /// equivalent one, so that copy runs on values the side the conjunct names never held. Only a
+    /// conjunct that is total may do that: `t2.c0 LIKE t2.c0` parses its pattern per row, and a value
+    /// held only by `t3` can be an invalid pattern.
+    NodeRawConstPtrs both_streams_total_conjunctions;
+    for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+    {
+        if (conjunctIsTotal(conjunct))
+            both_streams_total_conjunctions.push_back(conjunct);
+        else
+            both_streams_push_down_conjunctions.rejected.push_back(conjunct);
+    }
+    both_streams_push_down_conjunctions.allowed = std::move(both_streams_total_conjunctions);
 
     /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
     /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
