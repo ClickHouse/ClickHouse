@@ -8,8 +8,6 @@ LowCardinality(UInt8)
 1
 1
 -- the analyzer
-LowCardinality(UInt8)	LowCardinality(UInt8)
-LowCardinality(UInt8)
 ('a',1)
 ('b',0)
 ['a']

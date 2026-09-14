@@ -66,8 +66,6 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
-    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override { return key_generator; }
-
     bool supportWritingWithAppend() const override;
 
     const std::string & getPath() const override;
@@ -122,7 +120,6 @@ public:
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
-    int64_t getDeadBlobsQueueEstimate() override;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction

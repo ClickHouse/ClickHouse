@@ -1,9 +1,7 @@
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Formats/formatBlock.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -21,11 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSnappyMode snappy_mode;
-}
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -84,18 +77,8 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
 {
     Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
-    auto compression_method = chooseCompressionMethod(uri.getPath(), http_request_compression_method_str);
-    /// When the compression method came from the response's `Content-Encoding` header,
-    /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
-    /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
-    /// from the URL path (for example `http://.../data.snappy`), respect the user's
-    /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
-    /// with generic file/url reads.
-    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
-        ? SnappyMode::Framed
-        : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));
@@ -351,69 +334,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
     factory.registerSource("http", create_table_source, Documentation{
-        .description = R"DOCS_MD(
-# HTTP(S) dictionary source
-
-Working with an HTTP(S) server depends on [how the dictionary is stored in memory](/reference/statements/create/dictionary/layouts/overview). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(HTTP(
-    url 'http://[::1]/os.tsv'
-    format 'TabSeparated'
-    credentials(user 'user' password 'password')
-    headers(header(name 'API-KEY' value 'key'))
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <http>
-        <url>http://[::1]/os.tsv</url>
-        <format>TabSeparated</format>
-        <credentials>
-            <user>user</user>
-            <password>password</password>
-        </credentials>
-        <headers>
-            <header>
-                <name>API-KEY</name>
-                <value>key</value>
-            </header>
-        </headers>
-    </http>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](/reference/settings/server-settings/settings/other#openssl) in the server configuration.
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `url` | The source URL. |
-| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-| `credentials` | Basic HTTP authentication. Optional. |
-| `user` | Username required for the authentication. |
-| `password` | Password required for the authentication. |
-| `headers` | All custom HTTP headers entries used for the HTTP request. Optional. |
-| `header` | Single HTTP header entry. |
-| `name` | Identifier name used for the header send on the request. |
-| `value` | Value set for a specific identifier name. |
-
-When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
-)DOCS_MD",
+        .description = "Obtains dictionary data from an HTTP(S) endpoint in one of the supported formats.",
         .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
         .related = {"file"}});
 }
