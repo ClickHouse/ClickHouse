@@ -69,6 +69,9 @@ INNER JOIN
 -- The compatibility also switches EXPLAIN to the legacy format, which prints no step actions.
 SET compatibility = '26.6';
 SET explain_query_plan_default = 'pretty';
+-- The compatibility also resets distributed_plan_fallback_to_local_execution to its old default (off),
+-- which makes the plain SELECT of the section label throw instead of falling back.
+SET distributed_plan_fallback_to_local_execution = 1;
 
 SELECT '-- compatibility disables the tree in both window shapes';
 SELECT explain FROM (EXPLAIN SELECT sum(i) OVER w AS s FROM t_window_tree_dist WINDOW w AS (ORDER BY n ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
