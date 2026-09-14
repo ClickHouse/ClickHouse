@@ -92,6 +92,28 @@ UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached)
         number_of_segments -= 1;
     }
 
+    /// A known detach reason is authoritative in detached mode. Do not fall back to parsing the whole name as a regular part.
+    if (is_detached)
+    {
+        for (std::string_view known_prefix : DetachedPartInfo::DETACH_REASONS)
+        {
+            if (data.starts_with(known_prefix)
+                && known_prefix.size() < right
+                && data[known_prefix.size()] == '_')
+            {
+                const auto part_name = data.substr(known_prefix.size() + 1, right - known_prefix.size() - 1);
+                if (auto info = tryParseMergeTreePartInfo(part_name))
+                {
+                    unpacked.prefix = known_prefix;
+                    unpacked.part_info = std::move(info.value());
+                    return unpacked;
+                }
+
+                throwInvalidPartName(data);
+            }
+        }
+    }
+
     switch (number_of_segments)
     {
     case 6: /// prefix_partition_min_max_level_mutation
@@ -102,28 +124,6 @@ UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached)
     }
     case 5: /// prefix_partition_min_max_level or partition_min_max_level_mutation
     {
-        if (is_detached)
-        {
-            for (std::string_view known_prefix : DetachedPartInfo::DETACH_REASONS)
-            {
-                if (data.starts_with(known_prefix)
-                    && known_prefix.size() < right
-                    && data[known_prefix.size()] == '_')
-                {
-                    if (auto info = tryParseMergeTreePartInfo(data.substr(
-                            known_prefix.size() + 1, right - known_prefix.size() - 1)))
-                    {
-                        unpacked.prefix = known_prefix;
-                        unpacked.part_info = std::move(info.value());
-                        break;
-                    }
-                }
-            }
-
-            if (!unpacked.prefix.empty())
-                break;
-        }
-
         if (auto info = tryParseMergeTreePartInfo(data.substr(0, right)))
         {
             unpacked.prefix = "";
