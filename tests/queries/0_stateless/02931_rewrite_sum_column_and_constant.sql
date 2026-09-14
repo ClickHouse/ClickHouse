@@ -214,3 +214,16 @@ EXPLAIN SYNTAX SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
 
 
 DROP TABLE IF EXISTS test_table;
+
+-- Coverage for RewriteSumFunctionWithSumAndCountVisitor.cpp: literal-first path (column_id=1,
+-- lines 43-44 and 108-124). sum(k + col) → plus(multiply(k, count(col)), sum(col)) when
+-- the literal is the first operand. Only runs when enable_analyzer=0 (legacy AST path).
+SET enable_analyzer = 0;
+SET optimize_arithmetic_operations_in_aggregate_functions = 1;
+
+EXPLAIN SYNTAX SELECT sum(3 + number) FROM numbers(20);
+SELECT sum(3 + number) FROM numbers(20);
+
+-- Verify result matches unoptimized form
+SET optimize_arithmetic_operations_in_aggregate_functions = 0;
+SELECT sum(3 + number) FROM numbers(20);
