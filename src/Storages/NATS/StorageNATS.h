@@ -35,8 +35,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode,
-        bool authentication_determined_by_table_,
-        bool fresh_definition_);
+        bool authentication_determined_by_table_);
 
     ~StorageNATS() override;
 
@@ -125,7 +124,6 @@ private:
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
-    bool fresh_definition;
 
     void scheduleStreamingTasksImpl() override;
 
