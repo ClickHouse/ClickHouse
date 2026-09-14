@@ -3,6 +3,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <cstring>
 #include <memory>
@@ -1230,6 +1231,60 @@ TEST(AzureReadBigAt, WithinKnownObject)
 
     ASSERT_EQ(bytes_read, destination.size());
     assertCountsUpFromZero(destination);
+}
+
+/// The endpoint answers a positioned read of 16 bytes with `200 OK` and the whole 32-byte object.
+/// The reported length of the body must not be trusted: only the bytes the destination has room
+/// for may be copied, and the memory after the destination must stay untouched.
+TEST(AzureReadBigAt, DoesNotTrustResponseLength)
+{
+    constexpr size_t requested = 16;
+    auto buffer = makeFreshBuffer(/* max_response_size */ 32, /* blob_size */ 32, /* ignore_range */ true);
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    struct Storage
+    {
+        std::array<char, requested> payload{};
+        std::array<char, requested> canary{};
+    } storage;
+    std::fill(storage.canary.begin(), storage.canary.end(), '\xCD');
+
+    const size_t bytes_read = buffer->readBigAt(storage.payload.data(), requested, /* range_begin */ 0, {});
+
+    ASSERT_EQ(bytes_read, requested);
+    for (size_t i = 0; i < requested; ++i)
+        ASSERT_EQ(static_cast<uint8_t>(storage.payload[i]), static_cast<uint8_t>(i)) << "at position " << i;
+    for (char byte : storage.canary)
+        ASSERT_EQ(byte, '\xCD');
+}
+
+/// The endpoint answers a positioned read of 16 bytes with only 8 of them, and the single download
+/// attempt allowed is not retried: `readBigAt` must return the accumulated byte count, not the
+/// requested size, and must leave the unread tail of the destination untouched.
+TEST(AzureReadBigAt, ReturnsAccumulatedCountOnTruncatedResponse)
+{
+    constexpr size_t requested = 16;
+    constexpr size_t served = 8;
+    auto buffer = makeFreshBuffer(/* max_response_size */ served, /* blob_size */ requested);
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    struct Storage
+    {
+        std::array<char, requested> payload{};
+        std::array<char, requested> canary{};
+    } storage;
+    std::fill(storage.payload.begin(), storage.payload.end(), '\xCD');
+    std::fill(storage.canary.begin(), storage.canary.end(), '\xCD');
+
+    const size_t bytes_read = buffer->readBigAt(storage.payload.data(), requested, /* range_begin */ 0, {});
+
+    ASSERT_EQ(bytes_read, served);
+    for (size_t i = 0; i < served; ++i)
+        ASSERT_EQ(static_cast<uint8_t>(storage.payload[i]), static_cast<uint8_t>(i)) << "at position " << i;
+    for (size_t i = served; i < requested; ++i)
+        ASSERT_EQ(storage.payload[i], '\xCD') << "at position " << i;
+    for (char byte : storage.canary)
+        ASSERT_EQ(byte, '\xCD');
 }
 
 /// The `ETag` response header is optional, and `Azure::ETag::ToString` aborts the process when the
@@ -3472,3 +3527,5 @@ TEST(PlainRewritableLayoutScratch, ScratchBlobsAreNotUnderTheRootFiles)
 }
 
 #endif
+||||||| a5efd3a38a15
+=======
