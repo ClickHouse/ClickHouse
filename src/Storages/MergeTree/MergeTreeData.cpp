@@ -6651,6 +6651,20 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
 
+bool MergeTreeData::implicitIndicesChanged(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    auto implicit_index_names = [](const IndicesDescription & indices)
+    {
+        std::set<String> names;
+        for (const auto & index : indices)
+            if (index.is_implicitly_created)
+                names.insert(index.name);
+        return names;
+    };
+
+    return implicit_index_names(old_metadata.secondary_indices) != implicit_index_names(new_metadata.secondary_indices);
+}
+
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)
 {
     old_and_new_names.push_back({part_name, old_dir, new_dir, disk});

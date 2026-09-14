@@ -514,8 +514,19 @@ void StorageMergeTree::alter(
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        if (statistics_changed)
+        /// `changeSettings` installs the old metadata plus the new settings. When the ALTER also
+        /// changed derived metadata (implicit statistics, or implicit skip indices gated by a
+        /// mutable setting such as `enable_block_number_column`), the running table must get the
+        /// recomputed metadata too, otherwise it only appears after `DETACH` / `ATTACH` or restart.
+        if (statistics_changed || implicitIndicesChanged(old_metadata, new_metadata))
         {
+            /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
+            /// into `new_metadata` so that installing it does not revert the index filename policy.
+            auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+            new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+            for (auto & index : new_metadata.secondary_indices)
+                index.escape_filenames = committed_metadata->escape_index_filenames;
+
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);

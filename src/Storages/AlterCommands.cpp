@@ -1334,8 +1334,16 @@ void AlterCommand::apply(
             effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
             effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
             effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
-            effective_settings.applyChange({"add_minmax_index_for_block_number_column", metadata.add_minmax_index_for_block_number_column}, context, /*is_loading_from_existing_metadata=*/true);
-            effective_settings.applyChange({"add_minmax_index_for_block_offset_column", metadata.add_minmax_index_for_block_offset_column}, context, /*is_loading_from_existing_metadata=*/true);
+
+            /// The two block-column flags in the metadata hold the EFFECTIVE value, i.e. the setting
+            /// gated by `enable_block_number_column` / `enable_block_offset_column`. A `false` there
+            /// may only mean that the gate was closed, so it must not override a stored `1` of the
+            /// read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1` never
+            /// turns the implicit index on in the running table (it appeared only after reload).
+            if (metadata.add_minmax_index_for_block_number_column)
+                effective_settings.applyChange({"add_minmax_index_for_block_number_column", true}, context, /*is_loading_from_existing_metadata=*/true);
+            if (metadata.add_minmax_index_for_block_offset_column)
+                effective_settings.applyChange({"add_minmax_index_for_block_offset_column", true}, context, /*is_loading_from_existing_metadata=*/true);
 
             metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
             metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
