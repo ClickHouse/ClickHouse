@@ -1359,6 +1359,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
+    bool ambiguous_in_join_tree = false;
     auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
@@ -1374,6 +1375,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
+        ambiguous_in_join_tree |= res.ambiguous_in_join_tree;
 
         return std::move(res.resolved_identifier);
     };
@@ -1408,6 +1410,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
 
+    if (ambiguous_in_join_tree)
+        return IdentifierResolveResult::ambiguousInJoinTree();
+
     /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
       * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
       * is the table name of one side and the database name of the other). The database-qualified
@@ -1421,6 +1426,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
         else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
             left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+
+        if (ambiguous_in_join_tree)
+            return IdentifierResolveResult::ambiguousInJoinTree();
     }
 
     if (!identifier_lookup.isExpressionLookup())
@@ -1623,6 +1631,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
+        }
+        else if (identifier_lookup.allow_ambiguous_join_tree_identifier)
+        {
+            return IdentifierResolveResult::ambiguousInJoinTree();
         }
         else
         {
@@ -1852,6 +1864,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpressionNodeTyped(), scope);
+    if (resolve_result.ambiguous_in_join_tree)
+        return resolve_result;
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
