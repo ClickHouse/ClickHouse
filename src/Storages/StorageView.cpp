@@ -404,6 +404,7 @@ void StorageView::alter(
     auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
@@ -411,10 +412,11 @@ void StorageView::alter(
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.addViewDependency(*new_metadata.definer, table_id);
-    else
-        instance.removeViewDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
 }

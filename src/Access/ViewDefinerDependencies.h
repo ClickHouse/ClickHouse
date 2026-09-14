@@ -24,8 +24,7 @@ public:
     /// Get the global instance
     static ViewDefinerDependencies & instance();
 
-    /// Add a view dependency for a definer. A view has exactly one definer, so
-    /// re-registering a view moves it to `definer` and releases the one it had before.
+    /// Add a view dependency for a definer
     void addViewDependency(const String & definer, const StorageID & view_id);
 
     /// Remove all dependencies for a specific view (when view is dropped)
@@ -39,10 +38,6 @@ public:
 
 private:
     ViewDefinerDependencies() = default;
-
-    /// Releases `view_id` from its definer, collecting an auto-created `<user>:definer`
-    /// account that no view references any more. Call with `mutex` held.
-    void unregisterView(const StorageID & view_id);
 
     std::unordered_map<String, ViewSet> definer_to_views;
 
