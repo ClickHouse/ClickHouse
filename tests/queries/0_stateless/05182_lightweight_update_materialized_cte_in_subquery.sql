@@ -4,6 +4,9 @@
 
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
+-- The default `force_materialized_cte = 1` rejects materialized CTEs in a lightweight UPDATE / DELETE before
+-- planning; this test exercises the mutation plan itself, so the guard is disabled.
+SET force_materialized_cte = 0;
 SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
