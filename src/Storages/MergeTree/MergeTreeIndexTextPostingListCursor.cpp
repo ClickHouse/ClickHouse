@@ -256,6 +256,14 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count);
     }
 
+    if (num_blocks != max_blocks_count)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: number of blocks {} does not match "
+            "the expected {} for segment with {} documents",
+            num_blocks, max_blocks_count, segment.doc_count);
+    }
+
     segment.block_last_row_ids.resize(num_blocks);
     segment.block_offsets.resize(num_blocks);
 

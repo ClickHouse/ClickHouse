@@ -17,7 +17,10 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128) GRANULARITY 1
+    -- posting_list_block_size is pinned: with a smaller randomized value the posting list of a token
+    -- is split into several blocks, and each block is a separate postings cache entry, which changes
+    -- the expected cache hit/miss counts.
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128, posting_list_block_size = 128) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY (id)

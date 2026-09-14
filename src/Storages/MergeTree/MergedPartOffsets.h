@@ -123,6 +123,7 @@ private:
     PODArray<Page> pages;
     PODArray<UInt64> current_page_values;
     Arena arena;
+    size_t num_values = 0;
 
 public:
     /// @param val The _part_offset value to insert (must be greater than all previously inserted values)
@@ -133,7 +134,11 @@ public:
 
         chassert(current_page_values.empty() || current_page_values.back() < val);
         current_page_values.push_back(val);
+        ++num_values;
     }
+
+    /// Number of inserted values.
+    size_t size() const { return num_values; }
 
     /// Compresses and finalizes the current page of values.
     /// Called automatically when a page is full or at the end to finalize the structure.
@@ -212,6 +217,14 @@ public:
         chassert(mode == MappingMode::Enabled);
         chassert(part_index < offset_maps.size());
         return offset_maps[part_index][part_offset];
+    }
+
+    /// Number of rows of the part, which is the number of its mapped offsets.
+    size_t getPartRowsCount(UInt64 part_index) const
+    {
+        chassert(mode == MappingMode::Enabled);
+        chassert(part_index < offset_maps.size());
+        return offset_maps[part_index].size();
     }
 
     /// Finalizes all _part_offset maps and releases temporary buffers.
