@@ -6,6 +6,7 @@
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -64,6 +66,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     }
 
     LDAPClient::RoleSearchParamsList role_search_params_cfg;
+    std::vector<GroupAllowList> group_allow_lists_cfg;
     if (has_role_mapping)
     {
         Poco::Util::AbstractConfiguration::Keys all_keys;
@@ -71,12 +74,17 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         for (const auto & key : all_keys)
         {
             if (key == "role_mapping" || key.starts_with("role_mapping["))
-                parseLDAPRoleSearchParams(role_search_params_cfg.emplace_back(), config, prefix_str + key);
+            {
+                auto & role_mapping = role_search_params_cfg.emplace_back();
+                parseLDAPRoleSearchParams(role_mapping, config, prefix_str + key);
+                group_allow_lists_cfg.emplace_back(buildGroupAllowList(role_mapping));
+            }
         }
     }
 
     ldap_server_name = ldap_server_name_cfg;
     role_search_params.swap(role_search_params_cfg);
+    group_allow_lists.swap(group_allow_lists_cfg);
     common_role_names.swap(common_roles_cfg);
 
     users_external_roles.clear();
@@ -92,6 +100,32 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
                 this->processRoleChange(change.id, change.entity);
         }
     );
+}
+
+
+LDAPAccessStorage::GroupAllowList LDAPAccessStorage::buildGroupAllowList(const LDAPClient::RoleSearchParams & role_mapping)
+{
+    GroupAllowList allow_list;
+
+    for (const auto & group : role_mapping.groups)
+    {
+        if (LDAPClient::RoleSearchParams::isGroupDN(group))
+        {
+            /// Both were verified by `parseLDAPRoleSearchParams`, the only producer of `RoleSearchParams`.
+            const auto normalized_dn = LDAPClient::normalizeDN(group);
+            const auto rdn_value = LDAPClient::extractRDNValue(group, role_mapping.rdn_attribute);
+            if (!normalized_dn || !rdn_value)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Group DN '{}' passed validation but cannot be normalized", group);
+
+            allow_list.dn_groups.emplace(*normalized_dn, *rdn_value);
+        }
+        else
+        {
+            allow_list.plain_groups.emplace(toLowerCopyASCII(group), group);
+        }
+    }
+
+    return allow_list;
 }
 
 
@@ -312,16 +346,65 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
     if (external_roles.size() != role_search_params.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to map external roles");
 
+    if (group_allow_lists.size() != role_search_params.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Group allow-lists are out of sync with role mappings");
+
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
         const auto & external_role_set = external_roles[i];
-        const auto & prefix = role_search_params[i].prefix;
+        const auto & role_mapping = role_search_params[i];
+        const auto & allow_list = group_allow_lists[i];
+        const auto & prefix = role_mapping.prefix;
 
         for (const auto & external_role : external_role_set)
         {
-            if (prefix.size() < external_role.size() && external_role.starts_with(prefix))
+            /// Pipeline: value -> [DN-form group match | `rdn_attribute` extraction -> plain group match] -> `prefix` -> role name.
+            String value;
+
+            bool matched_dn_group = false;
+            if (!allow_list.dn_groups.empty())
             {
-                role_names.emplace(external_role, prefix.size());
+                if (const auto normalized_dn = LDAPClient::normalizeDN(external_role))
+                {
+                    const auto it = allow_list.dn_groups.find(*normalized_dn);
+                    if (it != allow_list.dn_groups.end())
+                    {
+                        value = it->second;
+                        matched_dn_group = true;
+                    }
+                }
+            }
+
+            if (!matched_dn_group)
+            {
+                value = external_role;
+
+                if (!role_mapping.rdn_attribute.empty())
+                {
+                    const auto rdn_value = LDAPClient::extractRDNValue(external_role, role_mapping.rdn_attribute);
+                    if (!rdn_value)
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not a DN with a '{}' RDN", external_role, role_mapping.rdn_attribute);
+                        continue;
+                    }
+                    value = *rdn_value;
+                }
+
+                if (!role_mapping.groups.empty())
+                {
+                    const auto it = allow_list.plain_groups.find(toLowerCopyASCII(value));
+                    if (it == allow_list.plain_groups.end())
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not in the 'groups' list", external_role);
+                        continue;
+                    }
+                    value = it->second;
+                }
+            }
+
+            if (prefix.size() < value.size() && value.starts_with(prefix))
+            {
+                role_names.emplace(value, prefix.size());
             }
         }
     }
@@ -378,6 +461,14 @@ String LDAPAccessStorage::getStorageParamsJSON() const
         role_mapping_json.set("search_filter", role_mapping.search_filter);
         role_mapping_json.set("attribute", role_mapping.attribute);
         role_mapping_json.set("prefix", role_mapping.prefix);
+        role_mapping_json.set("rdn_attribute", role_mapping.rdn_attribute);
+
+        Poco::JSON::Array groups_json;
+        for (const auto & group : role_mapping.groups)
+        {
+            groups_json.add(group);
+        }
+        role_mapping_json.set("groups", groups_json);
 
         String scope;
         switch (role_mapping.scope)

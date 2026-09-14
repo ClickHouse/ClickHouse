@@ -13,6 +13,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <optional>
+#include <set>
 #include <utility>
 
 namespace DB
@@ -325,9 +326,71 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
     parseLDAPSearchParams(params, config, prefix);
 
     const bool has_prefix = config.has(prefix + ".prefix");
+    const bool has_rdn_attribute = config.has(prefix + ".rdn_attribute");
+    const bool has_groups = config.has(prefix + ".groups");
 
     if (has_prefix)
         params.prefix = config.getString(prefix + ".prefix");
+
+    if (has_rdn_attribute)
+    {
+        params.rdn_attribute = config.getString(prefix + ".rdn_attribute");
+        if (params.rdn_attribute.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'rdn_attribute' entry in '{}' section", prefix);
+    }
+
+    if (has_groups)
+    {
+        Poco::Util::AbstractConfiguration::Keys group_keys;
+        config.keys(prefix + ".groups", group_keys);
+
+        /// Normalized forms seen so far: ASCII-lower-cased plain names and `normalizeDN` results of DNs.
+        /// The two kinds cannot collide because only the latter contain `=`.
+        std::set<String> normalized_groups;
+
+        for (const auto & key : group_keys)
+        {
+            if (key != "group" && !key.starts_with("group["))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown entry '{}' in '{}.groups' section, only 'group' entries are allowed", key, prefix);
+
+            const auto group = config.getString(prefix + ".groups." + key);
+            if (group.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'group' entry in '{}.groups' section", prefix);
+
+            String normalized_group;
+            if (LDAPClient::RoleSearchParams::isGroupDN(group))
+            {
+                if (params.rdn_attribute.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section is a DN, which requires 'rdn_attribute' to be set", group, prefix);
+
+                const auto normalized_dn = LDAPClient::normalizeDN(group);
+                if (!normalized_dn)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group '{}' in '{}.groups' section is not a valid DN", group, prefix);
+
+                if (!LDAPClient::extractRDNValue(group, params.rdn_attribute))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group DN '{}' in '{}.groups' section has no '{}' RDN", group, prefix, params.rdn_attribute);
+
+                normalized_group = *normalized_dn;
+            }
+            else
+            {
+                normalized_group = toLowerCopyASCII(group);
+            }
+
+            if (!normalized_groups.emplace(std::move(normalized_group)).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate group '{}' in '{}.groups' section", group, prefix);
+
+            params.groups.push_back(group);
+        }
+    }
+
+    /// Without an allow-list or a prefix every RDN value of every group the user belongs to would be
+    /// tried as a role name, which makes any LDAP group with a matching name grant a ClickHouse role.
+    if (!params.rdn_attribute.empty() && params.groups.empty() && params.prefix.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'rdn_attribute' in '{}' section requires a non-empty 'groups' list or a non-empty 'prefix'", prefix);
 }
 
 void ExternalAuthenticators::resetImpl()

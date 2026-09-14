@@ -3,11 +3,14 @@
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <algorithm>
 #include <mutex>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -55,6 +58,15 @@ void LDAPClient::RoleSearchParams::updateHash(SipHash & hash) const
 {
     SearchParams::updateHash(hash);
     ::updateHash(hash, prefix);
+    ::updateHash(hash, rdn_attribute);
+
+    /// The order of the `groups` entries is irrelevant for the mapping, so hash them sorted:
+    /// reordering the list must not invalidate cached authentication results.
+    std::vector<String> sorted_groups = groups;
+    std::sort(sorted_groups.begin(), sorted_groups.end());
+    ::updateHash(hash, sorted_groups.size());
+    for (const auto & group : sorted_groups)
+        ::updateHash(hash, group);
 }
 
 void LDAPClient::Params::updateHash(SipHash & hash) const
@@ -211,6 +223,83 @@ void LDAPClient::handleError(int result_code, String text)
 
         throw Exception::createDeprecated(text, ErrorCodes::LDAP_ERROR);
     }
+}
+
+/// The DN parsing routines below do not touch any `LDAP *` handle or library-global state
+/// (they only allocate), so they are not serialized through `ldap_global_mutex`.
+
+std::optional<String> LDAPClient::extractRDNValue(const String & dn, const String & rdn_attribute)
+{
+    LDAPDN parsed_dn = nullptr;
+
+    SCOPE_EXIT({
+        if (parsed_dn)
+        {
+            ldap_dnfree(parsed_dn);
+            parsed_dn = nullptr;
+        }
+    });
+
+    /// An empty string is a valid (root) DN for `ldap_str2dn` and yields a null `parsed_dn`.
+    if (ldap_str2dn(dn.c_str(), &parsed_dn, LDAP_DN_FORMAT_LDAPV3) != LDAP_SUCCESS || !parsed_dn)
+        return std::nullopt;
+
+    /// RDNs are ordered from the most specific one; the first matching attribute type wins.
+    for (size_t i = 0; parsed_dn[i]; ++i)
+    {
+        const LDAPRDN rdn = parsed_dn[i];
+        for (size_t j = 0; rdn[j]; ++j)
+        {
+            const LDAPAVA & ava = *rdn[j];
+
+            /// `#hex`-encoded (BER) values are not names.
+            if (ava.la_flags & LDAP_AVA_BINARY)
+                continue;
+
+            if (!ava.la_attr.bv_val || !ava.la_value.bv_val)
+                continue;
+
+            if (boost::iequals(std::string_view(ava.la_attr.bv_val, ava.la_attr.bv_len), rdn_attribute))
+                return String(ava.la_value.bv_val, ava.la_value.bv_len);
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<String> LDAPClient::normalizeDN(const String & dn)
+{
+    LDAPDN parsed_dn = nullptr;
+
+    SCOPE_EXIT({
+        if (parsed_dn)
+        {
+            ldap_dnfree(parsed_dn);
+            parsed_dn = nullptr;
+        }
+    });
+
+    if (ldap_str2dn(dn.c_str(), &parsed_dn, LDAP_DN_FORMAT_LDAPV3) != LDAP_SUCCESS || !parsed_dn)
+        return std::nullopt;
+
+    char * raw_str = nullptr;
+
+    SCOPE_EXIT({
+        if (raw_str)
+        {
+            ldap_memfree(raw_str);
+            raw_str = nullptr;
+        }
+    });
+
+    /// Serialization of a successfully parsed DN can only fail on allocation failure; do not degrade silently.
+    const int rc = ldap_dn2str(parsed_dn, &raw_str, LDAP_DN_FORMAT_LDAPV3);
+    if (rc != LDAP_SUCCESS || !raw_str)
+        throw Exception(ErrorCodes::LDAP_ERROR, "ldap_dn2str() failed: {}", ldap_err2string(rc));
+
+    String result(raw_str);
+    toLowerASCII(result);
+    return result;
 }
 
 bool LDAPClient::openConnection(BindMode mode)
@@ -733,6 +822,16 @@ void LDAPClient::closeConnection() noexcept
 }
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams &, bool)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::optional<String> LDAPClient::extractRDNValue(const String &, const String &)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::optional<String> LDAPClient::normalizeDN(const String &)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
