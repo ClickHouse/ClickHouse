@@ -68,6 +68,10 @@ rejected "$(insert "${FILE}.throw" "${ALL_TYPES}" "output_format_arrow_unsupport
 # `binary` is the default and matches what the old boolean did, so an unset `output_format_arrow_unsupported_types`
 # keeps honouring `output_format_arrow_unsupported_types_as_binary`. An explicit mode wins over the boolean
 # whichever order the two are given in.
+#
+# `binary` is the case that pins how the two are resolved: because it is also the default, precedence decided
+# on the resolved value rather than on whether the setting was set would fall back to the boolean here and
+# reject the write, while every other case below would still pass.
 echo "=== the old boolean, and precedence over it ==="
 DYNAMIC="SELECT 42::Dynamic AS x"
 printf 'boolean=0\t'; rejected "$(insert "${FILE}.b" "${DYNAMIC}" "output_format_arrow_unsupported_types_as_binary = 0")"
@@ -77,7 +81,9 @@ ${CLICKHOUSE_LOCAL} --multiquery --query "
     $(insert "${FILE}.b" "${DYNAMIC}" "output_format_arrow_unsupported_types_as_binary = 1")
     SELECT 'boolean=1' AS mode, hex(x) FROM file('${FILE}.b', 'ArrowStream');
     $(insert "${FILE}.b" "${DYNAMIC}" "output_format_arrow_unsupported_types_as_binary = 0, output_format_arrow_unsupported_types = 'text'")
-    SELECT 'text wins over boolean=0' AS mode, hex(x) FROM file('${FILE}.b', 'ArrowStream');"
+    SELECT 'text wins over boolean=0' AS mode, hex(x) FROM file('${FILE}.b', 'ArrowStream');
+    $(insert "${FILE}.b" "${DYNAMIC}" "output_format_arrow_unsupported_types = 'binary', output_format_arrow_unsupported_types_as_binary = 0")
+    SELECT 'binary wins over boolean=0' AS mode, hex(x) FROM file('${FILE}.b', 'ArrowStream');"
 
 # The opaque column is tagged as an Arrow extension type carrying the original ClickHouse type name, so a
 # consumer can tell it apart from a genuine string or binary column. A reader that does not know the

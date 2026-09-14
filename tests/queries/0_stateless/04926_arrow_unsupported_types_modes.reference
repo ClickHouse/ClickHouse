@@ -39,6 +39,7 @@ boolean=0	NOT_IMPLEMENTED
 throw wins over boolean=1	NOT_IMPLEMENTED
 boolean=1	15023432
 text wins over boolean=0	3432
+binary wins over boolean=0	15023432
 === pyarrow: storage type and clickhouse.opaque tag ===
 text	j	string	clickhouse.opaque	JSON
 text	d	string	clickhouse.opaque	Dynamic
