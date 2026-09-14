@@ -390,7 +390,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, /* worker_id = */ 0, true);
     }
 
     set_totals = for_totals;
