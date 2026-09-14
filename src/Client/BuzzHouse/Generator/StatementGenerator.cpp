@@ -3422,7 +3422,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
             || collectionCount<SQLDictionary>(attached_dictionaries) > 3
             || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3 || policies.size() > 3
-            || totalHypotheticalIndexes() > 3 || totalHypotheticalProjections() > 3);
+            || totalHypotheticalIndexes() > 0 || totalHypotheticalProjections() > 0);
     SQLMask[static_cast<size_t>(SQLOp::Insert)] = has_tables;
     SQLMask[static_cast<size_t>(SQLOp::LightDelete)] = has_mergeable_mt;
     SQLMask[static_cast<size_t>(SQLOp::Truncate)] = has_databases || has_tables;
@@ -3455,10 +3455,11 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::ShowStatement)] = !in_parallel;
     SQLMask[static_cast<size_t>(SQLOp::CreatePolicy)]
         = !in_parallel && static_cast<uint32_t>(policies.size()) < this->fc.max_policies && collectionHas<SQLTable>(attached_tables);
-    SQLMask[static_cast<size_t>(SQLOp::CreateHypotheticalIndex)]
-        = totalHypotheticals() < this->fc.max_hypotheticals && collectionHas<SQLTable>(attached_tables_for_create_hypotheticals);
+    SQLMask[static_cast<size_t>(SQLOp::CreateHypotheticalIndex)] = totalHypotheticalIndexes() < this->fc.max_hypothetical_indexes
+        && collectionHas<SQLTable>(attached_tables_for_create_hypotheticals);
     SQLMask[static_cast<size_t>(SQLOp::CreateHypotheticalProjection)]
-        = totalHypotheticals() < this->fc.max_hypotheticals && collectionHas<SQLTable>(attached_tables_for_create_hypotheticals);
+        = totalHypotheticalProjections() < this->fc.max_hypothetical_projections
+        && collectionHas<SQLTable>(attached_tables_for_create_hypotheticals);
     SQLGen.setEnabled(SQLMask);
 
     switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time

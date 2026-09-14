@@ -522,9 +522,6 @@ private:
         return res;
     }
 
-    /// `max_hypotheticals` is a single budget shared by hypothetical indexes and projections
-    uint32_t totalHypotheticals() const { return totalHypotheticalIndexes() + totalHypotheticalProjections(); }
-
 public:
     template <typename T>
     std::vector<std::reference_wrapper<T>> & filterCollection(std::function<bool(T &)> func)
