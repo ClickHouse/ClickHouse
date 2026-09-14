@@ -91,6 +91,37 @@ FROM
 )
 WHERE explain LIKE '%m.values%';
 
+-- Constant patterns must produce the same results on both paths, including
+-- matches at the first and last positions, misses, empty Maps, and multi-element Maps.
+DROP TABLE IF EXISTS t_map_contains_like_constants;
+
+CREATE TABLE t_map_contains_like_constants
+(
+    id UInt8,
+    m Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_constants VALUES
+    (0, {'service': 'api', 'debug': '1'}),
+    (1, {'debug': '1', 'service': 'api'}),
+    (2, {'debug': '1', 'result': 'worker'}),
+    (3, {}),
+    (4, {'service': 'worker', 'result': 'api'});
+
+SELECT id, mapContainsKeyLike(m, 'ser%'), mapContainsValueLike(m, 'api%')
+FROM t_map_contains_like_constants
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id, mapContainsKeyLike(m, 'ser%'), mapContainsValueLike(m, 'api%')
+FROM t_map_contains_like_constants
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_map_contains_like_constants;
+
 -- Captured column patterns must keep the same results.
 SELECT id
 FROM t_map_contains_like_subcolumns
@@ -373,7 +404,7 @@ SETTINGS optimize_functions_to_subcolumns = 1;
 
 DROP TABLE t_map_contains_like_nullable_pattern;
 
--- LowCardinality Map elements and patterns stay on the original Map LIKE implementation.
+-- LowCardinality on the searched Map element or pattern keeps the original Map LIKE implementation.
 SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
 FROM t_map_contains_like_subcolumns
 SETTINGS optimize_functions_to_subcolumns = 1;
@@ -389,5 +420,64 @@ SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT countIf(mapContainsKeyLike(m, pattern_lc)) = 2
 FROM t_map_contains_like_subcolumns
 SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- LowCardinality on the unused Map element does not block the rewrite.
+DROP TABLE IF EXISTS t_map_contains_like_unused_lc;
+
+CREATE TABLE t_map_contains_like_unused_lc
+(
+    id UInt8,
+    m_value_lc Map(String, LowCardinality(String)),
+    m_key_lc Map(LowCardinality(String), String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_unused_lc VALUES
+    (0, {'service': 'api'}, {'service': 'api'}),
+    (1, {}, {}),
+    (2, {'other': 'worker'}, {'other': 'worker'});
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_unused_lc
+    WHERE mapContainsKeyLike(m_value_lc, 'ser%')
+)
+WHERE explain LIKE '%m_value_lc.keys%';
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_unused_lc
+    WHERE mapContainsValueLike(m_key_lc, 'api%')
+)
+WHERE explain LIKE '%m_key_lc.values%';
+
+SELECT id, mapContainsKeyLike(m_value_lc, 'ser%')
+FROM t_map_contains_like_unused_lc
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id, mapContainsKeyLike(m_value_lc, 'ser%')
+FROM t_map_contains_like_unused_lc
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT id, mapContainsValueLike(m_key_lc, 'api%')
+FROM t_map_contains_like_unused_lc
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id, mapContainsValueLike(m_key_lc, 'api%')
+FROM t_map_contains_like_unused_lc
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_map_contains_like_unused_lc;
 
 DROP TABLE t_map_contains_like_subcolumns;

@@ -582,8 +582,9 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
-    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep that path for now;
-    /// passing a LowCardinality type directly to the lambda would change function resolution.
+    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep the
+    /// original path when the searched Map element or pattern is LowCardinality;
+    /// the unused Map element is not passed to LIKE.
     /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
     const auto & pattern_type = function_arguments_nodes[1]->getResultType();
     if (WhichDataType(map_element_type).isLowCardinality()
@@ -829,8 +830,8 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Map, "arrayElement"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
-    /// Splitting a Map LIKE predicate to its searched subcolumn is safe even when
-    /// the full Map is read separately, for example by SELECT.
+    /// Map LIKE rewrites only read the searched subcolumn, so they remain safe
+    /// when the full Map is read separately, for example by SELECT.
     {TypeIndex::Map, "mapContainsKeyLike"},
     {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
