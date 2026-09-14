@@ -76,10 +76,11 @@ namespace DB::QueryPlanOptimizations
 /// outer stage then rescores those k' rows against the full-precision vector and returns the exact top-k.
 ///
 /// That deferral is a PRECONDITION of the rewrite, not an expectation: the shortlist adds the codes to the read, so if
-/// the vector is read for every row anyway the query reads strictly more than the exact scan it replaced. Every way
-/// lazy materialization can decline for the shape built here is therefore checked before rewriting (the setting, the
-/// read step, the shortlist limit, the steps in the chain and the columns the read cannot defer), and the query is
-/// left exact when any of them holds.
+/// the vector is read for every row anyway the query reads strictly more than the exact scan it replaced. The ways lazy
+/// materialization can decline for the shape built here are therefore checked before rewriting (the setting, the read
+/// step, the shortlist limit, the steps in the chain and the columns the read cannot defer), and the query is left
+/// exact when any of them holds. An `arrayJoin` in the chain is the one decline deliberately left unchecked: the
+/// shortlist is spliced above the whole chain, so it only truncates rows the chain has already expanded.
 namespace
 {
 
