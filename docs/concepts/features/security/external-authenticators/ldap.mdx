@@ -38,7 +38,6 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <follow_referrals>false</follow_referrals>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
-            <tls_maximum_protocol_version>tls1.3</tls_maximum_protocol_version>
             <tls_require_cert>demand</tls_require_cert>
             <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
             <tls_key_file>/path/to/tls_key_file</tls_key_file>
@@ -74,9 +73,9 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
 | `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
-| `operation_timeout` | `40` | Maximum time, in seconds, to wait for the result of a single LDAP operation (a bind, a StartTLS negotiation, or a search) on an established connection. Must be greater than `0`. |
+| `operation_timeout` | `40` | Maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an established connection. Searches are bounded by `search_timeout` instead. Must be greater than `0`. |
 | `network_timeout` | `30` | Maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS handshake, to be established. Must be greater than `0`. An unreachable server that silently drops packets makes every authentication attempt wait for the whole timeout, see [Transport security and timeouts](#ldap-server-tls-and-timeouts). |
-| `search_timeout` | `20` | Time limit, in seconds, for LDAP search requests (user DN detection and role mapping). It is sent to the server as the requested time limit and enforced on the client as well. Must be greater than `0`. |
+| `search_timeout` | `20` | Time limit, in seconds, for each LDAP search request (user DN detection and role mapping). It is sent to the server as the requested time limit and enforced on the client as well; `operation_timeout` does not apply to searches. Must be greater than `0`. |
 | `follow_referrals` | `false` | A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. Mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`). Set to `true` only when you explicitly need cross-partition searches. |
 | `enable_tls` | `yes` | A flag to trigger the use of the secure connection to the LDAP server. Specify `no` for plain text `ldap://` protocol (not recommended), `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended), or `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS). |
 | `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`, `tls1.3`. |

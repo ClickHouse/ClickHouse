@@ -129,11 +129,13 @@ public:
 
         std::chrono::seconds verification_cooldown{0};
 
-        /// How long to wait for the result of one operation (bind, StartTLS, search) on an established connection (`LDAP_OPT_TIMEOUT`).
+        /// How long to wait for the result of a bind or of a StartTLS negotiation on an established connection (`LDAP_OPT_TIMEOUT`).
+        /// Searches are bounded by `search_timeout` instead.
         std::chrono::seconds operation_timeout{40};
-        /// How long to wait for the TCP connection to the server to be established (`LDAP_OPT_NETWORK_TIMEOUT`).
+        /// How long to wait for the TCP connection to the server to be established, including the TLS handshake
+        /// (`LDAP_OPT_NETWORK_TIMEOUT`).
         std::chrono::seconds network_timeout{30};
-        /// Time limit requested from the server for each search, also enforced on the client (`LDAP_OPT_TIMELIMIT`).
+        /// Time limit passed with each search request (`ldap_search_ext_s`): requested from the server and enforced on the client.
         std::chrono::seconds search_timeout{20};
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 

@@ -727,12 +727,13 @@
                 verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
                          to be successfully authenticated for all consecutive requests without contacting the LDAP server.
                         Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
-                operation_timeout - maximum time, in seconds, to wait for the result of a single LDAP operation (a bind, a StartTLS
-                         negotiation, or a search) on an established connection. Must be greater than 0. Default is 40.
+                operation_timeout - maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an
+                         established connection. Searches are bounded by search_timeout instead. Must be greater than 0. Default is 40.
                 network_timeout - maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS
                          handshake, to be established. Must be greater than 0. Default is 30.
-                search_timeout - time limit, in seconds, for LDAP search requests (user DN detection and role mapping), requested from
-                         the server and enforced on the client as well. Must be greater than 0. Default is 20.
+                search_timeout - time limit, in seconds, for each LDAP search request (user DN detection and role mapping), requested
+                         from the server and enforced on the client as well; operation_timeout does not apply to searches.
+                         Must be greater than 0. Default is 20.
                 enable_tls - flag to trigger use of secure connection to the LDAP server.
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
@@ -760,7 +761,6 @@
                     <search_timeout>20</search_timeout>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
-                    <tls_maximum_protocol_version>tls1.3</tls_maximum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
                     <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
                     <tls_key_file>/path/to/tls_key_file</tls_key_file>
