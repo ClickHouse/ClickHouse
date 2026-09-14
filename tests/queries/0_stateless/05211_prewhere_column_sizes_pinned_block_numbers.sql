@@ -11,6 +11,8 @@
 SET enable_analyzer = 1, explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, move_all_conditions_to_prewhere = 0;
 -- Keep the conditions on the columns themselves: rewriting them to `.size` subcolumns changes what is measured.
+-- The conditions are spelled as `notEmpty` directly, so the randomized `optimize_empty_string_comparisons`
+-- rewrite of `!= ''` cannot change the printed plan.
 SET optimize_functions_to_subcolumns = 0;
 SET query_plan_optimize_primary_key = 1, convert_query_to_cnf = 0, enable_parallel_replicas = 0;
 SET use_statistics = 0, materialize_statistics_on_insert = 0;
@@ -56,17 +58,17 @@ SELECT 'pinned_rows', count() FROM t_prewhere_pinned_r1 SETTINGS select_sequenti
 -- Unpinned: every part counts, `b` is the heaviest queried column and only `a` moves to PREWHERE.
 SET select_sequential_consistency = 0;
 SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
-FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE a != '' AND b != '')
+FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE notEmpty(a) AND notEmpty(b))
 WHERE explain LIKE '%Prewhere filter column%';
 
 -- Pinned: the unconfirmed part is excluded from the estimate exactly as from the read, so `b` is cheap
 -- again and both conditions move to PREWHERE.
 SET select_sequential_consistency = 1;
 SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
-FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE a != '' AND b != '')
+FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE notEmpty(a) AND notEmpty(b))
 WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT 'pinned_result', sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE a != '' AND b != '';
+SELECT 'pinned_result', sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE notEmpty(a) AND notEmpty(b);
 
 SYSTEM START FETCHES t_prewhere_pinned_r2;
 DROP TABLE t_prewhere_pinned_r1 SYNC;
