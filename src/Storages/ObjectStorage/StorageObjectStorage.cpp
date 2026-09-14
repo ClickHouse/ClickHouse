@@ -8,6 +8,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
+#include <base/scope_guard.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -986,16 +987,23 @@ void StorageObjectStorage::truncate(
     {
         objects.emplace_back(key.path);
     }
-    object_storage->removeObjectsIfExist(objects);
 
     /// The keys after the first one were written by the inserts into this table - with `*_create_new_file_on_insert`
-    /// or by splitting the data by size. Their objects are gone, so the table forgets them as well: otherwise
-    /// it would go on planning reads of the objects that do not exist anymore.
-    if (paths.size() > 1)
-    {
-        paths.resize(1);
-        configuration->setPaths(paths);
-    }
+    /// or by splitting the data by size. The table forgets each of them as soon as its object is gone: otherwise
+    /// it would go on planning reads of an object that does not exist anymore. The removal can succeed only
+    /// partially - the object storages report which objects they did delete - so the keys are retired from
+    /// the reported set even when the removal throws, exactly like the truncating insert retires the keys
+    /// one by one. The first key stays in the list whatever happens: it is the table itself.
+    StoredObjects successful_objects;
+    SCOPE_EXIT({
+        for (const auto & object : successful_objects)
+        {
+            if (object.remote_path != paths.front().path)
+                configuration->retirePath(object.remote_path);
+        }
+    });
+
+    object_storage->removeObjectsIfExist(objects, &successful_objects);
 }
 
 void StorageObjectStorage::drop()
