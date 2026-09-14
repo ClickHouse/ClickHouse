@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/memory.h>
+#include <Poco/XML/XMLString.h>
 
 #if USE_JEMALLOC && defined(OS_LINUX)
 #include <jemalloc/jemalloc.h>
@@ -158,4 +159,14 @@ void JemallocNoDumpArenas::deallocate(void * ptr) noexcept
 #endif
 }
 
+}
+
+void * Poco::XML::allocateNoDump(std::size_t bytes)
+{
+    return DB::JemallocNoDumpArenas::allocate(bytes);
+}
+
+void Poco::XML::deallocateNoDump(void * ptr) noexcept
+{
+    DB::JemallocNoDumpArenas::deallocate(ptr);
 }

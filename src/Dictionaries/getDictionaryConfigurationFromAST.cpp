@@ -94,9 +94,9 @@ void buildLifetimeConfiguration(
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+    AutoPtr<Text> min_sec(doc->createTextNode(toXMLString(toString(lifetime->min_sec))));
     min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+    AutoPtr<Text> max_sec(doc->createTextNode(toXMLString(toString(lifetime->max_sec))));
     max_element->appendChild(max_sec);
     lifetime_element->appendChild(min_element);
     lifetime_element->appendChild(max_element);
@@ -162,7 +162,7 @@ void buildLayoutParameterKeyValueCollection(
 
         const auto & key_and_value = entry.safeGet<Tuple>();
 
-        AutoPtr<Element> entry_element(doc->createElement(element_names.entry));
+        AutoPtr<Element> entry_element(doc->createElement(toXMLString(element_names.entry)));
         parameter_element->appendChild(entry_element);
 
         auto append_scalar_child = [&](const String & element_name, const Field & field)
@@ -179,8 +179,8 @@ void buildLayoutParameterKeyValueCollection(
                     field.getTypeName());
             }
 
-            AutoPtr<Element> field_element(doc->createElement(element_name));
-            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString(field)));
+            AutoPtr<Element> field_element(doc->createElement(toXMLString(element_name)));
+            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString<XMLString>(field)));
             field_element->appendChild(field_text);
             entry_element->appendChild(field_element);
         };
@@ -214,7 +214,7 @@ void buildLayoutConfiguration(
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
     root->appendChild(layout_element);
-    AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
+    AutoPtr<Element> layout_type_element(doc->createElement(toXMLString(layout->layout_type)));
     layout_element->appendChild(layout_type_element);
 
     if (!layout->parameters)
@@ -226,9 +226,9 @@ void buildLayoutConfiguration(
         root->appendChild(settings_element);
         for (const auto & [name, value, _] : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            AutoPtr<Element> setting_change_element(doc->createElement(toXMLString(name)));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -271,7 +271,7 @@ void buildLayoutConfiguration(
                     layout->layout_type);
             }
 
-            AutoPtr<Element> collection_parameter_element(doc->createElement(pair->first));
+            AutoPtr<Element> collection_parameter_element(doc->createElement(toXMLString(pair->first)));
             layout_type_element->appendChild(collection_parameter_element);
             buildLayoutParameterKeyValueCollection(doc, collection_parameter_element, pair->first, *element_names, value_field);
             continue;
@@ -297,8 +297,8 @@ void buildLayoutConfiguration(
             }
         }
 
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(toXMLString(pair->first)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toXMLString(fieldToString(value_field))));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -316,21 +316,21 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
     // appends <key><name>value</name></key> to root
     auto append_element = [&doc, &root](const std::string & key, const std::string & name, const AttributeConfiguration & configuration)
     {
-        AutoPtr<Element> element(doc->createElement(key));
+        AutoPtr<Element> element(doc->createElement(toXMLString(key)));
         AutoPtr<Element> name_node(doc->createElement("name"));
-        AutoPtr<Text> name_text(doc->createTextNode(name));
+        AutoPtr<Text> name_text(doc->createTextNode(toXMLString(name)));
         name_node->appendChild(name_text);
         element->appendChild(name_node);
 
         AutoPtr<Element> type_node(doc->createElement("type"));
-        AutoPtr<Text> type_text(doc->createTextNode(configuration.type));
+        AutoPtr<Text> type_text(doc->createTextNode(toXMLString(configuration.type)));
         type_node->appendChild(type_text);
         element->appendChild(type_node);
 
         if (!configuration.expression.empty())
         {
             AutoPtr<Element> expression_node(doc->createElement("expression"));
-            AutoPtr<Text> expression_text(doc->createTextNode(configuration.expression));
+            AutoPtr<Text> expression_text(doc->createTextNode(toXMLString(configuration.expression)));
             expression_node->appendChild(expression_text);
             element->appendChild(expression_node);
         }
@@ -377,7 +377,7 @@ void buildAttributeExpressionIfNeeded(
 
     AutoPtr<Element> expression_element(doc->createElement("expression"));
     String expression_str = getAttributeExpression(dict_attr);
-    AutoPtr<Text> expression(doc->createTextNode(expression_str));
+    AutoPtr<Text> expression(doc->createTextNode(toXMLString(expression_str)));
     expression_element->appendChild(expression);
     root->appendChild(expression_element);
 }
@@ -401,19 +401,19 @@ void buildSingleAttribute(
     root->appendChild(attribute_element);
 
     AutoPtr<Element> name_element(doc->createElement("name"));
-    AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
+    AutoPtr<Text> name(doc->createTextNode(toXMLString(dict_attr->name)));
     name_element->appendChild(name);
     attribute_element->appendChild(name_element);
 
     AutoPtr<Element> type_element(doc->createElement("type"));
-    AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
+    AutoPtr<Text> type(doc->createTextNode(toXMLString(dict_attr->type->formatWithSecretsOneLine())));
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
-    String null_value_str;
+    XMLString null_value_str;
     if (dict_attr->default_value)
-        null_value_str = convertFieldToString(dict_attr->default_value->as<ASTLiteral>()->value);
+        null_value_str = convertFieldToString<XMLString>(dict_attr->default_value->as<ASTLiteral>()->value);
     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
@@ -509,7 +509,7 @@ void buildPrimaryKeyConfiguration(
 
         const ASTDictionaryAttributeDeclaration * dict_attr = (*it)->as<const ASTDictionaryAttributeDeclaration>();
 
-        AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
+        AutoPtr<Text> name(doc->createTextNode(toXMLString(dict_attr->name)));
         name_element->appendChild(name);
 
         buildAttributeExpressionIfNeeded(doc, id_element, dict_attr);
@@ -520,7 +520,7 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> type_element(doc->createElement("type"));
         id_element->appendChild(type_element);
 
-        AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
+        AutoPtr<Text> type(doc->createTextNode(toXMLString(dict_attr->type->formatWithSecretsOneLine())));
         type_element->appendChild(type);
     }
     else
@@ -592,12 +592,12 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     for (const auto & child : children)
     {
         const ASTPair * pair = child->as<const ASTPair>();
-        AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
+        AutoPtr<Element> current_xml_element(doc->createElement(toXMLString(pair->first)));
         root->appendChild(current_xml_element);
 
         if (const auto * identifier = pair->second->as<const ASTIdentifier>())
         {
-            AutoPtr<Text> value(doc->createTextNode(identifier->name()));
+            AutoPtr<Text> value(doc->createTextNode(toXMLString(identifier->name())));
             current_xml_element->appendChild(value);
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
@@ -613,7 +613,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     pair->first);
             }
 
-            AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(convertFieldToString<XMLString>(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
@@ -650,7 +650,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             Field value;
             result->get(0, value);
 
-            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             current_xml_element->appendChild(text_value);
         }
         else
@@ -687,7 +687,7 @@ void buildSourceConfiguration(
 
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
-    AutoPtr<Element> source_element(doc->createElement(source->name));
+    AutoPtr<Element> source_element(doc->createElement(toXMLString(source->name)));
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
 
@@ -697,9 +697,9 @@ void buildSourceConfiguration(
         outer_element->appendChild(settings_element);
         for (const auto & [name, value, _] : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            AutoPtr<Element> setting_change_element(doc->createElement(toXMLString(name)));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -769,19 +769,19 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(dictionary_name));
+    AutoPtr<Text> name(xml_document->createTextNode(toXMLString(dictionary_name)));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(db_name));
+    AutoPtr<Text> database(xml_document->createTextNode(toXMLString(db_name)));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
     {
         AutoPtr<Poco::XML::Element> uuid_element(xml_document->createElement("uuid"));
         current_dictionary->appendChild(uuid_element);
-        AutoPtr<Text> uuid(xml_document->createTextNode(toString(query.uuid)));
+        AutoPtr<Text> uuid(xml_document->createTextNode(toXMLString(toString(query.uuid))));
         uuid_element->appendChild(uuid);
     }
 
@@ -820,7 +820,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     {
         AutoPtr<Element> comment_element(xml_document->createElement("comment"));
         current_dictionary->appendChild(comment_element);
-        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
+        AutoPtr<Text> comment_value(xml_document->createTextNode(toXMLString(query.comment->as<ASTLiteral>()->value.safeGet<String>())));
 
         comment_element->appendChild(comment_value);
     }

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <memory>
 #include <base/defines.h>
+#include <Common/SensitiveString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/Common.h>
 
@@ -31,7 +32,7 @@ public:
     struct ZNode
     {
         bool exists = false;
-        std::string contents;
+        DB::SensitiveString contents;
         Coordination::Stat stat{};
     };
 

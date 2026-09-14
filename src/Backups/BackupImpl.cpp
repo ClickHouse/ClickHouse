@@ -695,7 +695,7 @@ void BackupImpl::readBackupMetadata()
                 ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot parse <{}> value {}", backup_name_for_logging, key, quoteString(value));
         return result;
     };
-    auto to_bool = [&](const String & value, const String & key) -> bool
+    auto to_bool = [&](const String & value, std::string_view key) -> bool
     {
         if (value == "true" || value == "1")
             return true;
@@ -709,7 +709,7 @@ void BackupImpl::readBackupMetadata()
 
     handler.on_header = [&](const BackupMetadataHandler::Fields & h)
     {
-        auto req = [&](const String & key) -> const String &
+        auto req = [&](const Poco::XML::XMLString & key) -> const String &
         {
             auto it = h.find(key);
             if (it == h.end())
@@ -759,7 +759,7 @@ void BackupImpl::readBackupMetadata()
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        auto req = [&](const String & key) -> const String &
+        auto req = [&](const Poco::XML::XMLString & key) -> const String &
         {
             auto it = f.find(key);
             if (it == f.end())
@@ -767,12 +767,12 @@ void BackupImpl::readBackupMetadata()
                     ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot read <{}> of a file from metadata", backup_name_for_logging, key);
             return it->second;
         };
-        auto opt = [&](const String & key, const String & def) -> String
+        auto opt = [&](const Poco::XML::XMLString & key, const String & def) -> String
         {
             auto it = f.find(key);
             return it == f.end() ? def : it->second;
         };
-        auto get_bool = [&](const String & key, bool def)
+        auto get_bool = [&](const Poco::XML::XMLString & key, bool def)
         {
             auto it = f.find(key);
             return it == f.end() ? def : to_bool(it->second, key);

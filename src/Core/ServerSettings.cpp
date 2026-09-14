@@ -2472,7 +2472,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
     /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
     /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
-    auto escape_dom_name_as_config_key = [](const String & name) -> String
+    auto escape_dom_name_as_config_key = [](std::string_view name) -> String
     {
         String escaped;
         escaped.reserve(name.size());
@@ -2666,7 +2666,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
         /// left to a full merge replay rather than a partial one that could refuse to start a valid
         /// config.
-        std::unordered_set<std::string> top_level_include_refs;
+        std::unordered_set<Poco::XML::XMLString> top_level_include_refs;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
@@ -2776,7 +2776,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * root = doc->documentElement();
                 if (!root)
                     return false;
-                const String root_name = root->nodeName();
+                const auto & root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
                     return false;
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
@@ -2823,7 +2823,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             std::vector<std::pair<String, String>> identity_attrs;
                             for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
                             {
-                                const String & attr_name = attr->nodeName();
+                                const auto & attr_name = attr->nodeName();
                                 if (attr_name == "remove" || attr_name == "replace"
                                     || std::find(
                                            ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
@@ -2858,7 +2858,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         {
                             /// Resolved later against each `<include_from>` source (a lookup table),
                             /// exactly as `doIncludesRecursive` resolves an `incl` reference.
-                            String ref = elem->getAttribute("incl");
+                            auto ref = elem->getAttribute("incl");
                             if (!ref.empty())
                                 top_level_include_refs.insert(std::move(ref));
                         }
@@ -2867,7 +2867,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             /// `from_env` is fully resolvable here: the processor wraps the environment
                             /// variable's value as `<from_env>VALUE</from_env>` and imports its
                             /// children, so parse it the same way and exempt those imported keys.
-                            const String env_name = elem->getAttribute("from_env");
+                            const auto & env_name = elem->getAttribute("from_env");
                             if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                             {
                                 try

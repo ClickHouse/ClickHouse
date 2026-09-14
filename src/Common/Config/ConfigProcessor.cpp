@@ -115,18 +115,17 @@ static ElementIdentifier getElementIdentifier(Node * element)
     std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (const Node * node = attrs->item(0); node; node = node->nextSibling())
     {
-        std::string name = node->nodeName();
+        const auto & name = node->nodeName();
         const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
         if (name == "replace" || name == "remove" ||
             subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
-        std::string value = node->nodeValue();
-        attrs_kv.push_back(std::make_pair(name, value));
+        attrs_kv.emplace_back(name, node->nodeValue());
     }
     ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
-    res.push_back(element->nodeName());
+    res.emplace_back(element->nodeName());
     for (const auto & attr : attrs_kv)
     {
         res.push_back(attr.first);
@@ -141,12 +140,12 @@ static Node * getRootNode(Document * document)
     return XMLUtils::getRootNode(document);
 }
 
-static size_t firstNonWhitespacePos(const std::string & s)
+static size_t firstNonWhitespacePos(std::string_view s)
 {
     return s.find_first_not_of(" \t\n\r");
 }
 
-static bool allWhitespace(const std::string & s)
+static bool allWhitespace(std::string_view s)
 {
     return firstNonWhitespacePos(s) == std::string::npos;
 }
@@ -208,12 +207,11 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     return hex_value;
 }
 
-std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
+Poco::XML::XMLString ConfigProcessor::decryptValue(std::string_view codec_name, std::string_view value)
 {
     EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
     CompressionCodecEncrypted codec(encryption_method);
 
-    Memory<> memory;
     std::string encrypted_value;
 
     try
@@ -225,9 +223,9 @@ std::string ConfigProcessor::decryptValue(const std::string & codec_name, const 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text, check for valid characters [0-9a-fA-F] and length");
     }
 
-    memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
-    codec.decompress(encrypted_value.data(), static_cast<UInt32>(encrypted_value.size()), memory.data());
-    std::string decrypted_value(memory.data(), memory.size());
+    Poco::XML::XMLString decrypted_value;
+    decrypted_value.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
+    codec.decompress(encrypted_value.data(), static_cast<UInt32>(encrypted_value.size()), decrypted_value.data());
     return decrypted_value;
 }
 
@@ -263,7 +261,7 @@ void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
 }
 
-bool ConfigProcessor::hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name)
+bool ConfigProcessor::hasNodeWithAttribute(Poco::XML::Node * config_root, const Poco::XML::XMLString & attribute_name)
 {
     for (Node * node = config_root->firstChild(); node != nullptr; node = node->nextSibling())
     {
@@ -276,7 +274,7 @@ bool ConfigProcessor::hasNodeWithAttribute(Poco::XML::Node * config_root, const 
     return false;
 }
 
-bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name)
+bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, std::string_view node_name, const Poco::XML::XMLString & attribute_name)
 {
     for (Node * node = config_root->firstChild(); node != nullptr; node = node->nextSibling())
     {
@@ -289,7 +287,7 @@ bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node *
     return false;
 }
 
-bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name)
+bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, std::string_view node_name, const Poco::XML::XMLString & attribute_name)
 {
     return hasNodeWithNameAndChildNodeWithAttribute(loaded_config.preprocessed_xml.get(), node_name, attribute_name);
 }
@@ -304,7 +302,7 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
             Element & element = dynamic_cast<Element &>(*node);
-            if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(element.getAttribute("hide_in_preprocessed")))
+            if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(fromXMLString(element.getAttribute("hide_in_preprocessed"))))
             {
                 config_root->removeChild(node);
             } else
@@ -348,7 +346,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             bool replace = with_element.hasAttribute("replace");
 
             if (remove && replace)
-                throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
+                throw Poco::Exception(fmt::format("both remove and replace attributes set for element <{}>", with_node->nodeName()));
 
             ElementsByIdentifier::iterator it = config_element_by_id.find(getElementIdentifier(with_node));
 
@@ -399,8 +397,8 @@ bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
 
-    std::string config_root_node_name = config_root->nodeName();
-    std::string merged_root_node_name = with_root->nodeName();
+    const auto & config_root_node_name = config_root->nodeName();
+    const auto & merged_root_node_name = with_root->nodeName();
 
     /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
     /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
@@ -412,8 +410,8 @@ bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
         if (config_root_node_name != "clickhouse" && config_root_node_name != "yandex")
             return false;
 
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
-            " It must be <" + config_root->nodeName() + ">");
+        throw Poco::Exception(fmt::format("Root element doesn't have the corresponding root element as the config file."
+            " It must be <{}>", config_root->nodeName()));
     }
 
     mergeRecursive(config, config_root, with_root);
@@ -436,7 +434,7 @@ void ConfigProcessor::doIncludesRecursive(
     {
         for (const auto & substitution : substitutions)
         {
-            std::string value = node->nodeValue();
+            auto value = node->nodeValue();
 
             bool replace_occurred = false;
             size_t pos = 0;
@@ -465,7 +463,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (substs_count > 1) /// only one substitution is allowed
-        throw Poco::Exception("More than one substitution attribute is set for element <" + node->nodeName() + ">");
+        throw Poco::Exception(fmt::format("More than one substitution attribute is set for element <{}>", node->nodeName()));
 
     if (node->nodeName() == "include")
     {
@@ -482,16 +480,16 @@ void ConfigProcessor::doIncludesRecursive(
 
     bool included_something = false;
 
-    auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
+    auto process_include = [&](const Node * include_attr, const std::function<const Node * (const Poco::XML::XMLString &)> & get_node, const char * error_msg)
     {
-        const std::string & name = include_attr->getNodeValue();
+        const auto & name = include_attr->getNodeValue();
         const Node * node_to_include = get_node(name);
         if (!node_to_include)
         {
             if (attributes->getNamedItem("optional"))
                 node->parentNode()->removeChild(node);
             else if (throw_on_bad_incl)
-                throw Poco::Exception(error_msg + name);
+                throw Poco::Exception(fmt::format("{}{}", error_msg, name));
             else
             {
                 if (node->nodeName() == "include")
@@ -564,7 +562,7 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["incl"]) // we have include subst
     {
-        auto get_incl_node = [&](const std::string & name)
+        auto get_incl_node = [&](const Poco::XML::XMLString & name)
         {
             return include_from ? getRootNode(include_from.get())->getNodeByPath(name) : nullptr;
         };
@@ -576,22 +574,22 @@ void ConfigProcessor::doIncludesRecursive(
     {
         /// only allow substitution for nodes with no value and without "replace"
         if (node->hasChildNodes() && !replace)
-            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
+            throw Poco::Exception(fmt::format("Element <{}> has value and does not have 'replace' attribute, can't process from_zk substitution", node->nodeName()));
 
         if (contributing_zk_paths)
-            contributing_zk_paths->insert(attr_nodes["from_zk"]->getNodeValue());
+            contributing_zk_paths->emplace(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
         {
             XMLDocumentPtr zk_document;
-            auto get_zk_node = [&](const std::string & name) -> const Node *
+            auto get_zk_node = [&](const Poco::XML::XMLString & name) -> const Node *
             {
-                zkutil::ZooKeeperNodeCache::ZNode znode = zk_node_cache->get(name, zk_changed_event);
+                zkutil::ZooKeeperNodeCache::ZNode znode = zk_node_cache->get(fromXMLString(name), zk_changed_event);
                 if (!znode.exists)
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                zk_document = dom_parser.parseString(fmt::format("<from_zk>{}</from_zk>", znode.contents));
                 return getRootNode(zk_document.get());
             };
 
@@ -603,10 +601,10 @@ void ConfigProcessor::doIncludesRecursive(
     {
         /// only allow substitution for nodes with no value and without "replace"
         if (node->hasChildNodes() && !replace)
-            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_env substitution");
+            throw Poco::Exception(fmt::format("Element <{}> has value and does not have 'replace' attribute, can't process from_env substitution", node->nodeName()));
 
         XMLDocumentPtr env_document;
-        auto get_env_node = [&](const std::string & name) -> const Node *
+        auto get_env_node = [&](const Poco::XML::XMLString & name) -> const Node *
         {
             const char * env_val = std::getenv(name.c_str()); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
             if (env_val == nullptr)
@@ -687,13 +685,13 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
     boost::algorithm::to_lower(extension);
 
     if (extension == ".xml")
-        return dom_parser.parse(config_path);
+        return dom_parser.parse(toXMLString(config_path));
     if (extension == ".yaml" || extension == ".yml")
         return YAMLParser::parse(config_path);
 
     /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
     if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(config_path);
+        return dom_parser.parse(toXMLString(config_path));
 
     /// If the regular file begins with < it might be XML, otherwise it might be YAML.
     bool maybe_xml = false;
@@ -717,7 +715,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
         }
     }
     if (maybe_xml)
-        return dom_parser.parse(config_path);
+        return dom_parser.parse(toXMLString(config_path));
     return YAMLParser::parse(config_path);
 }
 
@@ -852,7 +850,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     comment << "      ";
     NodePtr new_node = config->createTextNode("\n\n");
     config->insertBefore(new_node, config->firstChild());
-    new_node = config->createComment(comment.str());
+    new_node = config->createComment(toXMLString(comment.str()));
     config->insertBefore(new_node, config->firstChild());
 
     return config;
@@ -926,7 +924,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
         LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
-        config_xml = dom_parser.parse(preprocessed_path);
+        config_xml = dom_parser.parse(toXMLString(preprocessed_path));
     }
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));

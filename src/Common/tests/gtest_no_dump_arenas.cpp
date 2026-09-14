@@ -6,6 +6,12 @@
 
 #include <Common/SensitiveString.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Text.h>
+#include <fmt/format.h>
+
 #if USE_AWS_S3
 #include <aws/core/utils/memory/stl/AWSString.h>
 #endif
@@ -51,6 +57,15 @@ TEST(NoDumpArenas, SmallSensitiveStringIsExcludedFromCoreDump)
 {
     DB::SensitiveString sensitive(std::string(3, 's'));
     EXPECT_TRUE(isExcludedFromCoreDump(std::string_view(sensitive).data()));
+}
+
+TEST(NoDumpArenas, ConfigValueIsExcludedFromCoreDump)
+{
+    std::string secret(1 << 20, 's');
+    Poco::XML::DOMParser parser;
+    Poco::AutoPtr<Poco::XML::Document> document = parser.parseString(fmt::format("<clickhouse><secret>{}</secret></clickhouse>", secret));
+    const auto * text = document->getNodeByPath("clickhouse/secret")->firstChild();
+    EXPECT_TRUE(isExcludedFromCoreDump(text->getNodeValue().data()));
 }
 
 #if USE_AWS_S3

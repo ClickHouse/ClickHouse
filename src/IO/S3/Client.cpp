@@ -12,6 +12,7 @@
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
+#include <aws/core/utils/memory/AWSMemory.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
@@ -1240,6 +1241,8 @@ namespace
 class NoDumpMemoryManager : public Aws::Utils::Memory::MemorySystemInterface
 {
 public:
+    NoDumpMemoryManager() { Aws::Utils::Memory::InitializeAWSMemorySystem(*this); }
+
     void Begin() override {}
     void End() override {}
     void * AllocateMemory(std::size_t block_size, std::size_t alignment, const char *) override { return JemallocNoDumpArenas::allocate(block_size, alignment); }

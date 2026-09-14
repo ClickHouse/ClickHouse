@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-EncryptionMethod toEncryptionMethod(const std::string & name)
+EncryptionMethod toEncryptionMethod(std::string_view name)
 {
     if (name == "AES_128_GCM_SIV")
         return AES_128_GCM_SIV;

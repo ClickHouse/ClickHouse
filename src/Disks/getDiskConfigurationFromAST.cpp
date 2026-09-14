@@ -96,7 +96,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
     /// user-supplied value.
-    auto is_indirect_value = [](const std::string & v) { return startsWith(v, "from_env") || startsWith(v, "from_zk"); };
+    auto is_indirect_value = [](std::string_view v) { return v.starts_with("from_env") || v.starts_with("from_zk"); };
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
@@ -126,14 +126,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         std::string key = key_identifier->name();
-        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
+        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(Poco::XML::toXMLString(key)));
         root->appendChild(key_element);
 
         if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
             throwBadConfiguration("expected values to be literals or identifiers");
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-        auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
+        auto value_str = convertFieldToString<Poco::XML::XMLString>(value->as<ASTLiteral>()->value);
 
         const bool indirect = is_indirect_value(value_str);
         if (indirect && is_s3_credential_or_auth_field(key))
@@ -186,7 +186,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                     "Using `include` in dynamic disk configuration is disabled by the setting `dynamic_disk_allow_include`");
             key_element->setAttribute("incl", value_str);
         }
-        else if (startsWith(value_str, "from_env"))
+        else if (value_str.starts_with("from_env"))
         {
             if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_from_env])
                 throw Exception(
@@ -196,7 +196,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             boost::trim(value_str);
             key_element->setAttribute("from_env", value_str);
         }
-        else if (startsWith(value_str, "from_zk"))
+        else if (value_str.starts_with("from_zk"))
         {
             if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_from_zk])
                 throw Exception(

@@ -19,7 +19,7 @@ enum EncryptionMethod
 };
 
 /// Get encryption method for string name. Throw exception for wrong name.
-EncryptionMethod toEncryptionMethod(const std::string & name);
+EncryptionMethod toEncryptionMethod(std::string_view name);
 
 /** This codec encrypts and decrypts blocks with AES-128 in
     * GCM-SIV mode (RFC-8452), which is the only cipher currently

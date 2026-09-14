@@ -33,7 +33,7 @@ namespace DB
 class BackupMetadataHandler : public Poco::XML::DefaultHandler
 {
 public:
-    using Fields = std::map<String, String>;
+    using Fields = std::map<Poco::XML::XMLString, String>;
 
     /// Fired once, when `<contents>` starts, with all top-level header elements collected.
     std::function<void(const Fields &)> on_header;
@@ -57,7 +57,7 @@ public:
     void characters(const Poco::XML::XMLChar ch[], int start, int length) override;
 
 private:
-    std::vector<String> path;
+    std::vector<Poco::XML::XMLString> path;
     String current_text;
     Fields header_fields;
     Fields file_fields;
