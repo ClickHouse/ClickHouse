@@ -83,6 +83,7 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
+    bool hasObservableSideEffects() const override { return function->hasObservableSideEffects(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
 
