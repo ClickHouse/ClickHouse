@@ -24,7 +24,8 @@ public:
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        String condition_time_zone_ = {});
 
     /// Use this overload when the transformed header (the header after the expression, but before
     /// removing the filter column) is already known (computed once per step) to avoid recomputing
@@ -34,7 +35,8 @@ public:
         SharedHeader header_, SharedHeader transformed_header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        String condition_time_zone_ = {});
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -64,6 +66,8 @@ private:
 
     /// If set, we need to update the query condition cache at runtime for every processed chunk
     std::optional<std::pair<UInt64, String>> condition;
+    /// The other half of the query condition cache key: the time zone the condition is evaluated in.
+    String condition_time_zone;
 
     std::shared_ptr<QueryConditionCache> query_condition_cache;
 

@@ -28,3 +28,11 @@ post-rewrite query was not a cache hit (expect 0):
 0
 repeated post-rewrite query was a cache hit (expect 1):
 1
+warm-up in Asia/Tokyo, nothing matches (expect 0):
+0
+the warm-up cached something (expect 1):
+1
+same condition in UTC, every row matches (expect 1000000):
+1000000
+same query with the cache emptied first (expect 1000000):
+1000000

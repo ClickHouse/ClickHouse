@@ -39,6 +39,7 @@ public:
         , remove_filter_column(other.remove_filter_column)
         , prevent_input_removal(other.prevent_input_removal)
         , condition(other.condition)
+        , condition_time_zone(other.condition_time_zone)
     {}
 
     String getName() const override { return "Filter"; }
@@ -52,7 +53,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, const String & condition_time_zone_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -84,6 +85,8 @@ private:
     bool prevent_input_removal = false;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    /// The other half of the query condition cache key: the time zone the condition is evaluated in.
+    String condition_time_zone;
 };
 
 }
