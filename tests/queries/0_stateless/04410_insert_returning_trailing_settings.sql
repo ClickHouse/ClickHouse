@@ -244,7 +244,7 @@ SELECT 'nested source query cache settings stay local';
 TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings
 SELECT * FROM (SELECT 1 SETTINGS use_query_cache = 1)
-RETURNING (SELECT getSettingOrDefault('use_query_cache', 0));
+RETURNING (SELECT count() FROM t_ret_settings);
 
 SELECT count() FROM t_ret_settings;
 

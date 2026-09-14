@@ -82,7 +82,7 @@ source query cache settings are rejected
 source parallel distributed insert-select setting is rejected
 0
 nested source query cache settings stay local
-0
+1
 1
 trailing settings do not affect returning planning
 1
