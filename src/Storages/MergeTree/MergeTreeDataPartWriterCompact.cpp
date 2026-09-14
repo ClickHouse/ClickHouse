@@ -79,7 +79,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy)
 {
-    const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+    const ASTPtr default_codec_desc = default_codec->getFullCodecDescription();
     ColumnCodecResolver codec_resolver(
         codec_policy,
         name_and_type.getTypeInStorage(),
