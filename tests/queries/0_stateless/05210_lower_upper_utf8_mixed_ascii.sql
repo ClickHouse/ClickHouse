@@ -18,7 +18,9 @@ INSERT INTO lower_upper_utf8_mixed_ascii VALUES
     (11, '\xe2'),
     (12, 'ASCII after invalid UTF-8'),
     (13, 'K'),
-    (14, 'ASCII after contraction');
+    (14, 'ASCII after contraction'),
+    (15, 'é'),
+    (16, 'Ab');
 
 SELECT id, concat('0x', hex(lowerUTF8(str))), concat('0x', hex(upperUTF8(str)))
 FROM lower_upper_utf8_mixed_ascii

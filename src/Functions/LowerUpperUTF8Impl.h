@@ -97,7 +97,7 @@ struct LowerUpperUTF8Impl
             const size_t src_begin_offset = row_i == 0 ? 0 : offsets[row_i - 1];
             const size_t src_end_offset = offsets[row_i];
             const size_t src_size = src_end_offset - src_begin_offset;
-            if (isAllASCII(data.data() + src_begin_offset, src_size))
+            if (isAllASCIIWithEarlyExit(data.data() + src_begin_offset, src_size))
                 continue;
 
             process_ascii_run(ascii_run_start, row_i);
@@ -196,8 +196,8 @@ struct LowerUpperUTF8Impl
 private:
     static bool isAllASCIIWithEarlyExit(const UInt8 * data, size_t size)
     {
-#    if defined(__AVX2__)
         size_t i = 0;
+#    if defined(__AVX2__)
         for (; i + 128 <= size; i += 128)
         {
             auto any = _mm256_setzero_si256();
@@ -207,9 +207,7 @@ private:
             if (_mm256_movemask_epi8(any))
                 return false;
         }
-        return isAllASCII(data + i, size - i);
 #    elif defined(__aarch64__) && defined(__ARM_NEON)
-        size_t i = 0;
         for (; i + 64 <= size; i += 64)
         {
             const auto bytes0 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + i));
@@ -220,9 +218,7 @@ private:
             if (vmaxvq_u8(any) & 0x80)
                 return false;
         }
-        return isAllASCII(data + i, size - i);
 #    elif defined(__SSE2__)
-        size_t i = 0;
         for (; i + 64 <= size; i += 64)
         {
             auto any = _mm_setzero_si128();
@@ -232,10 +228,18 @@ private:
             if (_mm_movemask_epi8(any))
                 return false;
         }
-        return isAllASCII(data + i, size - i);
-#    else
-        return isAllASCII(data, size);
 #    endif
+
+        /// Keep the existing vectorized scan for larger tails. For short rows,
+        /// stop at the first non-ASCII byte because this check is on the hot path.
+        if (size - i >= 32)
+            return isAllASCII(data + i, size - i);
+
+        for (; i < size; ++i)
+            if (data[i] & 0x80)
+                return false;
+
+        return true;
     }
 };
 

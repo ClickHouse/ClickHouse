@@ -22,6 +22,13 @@
                 <value>mixed_10</value>
                 <value>mixed_50</value>
                 <value>unicode</value>
+                <value>ascii_short</value>
+                <value>mixed_01_short</value>
+                <value>mixed_50_short</value>
+                <value>mixed_50_short_hashed</value>
+                <value>unicode_short</value>
+                <value>mixed_50_16</value>
+                <value>unicode_16</value>
             </values>
         </substitution>
     </substitutions>
@@ -34,7 +41,14 @@
             mixed_01_clustered String,
             mixed_10 String,
             mixed_50 String,
-            unicode String
+            unicode String,
+            ascii_short String,
+            mixed_01_short String,
+            mixed_50_short String,
+            mixed_50_short_hashed String,
+            unicode_short String,
+            mixed_50_16 String,
+            unicode_16 String
         ) ENGINE = Memory
     </create_query>
 
@@ -46,7 +60,14 @@
             if(number &lt; 500, unicode, ascii),
             if(number % 10 = 0, unicode, ascii),
             if(number % 2 = 0, unicode, ascii),
-            unicode
+            unicode,
+            ascii_short,
+            if(number % 1000 = 0, unicode_short, ascii_short),
+            if(number % 2 = 0, unicode_short, ascii_short),
+            if(cityHash64(number) % 2 = 0, unicode_short, ascii_short),
+            unicode_short,
+            if(number % 2 = 0, unicode_16, ascii_16),
+            unicode_16
         FROM
         (
             SELECT
@@ -57,7 +78,11 @@
                 concat(
                     repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
                     'é',
-                    rightPad(toString(number), 18, 'x')) AS unicode
+                    rightPad(toString(number), 18, 'x')) AS unicode,
+                'Ab' AS ascii_short,
+                'AbCdEfGhIjKlMnOp' AS ascii_16,
+                'é' AS unicode_short,
+                repeat('é', 8) AS unicode_16
             FROM numbers(500000)
         )
     </fill_query>
