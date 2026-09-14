@@ -227,7 +227,18 @@ private:
     {
         if (!state.weight_lowered)
         {
-            if (weightLoweringThresholdCrossed(ctx, state))
+            // Fast path: when lowering can never change the weight — the factor is 1 (disabled) or no
+            // threshold is set — finalize `effective_weight` on the first push and skip the per-push
+            // threshold check (and its clock read) for the rest of the query.
+            const bool lowering_disabled = ctx.weight_lowering_factor >= 1.0
+                || (ctx.weight_lowering_age_seconds <= 0 && ctx.weight_lowering_cpu_seconds <= 0
+                    && ctx.weight_lowering_io_bytes <= 0);
+            if (lowering_disabled)
+            {
+                state.weight_lowered = true;
+                state.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
+            }
+            else if (weightLoweringThresholdCrossed(ctx, state))
             {
                 state.weight_lowered = true;
                 double weight = ctx.weight * ctx.weight_lowering_factor;

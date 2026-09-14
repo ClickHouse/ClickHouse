@@ -114,8 +114,11 @@ public:
             // state): `fair` reads `attained_cost` for its thresholds and drains `vruntime_correction`,
             // `las` reads `attained_cost` for its level, `fifo`/`priority` read neither (harmless).
             const Int64 service_delta = static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost);
-            scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
-            scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+            if (service_delta != 0) // common case real == estimate: both adds are no-ops, skip the RMWs
+            {
+                scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
+                scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+            }
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);
