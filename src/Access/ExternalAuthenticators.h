@@ -101,4 +101,13 @@ private:
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix);
 
+/// Parses the search part of a `<sync>` section of an `ldap` user directory: `base_dn`, `scope`,
+/// `search_filter`, `attribute` and `page_size`. Unlike a role mapping, `base_dn`, `search_filter`
+/// and `attribute` are mandatory (there is no sensible default for the attribute that holds the
+/// user name), `attribute` must not be `dn`, the templates must not contain a per-user placeholder
+/// (`{user_name}`, `{bind_dn}`, `{user_dn}`: nothing could substitute it before the users are known)
+/// and `page_size` must be between 1 and 1000 (Active Directory rejects larger pages). Throws
+/// `BAD_ARGUMENTS` otherwise. `max_entries` is left for the caller to set.
+void parseLDAPUserEnumerationParams(LDAPClient::UserEnumerationParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix);
+
 }

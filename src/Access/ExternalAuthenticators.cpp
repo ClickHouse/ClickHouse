@@ -523,6 +523,45 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
                         "'rdn_attribute' in '{}' section requires a non-empty 'groups' list or a non-empty 'prefix'", prefix);
 }
 
+void parseLDAPUserEnumerationParams(LDAPClient::UserEnumerationParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    for (const auto * key : {"base_dn", "search_filter", "attribute"})
+    {
+        if (!config.has(prefix + "." + key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing '{}' entry in '{}' section", key, prefix);
+    }
+
+    parseLDAPSearchParams(params, config, prefix);
+
+    if (params.base_dn.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'base_dn' entry in '{}' section", prefix);
+
+    if (params.search_filter.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'search_filter' entry in '{}' section", prefix);
+
+    /// The DN is not an attribute and cannot serve as a ClickHouse user name.
+    if (params.attribute.empty() || boost::iequals(params.attribute, "dn"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'attribute' in '{}' section must name the attribute that holds the user name, e.g. 'sAMAccountName' or 'uid'", prefix);
+
+    /// The enumeration runs once for the whole directory, so nothing could substitute a per-user placeholder.
+    for (const auto * placeholder : {"{user_name}", "{bind_dn}", "{user_dn}"})
+    {
+        if (params.base_dn.contains(placeholder) || params.search_filter.contains(placeholder))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'base_dn' and 'search_filter' in '{}' section must not contain '{}': the enumeration is not performed on behalf of a user",
+                            prefix, placeholder);
+    }
+
+    if (config.has(prefix + ".page_size"))
+    {
+        const UInt64 page_size = config.getUInt64(prefix + ".page_size");
+        if (page_size < 1 || page_size > 1000)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'page_size' in '{}' section must be between 1 and 1000, got {}", prefix, page_size);
+        params.page_size = static_cast<UInt32>(page_size);
+    }
+}
+
 void ExternalAuthenticators::resetImpl()
 {
     ldap_client_params_blueprint.clear();

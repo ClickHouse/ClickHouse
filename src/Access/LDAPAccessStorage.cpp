@@ -5,27 +5,84 @@
 #include <Access/Role.h>
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <fmt/ranges.h>
+#include <algorithm>
+#include <cmath>
+#include <random>
 #include <sstream>
 
+
+namespace ProfileEvents
+{
+    extern const Event LDAPSyncRuns;
+    extern const Event LDAPSyncFailures;
+    extern const Event LDAPSyncUsersAdded;
+    extern const Event LDAPSyncUsersUpdated;
+    extern const Event LDAPSyncUsersRemoved;
+    extern const Event LDAPSyncUsersShadowed;
+    extern const Event LDAPSyncUsersExcluded;
+    extern const Event LDAPSyncRolesCreated;
+    extern const Event LDAPSyncRolesMissing;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric LDAPSyncRunning;
+}
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LDAP_ERROR;
+}
+
+namespace
+{
+
+/// Seconds of the steady clock, never 0, so that 0 can mean "never" in the atomics below.
+Int64 steadyNowSeconds()
+{
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    return std::max<Int64>(1, now);
+}
+
 }
 
 LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
     : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier(), false)
 {
     setConfiguration(config, prefix);
+}
+
+
+LDAPAccessStorage::~LDAPAccessStorage()
+{
+    /// `AccessControl::shutdown` has normally stopped the synchronisation thread already; a destructor
+    /// must not throw, so a failure to join here can only be logged (same as `ZooKeeperReplicator`).
+    try
+    {
+        LDAPAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -47,6 +104,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     const bool has_roles = config.has(prefix_str + "roles");
     const bool has_role_mapping = config.has(prefix_str + "role_mapping");
     const bool has_exclude_users = config.has(prefix_str + "exclude_users");
+    const bool has_sync = config.has(prefix_str + "sync");
 
     if (!has_server)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'server' field for LDAP user directory");
@@ -98,16 +156,22 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
+    std::optional<SyncParams> sync_params_cfg;
+    if (has_sync)
+        sync_params_cfg = parseSyncParams(config, prefix_str + "sync", role_search_params_cfg);
+
     ldap_server_name = ldap_server_name_cfg;
     role_search_params.swap(role_search_params_cfg);
     common_role_names.swap(common_roles_cfg);
     excluded_user_names.swap(excluded_user_names_cfg);
+    sync_params = std::move(sync_params_cfg);
 
     users_external_roles.clear();
     users_per_roles.clear();
     roles_per_users.clear();
     granted_role_names.clear();
     granted_role_ids.clear();
+    synced_user_names.clear();
 
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const std::vector<AccessChangesNotifier::Change> & changes)
@@ -116,6 +180,82 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
                 this->processRoleChange(change.id, change.entity);
         }
     );
+}
+
+
+LDAPAccessStorage::SyncParams LDAPAccessStorage::parseSyncParams(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, const LDAPClient::RoleSearchParamsList & role_search_params)
+{
+    /// Every guard below has a default, so a misspelt key would silently leave the default in place; reject it instead.
+    static const std::set<String> known_keys{
+        "interval", "base_dn", "scope", "search_filter", "attribute", "page_size", "create_roles", "roles_storage",
+        "only_synced_users", "min_users", "max_users", "max_removed_fraction", "max_staleness", "dry_run"};
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(prefix, keys);
+    for (const auto & key : keys)
+    {
+        if (!known_keys.contains(key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown entry '{}' in '{}' section of LDAP user directory", key, prefix);
+    }
+
+    SyncParams params;
+    parseLDAPUserEnumerationParams(params.enumeration, config, prefix);
+
+    params.interval = std::chrono::seconds{config.getUInt64(prefix + ".interval", params.interval.count())};
+    params.create_roles = config.getBool(prefix + ".create_roles", params.create_roles);
+    params.only_synced_users = config.getBool(prefix + ".only_synced_users", params.only_synced_users);
+    params.min_users = config.getUInt64(prefix + ".min_users", params.min_users);
+    params.max_users = config.getUInt64(prefix + ".max_users", params.max_users);
+    params.max_removed_fraction = config.getDouble(prefix + ".max_removed_fraction", params.max_removed_fraction);
+    params.max_staleness = std::chrono::seconds{config.getUInt64(prefix + ".max_staleness", params.max_staleness.count())};
+    params.dry_run = config.getBool(prefix + ".dry_run", params.dry_run);
+
+    if (config.has(prefix + ".roles_storage"))
+    {
+        params.roles_storage = config.getString(prefix + ".roles_storage");
+        if (params.roles_storage.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'roles_storage' entry in '{}' section", prefix);
+    }
+
+    if (params.max_users != 0 && params.max_users <= params.min_users)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'max_users' in '{}' section must be 0 (unlimited) or greater than 'min_users' ({}), got {}",
+                        prefix, params.min_users, params.max_users);
+    params.enumeration.max_entries = params.max_users;
+
+    /// The negated form also rejects NaN.
+    if (!(params.max_removed_fraction >= 0.0 && params.max_removed_fraction <= 1.0))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'max_removed_fraction' in '{}' section must be between 0 and 1, got {}", prefix, params.max_removed_fraction);
+
+    if (params.max_staleness > std::chrono::seconds{0})
+    {
+        /// The staleness gate refuses users that are in the snapshot; with lazily materialised users it could
+        /// refuse a user this directory never synchronised, and without a periodic run it would trip forever.
+        if (!params.only_synced_users)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'max_staleness' in '{}' section requires 'only_synced_users' = true", prefix);
+        if (params.interval == std::chrono::seconds{0})
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'max_staleness' in '{}' section requires a periodic synchronisation ('interval' > 0)", prefix);
+        if (params.max_staleness <= params.interval)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'max_staleness' ({} s) in '{}' section must be greater than 'interval' ({} s); at least twice the interval is recommended",
+                            params.max_staleness.count(), prefix, params.interval.count());
+    }
+
+    if (params.create_roles)
+    {
+        /// Only allow-listed roles are ever created: the `groups` lists are the complete set of roles the
+        /// directory may grant, and creating a role for every group a user belongs to is out of the question.
+        const bool has_groups = std::ranges::any_of(role_search_params, [](const auto & mapping) { return !mapping.groups.empty(); });
+        if (!has_groups)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "'create_roles' in '{}' section requires a non-empty 'groups' allow-list in at least one 'role_mapping' section", prefix);
+    }
+
+    return params;
 }
 
 
@@ -325,6 +465,56 @@ void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String 
 }
 
 
+void LDAPAccessStorage::removeUserNoLock(const String & user_name) const
+{
+    /// Mirror of the cleanup `assignRolesNoLock` performs for roles a user lost, for every role of the user.
+    users_external_roles.erase(user_name);
+    synced_user_names.erase(user_name);
+
+    const auto it = roles_per_users.find(user_name);
+    if (it == roles_per_users.end())
+        return;
+
+    for (const auto & role_name : it->second)
+    {
+        const auto rit = users_per_roles.find(role_name);
+        if (rit == users_per_roles.end())
+            continue;
+
+        auto & user_names = rit->second;
+        user_names.erase(user_name);
+
+        if (!user_names.empty())
+            continue;
+
+        users_per_roles.erase(rit);
+
+        /// Common roles stay granted to every user, so their ids are kept as long as the storage lives.
+        if (common_role_names.contains(role_name))
+            continue;
+
+        const auto iit = granted_role_ids.find(role_name);
+        if (iit == granted_role_ids.end())
+            continue;
+
+        granted_role_names.erase(iit->second);
+        granted_role_ids.erase(iit);
+    }
+
+    roles_per_users.erase(it);
+}
+
+
+std::shared_ptr<User> LDAPAccessStorage::makeUserNoLock(const String & user_name) const
+{
+    auto user = std::make_shared<User>();
+    user->setName(user_name);
+    user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+    user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+    return user;
+}
+
+
 std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::SearchResultsList & external_roles) const
 {
     std::set<String> role_names;
@@ -477,6 +667,37 @@ String LDAPAccessStorage::getStorageParamsJSON() const
     }
     params_json.set("exclude_users", excluded_user_names_json);
 
+    if (sync_params)
+    {
+        /// No secret lives here: the lookup credentials belong to the server definition.
+        Poco::JSON::Object sync_json;
+        sync_json.set("interval", static_cast<UInt64>(sync_params->interval.count()));
+        sync_json.set("base_dn", sync_params->enumeration.base_dn);
+        sync_json.set("search_filter", sync_params->enumeration.search_filter);
+        sync_json.set("attribute", sync_params->enumeration.attribute);
+
+        String scope;
+        switch (sync_params->enumeration.scope)
+        {
+            case LDAPClient::SearchParams::Scope::BASE:      scope = "base"; break;
+            case LDAPClient::SearchParams::Scope::ONE_LEVEL: scope = "one_level"; break;
+            case LDAPClient::SearchParams::Scope::SUBTREE:   scope = "subtree"; break;
+            case LDAPClient::SearchParams::Scope::CHILDREN:  scope = "children"; break;
+        }
+        sync_json.set("scope", scope);
+
+        sync_json.set("page_size", sync_params->enumeration.page_size);
+        sync_json.set("create_roles", sync_params->create_roles);
+        sync_json.set("roles_storage", sync_params->roles_storage);
+        sync_json.set("only_synced_users", sync_params->only_synced_users);
+        sync_json.set("min_users", static_cast<UInt64>(sync_params->min_users));
+        sync_json.set("max_users", static_cast<UInt64>(sync_params->max_users));
+        sync_json.set("max_removed_fraction", sync_params->max_removed_fraction);
+        sync_json.set("max_staleness", static_cast<UInt64>(sync_params->max_staleness.count()));
+        sync_json.set("dry_run", sync_params->dry_run);
+        params_json.set("sync", sync_json);
+    }
+
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(params_json, oss);
@@ -562,10 +783,7 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
     /// Materialize the user with the resolved role mapping. The shape mirrors the
     /// already-tested first-login path in `authenticateImpl`, so the entry is
     /// indistinguishable from one created by a real LDAP login.
-    auto new_user = std::make_shared<User>();
-    new_user->setName(name);
-    new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-    new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+    auto new_user = makeUserNoLock(name);
     assignRolesNoLock(*new_user, external_roles);
     return memory_storage.insert(new_user);
 }
@@ -625,16 +843,14 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     }
 
     auto id = memory_storage.find<User>(user_name);
+
     UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
 
     std::shared_ptr<User> new_user;
     if (!user)
     {
         // User does not exist, so we create one, and will add it if authentication is successful.
-        new_user = std::make_shared<User>();
-        new_user->setName(user_name);
-        new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-        new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+        new_user = makeUserNoLock(user_name);
         user = new_user;
     }
 
@@ -674,6 +890,472 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     if (id)
         return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP), .user_name = user_name };
     return std::nullopt;
+}
+
+
+void LDAPAccessStorage::startPeriodicReloading()
+{
+    if (!sync_params)
+        return;
+
+    std::lock_guard lock(sync_thread_mutex);
+    if (sync_thread)
+        return;
+
+    sync_thread_should_exit = false;
+    sync_thread = std::make_unique<ThreadFromGlobalPool>(&LDAPAccessStorage::runSyncThread, this);
+}
+
+
+void LDAPAccessStorage::stopPeriodicReloading()
+{
+    std::unique_ptr<ThreadFromGlobalPool> thread;
+    {
+        std::lock_guard lock(sync_thread_mutex);
+        sync_thread_should_exit = true;
+        thread = std::move(sync_thread);
+    }
+    sync_thread_cv.notify_all();
+
+    /// A run in progress finishes first (its LDAP operations are bounded by the server's timeouts).
+    if (thread && thread->joinable())
+        thread->join();
+}
+
+
+void LDAPAccessStorage::shutdown()
+{
+    stopPeriodicReloading();
+}
+
+
+void LDAPAccessStorage::reload(ReloadMode reload_mode)
+{
+    /// `USERS_CONFIG_ONLY` (`SYSTEM RELOAD CONFIG`) is about `users.xml`; the directory itself is configured once at startup.
+    if (!sync_params || reload_mode != ReloadMode::ALL)
+        return;
+
+    /// Synchronous and propagating: `SYSTEM RELOAD USERS` reports the reason when the run refuses to apply.
+    sync();
+}
+
+
+void LDAPAccessStorage::runSyncThread()
+{
+    setThreadName(ThreadName::LDAP_SYNC);
+
+    const auto interval = sync_params->interval;
+
+    /// Spread the first runs of several directories, and of several nodes started together, over a tenth
+    /// of the interval so that they do not all hit the directory at the same moment.
+    std::uniform_int_distribution<Int64> jitter(0, interval.count() / 10);
+    std::chrono::seconds wait{jitter(thread_local_rng)};
+
+    while (true)
+    {
+        {
+            std::unique_lock lock(sync_thread_mutex);
+            if (sync_thread_cv.wait_for(lock, wait, [this] { return sync_thread_should_exit; }))
+                return;
+        }
+
+        /// The only place a failed run is caught. A failure applies nothing (see `sync`), so the next run
+        /// starts from the same state; it is scheduled sooner than usual to recover quickly from a transient outage.
+        bool succeeded = false;
+        try
+        {
+            sync();
+            succeeded = true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger(), fmt::format("LDAP synchronisation of directory {} failed", backQuote(getStorageName())));
+        }
+
+        if (interval == std::chrono::seconds{0})
+            return; /// Startup run only; `SYSTEM RELOAD USERS` triggers the next one.
+
+        wait = succeeded ? interval : std::min(interval, std::chrono::seconds{60});
+    }
+}
+
+
+void LDAPAccessStorage::sync()
+{
+    /// Runs are serialised; `mutex` is taken only for the in-memory apply phase, never around LDAP I/O.
+    std::lock_guard sync_lock(sync_mutex);
+
+    /// `ldap_server_name`, `role_search_params`, `excluded_user_names` and `sync_params` are set once by
+    /// the constructor and never change, so they are read here without `mutex`.
+    const auto & params = *sync_params;
+
+    ProfileEvents::increment(ProfileEvents::LDAPSyncRuns);
+    CurrentMetrics::Increment running_metric{CurrentMetrics::LDAPSyncRunning};
+    Stopwatch watch;
+
+    /// Every exit before the end of this function is a failed run, and a failed run has applied nothing:
+    /// the guards trip before the first write, and the apply phase works in memory under one lock.
+    bool succeeded = false;
+    SCOPE_EXIT({
+        if (!succeeded)
+            ProfileEvents::increment(ProfileEvents::LDAPSyncFailures);
+    });
+
+    LOG_DEBUG(getLogger(), "Starting LDAP synchronisation of directory {} from server '{}'{}",
+        backQuote(getStorageName()), ldap_server_name, params.dry_run ? " (dry run)" : "");
+
+    /// Phase 1: enumerate the directory under the lookup identity. No storage lock is held meanwhile.
+    auto entries = access_control.getExternalAuthenticators().enumerateLDAPUsers(ldap_server_name, params.enumeration, role_search_params);
+
+    /// Phase 2: plan, and check the guards against the current snapshot so that nothing (roles included)
+    /// is written when the run is refused. The diff is recomputed under the lock right before it is
+    /// applied, because a lazy login may have materialised a user in between.
+    const auto plan = planSync(std::move(entries));
+    {
+        std::lock_guard lock(mutex);
+        checkRemovalGuard(computeSyncDiffNoLock(plan));
+    }
+
+    /// Phase 3: roles, without `mutex`: the writes go to another storage, whose notifications come back
+    /// to `processRoleChange`, which takes `mutex` itself.
+    std::set<String> roles_to_create;
+    std::shared_ptr<IAccessStorage> roles_target;
+    if (params.create_roles)
+    {
+        roles_target = selectRolesStorage();
+        for (const auto & role_name : getAllowListedRoleNames())
+        {
+            if (!access_control.find<Role>(role_name))
+                roles_to_create.insert(role_name);
+        }
+    }
+
+    if (params.dry_run)
+    {
+        std::lock_guard lock(mutex);
+        logDryRun(plan, computeSyncDiffNoLock(plan), roles_to_create, roles_target.get());
+        succeeded = true;
+        return;
+    }
+
+    size_t roles_created = 0;
+    if (roles_target)
+        roles_created = createMissingRoles(roles_to_create, *roles_target);
+
+    /// Phase 4: apply, in memory only, then notify the subscribers without the mutex.
+    SyncApplyResult result;
+    {
+        std::lock_guard lock(mutex);
+        const auto diff = computeSyncDiffNoLock(plan);
+        checkRemovalGuard(diff);
+        result = applySyncPlanNoLock(plan, diff);
+    }
+    access_control.getChangesNotifier().sendNotifications();
+
+    last_sync_success_time_s.store(steadyNowSeconds());
+    succeeded = true;
+
+    ProfileEvents::increment(ProfileEvents::LDAPSyncUsersAdded, result.added);
+    ProfileEvents::increment(ProfileEvents::LDAPSyncUsersUpdated, result.updated);
+    ProfileEvents::increment(ProfileEvents::LDAPSyncUsersRemoved, result.removed);
+    ProfileEvents::increment(ProfileEvents::LDAPSyncRolesMissing, result.missing_roles.size());
+
+    LOG_INFO(getLogger(),
+        "LDAP synchronisation of directory {} from server '{}' finished in {} ms: {} entries, {} users ({} added, {} updated, {} removed, "
+        "{} excluded, {} shadowed), {} roles created, {} roles missing",
+        backQuote(getStorageName()), ldap_server_name, watch.elapsedMilliseconds(), plan.entries, plan.users.size(),
+        result.added, result.updated, result.removed, plan.excluded, plan.shadowed, roles_created, result.missing_roles.size());
+
+    if (!result.missing_roles.empty())
+        LOG_WARNING(getLogger(), "Roles referenced by the role mappings of LDAP directory {} do not exist and were not granted: {}",
+            backQuote(getStorageName()), fmt::join(result.missing_roles, ", "));
+}
+
+
+LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClient::UserEntry> entries) const
+{
+    const auto & params = *sync_params;
+
+    SyncPlan plan;
+    plan.entries = entries.size();
+
+    /// Two entries sharing a user name would make a login map to an arbitrary one of them; refuse the whole run.
+    std::map<String, String> dn_by_name;
+    for (const auto & entry : entries)
+    {
+        const auto [it, inserted] = dn_by_name.emplace(entry.name, entry.dn);
+        if (!inserted)
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP synchronisation of directory {} from server '{}': entries '{}' and '{}' share the user name '{}' (ambiguous directory); refusing to synchronise",
+                backQuote(getStorageName()), ldap_server_name, it->second, entry.dn, entry.name);
+    }
+
+    /// A storage declared before this one wins for a name it defines (the user is never materialised here);
+    /// a storage declared after it is overridden by the LDAP entry, exactly as at login time.
+    const auto storages = access_control.getStorages();
+
+    for (auto & entry : entries)
+    {
+        if (excluded_user_names.contains(entry.name))
+        {
+            ++plan.excluded;
+            LOG_DEBUG(getLogger(), "Skipping excluded user {}: the name is listed in exclude_users", entry.name);
+            continue;
+        }
+
+        bool shadowed_by_preceding = false;
+        bool before_this = true;
+        for (const auto & storage : storages)
+        {
+            if (storage.get() == this)
+            {
+                before_this = false;
+                continue;
+            }
+
+            if (!storage->find<User>(entry.name))
+                continue;
+
+            ++plan.shadowed;
+            if (before_this)
+            {
+                shadowed_by_preceding = true;
+                LOG_WARNING(getLogger(), "LDAP user '{}' ({}) exists in storage {}, which precedes directory {}: not synchronised",
+                    entry.name, entry.dn, backQuote(storage->getStorageName()), backQuote(getStorageName()));
+            }
+            else
+            {
+                LOG_WARNING(getLogger(), "LDAP user '{}' ({}) also exists in storage {}, which follows directory {}: the LDAP entry takes precedence",
+                    entry.name, entry.dn, backQuote(storage->getStorageName()), backQuote(getStorageName()));
+            }
+            break;
+        }
+
+        if (shadowed_by_preceding)
+            continue;
+
+        plan.users.emplace(entry.name, std::move(entry));
+    }
+
+    ProfileEvents::increment(ProfileEvents::LDAPSyncUsersExcluded, plan.excluded);
+    ProfileEvents::increment(ProfileEvents::LDAPSyncUsersShadowed, plan.shadowed);
+
+    if (plan.users.size() < params.min_users)
+        throw Exception(ErrorCodes::LDAP_ERROR,
+            "LDAP synchronisation of directory {} from server '{}' found {} users in {} entries, fewer than min_users = {}; refusing to synchronise",
+            backQuote(getStorageName()), ldap_server_name, plan.users.size(), plan.entries, params.min_users);
+
+    return plan;
+}
+
+
+LDAPAccessStorage::SyncDiff LDAPAccessStorage::computeSyncDiffNoLock(const SyncPlan & plan) const
+{
+    SyncDiff diff;
+    diff.synced = synced_user_names.size();
+
+    for (const auto & [name, entry] : plan.users)
+    {
+        const auto id = memory_storage.find<User>(name);
+        if (!id)
+        {
+            diff.to_add.push_back(&entry);
+            continue;
+        }
+
+        /// `updateAssignedRolesNoLock` is a no-op for an unchanged set; only real changes are counted.
+        const auto it = users_external_roles.find(name);
+        if (it == users_external_roles.end() || it->second != entry.external_roles)
+            diff.to_update.emplace_back(*id, &entry);
+    }
+
+    /// Only users the synchronisation materialised are its to remove; a user that logged in lazily
+    /// (possible without `only_synced_users`) keeps the lifetime it has always had.
+    for (const auto & name : synced_user_names)
+    {
+        if (plan.users.contains(name))
+            continue;
+
+        if (const auto id = memory_storage.find<User>(name))
+            diff.to_remove.emplace_back(*id, name);
+    }
+
+    return diff;
+}
+
+
+void LDAPAccessStorage::checkRemovalGuard(const SyncDiff & diff) const
+{
+    const auto & params = *sync_params;
+
+    /// At least one removal is always allowed, otherwise a directory with a single user could never offboard them.
+    const size_t limit = std::max<size_t>(1, static_cast<size_t>(std::floor(params.max_removed_fraction * static_cast<double>(diff.synced))));
+    if (diff.to_remove.size() > limit)
+        throw Exception(ErrorCodes::LDAP_ERROR,
+            "LDAP synchronisation of directory {} from server '{}' would remove {} of {} users, more than max_removed_fraction = {} allows ({}); refusing to synchronise",
+            backQuote(getStorageName()), ldap_server_name, diff.to_remove.size(), diff.synced, params.max_removed_fraction, limit);
+}
+
+
+std::set<String> LDAPAccessStorage::getAllowListedRoleNames() const
+{
+    /// The role name of an allow-listed group is its configured spelling (plain form) or the `rdn_attribute`
+    /// value of the configured DN (DN form) with `prefix` removed; `parseLDAPRoleSearchParams` guarantees
+    /// that every entry starts with the prefix and is longer than it.
+    std::set<String> role_names;
+    for (const auto & mapping : role_search_params)
+    {
+        for (const auto & [_, configured_name] : mapping.plain_groups)
+            role_names.emplace(configured_name, mapping.prefix.size());
+        for (const auto & [_, rdn_value] : mapping.dn_groups)
+            role_names.emplace(rdn_value, mapping.prefix.size());
+    }
+    return role_names;
+}
+
+
+std::shared_ptr<IAccessStorage> LDAPAccessStorage::selectRolesStorage()
+{
+    const auto & params = *sync_params;
+    std::shared_ptr<IAccessStorage> storage;
+
+    if (!params.roles_storage.empty())
+    {
+        storage = access_control.getStorageByName(params.roles_storage);
+        if (storage->isReadOnly())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "LDAP sync cannot create roles in read-only storage {}; set roles_storage to a writable storage", backQuote(storage->getStorageName()));
+    }
+    else
+    {
+        std::vector<String> writable_names;
+        for (const auto & candidate : access_control.getStorages())
+        {
+            if (candidate->isReadOnly())
+                continue;
+            if (!storage)
+                storage = candidate;
+            writable_names.push_back(candidate->getStorageName());
+        }
+
+        if (!storage)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "LDAP sync of directory {} cannot create roles: there is no writable access storage", backQuote(getStorageName()));
+
+        if (writable_names.size() > 1 && !roles_storage_pick_logged)
+        {
+            roles_storage_pick_logged = true;
+            LOG_WARNING(getLogger(), "LDAP sync of directory {} creates roles in storage {}, the first writable one of [{}]; set roles_storage to choose explicitly",
+                backQuote(getStorageName()), backQuote(storage->getStorageName()), fmt::join(writable_names, ", "));
+        }
+    }
+
+    /// `MultipleAccessStorage::insertImpl` would happily pick a `memory` directory declared before the
+    /// persistent one; roles that vanish at restart would take the DBA's grants on them along.
+    if (storage->isEphemeral())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LDAP sync cannot create roles in ephemeral storage {}; set roles_storage", backQuote(storage->getStorageName()));
+
+    return storage;
+}
+
+
+size_t LDAPAccessStorage::createMissingRoles(const std::set<String> & role_names, IAccessStorage & storage)
+{
+    size_t created = 0;
+    for (const auto & role_name : role_names)
+    {
+        auto role = std::make_shared<Role>();
+        role->setName(role_name);
+
+        /// `CREATE ROLE IF NOT EXISTS` semantics: a node that lost the race against another node gets nullopt.
+        if (storage.tryInsert(role))
+        {
+            ++created;
+            LOG_INFO(getLogger(), "Created role '{}' in storage {} for LDAP directory {}", role_name, backQuote(storage.getStorageName()), backQuote(getStorageName()));
+        }
+    }
+
+    if (created > 0)
+    {
+        ProfileEvents::increment(ProfileEvents::LDAPSyncRolesCreated, created);
+        /// Direct storage writes only enqueue notifications; deliver them so that `processRoleChange`
+        /// learns the ids before the users are assigned.
+        access_control.getChangesNotifier().sendNotifications();
+    }
+
+    return created;
+}
+
+
+LDAPAccessStorage::SyncApplyResult LDAPAccessStorage::applySyncPlanNoLock(const SyncPlan & plan, const SyncDiff & diff)
+{
+    SyncApplyResult result;
+
+    for (const auto & [id, name] : diff.to_remove)
+    {
+        memory_storage.remove(id);
+        removeUserNoLock(name);
+        LOG_INFO(getLogger(), "Removed LDAP user '{}' from directory {}: no longer returned by the directory", name, backQuote(getStorageName()));
+    }
+    result.removed = diff.to_remove.size();
+
+    for (const auto & [id, entry] : diff.to_update)
+    {
+        updateAssignedRolesNoLock(id, entry->name, entry->external_roles);
+        LOG_INFO(getLogger(), "Updated roles of LDAP user '{}' ({}) in directory {}", entry->name, entry->dn, backQuote(getStorageName()));
+    }
+    result.updated = diff.to_update.size();
+
+    for (const auto * entry : diff.to_add)
+    {
+        auto new_user = makeUserNoLock(entry->name);
+        assignRolesNoLock(*new_user, entry->external_roles);
+        memory_storage.insert(new_user);
+        LOG_INFO(getLogger(), "Added LDAP user '{}' ({}) to directory {}", entry->name, entry->dn, backQuote(getStorageName()));
+    }
+    result.added = diff.to_add.size();
+
+    /// From now on every planned user belongs to the synchronisation, including the ones that had logged in lazily.
+    synced_user_names.clear();
+    for (const auto & [name, _] : plan.users)
+        synced_user_names.insert(name);
+
+    /// Roles the mappings name but nobody created: `assignRolesNoLock` warned per user, this is the per-run view.
+    for (const auto & [role_name, _] : users_per_roles)
+    {
+        if (!granted_role_ids.contains(role_name))
+            result.missing_roles.insert(role_name);
+    }
+    for (const auto & role_name : common_role_names)
+    {
+        if (!granted_role_ids.contains(role_name))
+            result.missing_roles.insert(role_name);
+    }
+
+    return result;
+}
+
+
+void LDAPAccessStorage::logDryRun(const SyncPlan & plan, const SyncDiff & diff, const std::set<String> & roles_to_create, const IAccessStorage * roles_target) const
+{
+    for (const auto * entry : diff.to_add)
+        LOG_INFO(getLogger(), "Dry run: would add LDAP user '{}' ({}) to directory {}", entry->name, entry->dn, backQuote(getStorageName()));
+
+    for (const auto & [id, entry] : diff.to_update)
+        LOG_INFO(getLogger(), "Dry run: would update roles of LDAP user '{}' ({}) in directory {}", entry->name, entry->dn, backQuote(getStorageName()));
+
+    for (const auto & [id, name] : diff.to_remove)
+        LOG_INFO(getLogger(), "Dry run: would remove LDAP user '{}' from directory {}", name, backQuote(getStorageName()));
+
+    for (const auto & role_name : roles_to_create)
+        LOG_INFO(getLogger(), "Dry run: would create role '{}' in storage {}", role_name, backQuote(roles_target->getStorageName()));
+
+    LOG_INFO(getLogger(),
+        "LDAP synchronisation of directory {} from server '{}' (dry run) finished: {} entries, {} users (would add {}, update {}, remove {}; "
+        "{} excluded, {} shadowed), would create {} roles; nothing applied",
+        backQuote(getStorageName()), ldap_server_name, plan.entries, plan.users.size(),
+        diff.to_add.size(), diff.to_update.size(), diff.to_remove.size(), plan.excluded, plan.shadowed, roles_to_create.size());
 }
 
 }
