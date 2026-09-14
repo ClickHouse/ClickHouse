@@ -316,6 +316,21 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
                     f"Too many simultaneous queries {whose}. Current: 1, maximum: 1" in error
                 ), error
                 assert ", waiting:" not in error, error
+
+            # `max_concurrent_queries` is a server setting, so its own negative control installs the
+            # limit from the config while the occupancy query already holds the only slot. The reload
+            # is admitted because the limit it installs is not in effect yet when it starts, and
+            # `Maximum: 1` proves the check ran against the value it installed. Nothing else runs
+            # after this: the limit is in effect until the occupancy query is killed below, and only
+            # `KILL QUERY` and `system.processes` selects are exempt from it.
+            set_config(
+                "<max_concurrent_queries>0</max_concurrent_queries>",
+                "<max_concurrent_queries>1</max_concurrent_queries>",
+            )
+            node.query("SYSTEM RELOAD CONFIG")
+            error = node.query_and_get_error("SELECT 1", settings={"queue_max_wait_ms": 0})
+            assert "Too many simultaneous queries. Maximum: 1" in error, error
+            assert ", waiting:" not in error, error
         finally:
             node.query("KILL QUERY WHERE query_id = 'occupancy' SYNC", ignore_error=True)
             occupancy.get_answer_and_error()
