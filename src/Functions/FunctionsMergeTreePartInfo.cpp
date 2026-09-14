@@ -69,7 +69,7 @@ bool isTryNSuffix(std::string_view suffix)
 }
 
 /// Tries to parse part name format: "<prefix>_<part_name>_<tryN>".
-UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached = false)
+UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached)
 {
     UnpackedPartSegments unpacked;
 
@@ -164,12 +164,12 @@ bool isBoolType(const IDataType & data_type)
 
 class FunctionMergeTreePartCoverage final : public IFunction
 {
-    static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
+    static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number, bool is_detached)
     {
         if (isColumnConst(*covering_column))
-            return unpackPartName(covering_column->getDataAt(0)).part_info;
+            return unpackPartName(covering_column->getDataAt(0), is_detached).part_info;
 
-        return unpackPartName(covering_column->getDataAt(row_number)).part_info;
+        return unpackPartName(covering_column->getDataAt(row_number), is_detached).part_info;
     }
 
 public:
@@ -178,17 +178,24 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartCoverage>(); }
 
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
+        FunctionArgumentDescriptors mandatory_args{
             {"nested_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"},
             {"covering_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
-        });
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"is_detached",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isBoolType), isColumnConst, "const Bool"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -197,11 +204,12 @@ public:
     {
         auto result_column = ColumnUInt8::create();
         const ColumnPtr & input_column = arguments.front().column;
+        const bool is_detached = arguments.size() == 3 && arguments[2].column->getBool(0);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto part_info = unpackPartName(input_column->getDataAt(i)).part_info;
-            const auto covering_part = constructCoveringPart(arguments[1].column, i);
+            const auto part_info = unpackPartName(input_column->getDataAt(i), is_detached).part_info;
+            const auto covering_part = constructCoveringPart(arguments[1].column, i, is_detached);
             result_column->insertValue(covering_part.contains(part_info));
         }
 
@@ -302,10 +310,13 @@ REGISTER_FUNCTION(MergeTreePartInfoTools)
     FunctionDocumentation::Description description_coverage = R"(
 Function which checks if the part of the first argument is covered by the part of the second argument.
     )";
-    FunctionDocumentation::Syntax syntax_coverage = "isMergeTreePartCoveredBy(nested_part, covering_part)";
+    FunctionDocumentation::Syntax syntax_coverage = "isMergeTreePartCoveredBy(nested_part, covering_part[, is_detached])";
     FunctionDocumentation::Arguments arguments_coverage = {
         {"nested_part", "Name of expected nested part.", {"String"}},
-        {"covering_part", "Name of expected covering part.", {"String"}}
+        {"covering_part", "Name of expected covering part.", {"String"}},
+        {"is_detached",
+         "If true, parse both names as detached parts. This is needed for names which are also valid regular part names.",
+         {"const Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_coverage = {"Returns `1` if it covers, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_coverage = {
@@ -336,7 +347,9 @@ Function that helps to cut the useful values out of the `MergeTree` part name.
         {"part_name", "Name of part to unpack.", {"String"}},
         {"is_detached", "If true, parse the name as a detached part. This is needed for names which are also valid regular part names.", {"const Bool"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_info = {"Returns a Tuple with subcolumns: `partition_id`, `min_block`, `max_block`, `level`, `mutation`.", {"Tuple"}};
+    FunctionDocumentation::ReturnedValue returned_value_info = {
+        "Returns a Tuple with subcolumns: `partition_id`, `prefix`, `suffix`, "
+        "`min_block`, `max_block`, `level`, `mutation`.", {"Tuple"}};
     FunctionDocumentation::Examples examples_info = {
     {
         "Basic example",
