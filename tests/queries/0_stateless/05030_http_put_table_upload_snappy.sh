@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 17 AND b =
 echo "-- an explicit HTTP Snappy header keeps framed mode"
 if ${CLICKHOUSE_CURL} -fsS -o /dev/null -X PUT -H 'Content-Type: text/csv' -H 'Content-Encoding: snappy' \
     --data-binary @"${BASIC_SNAPPY_PAYLOAD}" \
-    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy?snappy_mode=basic"; then
+    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy?snappy_mode=basic" 2>/dev/null; then
     echo "basic Snappy payload was accepted as framed HTTP Snappy"
     exit 1
 fi
