@@ -1,0 +1,30 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep every dividend six digits long. With result_scale = 70, divideDecimal
+         therefore passes a 76-digit vector to DecimalOpHelpers::divide on every row. -->
+    <create_query>
+        CREATE TABLE divide_decimal
+        (
+            value Decimal256(0)
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO divide_decimal
+        SELECT toDecimal256(number, 0)
+        FROM numbers(50000, 100000)
+    </fill_query>
+
+    <!-- A small divisor keeps the quotient vector nearly as long as the input vector,
+         exposing the repeated result push_back allocation pattern. -->
+    <query>
+        SELECT divideDecimal(value, toDecimal256(7, 0), 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS divide_decimal</drop_query>
+</test>
