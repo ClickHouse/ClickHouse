@@ -72,7 +72,8 @@ DROP TABLE t_05136_merge;
 -- LowCardinality type into a chain built on the plain type. With a CAST wrapper (here the implicit
 -- UInt8->Bool cast) the dictionary-unpack step is elided, and applyFunctionForField builds a
 -- LowCardinality const column that the inner cast wrapper then rejects with a Bad cast LOGICAL_ERROR.
--- The sparse caller must strip LowCardinality like the dense one.
+-- `applyMonotonicFunctionsChainToRange` seeds the chain with the recursively stripped key type, so a
+-- caller that passes the raw key type does not diverge from what the chain was built against.
 DROP TABLE IF EXISTS t_05136_lc2;
 DROP TABLE IF EXISTS t_05136_merge2;
 
@@ -121,7 +122,7 @@ DROP TABLE t_05136_merge2;
 -- passed the recursively-stripped key type. On the partition-minmax constant-coordinate (explicit
 -- field) path this reached `applyFunctionForField` with a LowCardinality `arg_type`, which built a
 -- LowCardinality const column that the next function (a Bool CAST wrapper) then rejected with a Bad
--- cast LOGICAL_ERROR. `applyFunctionForField` must strip LowCardinality like the cached branch does.
+-- cast LOGICAL_ERROR.
 DROP TABLE IF EXISTS t_05136_lc3;
 DROP TABLE IF EXISTS t_05136_merge3;
 CREATE TABLE t_05136_lc3 (a UInt64, b LowCardinality(Bool))
@@ -135,8 +136,8 @@ SELECT count() FROM t_05136_merge3 WHERE toLowCardinality(b) > toNullable(toLowC
 
 -- Opposite direction on the same path: here the chain's running type is the plain key type while the
 -- next function was resolved against a LowCardinality argument type, so building the const column on
--- the running type is also a bad cast (ColumnVector<char8_t> to ColumnLowCardinality). The const
--- column must follow the function's declared argument type, not the running type.
+-- the running type is also a bad cast (ColumnVector<char8_t> to ColumnLowCardinality). The running
+-- type advances to each function's own result type, which is what keeps the two in step.
 SELECT count() FROM t_05136_merge3 WHERE CAST(toLowCardinality(b), 'UInt64') > 0;
 SELECT count() FROM t_05136_merge3 WHERE CAST(CAST(b, 'LowCardinality(UInt8)'), 'UInt64') > 0;
 -- Both counts above are also what a declined chain would return, so assert that these two explicit-field
@@ -163,9 +164,8 @@ DROP TABLE t_05136_merge3;
 
 -- Same both-direction mismatch on the DENSE cached-column path: normal WHERE pruning builds
 -- block-backed FieldRefs, so a two-link chain whose intermediate result type is LowCardinality reaches
--- `applyFunction`'s cache-miss branch, which strips the column to plain while the next link was
--- resolved against a LowCardinality argument type. That link must be handed back the representation
--- it was resolved against, or the wrapper rejects the plain column with a Bad cast.
+-- `applyFunction`'s cache-miss branch. Only the chain's input is normalized there, and each interior
+-- link receives the argument type it was built for, or the wrapper rejects the column with a Bad cast.
 DROP TABLE IF EXISTS t_05136_lc4;
 DROP TABLE IF EXISTS t_05136_merge4;
 CREATE TABLE t_05136_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree ORDER BY k
