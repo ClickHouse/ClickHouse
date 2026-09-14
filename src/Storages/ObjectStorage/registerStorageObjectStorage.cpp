@@ -268,6 +268,13 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
+## Storage settings {#storage-settings}
+
+- [azure_truncate_on_insert](/reference/settings/session-settings/azure#azure_truncate_on_insert) - allows to truncate the blob before insert into it. Disabled by default.
+- [azure_create_new_file_on_insert](/reference/settings/session-settings/azure#azure_create_new_file_on_insert) - allows to create a new blob on each insert if the format has a suffix. Disabled by default.
+- [azure_split_on_write_by_size_bytes](/reference/settings/session-settings/azure#azure_split_on_write_by_size_bytes) - splits the written data into multiple numbered blobs of approximately the specified size. Disabled by default.
+- [azure_skip_empty_files](/reference/settings/session-settings/azure#azure_skip_empty_files) - allows to skip empty blobs while reading. Disabled by default.
+
 ## See also {#see-also}
 
 [Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
@@ -511,7 +518,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 ## Insert data {#inserting-data}
 
-Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
+Note that rows can only be inserted into new files. There are no merge cycles. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. A single `INSERT` can be split into several numbered files of approximately a given size with the [s3_split_on_write_by_size_bytes](/reference/settings/session-settings/s3#s3_split_on_write_by_size_bytes) setting. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
 ## Virtual columns {#virtual-columns}
 

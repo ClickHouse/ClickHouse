@@ -767,6 +767,26 @@ def test_split_on_write_by_size(started_cluster):
     ) == TSV([[500, 0, 499]])
 
     node1.query("drop table test_split_on_write")
+
+    # The table function keeps no list of the files written by a previous insert, so a truncating
+    # split insert into it claims the whole numbered sequence of its name: the files it does not
+    # rewrite are deleted by their numbers.
+    node1.query(
+        f"insert into table function {table_function} select number from numbers(1000) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv", "data.2.tsv", "data.3.tsv", "data.tsv"]
+    assert node1.query(f"select count(), min(x), max(x) from {wildcard}") == TSV(
+        [[1000, 0, 999]]
+    )
+
+    node1.query(
+        f"insert into table function {table_function} select number from numbers(1000, 300) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv", "data.tsv"]
+    assert node1.query(f"select count(), min(x), max(x) from {wildcard}") == TSV(
+        [[300, 1000, 1299]]
+    )
+
     fs.delete(f"/{id}/", recursive=True)
 
 

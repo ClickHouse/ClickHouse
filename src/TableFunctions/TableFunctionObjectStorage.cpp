@@ -670,7 +670,7 @@ While ZIP and TAR archives can be accessed from any supported storage location, 
 
 ## Inserting Data {#inserting-data}
 
-Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
+Note that rows can only be inserted into new files. There are no merge cycles. Once a file is written, subsequent inserts will fail. To avoid this you can use the `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. A single `INSERT` can be split into several numbered files of approximately a given size with the [s3_split_on_write_by_size_bytes](/reference/settings/session-settings/s3#s3_split_on_write_by_size_bytes) setting. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
 ## Virtual Columns {#virtual-columns}
 
@@ -1272,6 +1272,13 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 
 1 row in set. Elapsed: 0.153 sec.
 ```
+
+## Storage Settings {#storage-settings}
+
+- [azure_truncate_on_insert](/reference/settings/session-settings/azure#azure_truncate_on_insert) - allows to truncate the blob before insert into it. Disabled by default.
+- [azure_create_new_file_on_insert](/reference/settings/session-settings/azure#azure_create_new_file_on_insert) - allows to create a new blob on each insert if the format has a suffix. Disabled by default.
+- [azure_split_on_write_by_size_bytes](/reference/settings/session-settings/azure#azure_split_on_write_by_size_bytes) - splits the written data into multiple numbered blobs of approximately the specified size. Disabled by default.
+- [azure_skip_empty_files](/reference/settings/session-settings/azure#azure_skip_empty_files) - allows to skip empty blobs while reading. Disabled by default.
 
 ## Related {#related}
 - [AzureBlobStorage Table Engine](/reference/engines/table-engines/integrations/azureBlobStorage)
