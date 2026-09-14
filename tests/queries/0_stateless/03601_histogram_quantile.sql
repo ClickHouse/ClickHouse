@@ -106,6 +106,17 @@ FROM
     SELECT inf AS le, CAST([2.], 'Array(Nullable(Float64))') AS values
 );
 
+-- An all-NULL bucket must not affect the result.
+SELECT quantilePrometheusHistogramArray(0.5)(le, values)
+FROM
+(
+    SELECT toFloat64(0) AS le, CAST([NULL, NULL], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT toFloat64(1) AS le, CAST([2., 2.], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT inf AS le, CAST([3., 3.], 'Array(Nullable(Float64))') AS values
+);
+
 SELECT
     quantilePrometheusHistogramForEach(0.5)(
         arrayResize(CAST([], 'Array(Float64)'), length(values), le), values) AS old,

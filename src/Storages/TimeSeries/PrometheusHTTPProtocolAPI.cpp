@@ -199,7 +199,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.use_quantile_prometheus_histogram_array
-        = useQuantilePrometheusHistogramArray(getContext()->getSettingsRef()[Setting::compatibility]);
+        = useQuantilePrometheusHistogramArray(getContext()->getSettingsRef()[Setting::compatibility].value);
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)

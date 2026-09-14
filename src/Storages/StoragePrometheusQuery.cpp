@@ -152,7 +152,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
     evaluation_settings.mode = mode;
     evaluation_settings.use_quantile_prometheus_histogram_array
-        = useQuantilePrometheusHistogramArray(context->getSettingsRef()[Setting::compatibility]);
+        = useQuantilePrometheusHistogramArray(context->getSettingsRef()[Setting::compatibility].value);
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
