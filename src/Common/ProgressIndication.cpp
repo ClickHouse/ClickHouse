@@ -266,6 +266,36 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                 else
                     bar_segments.back().second = stalled;
             }
+
+            /// The state can flip on every progress update, so the history has to be compacted, or it
+            /// would grow with the duration of the query and make every repaint slower. It is compacted
+            /// at a fixed resolution, which is finer than any terminal, rather than at the current width
+            /// of the bar: the stored counts stay independent of the terminal, so a repaint while the
+            /// terminal is temporarily narrow (or the bar is hidden by the annotation) does not discard
+            /// transitions that are visible again once it is widened. Transitions that fall into the
+            /// same virtual cell cannot be told apart at that resolution: the cell keeps the count where
+            /// it began and takes the later state, and neighbours of the same state are merged. The
+            /// total may still grow and shift older transitions into one cell: the next repaint
+            /// collapses them the same way.
+            auto virtual_cell_of = [&](UInt64 count)
+            {
+                return static_cast<size_t>(UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(bar_history_resolution)));
+            };
+
+            size_t kept = 0;
+            for (const auto & segment : bar_segments)
+            {
+                auto to_keep = segment;
+                if (kept > 0 && virtual_cell_of(bar_segments[kept - 1].first) == virtual_cell_of(to_keep.first))
+                {
+                    to_keep.first = bar_segments[kept - 1].first;
+                    --kept;
+                }
+                if (kept > 0 && bar_segments[kept - 1].second == to_keep.second)
+                    continue;
+                bar_segments[kept++] = to_keep;
+            }
+            bar_segments.resize(kept);
         }
 
         if (elapsed_ns > 500000000)
@@ -280,34 +310,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                 if (width_of_progress_bar <= 1 + 2 * static_cast<int64_t>(profiling_msg.size()))
                     profiling_msg.clear();
 
-                /// Each cell is colored by the state at the time that progress was made.
+                /// Each cell is colored by the state at the time that progress was made. Segments that
+                /// begin in the same cell of this (coarser) bar are not told apart: `colored_bar` skips
+                /// the empty ranges, so the cell takes the state of the last segment beginning in it.
                 auto cell_of = [&](UInt64 count)
                 {
                     double width = UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(std::max<int64_t>(width_of_progress_bar, 0)));
                     return static_cast<size_t>(width);
                 };
-
-                /// The state can flip on every progress update, but the bar has only the resolution
-                /// of the terminal: segments that begin in the same cell as the previous one cannot be
-                /// told apart when rendered. Collapse them (the cell keeps the count where it began
-                /// and takes the later state) and merge neighbours of the same state, so the retained
-                /// history and the work per repaint stay bounded by the width of the bar, not by the
-                /// duration of the query. The total may still grow and shift older transitions into
-                /// one cell: the next repaint collapses them the same way.
-                size_t kept = 0;
-                for (const auto & segment : bar_segments)
-                {
-                    auto to_keep = segment;
-                    if (kept > 0 && cell_of(bar_segments[kept - 1].first) == cell_of(to_keep.first))
-                    {
-                        to_keep.first = bar_segments[kept - 1].first;
-                        --kept;
-                    }
-                    if (kept > 0 && bar_segments[kept - 1].second == to_keep.second)
-                        continue;
-                    bar_segments[kept++] = to_keep;
-                }
-                bar_segments.resize(kept);
 
                 if (width_of_progress_bar > 0)
                 {
