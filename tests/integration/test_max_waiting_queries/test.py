@@ -131,7 +131,7 @@ def test_waiting_queries_limit(started_cluster):
             raise AssertionError(
                 "the query over max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries" in error, error
+        assert "Too many simultaneous waiting queries. Maximum: 2, waiting: 2" in error, error
         assert waiters_on_startup_job() == "2"
         assert waiting_queries_metric() == "2"
 
@@ -155,7 +155,7 @@ def test_waiting_queries_limit(started_cluster):
             raise AssertionError(
                 "the query over the lowered max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries" in error, error
+        assert "Too many simultaneous waiting queries. Maximum: 1, waiting: 2" in error, error
         # The refusal throws before any counter moves, so it must leave the waiting set untouched.
         assert waiters_on_startup_job() == "2"
         assert waiting_queries_metric() == "2"
