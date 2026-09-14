@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -132,39 +131,6 @@ void validateSupportedColumns(
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
             configuration.getTypeName());
     }
-}
-
-void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
-{
-    size_t position = 0;
-    for (const auto & column : schema)
-    {
-        if (column.name.empty())
-            throw Exception(
-                ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                "Column name in {} table schema cannot be empty (field at position {})",
-                lake_name, position);
-        ++position;
-    }
-}
-
-std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
-{
-    if (prefix.empty())
-        return path;
-
-    std::string_view key = path;
-    if (key.starts_with("/"))
-        key.remove_prefix(1);
-    return fs::path(prefix) / key;
-}
-
-std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
-{
-    if (prefix.empty())
-        return path;
-
-    return fs::relative(path, prefix).string();
 }
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)

@@ -864,7 +864,7 @@ This format is suitable only for input.
 
 ## Example usage {#example-usage}
 
-The following request can be used for inserting data from its output example of format [JSON](/reference/formats/JSON/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 
@@ -915,7 +915,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
             for (auto escaping_rule : row_format.escaping_rules)
             {
                 if (!visited_escaping_rules.contains(escaping_rule))
-                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, escaping_rule);
+                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
                 visited_escaping_rules.insert(escaping_rule);
             }
             return result;

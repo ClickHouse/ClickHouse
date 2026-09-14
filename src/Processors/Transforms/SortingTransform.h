@@ -52,9 +52,6 @@ public:
 
     String getName() const override { return "MergeSorterSource"; }
 
-    /// These rows were already counted when they were read from the original source.
-    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
-
 protected:
     Chunk generate() override { return merge_sorter.read(); }
 

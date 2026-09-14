@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <memory>
-#include <optional>
 
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -54,13 +53,11 @@ class AsynchronousMetrics;
 ///         <type>prometheus</type>
 ///     </my_protocol_1>
 /// </protocols>
-/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name,
-    const std::optional<String> & default_session_user = {});
+    const String & name);
 
 /// Makes a HTTP handler factory to handle requests for prometheus metrics for a HTTP rule in the <http_handlers> section.
 /// Expects a configuration like this:
@@ -90,8 +87,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix, /// path to "http_handlers.my_handler_1"
     const AsynchronousMetrics & asynchronous_metrics,
-    std::unordered_map<String, String> & common_headers,
-    const std::optional<String> & default_session_user = {});
+    std::unordered_map<String, String> & common_headers);
 
 /// Makes a HTTP Handler factory to handle requests for prometheus metrics as a part of the default HTTP rule in the <http_handlers> section.
 /// Expects a configuration like this:
@@ -115,17 +111,14 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const AsynchronousMetrics & asynchronous_metrics,
-    const std::optional<String> & default_session_user = {});
+    const AsynchronousMetrics & asynchronous_metrics);
 
 /// Makes a handler factory to handle prometheus protocols.
 /// Supports the "metrics" protocol only.
-/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name,
-    const std::optional<String> & default_session_user = {});
+    const String & name);
 
 }

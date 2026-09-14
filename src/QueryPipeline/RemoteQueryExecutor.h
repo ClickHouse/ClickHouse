@@ -4,13 +4,11 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
-#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
-#include <atomic>
 
 
 namespace DB
@@ -128,7 +126,7 @@ public:
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
 
     int sendQueryAsync();
 
@@ -226,19 +224,12 @@ public:
 
     bool needToSkipUnavailableShard();
 
-    /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
-    /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
-    void reportShardSkipped();
-
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
     bool isFinished() const { return finished; }
-
-    bool isCancelled() const { LockAndBlocker lock(was_cancelled_mutex); return was_cancelled; }
 
 private:
     RemoteQueryExecutor(
@@ -296,61 +287,32 @@ private:
       */
     bool finished = false;
 
-    /** Test-only. True only while this executor's reading thread is parked at the
-      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
-      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
-      */
-    std::atomic_bool in_receive_packet_window = false;
-
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    mutable std::mutex was_cancelled_mutex;
-    bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
-
-    /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
-    /// owe us is that announcement - see `tryCancel`.
-    std::atomic_bool announcement_received = false;
-
-    /// Set when `tryCancel` left a packet undrained, so the destructor knows the connection is
-    /// unsynchronised and must be disconnected rather than returned to the pool.
-    std::atomic_bool drain_was_skipped = false;
+    bool was_cancelled = false;
+    std::mutex was_cancelled_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
     bool got_exception_from_replica = false;
 
-    /** Whether the shard has already returned any data block with rows.
-      * Used by `skip_unavailable_shards_mode = unavailable_or_exception_before_processing`
-      * to decide whether an exception arrived before the shard started returning results.
-      */
-    bool got_data_from_replica = false;
-
-    /// Cached `skip_unavailable_shards` settings, read once at construction time.
-    const bool skip_unavailable_shards;
-    const SkipUnavailableShardsMode skip_unavailable_shards_mode;
-
-    /** Returns true if an exception packet received from the shard should be silently
-      * ignored according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
-      */
-    bool shouldIgnoreShardException(int exception_code) const;
-
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
     bool got_unknown_packet_from_replica = false;
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = getLogger("RemoteQueryExecutor");
+    LoggerPtr log = nullptr;
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
@@ -374,8 +336,8 @@ private:
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
-    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
+    void cancelUnlocked();
+    void tryCancel(const char * reason);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
@@ -387,5 +349,4 @@ private:
     ReadResult processPacket(Packet packet);
 };
 
-ThrottlerPtr getThrottler(const ContextPtr & context);
 }

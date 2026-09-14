@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -22,7 +21,7 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheCommon.h>
 #endif
-#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -38,11 +37,7 @@ public:
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
-#if ENABLE_DISTRIBUTED_CACHE
-        , origin(context_->isDistributedCacheServer() ? DistributedCache::getIntrospectionCacheUser() : FileCache::getCommonOrigin())
-#else
         , origin(FileCache::getCommonOrigin())
-#endif
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
         for (const auto & [cache_name, cache_data] : caches_by_name)
@@ -110,10 +105,13 @@ protected:
                 col_cache_name->insert(cache_name);
                 col_cache_base_path->insert(cache->getBasePath());
 
-                /// `file_segment.path` is captured when the snapshot is taken and reflects the real
-                /// on-disk name (including the `_<size>` suffix for downloaded segments). Do not
-                /// recompute it from the offset here, as that cannot know the size suffix.
-                col_path->insert(file_segment.path);
+                /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
+                /// (because file_segments in getSnapshot do not have `cache` field set)
+                const auto path = cache->getFileSegmentPath(
+                    file_segment.key, file_segment.offset, file_segment.kind,
+                    file_segment.origin);
+
+                col_path->insert(path);
                 col_key->insert(file_segment.key.toString());
                 col_range_begin->insert(file_segment.range_left);
                 col_range_end->insert(file_segment.range_right);
@@ -129,7 +127,7 @@ protected:
                 col_file_origin->insert(toString(file_segment.origin.segment_type));
 
                 std::error_code ec;
-                auto size = fs::file_size(file_segment.path, ec);
+                auto size = fs::file_size(path, ec);
                 if (!ec)
                     col_file_size->insert(size);
                 else
@@ -290,6 +288,3 @@ void StorageSystemFilesystemCache::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCache) }

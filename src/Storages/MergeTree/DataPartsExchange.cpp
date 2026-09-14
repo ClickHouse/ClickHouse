@@ -14,7 +14,6 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -70,7 +69,6 @@ namespace DataPartsExchange
 
 namespace
 {
-
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
@@ -80,7 +78,6 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
-constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS = 10;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -117,7 +114,7 @@ struct ReplicatedFetchReadCallback
 bool isProjectionNameSafe(const std::string & projection_name)
 {
     return !projection_name.empty()
-        && !projection_name.contains('/');
+        && projection_name.find('/') == std::string::npos;
 }
 
 }
@@ -148,7 +145,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -267,10 +264,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
             && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
-            continue;
-
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS
-            && name == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -461,7 +454,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS)},
         {"compress",                "false"}
     });
 
@@ -760,8 +753,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME &&
-            file_name != IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
+            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -829,11 +821,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         return std::pair{std::move(v), std::move(s)};
     }();
 
-    if (!to_remote_disk)
-        part_storage_for_loading->beginTransaction();
+    part_storage_for_loading->beginTransaction();
 
-    /// Not `MergeTreeData::reclaimStaleTemporaryPartDirectory`: that one only handles directories
-    /// directly under the table data path, while a fetch with `to_detached` writes under `detached/`.
     if (part_storage_for_loading->exists())
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
@@ -893,8 +882,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         if (e.code() == ErrorCodes::ABORTED)
         {
             part_storage_for_loading->removeSharedRecursive(true);
-            if (part_storage_for_loading->hasActiveTransaction())
-                part_storage_for_loading->commitTransaction();
+            part_storage_for_loading->commitTransaction();
         }
         throw;
     }
@@ -903,16 +891,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::MutableDataPartPtr new_data_part;
     try
     {
-        if (part_storage_for_loading->hasActiveTransaction())
-            part_storage_for_loading->commitTransaction();
+        part_storage_for_loading->commitTransaction();
 
-        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings(), PartDirIntent::OpenExisting);
+        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
         new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
-        /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
         new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
@@ -952,34 +939,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
                     data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
             }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
-        }
-        else
-        {
-            /// A packed part is transferred as a single data.packed archive, so the per-file wire
-            /// hashes above only prove the archive arrived intact, not that its logical contents match
-            /// the checksums it advertises (data_checksums is keyed by data.packed, not by the logical
-            /// files in part->checksums, which is why the checkEqual above is limited to full storage).
-            /// Recompute the checksums from the archive and compare them, so a corrupted packed part is
-            /// rejected on fetch instead of being accepted and propagated to this replica.
-            /// checkDataPart itself tolerates an unknown <name>.proj that the table no longer knows about
-            /// (a projection dropped while the part was detached, then re-attached): it drops such
-            /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
-            /// base-file corruption still fails checkEqual, so it is left to propagate.
-            bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
-
-            /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
-            /// such as a transient read or memory-limit exception, expecting the check to be retried
-            /// later. On the fetch path there is no later check before the part is published, so an empty
-            /// result means the archive contents were never verified. Fail the fetch so it is retried
-            /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
-            /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
-                throw Exception(
-                    ErrorCodes::ABORTED,
-                    "Could not verify packed part {} on fetch (checksum computation was skipped because of a "
-                    "transient error); the fetch will be retried",
-                    part_name);
         }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }

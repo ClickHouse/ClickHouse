@@ -17,7 +17,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsDialect dialect;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsUInt64 interactive_delay;
@@ -189,13 +188,6 @@ void MultiplexedConnections::sendQuery(
     /// all servers involved in the distributed query processing.
     modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
-    /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-    /// servers of a distributed query must agree on it even when it comes only from server/profile
-    /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-    modified_settings.set(
-        "enable_packed_string_keys_in_aggregation",
-        static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
-
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
@@ -241,15 +233,6 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
     if (cancelled)
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
-}
-
-
-void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
-{
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
-        return;
-    current_connection->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 
@@ -390,18 +373,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
-    {
-        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
-        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
-        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
-        if (cancelled)
-        {
-            Packet res;
-            res.type = Protocol::Server::EndOfStream;
-            return res;
-        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
-    }
 
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
@@ -480,25 +452,31 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList except_list;
 
         auto timeout = settings[Setting::receive_timeout];
+        int n = 0;
 
-        read_list.clear();
-        for (const ReplicaState & state : replica_states)
+        /// EINTR loop
+        while (true)
         {
-            Connection * connection = state.connection;
-            if (connection != nullptr)
-                read_list.push_back(*connection->socket);
-        }
+            read_list.clear();
+            for (const ReplicaState & state : replica_states)
+            {
+                Connection * connection = state.connection;
+                if (connection != nullptr)
+                    read_list.push_back(*connection->socket);
+            }
 
-        /// No `EINTR` retry here: `Poco::Net::Socket::select` already retries against a single deadline
-        /// of its own, spending a `remainingTime` budget (`base/poco/Net/src/Socket.cpp`, in each of its
-        /// epoll, poll and select branches). Retrying on top of that restarted the deadline from the full
-        /// `receive_timeout` every time, because an exhausted budget returns 0 with `errno` still holding
-        /// the `EINTR` from Poco's own retry - so on a silent replica the timeout below never fired.
-        int n = Poco::Net::Socket::select(
-            read_list,
-            write_list,
-            except_list,
-            timeout);
+            /// poco returns 0 on EINTR, let's reset errno to ensure that EINTR came from select().
+            errno = 0;
+
+            n = Poco::Net::Socket::select(
+                read_list,
+                write_list,
+                except_list,
+                timeout);
+            if (n <= 0 && errno == EINTR)
+                continue;
+            break;
+        }
 
         if (n == 0)
         {

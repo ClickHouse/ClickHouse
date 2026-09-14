@@ -5,43 +5,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# A killed client must stop the test: continuing would reach a drop of a named collection whose
-# dependent table has not been removed yet, leaving that table unloadable at the next start.
-set -e
-
 ORDINARY_DB="${CLICKHOUSE_DATABASE}_ordinary"
-# A table whose collection this test drops out from under it cannot be attached again, so it lives
-# in a Memory database: that metadata is never written, so no restart can replay it.
-MEMORY_DB="${CLICKHOUSE_DATABASE}_memory"
 NC_NAME="test_nc_dep_${CLICKHOUSE_DATABASE}"
 
-# Setup: clean up any leftover state. Tables go before the collection, otherwise a table left by an
-# interrupted run outlives the collection it references.
-# ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op
-# (for URL, a TRUNCATE that throws).
-# ast_fuzzer_runs = 0: a fuzzed DROP TABLE can become UNDROP TABLE for the same target, which
-# reattaches the table after this block has dropped the collection it references.
+# Setup: clean up any leftover state
 $CLICKHOUSE_CLIENT -m -q "
 SET check_named_collection_dependencies = false;
-SET ignore_drop_queries_probability = 0;
-SET ast_fuzzer_runs = 0;
-DROP TABLE IF EXISTS test_nc_dep_table;
-DROP TABLE IF EXISTS test_nc_dep_table_renamed;
-DROP TABLE IF EXISTS test_nc_dep_table2;
-DROP TABLE IF EXISTS test_nc_dep_atomic;
-DROP DATABASE IF EXISTS ${MEMORY_DB};
-DROP DATABASE IF EXISTS ${ORDINARY_DB};
 DROP NAMED COLLECTION IF EXISTS ${NC_NAME};
 "
 
-# Create named collection and table that uses it.
-# ast_fuzzer_runs = 0: the stress profile enables the server-side AST fuzzer, which clones a
-# CREATE TABLE under a `__fuzz_N` name that inherits the collection reference this test drops.
+# Create named collection and table that uses it
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
-CREATE DATABASE ${MEMORY_DB} ENGINE = Memory;
 CREATE NAMED COLLECTION ${NC_NAME} AS url = 'http://localhost:8123', format = 'CSV';
-CREATE TABLE ${MEMORY_DB}.test_nc_dep_table (x UInt32) ENGINE = URL(${NC_NAME});
+CREATE TABLE test_nc_dep_table (x UInt32) ENGINE = URL(${NC_NAME});
 "
 
 # Should fail because table uses the named collection (check_named_collection_dependencies is true by default)
@@ -51,12 +27,11 @@ $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAM
 $CLICKHOUSE_CLIENT -m -q "
 SET check_named_collection_dependencies = false;
 DROP NAMED COLLECTION ${NC_NAME};
-DROP DATABASE ${MEMORY_DB};
+DROP TABLE test_nc_dep_table;
 "
 
 # Test normal behavior again with the setting enabled
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
 CREATE NAMED COLLECTION ${NC_NAME} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE test_nc_dep_table (x UInt32) ENGINE = URL(${NC_NAME});
 "
@@ -75,7 +50,6 @@ SET check_named_collection_dependencies = false;
 DROP NAMED COLLECTION IF EXISTS ${NC_NAME2};
 "
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
 CREATE NAMED COLLECTION ${NC_NAME2} AS url = 'http://localhost:8123', format = 'JSON';
 CREATE TABLE test_nc_dep_table2 (x UInt32) ENGINE = URL(${NC_NAME2});
 "
@@ -93,9 +67,8 @@ $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NA
 
 # Clean up
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
-DROP TABLE test_nc_dep_table_renamed SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE test_nc_dep_table2 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE test_nc_dep_table_renamed;
+DROP TABLE test_nc_dep_table2;
 DROP NAMED COLLECTION ${NC_NAME};
 DROP NAMED COLLECTION ${NC_NAME2};
 "
@@ -110,7 +83,6 @@ CREATE DATABASE ${ORDINARY_DB} ENGINE = Ordinary;
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
 CREATE NAMED COLLECTION ${NC_NAME} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE test_nc_dep_atomic (x UInt32) ENGINE = URL(${NC_NAME});
 CREATE TABLE ${ORDINARY_DB}.test_nc_dep_ordinary (x UInt32) ENGINE = URL(${NC_NAME});
@@ -124,13 +96,12 @@ $CLICKHOUSE_CLIENT -q "RENAME TABLE ${ORDINARY_DB}.test_nc_dep_ordinary TO ${ORD
 $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Atomic table, should still fail because Ordinary table uses the collection
-$CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic SETTINGS ignore_drop_queries_probability = 0, ast_fuzzer_runs = 0;"
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic;"
 $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Ordinary table, now drop should succeed
 $CLICKHOUSE_CLIENT -m -q "
-SET ast_fuzzer_runs = 0;
-DROP TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed;
 DROP NAMED COLLECTION ${NC_NAME};
 DROP DATABASE ${ORDINARY_DB};
 "

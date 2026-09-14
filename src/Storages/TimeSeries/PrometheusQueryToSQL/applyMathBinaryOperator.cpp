@@ -18,7 +18,7 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     void checkArgumentTypes(
-        const PrometheusQueryTree::BinaryOperator * operator_node,
+        const PQT::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
         const SQLQueryPiece & right_argument,
         const ConverterContext & context)
@@ -91,7 +91,7 @@ bool isMathBinaryOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applyMathBinaryOperator(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
+    const PQT::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context)
@@ -104,19 +104,7 @@ SQLQueryPiece applyMathBinaryOperator(
 
     auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
     {
-        if (operator_name != "%")
-            return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
-
-        ASTPtr result = makeASTFunction(impl_info->ch_function_name, x->clone(), y->clone());
-
-        return makeASTFunction(
-            "if",
-            makeASTFunction(
-                "and",
-                makeASTFunction("isInfinite", y->clone()),
-                makeASTFunction("isFinite", x->clone())),
-            std::move(x),
-            std::move(result));
+        return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
     };
 
     return applySimpleBinaryOperator(
