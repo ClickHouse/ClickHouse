@@ -81,7 +81,7 @@ dataset_hackernews_openai = {
         url           String,
         title         String,
         text          String,
-        vector        Array(Float32)
+        vector        Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -97,7 +97,7 @@ dataset_cohere_wiki_20m = {
     ],
     SCHEMA: """
         id            UInt32,
-        vector        Array(Float32)
+        vector        Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -141,7 +141,7 @@ dataset_laion_5b_mini_for_quick_test = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(Float32)
+        vector Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -861,6 +861,10 @@ TESTS_TO_RUN = [
 
 
 def main():
+    logger("CPU:\n" + os.popen("lscpu | grep -Ei 'model name|vendor|cpu family|^model:|stepping|^cpu.s.:|bogomips|cache|numa node.s.|implementer|^architecture|variant|^cpu part|revision'").read())
+    logger("MEM: " + os.popen("grep -E 'MemTotal|Hugepagesize' /proc/meminfo | tr -s ' ' | paste -sd'; '").read().strip())
+    logger("CPUSTAT begin: " + os.popen("head -1 /proc/stat").read().strip())
+
     test_results = install_clickhouse()
 
     if not test_results[-1].is_ok():
@@ -890,6 +894,8 @@ def main():
         test_results.append(
             Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
+
+    logger("CPUSTAT end: " + os.popen("head -1 /proc/stat").read().strip())
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"
