@@ -291,6 +291,8 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

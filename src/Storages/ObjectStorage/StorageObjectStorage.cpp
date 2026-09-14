@@ -133,6 +133,7 @@ StorageObjectStorage::StorageObjectStorage(
     , storage_id(table_id_)
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+    configuration->check(context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -205,8 +206,6 @@ StorageObjectStorage::StorageObjectStorage(
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
-
-    configuration->check(context);
 
     /// Resolving the sample path requires listing the object storage. Defer it to the first use
     /// of the table, so that CREATE, ATTACH and server startup do not depend on the endpoint.

@@ -196,6 +196,7 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
+        configuration->check(context);
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
