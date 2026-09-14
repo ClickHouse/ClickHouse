@@ -89,6 +89,7 @@ public:
         size_t num_streams) override;
     bool isRemote() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
+    StoragePtr getDestinationTable() const;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -209,8 +210,6 @@ private:
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
-
-    StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePoolPtr bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
