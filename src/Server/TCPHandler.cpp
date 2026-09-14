@@ -1197,11 +1197,12 @@ void TCPHandler::runImpl()
                 std::lock_guard lock(*callback_mutex);
 
                 /// A query packet is always followed by one or more data packets.
-                /// If some of those data packets are left, try to skip them.
-                /// Not after `UNEXPECTED_PACKET_FROM_CLIENT`: the payload of the rejected packet is
-                /// left unread on purpose, so skipping would deserialize it as a packet stream of its
-                /// own and then block until `receive_timeout`. The connection is closed right below.
-                if (!query_state->read_all_data && exception_code != ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
+                /// If some of those data packets are left, try to skip them - but only from a packet
+                /// boundary. A rejected packet's body is never read and a failed body read stops
+                /// halfway, and skipping from there would parse those bytes as packets of their own
+                /// and then block until `receive_timeout`.
+                if (!query_state->read_all_data && !query_state->packet_body_partially_read
+                    && exception_code != ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
                     skipData(*query_state);
             }
             catch (...)
@@ -1212,9 +1213,10 @@ void TCPHandler::runImpl()
             }
 
             /// We close the connection after an exception if there is something wrong with the connection,
-            /// otherwise we try to preserve it and reuse for other queries.
-            if (exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception_code == ErrorCodes::USER_EXPIRED
-                || exception_code == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
+            /// otherwise we try to preserve it and reuse for other queries. A half-read packet body
+            /// counts as wrong: the next query would read the rest of it as a packet.
+            if (query_state->packet_body_partially_read || exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
+                || exception_code == ErrorCodes::USER_EXPIRED || exception_code == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
@@ -2454,7 +2456,9 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
         case Protocol::Client::ReadTaskResponse:
         {
             auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+            state.packet_body_partially_read = true;
             task->deserialize(*in);
+            state.packet_body_partially_read = false;
             return task;
         }
 
@@ -2479,7 +2483,9 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         case Protocol::Client::MergeTreeReadTaskResponse:
         {
             ParallelReadResponse response;
+            state.packet_body_partially_read = true;
             response.deserialize(*in, client_parallel_replicas_protocol_version);
+            state.packet_body_partially_read = false;
             return response;
         }
 
@@ -2503,7 +2509,12 @@ InitialAllRangesAnnouncementResponse TCPHandler::receiveAllRangesAnnouncementRes
             return {};
 
         case Protocol::Client::MergeTreeAllRangesAnnouncementResponse:
-            return InitialAllRangesAnnouncementResponse::deserialize(*in, client_parallel_replicas_protocol_version);
+        {
+            state.packet_body_partially_read = true;
+            auto response = InitialAllRangesAnnouncementResponse::deserialize(*in, client_parallel_replicas_protocol_version);
+            state.packet_body_partially_read = false;
+            return response;
+        }
 
         default:
             throw Exception(
@@ -2856,25 +2867,25 @@ void TCPHandler::processObsoleteIgnoredPartUUIDs()
 
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
-    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
-
-    if (unexpected_packet && !state.skipping_data)
+    /// Rejected even while draining a failed query: the drain consumes what that query's input still
+    /// owes, and an out-of-place plan is not part of it.
+    if (state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
-    /// While draining the leftover packets of a query that has already failed, only consume the
-    /// bytes off the buffer, without building a runnable plan.
+    const auto & context = state.query_context;
+    state.packet_body_partially_read = true;
+
+    /// While draining, only consume the bytes off the buffer, without building a runnable plan.
     if (state.skipping_data)
     {
-        /// Out of place even for the drain: the global context lacks the parallel-replicas
-        /// coordinator callbacks a runnable plan would need.
-        auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
         QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context), /*skip_data=*/true);
+        state.packet_body_partially_read = false;
         return true;
     }
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
-    const auto & context = state.query_context;
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
+    state.packet_body_partially_read = false;
     LOG_TRACE(log, "Received query plan");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
@@ -2887,10 +2898,12 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     /// The name of the temporary table for writing data, default to empty string
     auto temporary_id = StorageID::createEmpty();
+    state.packet_body_partially_read = true;
     readStringBinary(temporary_id.table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
+    state.packet_body_partially_read = false;
 
     if (block.empty())
         return false;
@@ -2946,6 +2959,8 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     /// The client keeps sending the data of a query that has already failed. The block is
     /// deserialized only to find where the packet ends, so that the rest of the data can be
     /// discarded and the connection reused for the next query.
+    state.packet_body_partially_read = true;
+
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
 
@@ -2956,7 +2971,10 @@ bool TCPHandler::skipDataPacket(QueryState & state)
         maybe_compressed_in = in;
 
     NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version);
-    return !skip_block_in.read().empty();
+    bool has_rows = !skip_block_in.read().empty();
+
+    state.packet_body_partially_read = false;
+    return has_rows;
 }
 
 

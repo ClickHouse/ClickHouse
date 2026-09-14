@@ -32,6 +32,8 @@ REVISION = 54482
 UNEXPECTED_PACKET_FROM_CLIENT = 101
 VIOLATED_CONSTRAINT = 469
 
+UNKNOWN_TYPE_NAME = "ThisTypeDoesNotExist"
+
 
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
@@ -294,6 +296,21 @@ def sendUInt64Block(s, values):
     s.sendall(ba)
 
 
+def sendBlockWithUnknownTypeName(s, trailing=b""):
+    # `NativeReader` resolves a column's type right after reading its name and before reading
+    # anything else, so a name that belongs to no type fails with the rest of the packet unread.
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # external table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(1, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary(UNKNOWN_TYPE_NAME, ba)
+    ba.extend(trailing)
+    s.sendall(ba)
+
+
 def startInsert(s):
     # input_format_defaults_for_omitted_fields=0 suppresses the TableColumns packet
     # (mirrors 02010_lc_native); async_insert=0 forces the synchronous insert path.
@@ -357,6 +374,54 @@ def leftoverBytesScenario():
         print("leftover bytes after a rejected packet: not parsed, connection closed")
 
 
+def queryPlanDuringDrainScenario():
+    # The drain of a failed query consumes what that query's input still owes - its trailing `Data`
+    # packets - and nothing else. A `QueryPlan` packet is out of place after an `INSERT`, so it is
+    # rejected there too rather than handed to `QueryPlan::deserialize`, which with a truncated
+    # payload would hold the connection until `receive_timeout`.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        # Violates the `CHECK` constraint, so the insert fails while the client is still sending and
+        # the server starts draining the rest of the row stream.
+        sendUInt64Block(s, [100])
+        readExceptionPacket(s, VIOLATED_CONSTRAINT)
+
+        sendPacketTypeOnly(s, 13)  # QueryPlan, with no body
+
+        try:
+            while s.recv(4096):
+                pass
+        except ConnectionResetError:
+            pass
+        print("query plan during the drain: rejected, connection closed")
+
+
+def undecodableDataScenario():
+    # Failing inside a packet body leaves it partly consumed, so the leftover input starts mid-packet
+    # and must not be drained either. The trailing `2` is the type of a `Data` packet, so a drain
+    # would take it for one and wait for the block behind it until `receive_timeout`.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        sendBlockWithUnknownTypeName(s, trailing=bytes([2]))
+
+        packet_type = readVarUInt(s)
+        assert packet_type == 2, "Expected an Exception packet, got {}".format(packet_type)
+        _, text = readException(s)
+        assert UNKNOWN_TYPE_NAME in text, text
+
+        # The trailing byte is left unread, so the close is a reset rather than orderly.
+        try:
+            while s.recv(4096):
+                pass
+        except ConnectionResetError:
+            pass
+        print("undecodable data packet: not drained, connection closed")
+
+
 def dataAfterFailedInsertScenario():
     # The one place where a data packet of a doomed query is still deserialized: a client that keeps
     # streaming data for an insert that has already failed. The blocks are read only to find where
@@ -392,6 +457,10 @@ def main():
     duringInsertScenario(8, "IgnoredPartUUIDs", expected_message="query deduplication")
 
     leftoverBytesScenario()
+    queryPlanDuringDrainScenario()
+    undecodableDataScenario()
+    # The counterweight to the two above: a failure *after* a complete packet still drains the rest
+    # and keeps the connection.
     dataAfterFailedInsertScenario()
 
 
