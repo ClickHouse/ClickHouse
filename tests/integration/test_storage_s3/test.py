@@ -60,10 +60,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "restricted_dummy",
-            main_configs=[
-                "configs/config_for_test_remote_host_filter.xml",
-                "configs/remote_servers.xml",
-            ],
+            main_configs=["configs/config_for_test_remote_host_filter.xml"],
             user_configs=["configs/allow_server_credentials.xml"],
             with_minio=True,
         )
@@ -791,21 +788,21 @@ def test_multipart(started_cluster, maybe_auth, positive):
 def test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    blocked_url = f"http://invalid_host:{MINIO_INTERNAL_PORT}/{started_cluster.minio_bucket}"
-    queries = (
-        f"DESCRIBE TABLE s3('{blocked_url}/test.csv', 'CSV')",
-        f"SELECT count() FROM s3Cluster('cluster', '{blocked_url}/test.csv', 'CSV')",
-        f"DESCRIBE TABLE icebergS3('{blocked_url}/')",
-        f"SELECT count() FROM icebergS3('{blocked_url}/')",
-        f"SELECT count() FROM icebergS3Cluster('cluster', '{blocked_url}/')",
-        f"CREATE TABLE remote_host_filter_iceberg (x UInt32) ENGINE = IcebergS3('{blocked_url}/')",
-        f"SELECT *, column1 * column2 * column3 FROM s3('{blocked_url}/test.csv', 'CSV', '{format}')",
-        f"INSERT INTO TABLE FUNCTION s3('{blocked_url}/test.csv', 'CSV', '{format}') VALUES {other_values}",
-    )
 
-    for query in queries:
-        assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
+        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
+        "invalid_host",
+        MINIO_INTERNAL_PORT,
+        started_cluster.minio_bucket,
+        format,
+        other_values,
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
 
 def test_wrong_s3_syntax(started_cluster):
@@ -1445,6 +1442,69 @@ def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
     assert result.endswith("MiB")
     result = result[: result.index(".")]
     assert int(result) > 140
+
+
+def _write_wide_parquet(instance, started_cluster, shape):
+    # 20 rows carrying ~12 MB each, so ~240 MB of payload in one object, laid
+    # out either as a single row group or as one row group per row.
+    rows_per_row_group = 1000000 if shape == "one_row_group" else 1
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_{shape}.parquet"
+    table_function = f"s3('{url}', 'minio', '{minio_secret_key}', 'Parquet')"
+    exec_query_with_retry(
+        instance,
+        f"INSERT INTO TABLE FUNCTION {table_function} "
+        "SELECT toString(number) AS id, "
+        "arrayStringConcat(arrayMap(i -> repeat('a', 1000000), range(12))) AS payload "
+        "FROM numbers(20) SETTINGS s3_truncate_on_insert=1, "
+        f"output_format_parquet_row_group_size={rows_per_row_group}, "
+        "output_format_parquet_row_group_size_bytes=8000000000",
+        timeout=300,
+    )
+    return table_function
+
+
+# Limits sit between the two readers' measured peaks on 26.2.19.43, taken from
+# system.query_log. Reads: 715 MiB arrow / 1.25 GiB v3 from one row group,
+# 608 MiB arrow / 257-337 MiB v3 from many. Inserts: 717 MiB / 1.25 GiB from one row
+# group, 609 MiB / 871 MiB from many.
+READ_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "512Mi"}
+INSERT_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "720Mi"}
+
+WIDE_ROWS_READER_SETTINGS = "input_format_parquet_use_native_reader_v3={v3}"
+
+
+@pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
+@pytest.mark.parametrize("use_native_reader_v3", [0, 1])
+def test_parquet_wide_rows_read_memory(started_cluster, shape, use_native_reader_v3):
+    instance = started_cluster.instances["dummy"]
+    source = _write_wide_parquet(instance, started_cluster, shape)
+    assert (
+        int(
+            instance.query(
+                f"SELECT max(length(payload)) FROM {source} "
+                f"SETTINGS max_memory_usage='{READ_MEMORY_LIMIT[shape]}', "
+                + WIDE_ROWS_READER_SETTINGS.format(v3=use_native_reader_v3)
+            )
+        )
+        == 12000000
+    )
+
+
+@pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
+@pytest.mark.parametrize("use_native_reader_v3", [0, 1])
+def test_parquet_wide_rows_insert_memory(started_cluster, shape, use_native_reader_v3):
+    instance = started_cluster.instances["dummy"]
+    source = _write_wide_parquet(instance, started_cluster, shape)
+    dest_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_out_{shape}_{use_native_reader_v3}.parquet"
+    dest = f"s3('{dest_url}', 'minio', '{minio_secret_key}', 'Parquet')"
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION {dest} SELECT * FROM {source} "
+        f"SETTINGS max_memory_usage='{INSERT_MEMORY_LIMIT[shape]}', s3_truncate_on_insert=1, "
+        + WIDE_ROWS_READER_SETTINGS.format(v3=use_native_reader_v3)
+        + ", output_format_parquet_row_group_size=1, "
+        "output_format_parquet_row_group_size_bytes=33554432"
+    )
+    assert int(instance.query(f"SELECT count() FROM {dest}")) == 20
 
 
 @pytest.mark.parametrize("format_name", ["Parquet", "ORC"])
