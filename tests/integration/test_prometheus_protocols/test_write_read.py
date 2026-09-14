@@ -439,7 +439,15 @@ def test_remote_write_v2_missing_metric_name():
     assert response.status_code == requests.codes.bad_request
 
 
-def test_remote_write_v2_unknown_proto_parameter():
+@pytest.mark.parametrize(
+    "proto",
+    [
+        "unknown.Request",
+        "prometheus.WriteRequest2",
+        "io.prometheus.write.v2.Request.bad",
+    ],
+)
+def test_remote_write_v2_unsupported_proto_parameter(proto):
     time_series = [({"__name__": "rw2_bad_proto"}, {1724118500: 1.0})]
     protobuf = convert_time_series_to_write_v2_protobuf(time_series)
     response = get_response_to_remote_write(
@@ -447,7 +455,7 @@ def test_remote_write_v2_unknown_proto_parameter():
         9093,
         "/write",
         protobuf,
-        content_type="application/x-protobuf;proto=unknown.Request",
+        content_type=f"application/x-protobuf;proto={proto}",
         headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
     )
     assert response.status_code == requests.codes.unsupported_media_type

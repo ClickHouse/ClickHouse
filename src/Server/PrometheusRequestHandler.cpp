@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -313,10 +314,13 @@ public:
 #if USE_PROMETHEUS_PROTOBUFS
         /// Unsupported content types and encodings get 415 Unsupported Media Type.
         const String content_type = request.get("Content-Type", "");
-        const bool is_v2 = content_type.contains("proto=io.prometheus.write.v2.Request");
-        const bool is_explicit_v1 = content_type.contains("proto=prometheus.WriteRequest");
-        const bool is_protobuf = (content_type == "application/x-protobuf") || content_type.starts_with("application/x-protobuf;");
-        if (!is_protobuf || (content_type.contains("proto=") && !is_v2 && !is_explicit_v1))
+        String media_type;
+        Poco::Net::NameValueCollection content_type_parameters;
+        Poco::Net::MessageHeader::splitParameters(content_type, media_type, content_type_parameters);
+        const String proto = content_type_parameters.get("proto", "");
+        const bool is_v2 = proto == "io.prometheus.write.v2.Request";
+        const bool is_explicit_v1 = proto == "prometheus.WriteRequest";
+        if (media_type != "application/x-protobuf" || (content_type_parameters.has("proto") && !is_v2 && !is_explicit_v1))
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf', "
                 "'application/x-protobuf;proto=prometheus.WriteRequest', or "
