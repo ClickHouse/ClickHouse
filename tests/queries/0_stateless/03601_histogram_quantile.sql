@@ -80,6 +80,21 @@ FROM
     SELECT inf AS le, CAST([2., 3.], 'Array(Nullable(Float64))') AS values
 );
 
+-- Nullable top-level arguments must keep the array result non-null.
+SELECT quantilePrometheusHistogramArray(0.9)(le, values)
+FROM
+(
+    SELECT CAST(NULL, 'Nullable(Float64)') AS le, CAST([0., 1.], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT 0.0 AS le, CAST([0., 1.], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT 0.5 AS le, CAST([10., 11.], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT 1.0 AS le, CAST([11., 12.], 'Array(Nullable(Float64))') AS values
+    UNION ALL
+    SELECT inf AS le, CAST([12., 13.], 'Array(Nullable(Float64))') AS values
+);
+
 SELECT
     quantilePrometheusHistogramForEach(0.5)(
         arrayResize(CAST([], 'Array(Float64)'), length(values), le), values) AS old,

@@ -17,6 +17,7 @@ struct ConverterContext
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
     DataTypePtr scalar_data_type;
+    const bool use_quantile_prometheus_histogram_array;
     const NodeEvaluationRangeGetter node_range_getter;
     const ResultType result_type;
     SQLSubqueries subqueries;
