@@ -306,7 +306,7 @@ void StorageMergeTree::startup()
         /// can start removing parts, then activate the scheduler task so PENDING tasks resume.
         if (partition_export_scheduler)
         {
-            partition_export_scheduler->loadFromDisk();
+            partition_export_scheduler->load();
             partition_export_task->activateAndSchedule();
         }
 
@@ -3943,7 +3943,7 @@ void StorageMergeTree::partitionExportTask()
 {
     /// Reschedule only while there is pending export work. When the scheduler reports no pending
     /// tasks the schedule-pool task goes idle (no periodic wakeups per table); it is re-armed by
-    /// triggerPartitionExportTask() on a new EXPORT PARTITION and by loadFromDisk() at startup.
+    /// triggerPartitionExportTask() on a new EXPORT PARTITION and by load() at startup.
     bool has_pending_work = true;
     try
     {

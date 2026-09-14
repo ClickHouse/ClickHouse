@@ -701,7 +701,7 @@ void MergeTreePartitionExportScheduler::persist(const String & composite_key, co
     disk->replaceFile(tmp_path, final_path);
 }
 
-void MergeTreePartitionExportScheduler::loadFromDisk()
+void MergeTreePartitionExportScheduler::load()
 {
     auto disk = storage.getDisks().front();
     const auto directory = getExportsRelativePath();

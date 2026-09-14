@@ -38,7 +38,7 @@ public:
     /// the task go idle until the next addTask/startup trigger.
     bool run();
 
-    void loadFromDisk();
+    void load();
 
 private:
     StorageMergeTree & storage;
