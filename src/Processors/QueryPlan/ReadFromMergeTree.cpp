@@ -3062,7 +3062,7 @@ void ReadFromMergeTree::buildIndexes(
                     return nullptr;
 
                 const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_helper);
-                bool enable_scoring = query_computes_bm25_score && text_index.getParams().enable_scoring;
+                bool enable_scoring = query_computes_bm25_score && text_index.getParams().scoring == ScoringKind::BM25;
                 return text_index.createIndexCondition(predicate, query_context, enable_scoring);
             };
         }
@@ -4927,7 +4927,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The '{}' virtual column requires a `hasToken`, `hasAnyTokens` or `hasAllTokens` predicate "
-                "on a column with a text index created with `enable_scoring = 1`",
+                "on a column with a text index created with `scoring = 'bm25'`",
                 BM25ScoreColumn::name);
         }
     }

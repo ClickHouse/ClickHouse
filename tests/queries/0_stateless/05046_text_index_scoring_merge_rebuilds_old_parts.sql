@@ -30,7 +30,7 @@ INSERT INTO tab_scoring_rebuild VALUES
 -- Keep the old part's index files while the index definition changes to a scoring one.
 ALTER TABLE tab_scoring_rebuild DETACH PARTITION tuple();
 ALTER TABLE tab_scoring_rebuild DROP INDEX idx_body;
-ALTER TABLE tab_scoring_rebuild ADD INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1;
+ALTER TABLE tab_scoring_rebuild ADD INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1;
 ALTER TABLE tab_scoring_rebuild ATTACH PARTITION tuple();
 
 INSERT INTO tab_scoring_rebuild VALUES
@@ -50,7 +50,7 @@ CREATE TABLE tab_scoring_ref
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

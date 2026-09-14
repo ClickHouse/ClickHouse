@@ -444,14 +444,12 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
 
     const auto & scoring_stats = granule->getScoringStats();
 
-    /// The pool pre-pass has already rejected parts without scoring data; keep a defensive check.
-    auto index_format = index.index->getDeserializedFormat(*getDataPart(), index.index->getFileName());
-    if (granule->getSerializationVersion() < MergeTreeTextIndexSerializationVersion::V3_WithScoring
-        || !index_format.hasSubstream(MergeTreeIndexSubstream::Type::TextIndexDocLengths))
+    /// The pool pre-pass has already rejected parts without BM25 scoring data; keep a defensive check.
+    if (granule->getScoringKind() != ScoringKind::BM25)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot fill '{}': the text index '{}' in part '{}' was written without BM25 scoring data. "
-            "Recreate the index with `enable_scoring = 1` and run `ALTER TABLE ... MATERIALIZE INDEX {}`",
+            "Recreate the index with `scoring = 'bm25'` and run `ALTER TABLE ... MATERIALIZE INDEX {}`",
             BM25ScoreColumn::name, index.index->index.name, getDataPart()->name, index.index->index.name);
     }
 

@@ -471,7 +471,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
     params = text_index.getParams();
-    postings_queue = std::make_unique<PostingsMergeQueue>(*this, segments.size(), params.enable_scoring);
+    postings_queue = std::make_unique<PostingsMergeQueue>(*this, segments.size(), params.hasScoring());
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -581,7 +581,7 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
     captureRowIdsForPositions(cursor);
     adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
 
-    if (params.enable_scoring && !info.embedded_term_frequencies.empty())
+    if (params.hasScoring() && !info.embedded_term_frequencies.empty())
         cursor.tfs.assign(info.embedded_term_frequencies.begin(), info.embedded_term_frequencies.end());
 
     cursor.next_segment = info.offsets.size();
@@ -594,7 +594,7 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
     stream->seekToMark({info.offsets[segment_idx], 0});
 
     /// The exact term frequencies are decoded only if the source stores them and the merge is scoring.
-    const bool has_term_frequencies = params.enable_scoring && (info.header & PostingsSerialization::Flags::HasTermFrequencies);
+    const bool has_term_frequencies = params.hasScoring() && (info.header & PostingsSerialization::Flags::HasTermFrequencies);
 
     source_postings_serializations[source.source_num].deserializeToArray(
         *stream->getDataBuffer(), info.header, info.cardinality, row_ids, has_term_frequencies ? &tfs : nullptr);
@@ -987,8 +987,8 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
         .codec = *codec,
         .segment_size = codec->getSegmentSize(params.posting_list_block_size),
         .enable_positions = params.enable_positions,
-        .enable_scoring = params.enable_scoring,
-        .doc_lengths = params.enable_scoring ? &merged_doc_lengths : nullptr,
+        .enable_scoring = params.hasScoring(),
+        .doc_lengths = params.scoring == ScoringKind::BM25 ? &merged_doc_lengths : nullptr,
     };
 
     mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one)
@@ -1241,7 +1241,7 @@ bool MergeTextIndexesTask::executeStep()
         /// On the scoring path, build the merged per-row document lengths and per-part collection
         /// statistics once, before token iteration. This reads the per-source `.dl` and `Regular`
         /// (header) streams, which are independent of the dictionary / postings cursors used below.
-        if (params.enable_scoring)
+        if (params.scoring == ScoringKind::BM25)
             buildDocLengthsAndStats();
     }
 
@@ -1309,7 +1309,7 @@ void MergeTextIndexesTask::finalize()
 
     ScoringStats scoring_stats;
 
-    if (params.enable_scoring)
+    if (params.scoring == ScoringKind::BM25)
     {
         auto * doc_lengths_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
         if (!doc_lengths_stream)
@@ -1337,7 +1337,7 @@ void MergeTextIndexesTask::finalize()
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
         .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
-        .has_scoring = params.enable_scoring,
+        .scoring = params.scoring,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
         .scoring_stats = std::move(scoring_stats),
     };

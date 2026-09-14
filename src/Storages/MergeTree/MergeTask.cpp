@@ -2572,7 +2572,7 @@ void MergeTask::MergeTextIndexStage::cancel() noexcept
 }
 
 /// Whether the source part's copy of the text index exists and contains every substream the merged index
-/// writes. An older copy (e.g. no `.dl` while the index now has `enable_scoring`) is rebuilt from the rows instead.
+/// writes. An older copy (e.g. no `.dl` while the index now has `scoring = 'bm25'`) is rebuilt from the rows instead.
 static bool canMergeTextIndexFromIndexFiles(const IMergeTreeIndex & index, const IMergeTreeDataPart & part)
 {
     auto format = index.getDeserializedFormat(part, index.getFileName());

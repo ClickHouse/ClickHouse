@@ -36,7 +36,7 @@ FROM numbers(20000);
 -- BM25 statistics are per part: both tables must consist of a single part.
 OPTIMIZE TABLE tab_mat_scoring FINAL;
 
-ALTER TABLE tab_mat_scoring ADD INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, enable_scoring = 1);
+ALTER TABLE tab_mat_scoring ADD INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, scoring = 'bm25');
 ALTER TABLE tab_mat_scoring MATERIALIZE INDEX idx;
 
 SYSTEM FLUSH LOGS part_log;
@@ -58,7 +58,7 @@ CREATE TABLE tab_mat_scoring_ref
 (
     id UInt64,
     s String,
-    INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, enable_scoring = 1)
+    INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, scoring = 'bm25')
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024,

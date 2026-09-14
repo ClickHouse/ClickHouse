@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"allow_experimental_bm25_score_column", false, false, "New setting to allow reading the `_bm25_score` virtual column filled by the direct read from a text index with `enable_scoring = 1`."},
+            {"allow_experimental_bm25_score_column", false, false, "New setting to allow reading the `_bm25_score` virtual column filled by the direct read from a text index with `scoring = 'bm25'`."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
@@ -1506,7 +1506,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
-            {"allow_experimental_text_index_scoring", false, false, "New setting to gate the experimental `enable_scoring` text index argument that stores BM25 scoring data in the `v3_with_scoring` text index format."},
+            {"allow_experimental_text_index_scoring", false, false, "New setting to gate the experimental `scoring = 'bm25'` text index argument that stores BM25 scoring data in the `v3_with_scoring` text index format."},
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},

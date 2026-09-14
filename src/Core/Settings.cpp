@@ -9106,7 +9106,7 @@ Posting list density threshold that selects the intersection algorithm in lazy p
 Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
 )", 0, text_index_density_threshold) \
     DECLARE(Bool, allow_experimental_bm25_score_column, false, R"(
-Allow reading the `_bm25_score` virtual column: the BM25 relevance score filled by the direct read from a text index created with `enable_scoring = 1`.
+Allow reading the `_bm25_score` virtual column: the BM25 relevance score filled by the direct read from a text index created with `scoring = 'bm25'`.
 The query must filter by `hasToken`, `hasAnyTokens` or `hasAllTokens` on the indexed column, and the direct read from the text index must be enabled (`query_plan_direct_read_from_text_index`).
 )", EXPERIMENTAL) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(

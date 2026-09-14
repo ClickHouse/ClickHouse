@@ -12,7 +12,7 @@ CREATE TABLE tab_doc_lengths
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1)
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25')
 )
 ENGINE = MergeTree
 ORDER BY id

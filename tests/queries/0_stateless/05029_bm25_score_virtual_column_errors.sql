@@ -12,12 +12,23 @@ DROP TABLE IF EXISTS tab_bm25_shadow;
 DROP TABLE IF EXISTS tab_bm25_unmaterialized;
 DROP TABLE IF EXISTS tab_bm25_no_index;
 
-SELECT '-- enable_scoring requires the experimental MergeTree setting';
+SELECT '-- unknown scoring kind';
 CREATE TABLE tab_bm25_err
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'tfidf') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_scoring = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- scoring = ''bm25'' requires the experimental MergeTree setting';
+CREATE TABLE tab_bm25_err
+(
+    id UInt32,
+    body String,
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
@@ -26,7 +37,7 @@ CREATE TABLE tab_bm25_err
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -51,12 +62,12 @@ SELECT id, _bm25_score FROM tab_bm25_err; -- { serverError BAD_ARGUMENTS }
 SELECT '-- only predicates outside the three scoring functions (they filter but do not score)';
 SELECT id, _bm25_score FROM tab_bm25_err WHERE body = 'raft consensus log'; -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- the index has no enable_scoring';
+SELECT '-- the index has no scoring (the explicit default needs no experimental setting)';
 CREATE TABLE tab_bm25_no_scoring
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking') GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'none') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -71,8 +82,8 @@ CREATE TABLE tab_bm25_two_indexes
     id UInt32,
     title String,
     body String,
-    INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1,
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -96,7 +107,7 @@ CREATE TABLE tab_bm25_shadow
     id UInt32,
     body String,
     _bm25_score Float32,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -117,7 +128,7 @@ ORDER BY id
 SETTINGS allow_experimental_text_index_scoring = 1;
 
 INSERT INTO tab_bm25_unmaterialized VALUES (1, 'raft consensus log');
-ALTER TABLE tab_bm25_unmaterialized ADD INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1;
+ALTER TABLE tab_bm25_unmaterialized ADD INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1;
 INSERT INTO tab_bm25_unmaterialized VALUES (2, 'raft quorum');
 
 SELECT id, _bm25_score FROM tab_bm25_unmaterialized WHERE hasToken(body, 'raft'); -- { serverError BAD_ARGUMENTS }

@@ -731,7 +731,7 @@ private:
             const IMergeTreeIndex * index_ptr = condition.info->index ? condition.info->index->index.get() : condition.info->index_helper.get();
             const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_ptr);
 
-            if (text_index && text_index->getParams().enable_scoring)
+            if (text_index && text_index->getParams().scoring == ScoringKind::BM25)
                 scoring_predicate_indexes->insert(condition.index_name);
         }
     }
@@ -1208,7 +1208,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 }
 
 /// Attaches the `_bm25_score` virtual column to the read task of the scoring text index when the query reads it.
-/// The column requires exactly one text index with `enable_scoring = 1` among the indexes with read tasks,
+/// The column requires exactly one text index with `scoring = 'bm25'` among the indexes with read tasks,
 /// and at least one `hasToken` / `hasAnyTokens` / `hasAllTokens` condition on it.
 static void attachScoreColumnIfRequested(
     ReadFromMergeTree & read_from_merge_tree_step,
@@ -1256,7 +1256,7 @@ static void attachScoreColumnIfRequested(
             return;
 
         const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_task.index.index.get());
-        if (!text_index || !text_index->getParams().enable_scoring)
+        if (!text_index || text_index->getParams().scoring != ScoringKind::BM25)
             continue;
 
         const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index_task.index.condition_template->generateUnsubstituted());
@@ -1287,7 +1287,7 @@ static void attachScoreColumnIfRequested(
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The '{}' virtual column requires a `hasToken`, `hasAnyTokens` or `hasAllTokens` predicate "
-            "on a column with a text index created with `enable_scoring = 1`",
+            "on a column with a text index created with `scoring = 'bm25'`",
             BM25ScoreColumn::name);
     }
 

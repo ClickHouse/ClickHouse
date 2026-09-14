@@ -60,7 +60,7 @@ struct PartitionValueColumn
 };
 
 /// BM25 relevance score filled by the text index reader during the direct read
-/// from a text index created with `enable_scoring = 1`.
+/// from a text index created with `scoring = 'bm25'`.
 struct BM25ScoreColumn
 {
     static const String name;

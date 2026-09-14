@@ -14,7 +14,7 @@ CREATE TABLE tab_bm25_events
 (
     id UInt32,
     body String,
-    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_body(body) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

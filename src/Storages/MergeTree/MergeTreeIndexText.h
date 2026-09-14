@@ -89,17 +89,32 @@ namespace DB
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 
+/// What a text index stores for relevance scoring, chosen by the `scoring` index argument.
+/// Persisted in the index header since `V3_WithScoring`, so the reader knows which scoring data follows:
+/// `BM25` stores per-posting term frequencies, per-row document lengths (`.dl`) and the corpus statistics of the header.
+enum class ScoringKind : UInt8
+{
+    None = 0,
+    BM25 = 1,
+};
+
+/// Parses the value of the `scoring` index argument (`'none'` or `'bm25'`); throws `BAD_ARGUMENTS` for other values.
+ScoringKind parseScoringKind(std::string_view name);
+std::string_view toString(ScoringKind kind);
+
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
-    bool enable_scoring = false;
+    ScoringKind scoring = ScoringKind::None;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+
+    bool hasScoring() const { return scoring != ScoringKind::None; }
 };
 
 using PostingList = roaring::Roaring;
@@ -412,8 +427,8 @@ struct TextIndexHeader
     /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
-    /// Persisted for version >= V3_WithScoring.
-    bool has_scoring = false;
+    /// Persisted for version >= V3_WithScoring. The scoring stats follow it for `BM25`.
+    ScoringKind scoring = ScoringKind::None;
 
     DictionarySparseIndex sparse_index;
     ScoringStats scoring_stats;
@@ -445,7 +460,7 @@ struct TextIndexSerialization
     static void checkTokenSize(size_t token_size);
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
 
-    /// Reads the version, posting list codec, feature flags and the BM25 corpus stats (`num_docs`, `sum_doc_length`).
+    /// Reads the version, posting list codec, feature flags, scoring kind and the BM25 corpus stats (`num_docs`, `sum_doc_length`).
     /// Skips the doc-lengths segment offsets and the sparse index, which stay empty in the result.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
 
@@ -497,6 +512,7 @@ public:
     UInt8 getPositionsCodec() const { return positions_codec; }
 
     const ScoringStats & getScoringStats() const { return scoring_stats; }
+    ScoringKind getScoringKind() const { return scoring_kind; }
     bool isScoringEnabled() const { return scoring_enabled; }
 
     struct PostingsBlock
@@ -552,6 +568,8 @@ private:
     UInt8 positions_codec = 0;
     /// Per-part statistics for BM25 scoring, read from the text index header.
     ScoringStats scoring_stats;
+    /// The scoring data the index stores, read from the text index header.
+    ScoringKind scoring_kind = ScoringKind::None;
     /// Flat postings of the single-block tokens decoded for BM25 scoring during the granule
     /// analysis, keyed by the block's offset in the postings file.
     absl::flat_hash_map<UInt64, ScoringPostingsPtr> scoring_postings_by_offset;

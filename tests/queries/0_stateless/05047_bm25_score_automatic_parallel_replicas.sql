@@ -20,7 +20,7 @@ CREATE TABLE tab_bm25_auto_pr
 (
     id UInt32,
     str String,
-    INDEX idx_str(str) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1) GRANULARITY 1
+    INDEX idx_str(str) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

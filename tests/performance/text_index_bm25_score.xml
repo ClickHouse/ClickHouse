@@ -8,7 +8,7 @@
   </settings>
 
   <fill_query>ALTER TABLE hits_10m_single MODIFY SETTING allow_experimental_text_index_scoring = 1</fill_query>
-  <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp_bm25(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1)</fill_query>
+  <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp_bm25(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25')</fill_query>
   <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp_bm25</fill_query>
 
   <!-- Baselines without the score column: the pure filter cost of the same predicates -->
