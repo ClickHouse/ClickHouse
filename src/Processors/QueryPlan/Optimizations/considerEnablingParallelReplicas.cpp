@@ -228,11 +228,15 @@ ReadFromMergeTree * findReadingStep(
 
         if (lazy_joining)
         {
-            /// `optimizeLazyMaterialization2` unites the main plan and the lazy one in this order, so
-            /// everything but the child we descend into below is the lazy half of this same read.
+            /// Unlike the `JoinStep` below, which side is which is not a decision here: this is not a SQL
+            /// join, the step has neither a kind nor `swap_streams`, and its inputs are positional - input
+            /// 0 is the main branch, input 1 the lazy one. `updatePipeline` hands the two pipelines to
+            /// `LazyMaterializingTransform` in exactly that order, so the order is what makes the step
+            /// work at all, not a convention this function relies on. Both places that build it
+            /// (`optimizeLazyMaterialization2` and `optimizeLazyFinal`) unite the plans that way, and
+            /// `unitePlans` rejects any other order because the headers would not line up.
             chassert(reading_step->children.size() == 2);
-            for (size_t i = 1; i < reading_step->children.size(); ++i)
-                collectLazyReads(*reading_step->children[i], lazy_reads);
+            collectLazyReads(*reading_step->children.back(), lazy_reads);
         }
 
         // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
