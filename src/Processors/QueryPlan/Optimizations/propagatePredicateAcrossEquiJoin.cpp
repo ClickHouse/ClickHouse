@@ -145,8 +145,11 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
         return false;
 
     /// The atom will also run on target rows the source never saw, so it must not throw on them:
-    /// a comparison across type domains parses one side per row and can fail there
+    /// a comparison across type domains parses one side per row and can fail there; a set lookup casts
+    /// the probe into the set's key type per row
     if (is_comparison && comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
+        return false;
+    if (is_set_check && ActionsDAG::setLookupCanThrow(*node))
         return false;
     if (!node->function_base->isDeterministic())
         return false;

@@ -18,6 +18,8 @@ DROP TABLE IF EXISTS pd_dec_src;
 DROP TABLE IF EXISTS pd_dec_dst;
 DROP TABLE IF EXISTS pd_tup_src;
 DROP TABLE IF EXISTS pd_tup_dst;
+DROP TABLE IF EXISTS pk_tup_src;
+DROP TABLE IF EXISTS pk_tup_dst;
 
 -- The destination row is not a join partner of anything in the source, and its value is what the
 -- predicate cannot process: a single backslash is not a valid LIKE pattern.
@@ -40,6 +42,13 @@ CREATE TABLE pd_tup_src (c0 String) ENGINE = Memory;
 CREATE TABLE pd_tup_dst (c0 String) ENGINE = Memory;
 INSERT INTO pd_tup_src VALUES ('(1)');
 INSERT INTO pd_tup_dst VALUES ('(1)'), ('abc');
+
+-- Same values, but reading a MergeTree primary key, which is the only target
+-- `propagatePredicateAcrossEquiJoin` copies a conjunct onto.
+CREATE TABLE pk_tup_src (c0 String) ENGINE = MergeTree ORDER BY c0;
+CREATE TABLE pk_tup_dst (c0 String) ENGINE = MergeTree ORDER BY c0;
+INSERT INTO pk_tup_src VALUES ('(1)');
+INSERT INTO pk_tup_dst VALUES ('(1)'), ('abc');
 
 -- 1. The reported query: the predicate is projected in a derived table and filtered above the join.
 SELECT c0
@@ -165,6 +174,27 @@ FROM (SELECT pd_tup_src.c0 AS c0, (pd_tup_src.c0 IN (SELECT tuple(toUInt64(1))))
       FROM pd_tup_src INNER JOIN pd_tup_dst ON (pd_tup_src.c0 = pd_tup_dst.c0)) AS s
 WHERE ref;
 
+-- 10. `propagatePredicateAcrossEquiJoin` substitutes the key into a conjunct that already sits below
+-- the join and copies it onto the other side, so a partial set lookup must not be transferred there
+-- either. The setting is pinned so a default flip cannot silence this.
+SELECT s.c0
+FROM (SELECT pk_tup_src.c0 AS c0 FROM pk_tup_src INNER JOIN pk_tup_dst ON pk_tup_src.c0 = pk_tup_dst.c0) AS s
+WHERE s.c0 IN (SELECT tuple(toUInt64(1)))
+SETTINGS query_plan_propagate_predicate_across_join = 1;
+
+-- 11. That pass still copies a set lookup whose key type is the probe column's own: what is refused is
+-- the per-row cast, not `IN`.
+SELECT count()
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT count()
+    FROM (SELECT * FROM pk_tup_src WHERE c0 IN ('(1)')) AS s
+    INNER JOIN pk_tup_dst AS d ON s.c0 = d.c0
+    SETTINGS query_plan_propagate_predicate_across_join = 1
+)
+WHERE explain ILIKE '%Propagated equi-join filter%';
+
 DROP TABLE pd_like_src;
 DROP TABLE pd_like_dst;
 DROP TABLE pd_num_src;
@@ -175,3 +205,5 @@ DROP TABLE pd_dec_src;
 DROP TABLE pd_dec_dst;
 DROP TABLE pd_tup_src;
 DROP TABLE pd_tup_dst;
+DROP TABLE pk_tup_src;
+DROP TABLE pk_tup_dst;
