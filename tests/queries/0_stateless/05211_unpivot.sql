@@ -83,3 +83,7 @@ SELECT 1 AS unpivot, unpivot;
 SELECT 1 unpivot;
 SELECT number FROM numbers(1) AS unpivot ORDER BY unpivot.number;
 SELECT number FROM numbers(1) unpivot ORDER BY unpivot.number;
+-- An alias named after the clause, followed by a column alias list, is not the clause: the clause is
+-- only recognised by its whole head, `UNPIVOT [INCLUDE|EXCLUDE NULLS] (<name> FOR <name> IN (`.
+SELECT a, b FROM (SELECT 1 AS x, 2 AS y) unpivot (a, b);
+SELECT a FROM (SELECT 1 AS x) AS unpivot (a);

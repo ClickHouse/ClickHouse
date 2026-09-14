@@ -79,3 +79,5 @@ SELECT * FROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x,
 1
 0
 0
+1	2
+1
