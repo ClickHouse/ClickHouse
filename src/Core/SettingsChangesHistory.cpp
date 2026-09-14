@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"read_in_order_virtual_row_prefetch_window", -1, -1, "New setting to control the read-ahead window for sources deferred behind virtual rows in read-in-order merges."},
+            {"read_in_order_virtual_row_block_interval", 1, 8, "New setting to emit a virtual row after every N-th block read instead of after every block when `read_in_order_use_virtual_row_per_block` is enabled. Every virtual row passes through the merge, so the previous per-block emission slowed down scan-heavy read-in-order queries with selective filters."},
+            {"read_in_order_use_virtual_row_per_block", false, true, "Emit a virtual row after each block during read-in-order by default: `VirtualRowReadAheadTransform` now uses per-block boundaries to keep speculative reads bounded while filters discard rows unevenly across parts."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},

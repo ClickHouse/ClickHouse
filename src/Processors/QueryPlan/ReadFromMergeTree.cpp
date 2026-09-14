@@ -333,6 +333,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsUInt64 read_in_order_virtual_row_block_interval;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
@@ -1016,7 +1017,11 @@ Pipe ReadFromMergeTree::readInOrder(
             pk_header = Block(std::move(pk_header_columns));
 
             if (use_virtual_row_per_block)
-                processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
+                processor->setVirtualRowConversions(
+                    virtual_row_conversion,
+                    pk_header,
+                    read_type == ReadType::InReverseOrder,
+                    context->getSettingsRef()[Setting::read_in_order_virtual_row_block_interval]);
         }
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
@@ -1968,10 +1973,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
-    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
-    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
-        need_preliminary_merge = false;
-
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
     const size_t total_query_nodes = is_parallel_reading_from_replicas
@@ -2194,6 +2195,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
+        /// Let the top-level merge defer whole groups behind their virtual rows. Needed in both
+        /// modes: the default mode gets its lazy win from it, and the per-block boundaries can
+        /// reach the read-ahead transform only through it (the preliminary merge used to be
+        /// disabled for that mode). Useless for a single group and wrong for the partition-wise
+        /// output (it feeds aggregation).
+        bool emit_boundary_virtual_rows = virtual_row_conversion && pipes.size() > 1 && !output_each_partition_through_separate_port;
+
         auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const SharedHeader & header)
@@ -2214,7 +2222,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*out_row_sources_buf=*/ nullptr,
                     /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*apply_virtual_row_conversions*/ false,
+                    emit_boundary_virtual_rows);
 
                 pipe.addTransform(std::move(transform));
             }

@@ -31,6 +31,8 @@ bool isVirtualRow(const Chunk & chunk);
 
 /// Returns the block the virtual row was built from, i.e. the sort columns it can announce exactly.
 /// Every other column of `header` is filled with a type default and bounds nothing.
+/// The chunk stays a virtual row (the info is kept attached), so a merge that consumed it as
+/// a cursor can re-emit the announcement downstream.
 Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions);
 
 }

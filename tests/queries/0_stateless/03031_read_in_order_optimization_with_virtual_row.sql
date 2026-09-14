@@ -2,7 +2,7 @@
 -- ^ because we are using query_log
 -- add_minmax_index_for_numeric_columns=0: Different read rows
 
-SET read_in_order_use_virtual_row = 1;
+SET read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
@@ -38,8 +38,8 @@ INSERT INTO t SELECT
     number
 FROM numbers(8192 * 3);
 
--- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
--- both chunks come from the same part.
+-- Expecting 2 virtual rows + one chunk (8192) for result. The preliminary merge forwards
+-- the per-block virtual row that follows it, so it does not fetch a spare chunk.
 SELECT x
 FROM t
 ORDER BY x ASC
@@ -109,7 +109,7 @@ LIMIT 1;
 
 SELECT '========';
 -- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
--- all chunks come from the same part.
+-- all chunks come from the same part. With one thread nothing reads ahead of the merge.
 SELECT k
 FROM t
 WHERE k > 8192 * 2

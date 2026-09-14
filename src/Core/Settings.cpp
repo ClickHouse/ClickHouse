@@ -4465,10 +4465,24 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
+    DECLARE(Bool, read_in_order_use_virtual_row_per_block, true, R"(
 When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
-Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
+The frequency of the emitted virtual rows is controlled by `read_in_order_virtual_row_block_interval`.
+)", 0) \
+    DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
+When `read_in_order_use_virtual_row_per_block` is enabled, emit a virtual row after every N-th block read from a part instead of after every block.
+Every virtual row passes through the merge, so a larger interval reduces the merge overhead on scan-heavy queries with selective filters at the cost of coarser reprioritization of sources.
+Set to 1 to emit a virtual row after every block. Values below 1 are treated as 1.
+)", 0) \
+    DECLARE(Int64, read_in_order_virtual_row_prefetch_window, -1, R"(
+The number of sources deferred behind virtual rows that are allowed to read ahead in parallel during a read-in-order merge. Bounds the number of concurrently open readers and the reads wasted when a `LIMIT` finishes the merge before it reaches the prefetched sources.
+
+Possible values:
+
+- -1 — one fewer than the number of threads in the query pipeline (the default): one thread serves the merge and the source it demands, the others read ahead.
+- 0 — read-ahead is disabled; sources deferred behind virtual rows are read strictly on demand, one at a time.
+- N > 0 — at most N sources read ahead.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.

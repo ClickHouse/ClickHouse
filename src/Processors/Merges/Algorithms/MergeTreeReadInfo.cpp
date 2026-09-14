@@ -45,7 +45,7 @@ bool isVirtualRow(const Chunk & chunk)
 
 Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
-    auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();
+    auto read_info = chunk.getChunkInfos().get<MergeTreeReadInfo>();
     chassert(read_info);
 
     Block & pk_block = read_info->pk_block;
