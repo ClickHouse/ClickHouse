@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
@@ -35,6 +36,12 @@ namespace ErrorCodes
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int UNKNOWN_USER;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ProfileEvents
+{
+    extern const Event EffectiveAccessRightsCalculations;
+    extern const Event EffectiveAccessRightsCacheHits;
 }
 
 
@@ -92,7 +99,7 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const ImplicitExpansionSettings & settings)
 {
     AccessFlags max_flags;
 
@@ -195,7 +202,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     res.modifyFlags(modifier);
 
     /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
-    if (access_control.doesSelectFromSystemDatabaseRequireGrant())
+    if (settings.select_from_system_db_requires_grant)
     {
         const char * always_accessible_tables[] = {
             /// Constant tables
@@ -241,7 +248,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
         /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
         /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
-        if (access_control.isUserQueryLogEnabled())
+        if (settings.user_query_log_enabled)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
 
         if (max_flags.contains(AccessType::SHOW_USERS))
@@ -268,7 +275,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     }
 
     /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
-    if (!access_control.doesSelectFromInformationSchemaRequireGrant())
+    if (!settings.select_from_information_schema_requires_grant)
     {
         res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
         res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
@@ -285,7 +292,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     {
         if (!creator.features.source_access_type)
         {
-            if (!access_control.doesTableEnginesRequireGrant())
+            if (!settings.table_engines_require_grant)
                 res.grant(AccessType::TABLE_ENGINE, engine_name);
         }
         else
@@ -307,7 +314,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     {
         if (!creator.features.source_access_type)
         {
-            if (!access_control.doesTableEnginesRequireGrant())
+            if (!settings.table_engines_require_grant)
                 res.grant(AccessType::TABLE_ENGINE, name);
         }
         else
@@ -471,16 +478,45 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
 void ContextAccess::calculateAccessRights() const
 {
-    auto mixed_access = mixAccessRightsFromUserAndRoles(*user, *roles_info);
+    /// All sessions of the same user with the same enabled roles get the same effective access
+    /// rights, so the first session calculates them and the others reuse the cached result -
+    /// otherwise a single change of the user recalculates the whole tree once per active session,
+    /// which is very slow for users with a huge number of grants.
+    /// Results limited by the GRANTS clause of an authentication method are per-session, so they are not shared.
+    const bool shareable = !params.authentication_grants;
 
-    /// The GRANTS clause of the authentication method the user logged in with limits the access rights
-    /// of the session to the intersection with the specified elements. Note that the intersection also erases
-    /// all the grant options, because the elements of the GRANTS clause never have them.
-    if (params.authentication_grants)
-        mixed_access.makeIntersection(AccessRights{*params.authentication_grants});
+    /// One snapshot of the settings for both the implicit expansion and the cache key,
+    /// so an entry is never filed under settings it was not calculated with.
+    const ImplicitExpansionSettings settings = access_control->getImplicitExpansionSettings();
 
-    access = std::make_shared<AccessRights>(std::move(mixed_access));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
+    std::optional<EffectiveAccessRightsCache::Result> cached;
+    if (shareable)
+        cached = access_control->findEffectiveAccessRights(*params.user_id, user, roles_info, settings);
+
+    if (cached)
+    {
+        ProfileEvents::increment(ProfileEvents::EffectiveAccessRightsCacheHits);
+        access = std::move(cached->access);
+        access_with_implicit = std::move(cached->access_with_implicit);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::EffectiveAccessRightsCalculations);
+
+        auto mixed_access = mixAccessRightsFromUserAndRoles(*user, *roles_info);
+
+        /// The GRANTS clause of the authentication method the user logged in with limits the access rights
+        /// of the session to the intersection with the specified elements. Note that the intersection also erases
+        /// all the grant options, because the elements of the GRANTS clause never have them.
+        if (params.authentication_grants)
+            mixed_access.makeIntersection(AccessRights{*params.authentication_grants});
+
+        access = std::make_shared<AccessRights>(std::move(mixed_access));
+        access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, settings));
+
+        if (shareable)
+            access_control->storeEffectiveAccessRights(*params.user_id, user, roles_info, settings, access, access_with_implicit);
+    }
 
     if (trace_log)
     {

@@ -252,6 +252,7 @@ AccessControl::AccessControl()
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
+      effective_access_rights_cache(std::make_unique<EffectiveAccessRightsCache>()),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
@@ -831,6 +832,28 @@ std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
     const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
+}
+
+
+std::optional<EffectiveAccessRightsCache::Result> AccessControl::findEffectiveAccessRights(
+    const UUID & user_id,
+    const UserPtr & user,
+    const std::shared_ptr<const EnabledRolesInfo> & roles_info,
+    const ImplicitExpansionSettings & settings) const
+{
+    return effective_access_rights_cache->find(user_id, user, roles_info, settings);
+}
+
+
+void AccessControl::storeEffectiveAccessRights(
+    const UUID & user_id,
+    const UserPtr & user,
+    const std::shared_ptr<const EnabledRolesInfo> & roles_info,
+    const ImplicitExpansionSettings & settings,
+    const std::shared_ptr<const AccessRights> & access,
+    const std::shared_ptr<const AccessRights> & access_with_implicit) const
+{
+    effective_access_rights_cache->store(user_id, user, roles_info, settings, access, access_with_implicit);
 }
 
 
