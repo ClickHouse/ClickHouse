@@ -173,11 +173,12 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 
 **Syntax**
 
-For `INSERT VALUES` and `INSERT FORMAT`, the `RETURNING` clause must appear before the data clause:
+For `INSERT VALUES`, `INSERT FORMAT`, and `INSERT FROM INFILE`, the `RETURNING` clause appears before the payload format:
 
 ```sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) FORMAT format_name data_set
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] RETURNING (SELECT ...) [FORMAT format_name]
 ```
 
 For `INSERT SELECT`, the `RETURNING` clause appears after the source query:
