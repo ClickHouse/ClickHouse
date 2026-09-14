@@ -169,9 +169,9 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
-/// A `ColumnSet` is `ColumnConst` whether or not its set has been built, so const-ness alone does not
-/// make it foldable: an unbuilt set carries no value yet, and `in` over it can only answer with the
-/// dummy it reserves for a not-ready set.
+/// A `ColumnSet` argument arrives wrapped in `ColumnConst` whether or not its set has been built, so
+/// const-ness alone does not make it foldable: an unbuilt set carries no value yet, and `in` over it
+/// can only answer with the dummy it reserves for a not-ready set.
 inline bool columnHoldsUnbuiltSet(const IColumn & column)
 {
     const auto * column_set = typeid_cast<const ColumnSet *>(&column);
