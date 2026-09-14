@@ -56,6 +56,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
@@ -360,7 +361,20 @@ public:
                     || v2_request.symbols().empty()
                     || !v2_request.symbols(0).empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
-                set_v2_written_headers(protocol.write(v2_request));
+                try
+                {
+                    set_v2_written_headers(protocol.write(v2_request));
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT)
+                    {
+                        response.erase("X-Prometheus-Remote-Write-Samples-Written");
+                        response.erase("X-Prometheus-Remote-Write-Histograms-Written");
+                        response.erase("X-Prometheus-Remote-Write-Exemplars-Written");
+                    }
+                    throw;
+                }
             }
             else
             {

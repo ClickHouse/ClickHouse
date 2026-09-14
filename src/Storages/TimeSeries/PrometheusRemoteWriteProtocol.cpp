@@ -465,7 +465,12 @@ size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Req
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 exemplars are not supported");
         if (element.samples().empty() && element.histograms().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 time series must contain samples or histograms");
-        samples_written += element.samples_size();
+        for (const auto & sample : element.samples())
+        {
+            if (sample.start_timestamp())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 sample start timestamps are not supported");
+            ++samples_written;
+        }
     }
 
     const auto storage_id = time_series_storage->getStorageID();

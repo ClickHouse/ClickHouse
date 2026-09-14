@@ -531,6 +531,55 @@ def test_remote_write_v2_written_sample_count():
     assert len(series[0].samples) == 3
 
 
+def test_remote_write_v2_async_insert_timeout_omits_written_headers():
+    start_time = 1724118850
+    metric_name = "rw2_async_timeout"
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": metric_name}, {start_time: 1.0})]
+    )
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1&wait_for_async_insert_timeout=0"
+        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert response.status_code == requests.codes.service_unavailable
+    assert "X-Prometheus-Remote-Write-Samples-Written" not in response.headers
+    assert "X-Prometheus-Remote-Write-Histograms-Written" not in response.headers
+    assert "X-Prometheus-Remote-Write-Exemplars-Written" not in response.headers
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesData(prometheus) "
+        "WHERE id IN (SELECT id FROM timeSeriesTags(prometheus) "
+        f"WHERE metric_name = '{metric_name}')",
+        "1",
+        retry_count=60,
+    )
+
+
+def test_remote_write_v2_rejects_sample_start_timestamp():
+    start_time = 1724118875
+    metric_name = "rw2_start_timestamp"
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": metric_name}, {start_time: 1.0})]
+    )
+    protobuf.timeseries[0].samples[0].start_timestamp = (start_time - 10) * 1000
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
+    assert _read_samples(metric_name, start_time, start_time + 1) == []
+
+
 def test_remote_write_v2_rejects_exemplars():
     start_time = 1724118900
     metric_name = "rw2_exemplars"
