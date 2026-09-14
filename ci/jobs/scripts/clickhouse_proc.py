@@ -1211,10 +1211,21 @@ fi
                 "caller id: None:DistribCache",
             )
         )
+        # Each match names the failing read only, so the matched keys' upload and delete
+        # lines are appended: without them a lost key cannot be attributed. The matches go
+        # through a file rather than `tee /dev/stderr | grep -q .`, which loses the tail of
+        # a large report to SIGPIPE - and the appended section is that tail.
+        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
+            f"| head -n100 > {no_such_key_matches}; "
+            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
+            f">> {no_such_key_matches} "
+            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
+            f">> {no_such_key_matches}; "
+            f"cat {no_such_key_matches} >&2; "
+            f"! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(
