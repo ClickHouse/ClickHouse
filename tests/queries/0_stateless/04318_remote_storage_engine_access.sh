@@ -68,26 +68,18 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT x FROM $db.t_remote_infer OR
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.t_remote_infer"
 
 echo "-- 3. a Remote table built from a named collection blocks DROP NAMED COLLECTION"
+# The assertion below needs the table attached. ast_fuzzer_any_query = 0: a fuzzed DETACH would stop the
+# drop below being refused, and a `__fuzz_N` clone inheriting the collection reference would leave
+# metadata naming the collection dropped at the end.
 ${CLICKHOUSE_CLIENT} <<EOF
+SET ast_fuzzer_any_query = 0;
 DROP NAMED COLLECTION IF EXISTS $collection;
 CREATE NAMED COLLECTION $collection AS host = '127.0.0.1', database = '$db', table = 'local_target', user = 'default';
 CREATE TABLE $db.t_remote_nc (x UInt64) ENGINE = Remote($collection);
 EOF
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection" 2>&1 | grep -c -m1 "NAMED_COLLECTION_IS_USED\|is used by"
-# The stress runner sets `ignore_drop_queries_probability` to 0.2, which turns this drop into a no-op,
-# and its AST fuzzer can rewrite it into a `DETACH`. Either way the table stays on disk, and dropping
-# the collection under it would leave that table unloadable at every later server start.
-${CLICKHOUSE_CLIENT} --query \
-    "DROP TABLE $db.t_remote_nc SETTINGS ignore_drop_queries_probability = 0, ast_fuzzer_runs = 0"
-
-echo "-- 3. the dependent table is gone before the collection is dropped"
-remaining=$(${CLICKHOUSE_CLIENT} --query \
-    "SELECT (SELECT count() FROM system.tables WHERE database = '$db' AND name = 't_remote_nc')
-          + (SELECT count() FROM system.detached_tables WHERE database = '$db' AND table = 't_remote_nc')")
-echo "$remaining"
-if [ "$remaining" = "0" ]; then
-    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection"
-fi
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_any_query = 0; DROP TABLE $db.t_remote_nc"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.local_target"

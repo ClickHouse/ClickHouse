@@ -450,7 +450,7 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
 
 <Steps>
   <Step title="データを挿入する" id="insert-the-data">
-    次のクエリを実行し、再度 `url` 関数を使ってリモートデータを読み込み、同じデータを Parquet フォーマットで読み込みます。
+    次のクエリを実行して、同じデータを Parquet フォーマットで読み取ります。リモートデータの読み取りには、再び `url` 関数を使用します。
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -460,26 +460,31 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
-      **Parquet における NULL キー**
+      **Parquet の null キー**
 
-      Parquet フォーマットの仕様上、データ内には存在しない場合でも、
-      キーが `NULL` になり得ることを受け入れる必要があります。
+      スキーマの推論によりカラムが `Nullable` となるため、このデータセットに
+      null ID が含まれていない場合でも `allow_nullable_key` が必要です。
     </Info>
 
-    次のコマンドを実行して、推論されたスキーマを確認します。
+    推定されたスキーマを表示するには、次のコマンドを実行します。
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -494,10 +499,12 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
     └─────────────┴────────────────────────┴
     ```
 
-    CSV ファイルと同様に、選択する型をより細かく制御するためにスキーマを手動で指定し、S3 から直接
-    データを挿入できます:
+    以降の手順では、`author` や `comment` などのよりわかりやすいカラム名を使用するため、手動で指定したスキーマを使用します。
+    まず推論されたテーブルを削除し、次にテーブルを作成して、パブリック S3 バケットから直接データを挿入します。
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -522,6 +529,7 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -541,101 +549,120 @@ Parquet ファイルに対する型推論を行うと、CSV ファイルの場�
     ```
   </Step>
 
-  <Step title="クエリを高速化するため、スキップ索引を追加する" id="add-skipping-index">
-    &quot;ClickHouse&quot; に言及しているコメントの数を調べるには、次のクエリを実行します。
+  <Step title="検索を高速化するテキスト索引を追加する" id="add-skipping-index">
+    &quot;ClickHouse&quot; に言及しているコメント数を確認するには、次のクエリを実行します。
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
-    ┌─count()─┐
-    │     516 │
-    └─────────┘
-    ```
-
-    次に、このクエリを高速化するため、&quot;comment&quot; カラムに転置 [索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を作成します。
-    大文字小文字を区別せずに語句を検索できるよう、comment の値は小文字化して索引付けされる点に注意してください。
-
-    索引を作成するには、次のコマンドを実行します。
-
-    ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
-    ```
-
-    索引のマテリアライズには多少時間がかかります (索引が作成されたかどうかを確認するには、システムテーブル `system.data_skipping_indices` を使用します) 。
-
-    索引の作成後に、クエリを再度実行してください：
-
-    ```sql title="Query"
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
-    ```
-
-    索引を使用すると、クエリの所要時間が、以前の索引なしの 0.843 秒から 0.248 秒に短縮されていることがわかります。
-
-    ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    [`EXPLAIN`](/ja/reference/statements/explain) 句を使うと、この索引を追加することでクエリが約3.4倍高速化された理由を理解できます。
+    次に、このクエリを高速化するため、`comment`カラムに[text index](/ja/reference/engines/table-engines/mergetree-family/textindexes)を作成します。テキスト索引では、トークンとそれを含む行を対応付ける転置索引を使用します。
+    `splitByNonAlpha`トークナイザーは、英数字以外の文字でテキストを分割します。索引とクエリでは、検索語を小文字にし、`lower(comment)`
+    を使用するため、大文字と小文字を区別せずに照合されます。クエリ式は、索引付けされた式と一致している必要があります。
 
-    ```response text="Query"
-    EXPLAIN indexes = 1
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    次のコマンドを実行して索引を作成します。
+
+    ```sql
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
-    ```
+    マテリアライズにより、既存データに対する索引が構築されます。`mutations_sync` 設定を指定すると、マテリアライズが完了するまで待機します。
+    索引の定義は `system.data_skipping_indices` テーブルで確認できます。
 
-    索引によって多数のグラニュールを読み飛ばせるため、
-    クエリが高速化されていることに注目してください。
-
-    また、1 つ、または複数の検索語をすべて効率よく検索できるようになりました。
+    索引のマテリアライズ後に、同じクエリを再度実行します。
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
+    ```
+
+    結果は変わりません。索引によって変わるのは、ClickHouseが一致する行を見つける方法であり、どの行が一致するかではないためです。索引を使用した
+    クエリでは処理するデータ量が大幅に減り、はるかに高速に完了します。
+    [`EXPLAIN`](/ja/reference/statements/explain)を使用して、ClickHouseが索引を適用する予定であることを確認します。
+
+    ```sql title="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response"
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
+    ```
+
+    `comment_idx`エントリは、ClickHouseがテキスト索引を適用する予定であることを示します。この例では、実行プランは3527個の
+    グラニュールのうち547個を選択し、調査するデータ量を大幅に削減します。
+
+    複数のトークンについて、いずれかまたはすべてを検索することもできます。これらの関数は、索引トークナイザーによって生成された完全なトークンに一致します。
+    少なくとも1つのトークンが一致する必要がある場合は、`hasAnyTokens`を使用します。
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    すべてのトークンが順不同で一致する必要がある場合は、`hasAllTokens` を使用します。
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"

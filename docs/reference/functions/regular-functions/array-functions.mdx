@@ -72,7 +72,7 @@ Introduced in: v20.4.0
 
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance, unless a score is `NaN`, in which case the result is `NaN`.
 The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
@@ -105,7 +105,7 @@ For example:
 
 **Returned value**
 
-Returns area under the precision-recall (PR) curve. [`Float64`](/reference/data-types/float)
+Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`. [`Float64`](/reference/data-types/float)
 
 **Examples**
 
@@ -1559,6 +1559,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Introduced in: v26.9.0
+
+Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/reference/functions/regular-functions/array-functions#arrayFlatten) function.
+
+Function:
+
+- Applies to any depth of nested arrays.
+- Is equivalent to [`length`](/reference/functions/regular-functions/array-functions#length) for arrays that are already flat.
+- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/reference/data-types/map), [`Tuple`](/reference/data-types/tuple), [`Dynamic`](/reference/data-types/dynamic) or [`Variant`](/reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
+
+This is the equivalent of `cardinality` in PostgreSQL, whereas in ClickHouse `cardinality` is an alias of `length` and counts only the elements of the outermost array.
+
+**Syntax**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Arguments**
+
+- `arr` — A possibly multidimensional array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the number of elements of the array after all nested arrays are flattened. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Nested array**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Deeper nesting**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Flat array**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Non-array elements are not traversed**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 Introduced in: v23.10.0
@@ -2767,7 +2837,8 @@ Introduced in: v20.4.0
 
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from zero to one, with a higher value indicating better model performance.
+With `scale` set to true, the default, the resulting value ranges from zero to one, with a higher value indicating better model performance, and the result is `NaN` when the ROC AUC is undefined, for example if there are no positive or no negative labels.
+A `NaN` score always produces a `NaN` result.
 
 The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
@@ -2803,7 +2874,7 @@ For example:
 
 **Returned value**
 
-Returns area under the receiver operating characteristic (ROC) curve. [`Float64`](/reference/data-types/float)
+Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels. [`Float64`](/reference/data-types/float)
 
 **Examples**
 
