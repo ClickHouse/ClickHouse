@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ErrnoException.h>
+#include <Common/simulateObjectStorageLatency.h>
 
 namespace fs = std::filesystem;
 
@@ -38,6 +39,28 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
+    extern const char local_object_storage_slow_read[];
+    extern const char local_object_storage_slow_write[];
+    extern const char local_object_storage_slow_metadata[];
+    extern const char local_object_storage_slow_list[];
+    extern const char local_object_storage_slow_remove[];
+}
+
+namespace
+{
+
+/// Latencies injected by the `local_object_storage_slow_*` failpoints: emulate slow disk
+/// access behind `LocalObjectStorage` with one sleep per simulated request, at the verb
+/// boundary where a remote object store would pay a round trip (used by the
+/// `iceberg_suite_*_slowio` performance tests). Failpoints carry no payload, so the
+/// durations are fixed here; see `simulateObjectStorageLatency` for how the injected
+/// wait is kept identifiable in profiles.
+constexpr UInt64 simulated_read_latency_ms = 20;
+constexpr UInt64 simulated_write_latency_ms = 25;
+constexpr UInt64 simulated_metadata_latency_ms = 5;
+constexpr UInt64 simulated_list_latency_ms = 10;
+constexpr UInt64 simulated_remove_latency_ms = 5;
+
 }
 
 namespace ErrorCodes
@@ -544,6 +567,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* use_external_buffer */,
     bool /* restrict_seek */) const
 {
+    /// Simulated per-request latency of a slow store, the GET analogue.
+    fiu_do_on(FailPoints::local_object_storage_slow_read, { simulateObjectStorageLatency(simulated_read_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
@@ -573,6 +599,11 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
+
+    /// Simulated per-request latency of a slow store, the PUT analogue. Injected once at
+    /// buffer creation rather than at finalize: for this storage the whole buffer lifetime
+    /// is the one "upload request", so the total per-object cost is the same.
+    fiu_do_on(FailPoints::local_object_storage_slow_write, { simulateObjectStorageLatency(simulated_write_latency_ms); });
 
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Write object: {}", resolved_path);
@@ -703,6 +734,11 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
+    /// Simulated per-request latency of a slow store, the DELETE analogue
+    /// (`removeObjectsIfExist` loops over this method, so a batch pays per object,
+    /// matching the one-`unlink`-per-object nature of this storage).
+    fiu_do_on(FailPoints::local_object_storage_slow_remove, { simulateObjectStorageLatency(simulated_remove_latency_ms); });
+
     removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
@@ -726,6 +762,11 @@ void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
+    /// Simulated per-request latency of a slow store, the HEAD analogue. Deliberately not
+    /// in `tryStatResolvedPath`: `listObjects` stats every listed entry through it, and a
+    /// real store returns listing metadata inline with the LIST response, not per-entry.
+    fiu_do_on(FailPoints::local_object_storage_slow_metadata, { simulateObjectStorageLatency(simulated_metadata_latency_ms); });
+
     /// The same path resolution and the same metadata builder as `getObjectMetadata`:
     /// this method only differs from it in tolerating an object that does not exist,
     /// so a caller must not be able to observe a different file or a differently
@@ -742,6 +783,10 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t>) const
 {
+    /// Simulated per-request latency of a slow store: this read is one GET request
+    /// (the version-hint compare-and-swap read), same class as `readObject`.
+    fiu_do_on(FailPoints::local_object_storage_slow_read, { simulateObjectStorageLatency(simulated_read_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read small object: {}", resolved_path);
 
@@ -784,6 +829,9 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
+    /// Simulated per-request latency of a slow store, the HEAD analogue.
+    fiu_do_on(FailPoints::local_object_storage_slow_metadata, { simulateObjectStorageLatency(simulated_metadata_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -809,6 +857,11 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    /// Simulated per-request latency of a slow store, the LIST analogue. One sleep per
+    /// listing call: a real store returns per-entry metadata inline with the response,
+    /// so the per-entry stats below must not pay the HEAD latency.
+    fiu_do_on(FailPoints::local_object_storage_slow_list, { simulateObjectStorageLatency(simulated_list_latency_ms); });
+
     /// A path with an embedded NUL is malformed: libc truncates every syscall
     /// argument at the NUL while our `std::string`/`fs::path` keep the full
     /// value, so the traversal below would re-open the same truncated directory
