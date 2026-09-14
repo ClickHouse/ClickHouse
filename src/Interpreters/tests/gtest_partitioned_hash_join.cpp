@@ -91,9 +91,15 @@ void drainResult(IJoinResult & result, JoinedRows & rows)
 }
 
 std::shared_ptr<TableJoin> makeTableJoin(
-    const Block & left_header, const Block & right_header, JoinKind kind = JoinKind::Inner, JoinStrictness strictness = JoinStrictness::All)
+    const Block & left_header,
+    const Block & right_header,
+    JoinKind kind = JoinKind::Inner,
+    JoinStrictness strictness = JoinStrictness::All,
+    std::optional<size_t> parallel_hash_join_threshold = {})
 {
     Settings settings;
+    if (parallel_hash_join_threshold)
+        settings.set("parallel_hash_join_threshold", *parallel_hash_join_threshold);
     auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, /*tmp_volume=*/nullptr, /*tmp_data=*/nullptr);
     table_join->setKind(kind);
     table_join->getTableJoin().strictness = strictness;
@@ -145,6 +151,13 @@ struct BuildOptions
     std::optional<size_t> grow_budget_for_tests;
     bool lift_grow_budget_before_drain = false;
     std::optional<size_t> reserve_override_for_tests;
+    /// The planner's row store switch; the saved block of a RIGHT/FULL join has two UInt64 columns here,
+    /// enough for a row store.
+    bool enable_row_store = false;
+    /// `parallel_hash_join_threshold`; unset keeps the default (100000 rows).
+    std::optional<size_t> parallel_hash_join_threshold;
+    /// The planner's build-size estimate; below the threshold it selects the single fill thread.
+    std::optional<size_t> build_rows_hint;
 };
 
 UInt64 keyOf(size_t i)
@@ -163,14 +176,16 @@ BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, const BuildOptions 
     const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
 
     BuiltJoin result;
-    result.table_join = makeTableJoin(left_header, right_header, options.kind, options.strictness);
+    result.table_join = makeTableJoin(left_header, right_header, options.kind, options.strictness, options.parallel_hash_join_threshold);
+    result.table_join->setRowStoreEnabled(options.enable_row_store);
     result.join = std::make_shared<PartitionedHashJoin>(
         result.table_join,
         std::make_shared<const Block>(right_header),
         options.num_threads,
         /*any_take_last_row_=*/false,
-        options.stats_collecting_params ? *options.stats_collecting_params : StatsCollectingParams{},
-        options.max_bytes_before_external_join);
+        HashJoinStatsCollectingParams{.build = options.stats_collecting_params ? *options.stats_collecting_params : StatsCollectingParams{}, .match = {}},
+        options.max_bytes_before_external_join,
+        options.build_rows_hint);
     if (options.reserve_safety_for_tests > 0)
         result.join->setReserveSafetyFactorForTests(options.reserve_safety_for_tests);
     if (options.reserve_override_for_tests)
@@ -251,7 +266,7 @@ BuiltJoin buildDuplicateMajorGrouped(
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
     std::vector<UInt64> keys;
     std::vector<UInt64> ids;
@@ -508,6 +523,152 @@ TEST(PartitionedHashJoin, DegenerateSinglePartition)
     probeAndCheck(built, distinct_keys, /*duplicates=*/2, /*misses=*/100);
 }
 
+void checkRightJoinAndNonJoined(BuiltJoin & built, size_t distinct_keys, size_t duplicates, size_t probed_keys);
+
+TEST(PartitionedHashJoin, SingleFillThreadBuild)
+{
+    /// A build the planner estimates below `parallel_hash_join_threshold` runs on one fill thread: the
+    /// pipeline is not widened, the table is created from the hint before the first block and every block
+    /// is inserted as it arrives. A hint far below the truth must only cost table doublings.
+    constexpr size_t distinct_keys = 50000;
+    constexpr size_t duplicates = 2;
+    {
+        BuildOptions options;
+        options.build_rows_hint = 1000;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        EXPECT_FALSE(built.join->supportParallelJoin());
+        EXPECT_TRUE(built.join->isSingleLaneBuild());
+        const auto stats = built.join->getBuildStats();
+        EXPECT_EQ(stats.partitions, 1u);
+        EXPECT_GT(stats.table_resizes, 0u) << "a 1000-row hint sizes a table far too small for 50000 keys";
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+        probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+
+        /// The spill switch hands the stored blocks over; nothing else holds the rows.
+        built.join->beginStoredBlockDrain();
+        size_t drained = 0;
+        for (Block block = built.join->releaseNextStoredBlock(); !block.empty(); block = built.join->releaseNextStoredBlock())
+            drained += block.rows();
+        EXPECT_EQ(drained, distinct_keys * duplicates);
+    }
+    {
+        /// RIGHT output and the non-joined stream over a single-fill build.
+        BuildOptions options;
+        options.kind = JoinKind::Right;
+        options.build_rows_hint = 20000;
+        auto built = buildJoin(/*distinct_keys=*/20000, duplicates, options);
+        EXPECT_FALSE(built.join->supportParallelJoin());
+        checkRightJoinAndNonJoined(built, 20000, duplicates, /*probed_keys=*/10000);
+    }
+    {
+        /// An estimate at or above the threshold keeps the parallel fill.
+        BuildOptions options;
+        options.build_rows_hint = 100000;
+        auto built = buildJoin(/*distinct_keys=*/1000, duplicates, options);
+        EXPECT_TRUE(built.join->supportParallelJoin());
+        EXPECT_FALSE(built.join->isSingleLaneBuild());
+    }
+    {
+        /// No block at all: the barrier still creates the table the probe and the used flags need.
+        BuildOptions options;
+        options.build_rows_hint = 10;
+        auto built = buildJoin(/*distinct_keys=*/0, duplicates, options);
+        EXPECT_EQ(built.join->getBuildStats().partitions, 1u);
+        probeAndCheck(built, 0, duplicates, /*misses=*/1000);
+    }
+}
+
+TEST(PartitionedHashJoin, PartitionFloorFewKeysManyRows)
+{
+    /// 1024 keys with 2048 duplicates each: the table has 2^12 cells, so the L2 rule alone wants one
+    /// partition and one worker would insert all 2M rows after the barrier. From
+    /// `parallel_hash_join_threshold` rows on, the plan takes one partition per worker instead, as
+    /// `parallel_hash` has one table per slot, capped by the distinct keys.
+    constexpr size_t distinct_keys = 1024;
+    constexpr size_t duplicates = 2048;
+    {
+        BuildOptions options;
+        options.num_threads = 4;
+        options.parallel_hash_join_threshold = 1000;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        const auto stats = built.join->getBuildStats();
+        EXPECT_EQ(stats.partitions, 4u) << "one partition per worker above the threshold";
+        EXPECT_GE(stats.table_cells, stats.partitions << 10) << "every range keeps at least 2^10 cells";
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+        probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+    }
+    {
+        /// Fewer distinct keys than workers: no more partitions than keys.
+        BuildOptions options;
+        options.num_threads = 4;
+        options.parallel_hash_join_threshold = 1000;
+        auto built = buildJoin(/*distinct_keys=*/2, /*duplicates=*/300000, options);
+        const auto stats = built.join->getBuildStats();
+        EXPECT_EQ(stats.partitions, 2u);
+        EXPECT_GE(stats.table_cells, stats.partitions << 10);
+        expectTableInvariants(stats, 2, 2 * 300000);
+        probeAndCheck(built, 2, 300000, /*misses=*/10);
+    }
+    {
+        /// Below the threshold the small table keeps the single-partition plan.
+        BuildOptions options;
+        options.num_threads = 4;
+        options.parallel_hash_join_threshold = 10000000;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        EXPECT_EQ(built.join->getBuildStats().partitions, 1u);
+    }
+}
+
+TEST(PartitionedHashJoin, RowsFloorDeclinedUnderBudget)
+{
+    /// The floor's scatter holds a locator and the key of every row at once. A spill budget with room
+    /// for the resident build and the widened table, but not for that transient, keeps the
+    /// single-partition insert, and the build then fits without spilling.
+    constexpr size_t distinct_keys = 1024;
+    constexpr size_t duplicates = 2048;
+    PartitionedHashJoin::PostBuildGateTerms terms;
+    {
+        BuildOptions options;
+        options.num_threads = 4;
+        options.parallel_hash_join_threshold = 1000;
+        options.max_bytes_before_external_join = 4096uz << 20;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        ASSERT_EQ(built.join->getBuildStats().partitions, 4u) << "a budget far above the peak takes the floor";
+        terms = built.join->getPostBuildGateTermsForTests();
+        ASSERT_GT(terms.chunk_all, 0u);
+    }
+    {
+        BuildOptions options;
+        options.num_threads = 4;
+        options.parallel_hash_join_threshold = 1000;
+        options.max_bytes_before_external_join = terms.floor_bytes + terms.tables + terms.chunk_all / 4;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        const auto stats = built.join->getBuildStats();
+        EXPECT_EQ(stats.partitions, 1u) << "the floor must not blow the spill budget";
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+        probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+    }
+}
+
+TEST(PartitionedHashJoin, RowStoreJoinedParityFullJoin)
+{
+    /// The joined stream of a FULL join reads the row store through `LazyOutput` like the RIGHT join
+    /// above, but through the LEFT-side loop with default rows. Probing every key with no misses, the
+    /// emitted tuples must equal the columnar build's. INNER and LEFT save only `build_id` here (the
+    /// right key is copied from the left one), too few columns for a store; the functional test 05139
+    /// covers them with a wide payload.
+    constexpr size_t distinct_keys = 200000;
+    constexpr size_t duplicates = 3;
+    BuildOptions options;
+    options.kind = JoinKind::Full;
+    options.enable_row_store = true;
+    auto built = buildJoin(distinct_keys, duplicates, options);
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GT(stats.row_store_blocks, 0u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/0);
+}
+
 TEST(PartitionedHashJoin, WideLocatorsForLargeBlocks)
 {
     /// Above 65536 rows the packed locator no longer fits, so this is the 8-byte path.
@@ -548,7 +709,7 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
     grouped.join->setReserveSafetyFactorForTests(0.25);
     grouped.join->setGrowBudgetForTests(0);
@@ -579,22 +740,10 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
     probeAndCheck(grouped, grouped_keys, duplicates, /*misses=*/100);
 }
 
-TEST(PartitionedHashJoin, RightJoinSharedFlagsAndNonJoined)
+/// Probes the first `probed_keys` keys of a RIGHT ALL build and checks the joined tuples, then drains
+/// the non-joined streams and checks they return exactly the build rows of the unprobed keys, once.
+void checkRightJoinAndNonJoined(BuiltJoin & built, size_t distinct_keys, size_t duplicates, size_t probed_keys)
 {
-    /// RIGHT ALL exercises the shared used-flag space and the non-joined iteration over cell
-    /// positions: a wrong offset marks or reads the wrong cell, which shows up as missing or duplicated
-    /// non-joined rows.
-    constexpr size_t distinct_keys = 300000;
-    constexpr size_t duplicates = 2;
-    constexpr size_t probed_keys = distinct_keys / 2;
-    BuildOptions options;
-    options.kind = JoinKind::Right;
-    auto built = buildJoin(distinct_keys, duplicates, options);
-
-    const auto stats = built.join->getBuildStats();
-    EXPECT_GT(stats.partitions, 1u);
-    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
-
     /// RIGHT filters unmatched probe rows, so the output is exactly the probed keys' tuples.
     JoinedRows expected;
     expected.reserve(probed_keys * duplicates);
@@ -665,6 +814,123 @@ TEST(PartitionedHashJoin, RightJoinSharedFlagsAndNonJoined)
     std::sort(actual_non_joined.begin(), actual_non_joined.end());
     ASSERT_EQ(actual_non_joined.size(), expected_non_joined.size());
     ASSERT_TRUE(actual_non_joined == expected_non_joined);
+}
+
+TEST(PartitionedHashJoin, RightJoinSharedFlagsAndNonJoined)
+{
+    /// RIGHT ALL exercises the shared used-flag space and the non-joined iteration over cell
+    /// positions: a wrong offset marks or reads the wrong cell, which shows up as missing or duplicated
+    /// non-joined rows.
+    constexpr size_t distinct_keys = 300000;
+    constexpr size_t duplicates = 2;
+    BuildOptions options;
+    options.kind = JoinKind::Right;
+    auto built = buildJoin(distinct_keys, duplicates, options);
+
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GT(stats.partitions, 1u);
+    EXPECT_EQ(stats.row_store_blocks, 0u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+    checkRightJoinAndNonJoined(built, distinct_keys, duplicates, distinct_keys / 2);
+}
+
+TEST(PartitionedHashJoin, RowStoreRightJoinParityAndNonJoined)
+{
+    /// With the row store enabled the saved block (`rk`, `build_id`) is packed row-wise at the fill and
+    /// only the access indexes say where each column lives. The joined output reads it through
+    /// `LazyOutput`, the non-joined stream through `NotJoinedPartitioned`; a positional read of the
+    /// (now empty) columnar part would return nothing or the wrong column.
+    constexpr size_t distinct_keys = 200000;
+    constexpr size_t duplicates = 3;
+    BuildOptions options;
+    options.kind = JoinKind::Right;
+    options.enable_row_store = true;
+    auto built = buildJoin(distinct_keys, duplicates, options);
+
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GT(stats.partitions, 1u);
+    EXPECT_EQ(stats.row_store_blocks, (distinct_keys * duplicates + block_rows - 1) / block_rows);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+    checkRightJoinAndNonJoined(built, distinct_keys, duplicates, distinct_keys / 2);
+}
+
+TEST(PartitionedHashJoin, RowStoreDrainsRebuildColumns)
+{
+    /// Both drains hand whole saved-structure blocks to another join (grace), so they must scatter the
+    /// row store back into columns and place every column at its saved position: the stored-block drain
+    /// after the barrier, and the fill-lane drain before it.
+    constexpr size_t distinct_keys = 100000;
+    constexpr size_t duplicates = 2;
+    BuildOptions options;
+    options.kind = JoinKind::Right;
+    options.enable_row_store = true;
+
+    std::vector<std::pair<UInt64, UInt64>> expected;
+    expected.reserve(distinct_keys * duplicates);
+    for (size_t i = 0; i < distinct_keys; ++i)
+        for (size_t d = 0; d < duplicates; ++d)
+            expected.emplace_back(keyOf(i), i * duplicates + d);
+    std::sort(expected.begin(), expected.end());
+
+    auto collect = [](const Block & block, std::vector<std::pair<UInt64, UInt64>> & rows)
+    {
+        ASSERT_EQ(block.columns(), 2u);
+        ColumnPtr rk_holder;
+        ColumnPtr build_holder;
+        const UInt64 * rk = columnData(block, "rk", rk_holder);
+        const UInt64 * build_id = columnData(block, "build_id", build_holder);
+        for (size_t i = 0; i < block.rows(); ++i)
+            rows.emplace_back(rk[i], build_id[i]);
+    };
+
+    {
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        EXPECT_GT(built.join->getBuildStats().row_store_blocks, 0u);
+        built.join->beginStoredBlockDrain();
+        std::vector<std::pair<UInt64, UInt64>> actual;
+        for (Block block = built.join->releaseNextStoredBlock(); !block.empty(); block = built.join->releaseNextStoredBlock())
+            collect(block, actual);
+        std::sort(actual.begin(), actual.end());
+        ASSERT_TRUE(actual == expected);
+    }
+
+    {
+        /// Fill only, then release the lanes as the spilling wrapper does before the barrier.
+        const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
+        const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
+        auto table_join = makeTableJoin(left_header, right_header, JoinKind::Right);
+        table_join->setRowStoreEnabled(true);
+        auto join = std::make_shared<PartitionedHashJoin>(table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4);
+        std::vector<UInt64> keys;
+        std::vector<UInt64> ids;
+        for (size_t i = 0; i < distinct_keys; ++i)
+        {
+            for (size_t d = 0; d < duplicates; ++d)
+            {
+                keys.push_back(keyOf(i));
+                ids.push_back(i * duplicates + d);
+                if (keys.size() == block_rows)
+                {
+                    EXPECT_TRUE(join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+                    keys.clear();
+                    ids.clear();
+                }
+            }
+        }
+        if (!keys.empty())
+            EXPECT_TRUE(join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+
+        join->dropFillAuxiliary();
+        std::vector<std::pair<UInt64, UInt64>> actual;
+        for (size_t lane = 0; lane < join->getNumFillLanes(); ++lane)
+            for (Block block = join->releaseNextFillLaneBlock(lane); !block.empty(); block = join->releaseNextFillLaneBlock(lane))
+                collect(block, actual);
+        std::sort(actual.begin(), actual.end());
+        ASSERT_TRUE(actual == expected);
+        EXPECT_EQ(join->getTotalByteCount(), 0u);
+    }
 }
 
 TEST(PartitionedHashJoin, AmacDuplicateHeavyBuildParityVsSequential)
@@ -1306,7 +1572,7 @@ TEST(PartitionedHashJoin, GroupedScatterExactSpans)
     built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
     constexpr size_t budget = 55u << 20;
     built.join = std::make_shared<PartitionedHashJoin>(
-        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, StatsCollectingParams{}, budget);
+        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, HashJoinStatsCollectingParams{}, budget);
 
     std::vector<UInt64> keys;
     std::vector<UInt64> ids;
@@ -1359,7 +1625,7 @@ TEST(PartitionedHashJoin, GroupedChainsAcrossGroups)
     built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
     constexpr size_t budget = 75u << 20;
     built.join = std::make_shared<PartitionedHashJoin>(
-        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, StatsCollectingParams{}, budget);
+        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, HashJoinStatsCollectingParams{}, budget);
 
     std::vector<UInt64> keys;
     std::vector<UInt64> ids;
@@ -1441,7 +1707,7 @@ TEST(PartitionedHashJoin, PlanPostBuildHeaderTerm)
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
 
     std::vector<UInt64> keys;
@@ -1814,7 +2080,7 @@ TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
 
     auto push_nullable = [&](const std::vector<UInt64> & keys, const std::vector<UInt64> & ids, bool is_null)
@@ -1967,7 +2233,7 @@ TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
     built.join->setReserveSafetyFactorForTests(0.25);
     std::vector<UInt64> keys;
@@ -2065,7 +2331,7 @@ TEST(PartitionedHashJoin, ZeroKeyChain)
         std::make_shared<const Block>(right_header),
         /*num_threads_=*/4,
         /*any_take_last_row_=*/false,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         budget);
 
     std::vector<UInt64> keys;
@@ -2114,7 +2380,7 @@ TEST(PartitionedHashJoin, AmacParityWithChains)
             std::make_shared<const Block>(right_header),
             /*num_threads_=*/4,
             /*any_take_last_row_=*/false,
-            StatsCollectingParams{},
+            HashJoinStatsCollectingParams{},
             budget);
         if (disable_amac)
             built.join->setAmacEnabledForTests(false);
@@ -2284,7 +2550,7 @@ TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
     BuiltJoin built;
     built.table_join = makeTableJoin(left_header, right_header);
     built.join = std::make_shared<PartitionedHashJoin>(
-        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, false, StatsCollectingParams{}, budget);
+        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, false, HashJoinStatsCollectingParams{}, budget);
     built.join->setPartitionBitsForTests(bits);
     /// `reserve` is a 50% fill target, so `2^(degree-1)` keys produce a table of `2^degree` cells.
     built.join->setReserveOverrideForTests(1uz << (size_degree - 1));

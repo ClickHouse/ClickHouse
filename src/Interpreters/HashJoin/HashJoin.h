@@ -573,6 +573,11 @@ public:
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure = false);
 
+    /// Rebuilds one stored block's columns in saved-block order: the row store is scattered back into
+    /// columns, the selector is applied to both parts, and the access indexes put every column back at
+    /// its saved position. Consumes the row store.
+    static Columns materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes);
+
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
     Block prepareRightBlock(const Block & block) const;
@@ -598,12 +603,17 @@ public:
         ColumnAccessIndexes access_indexes;
     };
 
-    /// Derives the row store layout from the first right block.
-    std::optional<RowStoreLayoutWithAccessIndexes> initRowStore(const Block & block);
+    /// Derives the row store layout from the first right block. `may_rerange` is false for a caller
+    /// that never reorders the stored rows, so the row store need not yield to the rerange optimization.
+    std::optional<RowStoreLayoutWithAccessIndexes> initRowStore(const Block & block, bool may_rerange = true);
     /// Takes a pre-computed row store layout.
     void initRowStore(const std::optional<RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes);
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
+    /// Packs a prepared right block (`prepareRightBlock`) into its stored form: the columns the
+    /// initialized row store layout admits go into a `RowDataStore`, the rest stay columnar. Without an
+    /// initialized row store every column stays columnar.
+    StoredBlock createStoredBlock(const Block & block_to_save, ScatteredBlock::Selector selector) const;
 
     size_t getAndSetRightTableKeys() const;
 

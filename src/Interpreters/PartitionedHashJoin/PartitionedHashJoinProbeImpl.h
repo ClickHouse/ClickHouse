@@ -478,6 +478,9 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
 
             [[maybe_unused]] IColumn::Offset current_offset = 0;
             [[maybe_unused]] UInt64 appended_row_count = 0;
+            /// Right rows matched, as `LazyOutput::addRef` counts them on the full loop; the planner's
+            /// row store decision for the next run reads the published total.
+            [[maybe_unused]] UInt64 matched_row_count = 0;
             /// Copied out: the filter's byte stores may alias whatever the closure points at, so the
             /// bound would otherwise be reloaded every iteration.
             const size_t rows_local = rows;
@@ -502,12 +505,14 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
                             {
                                 *ref_cur++ = word;
                                 appended_row_count += match_rows;
+                                matched_row_count += match_rows;
                             }
                         }
                         else if constexpr (with_refs)
                         {
                             *ref_cur++ = firstRefWord(mappedFromWord<Mapped>(word));
                             ++appended_row_count;
+                            ++matched_row_count;
                         }
                     }
                 }
@@ -540,16 +545,19 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
                 auto & row_refs = added_columns.lazy_output.row_refs;
                 row_refs.resize(ref_cur - row_refs.data());
                 added_columns.lazy_output.row_count += appended_row_count;
+                added_columns.lazy_output.hash_table_matches += matched_row_count;
             }
         }
     };
 
     /// The flat loop for the cheap-key shared-table shapes, which is the hot shape: every loop invariant
     /// is snapshotted into a local, because the closure's fields sit behind a pointer the compiler must
-    /// conservatively reload after each opaque call. The selector variant is a template parameter for
-    /// the same reason. The lookup itself is the table's `find` with identical offset semantics,
-    /// zero-sentinel keys going through the table object.
-    auto flat_loop = [&]<bool need_filter, bool with_skip, bool selector_is_range>()
+    /// conservatively reload after each opaque call. That includes the row count, the table's placement
+    /// shift and, as the `with_refs` template parameter, whether the lazy output records ref words at
+    /// all: a miss on the lazy shape then costs one offset increment and nothing else. The selector
+    /// variant is a template parameter for the same reason. The lookup itself is the table's `find` with
+    /// identical offset semantics, zero-sentinel keys going through the table object.
+    auto flat_loop = [&]<bool need_filter, bool with_skip, bool selector_is_range, bool with_refs>()
     {
         /// The call sites are gated on the same constant, but instantiating the enclosing function
         /// substitutes into this body whether the lambda is called or not, and the lookup below is
@@ -558,13 +566,14 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
         {
             using Cell = typename MapNonConst::cell_type;
 
-            if (rows == 0)
+            const size_t num_rows = rows;
+            if (num_rows == 0)
                 return;
 
             if constexpr (need_filter)
             {
-                added_columns.filter = IColumn::Filter(rows, 0);
-                added_columns.matched_rows.reserve(rows);
+                added_columns.filter = IColumn::Filter(num_rows, 0);
+                added_columns.matched_rows.reserve(num_rows);
             }
 
             [[maybe_unused]] size_t selector_base = 0;
@@ -584,6 +593,10 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
             [[maybe_unused]] const UInt8 * const skip_local = skip_data;
             const Cell * const cells = table.cells();
             const size_t mask = table.cellMask();
+            /// `table.place` with the shift held in a register.
+            const size_t place_shift = 64 - table.sizeDegree();
+            auto place = [place_shift](size_t hash_value) __attribute__((always_inline))
+            { return static_cast<size_t>(sharedJoinPlacement(hash_value) >> place_shift); };
             /// The gate guarantees the zero-check and key-compare read no table state.
             const HashTableNoState no_state{};
             /// A private copy keeps the key getter's column pointer in a register.
@@ -591,15 +604,15 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
 
             auto flat_prefetcher = makeJoinPrefetcher(
                 use_prefetch,
-                rows,
+                num_rows,
                 [&](size_t k) __attribute__((always_inline))
                 {
                     auto && key_holder = keys.getKeyHolder(index_at(k), pool);
-                    __builtin_prefetch(cells + table.place(table.hash(keyHolderGetKey(key_holder))));
+                    __builtin_prefetch(cells + place(table.hash(keyHolderGetKey(key_holder))));
                 });
 
             IColumn::Offset current_offset = 0;
-            for (size_t i = 0; i < rows; ++i)
+            for (size_t i = 0; i < num_rows; ++i)
             {
                 flat_prefetcher.prefetchAt(i);
 
@@ -626,7 +639,7 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
                     else
                     {
                         const size_t hash = table.hash(key);
-                        size_t pos = table.place(hash);
+                        size_t pos = place(hash);
                         while (!cells[pos].isZero(no_state) && !cells[pos].keyEquals(key, hash, no_state))
                             pos = (pos + 1) & mask;
                         if (!cells[pos].isZero(no_state))
@@ -648,7 +661,18 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
                 {
                     if constexpr (join_features.is_anti_join && join_features.left)
                         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-                    addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+                    /// `addNotFoundRow` inlined with the record flag resolved at compile time: the lazy
+                    /// output takes a zero word only when it records refs, the eager output counts the
+                    /// default row as before.
+                    if constexpr (join_features.add_missing)
+                    {
+                        if constexpr (!AddedColumnsType::isLazy())
+                            added_columns.appendDefaultRow();
+                        else if constexpr (with_refs)
+                            added_columns.lazy_output.addDefault();
+                        if constexpr (join_features.need_replication)
+                            ++current_offset;
+                    }
                 }
 
                 if constexpr (join_features.need_replication)
@@ -738,10 +762,23 @@ size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColum
         {
             auto flat_dispatch = [&]<bool need_filter, bool with_skip>()
             {
-                if (selector.isContinuousRange())
-                    flat_loop.template operator()<need_filter, with_skip, true>();
+                auto by_selector = [&]<bool with_refs>()
+                {
+                    if (selector.isContinuousRange())
+                        flat_loop.template operator()<need_filter, with_skip, true, with_refs>();
+                    else
+                        flat_loop.template operator()<need_filter, with_skip, false, with_refs>();
+                };
+                /// Chosen once per block; the eager output never records refs, so it gets one instantiation.
+                if constexpr (AddedColumnsType::isLazy())
+                {
+                    if (added_columns.record_row_refs)
+                        by_selector.template operator()<true>();
+                    else
+                        by_selector.template operator()<false>();
+                }
                 else
-                    flat_loop.template operator()<need_filter, with_skip, false>();
+                    by_selector.template operator()<false>();
             };
             if (added_columns.need_filter)
             {

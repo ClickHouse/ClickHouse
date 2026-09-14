@@ -85,8 +85,9 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t num_threads_,
-    const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_,
+    std::optional<size_t> build_rows_hint_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -98,7 +99,13 @@ SpillingHashJoin::SpillingHashJoin(
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     partitioned_join = std::make_shared<PartitionedHashJoin>(
-        table_join, right_sample_block_, num_threads_, any_take_last_row, stats_collecting_params_, max_bytes_before_external_join);
+        table_join,
+        right_sample_block_,
+        num_threads_,
+        any_take_last_row,
+        stats_collecting_params_,
+        max_bytes_before_external_join,
+        build_rows_hint_);
     supports_parallel_non_joined_blocks_processing = partitioned_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -326,6 +333,16 @@ void SpillingHashJoin::switchToGraceHashJoin()
             /// before any drain so they are not still allocated at the conversion peak.
             partitioned_join->dropFillAuxiliary();
 
+            /// A single fill thread has no lanes: its rows are in the stored blocks and the table, and
+            /// this thread is the only one filling, so the blocks are handed over here. A build that
+            /// has not stored anything yet keeps its join data.
+            if (partitioned_join->isSingleLaneBuild())
+            {
+                partitioned_join->beginStoredBlockDrain();
+                if (partitioned_join->getTotalRowCount() > 0)
+                    partitioned_join->drainStoredBlocksInto(*grace_join);
+            }
+
             state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
         }
         tryConvertFillLanes();
@@ -374,7 +391,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// have always used at this terminal point (the `* 2` lives only on the per-block path,
         /// where a subsequent insert could still double the buffer).
         const bool over_threshold = partitioned_join
-            ? partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join
+            ? partitioned_join->predictedResidentBytes(/*at_barrier=*/true) >= max_bytes_before_external_join
             : collectingJoin().getTotalByteCount() >= max_bytes_before_external_join;
         if (over_threshold)
         {

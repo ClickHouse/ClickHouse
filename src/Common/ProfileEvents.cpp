@@ -476,6 +476,7 @@
     M(PartitionedHashJoinTeardownMicroseconds, "Time spent destroying a partitioned_hash JOIN's heavy state (the shared hash table, build arenas, the stored-blocks row store), measured in the destructor.", ValueType::Microseconds) \
     M(PartitionedHashJoinScatterGroups, "Number of contiguous build-block ranges the partitioned_hash JOIN post-build scatter was split into to bound its transient (1 means the whole build was scattered at once).", ValueType::Number) \
     M(PartitionedHashJoinTableResizes, "Number of times a partitioned_hash JOIN shared hash table grew during post-build.", ValueType::Number) \
+    M(PartitionedHashJoinRowStoreBlocks, "Number of right-side blocks a partitioned_hash JOIN build stored with a row-major payload store (`RowDataStore`) next to the columnar remainder, as `parallel_hash` does when the row store is enabled.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

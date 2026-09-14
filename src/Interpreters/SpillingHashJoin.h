@@ -89,7 +89,8 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
-    /// Partitioned mode: wraps a PartitionedHashJoin.
+    /// Partitioned mode: wraps a PartitionedHashJoin. `build_rows_hint_` is the planner's right-side
+    /// row estimate, see `PartitionedHashJoin`.
     SpillingHashJoin(
         PartitionedCollectingTag,
         std::shared_ptr<TableJoin> table_join_,
@@ -99,8 +100,9 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t num_threads_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false,
+        std::optional<size_t> build_rows_hint_ = {});
 
     ~SpillingHashJoin() override;
 

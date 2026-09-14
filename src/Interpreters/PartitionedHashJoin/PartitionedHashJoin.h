@@ -67,13 +67,18 @@ class TableJoin;
 class PartitionedHashJoin : public IJoin
 {
 public:
+    /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
+    /// `parallel_hash_join_threshold` the join builds on one fill thread: the pipeline keeps the
+    /// `hash` shape, the table is sized from the hint and grows like `hash`'s, and every block is
+    /// inserted as it arrives, so nothing is left for the barrier.
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
         size_t num_threads_,
         bool any_take_last_row_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {},
-        size_t max_bytes_before_external_join_ = 0);
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        size_t max_bytes_before_external_join_ = 0,
+        std::optional<size_t> build_rows_hint_ = {});
 
     ~PartitionedHashJoin() override;
 
@@ -102,7 +107,9 @@ public:
     /// store and route words that are already allocated, plus the table and arena that are not yet.
     /// `SpillingHashJoin` compares this against the external-join threshold. Not `getTotalByteCount`,
     /// which is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
-    size_t predictedResidentBytes() const;
+    /// `at_barrier`: the fill is complete, so a single fill thread's table only has a doubling ahead
+    /// of it when the claimed count already exceeds the maximum fill.
+    size_t predictedResidentBytes(bool at_barrier = false) const;
 
     /// Bytes the stored rows would take once loaded into a single in-memory join: the row store as it
     /// stands plus the ungrouped table and arena prediction from the barrier's exact totals. On the
@@ -114,12 +121,25 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     /// The fill is per-lane plus a short mutexed append, so right-side streams may fill
-    /// concurrently. The delegated path inserts into one `HashJoin`, which is not thread-safe.
-    bool supportParallelJoin() const override { return !delegate_mode; }
+    /// concurrently. The delegated path inserts into one `HashJoin`, which is not thread-safe, and
+    /// a build estimated small keeps the narrow pipeline on purpose.
+    bool supportParallelJoin() const override { return !delegate_mode && !single_fill_thread; }
+
+    /// One fill thread inserting as it goes: the rows live in the stored blocks and the table, never
+    /// in fill lanes, so a spill switch drains the stored blocks.
+    bool isSingleLaneBuild() const { return single_fill_thread; }
 
     void onBuildPhaseFinish() override;
     bool hasPostBuildPhase() const override { return true; }
     void runPostBuildPhase() override;
+
+    /// The planner reads the matched count of the previous run to decide on the row store, so it is
+    /// published at destruction as the other hash joins publish theirs.
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        hash_table_matches = matched_right_rows;
+        probe_phase_finished = true;
+    }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -203,6 +223,8 @@ public:
         /// refusals under budget.
         UInt64 table_resizes = 0;
         UInt64 load_factor_grow_skipped = 0;
+        /// Stored blocks whose fixed-width payload went into a row store.
+        UInt64 row_store_blocks = 0;
     };
 
     BuildStats getBuildStats() const;
@@ -287,11 +309,11 @@ private:
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
     const HashJoin::RightTableData & storedData() const { return *leaf_join->data; }
 
-    /// One accumulated right-side block: the payload in row-store form, the prepared key columns,
-    /// and the saved routes.
+    /// One accumulated right-side block: the payload in stored form (row store plus columnar
+    /// remainder, a full selector), the prepared key columns, and the saved routes.
     struct FillBlock
     {
-        Block stored;
+        StoredBlock stored;
         Columns keys_holder;
         ColumnRawPtrs key_columns;
         ColumnPtr null_map_holder;
@@ -335,10 +357,21 @@ private:
     bool addBlockToJoinImpl(const Block & source_block, bool check_limits, size_t build_lane);
     void decidePartitionPlan();
     void storeBlocksInRowStore();
+    /// Moves one fill block's stored form into the leaf join's block list and saves its null-key and
+    /// filtered rows for RIGHT/FULL output.
+    void storeBlockInRowStore(FillBlock & fill);
+    /// The saved-block form of one stored block, for the drains that hand blocks to another join.
+    Block storedBlockToBlock(StoredBlock && stored) const;
 
     /// Both return whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuildPartitioned();
     bool postBuildSinglePartition();
+    /// The single-partition insert in three steps, so the single fill thread can run the middle one
+    /// per block as it arrives: create the table of `reserve` cells with its context and arenas,
+    /// insert one block, finish the scratch and publish. `postBuildSinglePartition` runs all three.
+    void beginSinglePartitionInsert(size_t reserve);
+    void insertSingleLaneBlock(FillBlock & fill);
+    bool finishSinglePartitionInsert();
     void preparePostBuildContext();
     void runGroupStages(size_t block_begin, size_t block_end);
     size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
@@ -360,6 +393,9 @@ private:
 
     void measureGenericKeyBytes();
     void createSharedTable();
+    /// The partition floor's memory guard: the scatter transient it introduces has to fit the spill
+    /// budget next to what is resident already (the post-build gate's ungrouped peak).
+    bool partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree) const;
     void reduceWorkerHistogram();
     void resetWorkerHistogram(PostBuildContext & ctx);
     void histogramWorker(PostBuildContext & ctx, size_t worker) const;
@@ -490,6 +526,8 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
+    /// The row store layout is derived from the first block, as `ConcurrentHashJoin` does.
+    std::once_flag row_store_init_flag;
 
     /// Fill-phase distinct estimate for `predictedResidentBytes`. Merging every lane on every block
     /// would cost `lanes * 8 KiB`, so the value is reused until the row count has grown by a
@@ -505,6 +543,12 @@ private:
     size_t max_fanout_per_pass;
     /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
     bool cap_partitions_by_l1_descriptors;
+    /// `parallel_hash_join_threshold`: from this many build rows on, the insert phase gets at least one
+    /// partition per worker, as `parallel_hash` gets one table per slot. Below it, an estimated build
+    /// runs on one fill thread.
+    size_t parallel_hash_join_threshold;
+    std::optional<size_t> build_rows_hint;
+    bool single_fill_thread = false;
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
@@ -514,6 +558,10 @@ private:
     /// Cross-run distinct-key statistics are published for join reordering and the runtime filters,
     /// never consumed for sizing: the table cannot grow, and a cached count is data-independent.
     StatsCollectingParams stats_collecting_params;
+    /// The matched-row statistics the planner's row store decision reads.
+    StatsCollectingParams match_stats_collecting_params;
+    size_t hash_table_matches = 0;
+    bool probe_phase_finished = false;
     std::vector<FillBlock> build_blocks; /// concatenated lanes, row-store block numbers assigned
     /// When every block and row number fits 16 bits the scattered locator column packs into
     /// `(block_no << 16) | row_no` and is decoded at insert, halving the largest scatter transient.

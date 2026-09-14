@@ -29,10 +29,10 @@ void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_size
     for (size_t row = 0; row < rows; ++row)
     {
         auto && key_holder = key_getter.getKeyHolder(row, pool);
-        const UInt64 mixed = sharedJoinMix(hash(keyHolderGetKey(key_holder)));
-        routes[row] = static_cast<UInt16>(mixed >> 48);
+        const size_t hash_value = hash(keyHolderGetKey(key_holder));
+        routes[row] = static_cast<UInt16>(sharedJoinPlacement(hash_value) >> 48);
         if (!skip || !skip[row])
-            hll.add(static_cast<UInt32>(mixed >> 32));
+            hll.add(static_cast<UInt32>(sharedJoinMix(hash_value) >> 32));
     }
 }
 

@@ -51,6 +51,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
@@ -174,8 +175,23 @@ struct InsertTarget
 
     UInt64 claimed = 0;
     bool all_unique = true;
+    /// The single fill thread sized its table from a hint that may be low, so it grows at the load-factor
+    /// bound as `hash` does; the post-build inserts grow only when the last free cell is claimed.
+    bool grow_at_max_fill = false;
+    /// `growBound()`, cached so the per-row grow check below stays a register compare; refreshed by
+    /// `g1BeforeClaim` after a grow. A stale smaller value only costs an extra exact re-check there.
+    size_t grow_threshold = 0;
+
+    size_t growBound() const { return grow_at_max_fill ? table.maxFill() : table.cellCount() - 1; }
 
     ALWAYS_INLINE void claimed_one() { ++claimed; }
+
+    /// G1's fast condition inline; `g1BeforeClaim` re-checks exactly and grows.
+    ALWAYS_INLINE void maybeGrowBeforeClaim()
+    {
+        if (wrap && owner && claimed >= grow_threshold)
+            owner->g1BeforeClaim(*this);
+    }
 
     void foldClaimed()
     {
@@ -242,8 +258,7 @@ struct InsertTarget
     ALWAYS_INLINE bool insertFromHome(KeyHolder && key_holder, size_t hash, UInt64 ref, size_t row)
     {
         const auto & key = keyHolderGetKey(key_holder);
-        if (wrap && owner)
-            owner->g1BeforeClaim(*this);
+        maybeGrowBeforeClaim();
         size_t pos = table.place(hash);
         chassert(pos >= range_begin && pos < range_end);
         while (true)
@@ -600,8 +615,7 @@ void drainPartitionOverflow(InsertTarget<Table> & target, UInt64 & appended)
         const Key key = overflow.template keyAt<Key>(i);
         const size_t hash = overflow.hashes[i];
         const UInt64 ref = overflow.refs[i];
-        if (target.owner)
-            target.owner->g1BeforeClaim(target);
+        target.maybeGrowBeforeClaim();
         size_t pos = target.table.place(hash);
         while (true)
         {
@@ -833,6 +847,8 @@ void PartitionedHashJoin::insertPartitionSection(
                 .partition = partition == single_partition ? 0 : partition, \
                 .fold_base = claimed, \
                 .single_partition_pass = wrap && partition == single_partition}; \
+            target.grow_at_max_fill = single_fill_thread; \
+            target.grow_threshold = target.growBound(); \
             target.claimed = claimed; \
             insertSectionShared<KeyGetter, Table>( \
                 target, \
@@ -930,16 +946,21 @@ size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter 
 template <typename Target>
 bool PartitionedHashJoin::g1BeforeClaim(Target & target)
 {
-    if (!target.wrap || target.claimed < target.table.cellCount() - 1)
+    if (!target.wrap || target.claimed < target.growBound())
         return false;
     chassert(target.writer);
     const size_t used = finishPassScratch(target.scratch, *target.writer);
     if (target.scratch_high_water)
         *target.scratch_high_water = std::max(*target.scratch_high_water, used);
     target.foldClaimed();
-    grow(target.claimed, target.claimed + 1, GrowReason::G1);
+    /// At the last free cell the grow must happen; at the load-factor bound it may be refused under a
+    /// tight budget, and the walk then goes on until the table is full.
+    const size_t cells_before = target.table.cellCount();
+    const bool table_full = target.claimed >= cells_before - 1;
+    grow(target.claimed, target.claimed + 1, table_full ? GrowReason::G1 : GrowReason::G2);
     target.cells = target.table.cells();
     target.range_end = target.table.cellCount();
+    target.grow_threshold = target.table.cellCount() == cells_before ? cells_before - 1 : target.growBound();
     return true;
 }
 
@@ -1242,7 +1263,14 @@ void PartitionedHashJoin::runPostBuildPhase()
     }
 
     bool all_values_unique = true;
-    if (bits == 0)
+    if (single_fill_thread)
+    {
+        /// The rows went in during the fill; only the scratch finish and the publication remain.
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::PartitionedHashJoinBuildLeafMicroseconds);
+        all_values_unique = finishSinglePartitionInsert();
+    }
+    else if (bits == 0)
     {
         /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
         /// stored blocks - so all of it charges to the insert sub-phase.
@@ -1346,9 +1374,9 @@ void PartitionedHashJoin::reinitUsedFlags()
 void PartitionedHashJoin::createSharedTable()
 {
     const HashJoin::Type type = leaf_join->data->type;
-    const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
-    const size_t reserve = reserveFor(insertable_rows, hll_estimate);
-    ht_total_bytes = SharedJoinMaps::predictedBufferBytes(maps_variant_index, type, reserve);
+    /// From the degree, not the reserve: the partition floor may have widened the table past what the
+    /// reserve alone asks for, and the exactness check compares against what was actually created.
+    ht_total_bytes = SharedJoinMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
 
     shared_maps = std::make_unique<SharedJoinMaps>(maps_variant_index);
     shared_maps->create(type, size_degree, bits);
@@ -1357,6 +1385,59 @@ void PartitionedHashJoin::createSharedTable()
     stats.table_cells = shared_maps->getBufferSizeInCells(type);
     stats.predictions_exact = shared_maps->getReservedBufferBytes(type) == ht_total_bytes;
     decideAmacEngagement();
+}
+
+bool PartitionedHashJoin::partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree) const
+{
+    /// Without a spill budget nothing bounds the peak but the query's own memory limit, as for
+    /// `parallel_hash`, whose per-slot tables are never budgeted either.
+    if (max_bytes_before_external_join == 0)
+        return true;
+
+    const HashJoin::Type type = leaf_join->data->type;
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t tables = SharedJoinMaps::bufferBytesForDegree(maps_variant_index, type, floor_degree);
+
+    /// The ungrouped scatter chunk as `chunkBytesForBlockRange` will size it: the fixed key widths or
+    /// the generic 8-byte hashes plus the key bytes, one locator per row, the duplicate scratch. The
+    /// context that carries those widths does not exist yet, so they are read off the first block.
+    const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
+    size_t key_width = 0;
+    size_t generic_key_bytes_est = 0;
+    if (!build_blocks.empty())
+    {
+        bool generic = false;
+        for (const auto * column : build_blocks.front().key_columns)
+        {
+            if (column->isFixedAndContiguous())
+                key_width += column->sizeOfValueIfFixed();
+            else
+                generic = true;
+        }
+        if (generic)
+        {
+            key_width = sizeof(UInt64) * build_blocks.front().key_columns.size();
+            for (const auto & fill : build_blocks)
+                for (const auto * key_column : fill.key_columns)
+                    generic_key_bytes_est += key_column->byteSize();
+        }
+    }
+    const size_t transient = rows * (key_width + locator_width) + generic_key_bytes_est + duplicateScratchBytesForRows(rows, /*first_group=*/true);
+
+    /// What is resident whatever the plan: the stored blocks, their null maps and routes, and the
+    /// duplicate runs. Then the post-build gate's ungrouped peak, where the chunk and the table trade
+    /// off range by range.
+    size_t routes = 0;
+    for (const auto & fill : build_blocks)
+        routes += fill.routes.allocated_bytes();
+    const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
+    const size_t tables_and_runs = predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
+    const size_t predicted_tables = SharedJoinMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
+    const size_t runs = tables_and_runs > predicted_tables ? tables_and_runs - predicted_tables : 0;
+    const size_t floor_bytes = storedData().allocated_size + storedData().nullmaps_allocated_size + routes + runs + generic_key_bytes_est;
+    const size_t leaves = 1uz << floor_bits;
+    const size_t peak = floor_bytes + std::max(transient + tables / leaves, tables + transient / leaves);
+    return peak <= max_bytes_before_external_join;
 }
 
 size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) const
@@ -1375,11 +1456,32 @@ size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) co
 
 bool PartitionedHashJoin::postBuildSinglePartition()
 {
-    const HashJoin::Type type = leaf_join->data->type;
-
     /// One partition over the whole build, with no scatter: rows go in straight from the stored blocks
     /// with plain `RowRef(block_no, row)` refs, the walk wraps at the buffer end, and nothing overflows.
     chassert(bits == 0 && !post_build_ctx);
+    beginSinglePartitionInsert(reserveFor(accumulated_rows.load(std::memory_order_relaxed), hll_estimate));
+    for (auto & fill : build_blocks)
+        insertSingleLaneBlock(fill);
+    return finishSinglePartitionInsert();
+}
+
+void PartitionedHashJoin::beginSinglePartitionInsert(size_t reserve)
+{
+    const HashJoin::Type type = leaf_join->data->type;
+
+    /// The barrier's plan already derived these for the post-build path; the single fill thread has no
+    /// plan and derives them here, from the hint, before its first block.
+    size_degree = SharedJoinMaps::sizeDegree(maps_variant_index, type, reserve);
+    if (size_degree > 32)
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "PartitionedHashJoin: a table of degree {} would exceed the 2^31 distinct-key cap (size_degree <= 32)",
+            size_degree);
+    bits = 0;
+    partitions = 1;
+    pass_bits.clear();
+
+    chassert(!post_build_ctx);
     post_build_ctx.reset(new PostBuildContext);
     auto & ctx = *post_build_ctx;
     ctx.workers = 1;
@@ -1416,31 +1518,37 @@ bool PartitionedHashJoin::postBuildSinglePartition()
         },
         shared_maps->maps);
     ctx.range_committed[0] = 1;
+}
 
-    for (auto & fill : build_blocks)
-    {
-        insertPartitionSection(
-            ctx,
-            /*worker=*/0,
-            single_partition,
-            fill.key_columns,
-            fill.rows,
-            /*locators=*/nullptr,
-            /*narrow_locators_data=*/nullptr,
-            fill.block_no,
-            fill.skipData());
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, fill.rows);
-        ctx.worker_state[0].inserted_rows += fill.rows;
+void PartitionedHashJoin::insertSingleLaneBlock(FillBlock & fill)
+{
+    auto & ctx = *post_build_ctx;
+    insertPartitionSection(
+        ctx,
+        /*worker=*/0,
+        single_partition,
+        fill.key_columns,
+        fill.rows,
+        /*locators=*/nullptr,
+        /*narrow_locators_data=*/nullptr,
+        fill.block_no,
+        fill.skipData());
+    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, fill.rows);
+    ctx.worker_state[0].inserted_rows += fill.rows;
 
-        /// Consumed - drop this block's prepared keys and routes.
-        fill.keys_holder.clear();
-        fill.key_columns.clear();
-        fill.null_map_holder.reset();
-        fill.null_map = nullptr;
-        fill.join_mask = JoinCommon::JoinMask();
-        fill.skip_bytes = {};
-        fill.routes = {};
-    }
+    /// Consumed - drop this block's prepared keys and routes.
+    fill.keys_holder.clear();
+    fill.key_columns.clear();
+    fill.null_map_holder.reset();
+    fill.null_map = nullptr;
+    fill.join_mask = JoinCommon::JoinMask();
+    fill.skip_bytes = {};
+    fill.routes = {};
+}
+
+bool PartitionedHashJoin::finishSinglePartitionInsert()
+{
+    auto & ctx = *post_build_ctx;
     auto & worker0 = ctx.worker_state[0];
     worker0.scratch_used_high_water = std::max(worker0.scratch_used_high_water, finishPassScratch(worker0.scratch, *worker0.writer));
     stats.scratch_used_high_water = worker0.scratch_used_high_water;
@@ -1848,6 +1956,13 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
     if (max_bytes_before_external_join == 0 || delegate_mode)
     {
         post_build_plan = PostBuildPlan::Fits;
+        return post_build_plan;
+    }
+
+    if (single_fill_thread)
+    {
+        /// Everything is already resident: the stored blocks, the table and the duplicate runs.
+        post_build_plan = getTotalByteCount() <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
         return post_build_plan;
     }
 
@@ -2308,6 +2423,7 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
                 .fold_base = seed, \
                 .single_partition_pass = false}; \
             target.claimed = seed; \
+            target.grow_threshold = table.cellCount() - 1; \
             drainPartitionOverflow(target, ctx.drain_appended); \
             target.foldClaimed(); \
             ctx.drain_all_unique = ctx.drain_all_unique && target.all_unique; \
@@ -2898,6 +3014,20 @@ PartitionedHashJoin::~PartitionedHashJoin()
     /// Explicit, because members are otherwise destroyed after the body and outside the timer.
     /// Order matters: cells point into the arenas and the row store, so the table goes first.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinTeardownMicroseconds);
+
+    /// The planner's row store decision for the next run of this query reads the matched count, as it
+    /// does for the other hash joins, which publish it from their destructors too.
+    if (build_phase_finished && probe_phase_finished && match_stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        try
+        {
+            getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_stats_collecting_params);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     post_build_ctx.reset();
     post_build_pool.reset();

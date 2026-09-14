@@ -1247,8 +1247,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.grace_hash_join_initial_buckets,
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
-                    stats_collecting_params.build,
-                    params.join_any_take_last_row);
+                    stats_collecting_params,
+                    params.join_any_take_last_row,
+                    params.rhs_size_estimation);
 
             if (table_join->allowParallelHashJoin())
             {
@@ -1289,7 +1290,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 right_table_expression_header,
                 params.max_threads,
                 params.join_any_take_last_row,
-                stats_collecting_params.build);
+                stats_collecting_params,
+                /*max_bytes_before_external_join_=*/0,
+                params.rhs_size_estimation);
         }
 
         if (table_join->allowParallelHashJoin())

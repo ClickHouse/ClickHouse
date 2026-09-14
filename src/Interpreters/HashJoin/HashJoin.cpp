@@ -809,7 +809,7 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
-std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(const Block & block)
+std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(const Block & block, bool may_rerange)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
@@ -818,7 +818,7 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     /// Skip using row store when the right table rerange optimization could get triggered.
     /// TODO: allow row store when right table could get reranged and build the reranged table
     /// based on the row store instead.
-    if (isRightTableRerangeEnabled())
+    if (may_rerange && isRightTableRerangeEnabled())
     {
         data->row_store_state = RowStoreState::Disabled;
         return {};
@@ -896,6 +896,15 @@ RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     auto [columns, _] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
     return RowDataStore::create(data->row_store_layout, columns);
+}
+
+StoredBlock HashJoin::createStoredBlock(const Block & block_to_save, ScatteredBlock::Selector selector) const
+{
+    if (data->row_store_state != RowStoreState::Initialized)
+        return StoredBlock(block_to_save.getColumns(), std::move(selector));
+
+    auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+    return StoredBlock(std::move(remaining_columns), std::move(selector), RowDataStore::create(data->row_store_layout, row_store_columns));
 }
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
@@ -1997,6 +2006,56 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
 }
 
+Columns HashJoin::materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes)
+{
+    const auto & stored_columns = stored_block.columns;
+    const auto & selector = stored_block.selector;
+
+    MutableColumns row_store_columns;
+    if (stored_block.hasRowStore())
+    {
+        if (selector.isContinuousRange())
+        {
+            auto [start, end] = selector.getRange();
+            row_store_columns = stored_block.row_store->scatterRows(start, end - start);
+        }
+        else
+            row_store_columns = stored_block.row_store->scatterRows(selector.getIndexes().getData());
+        stored_block.row_store.reset();
+    }
+
+    Columns columnar_columns;
+    columnar_columns.reserve(stored_block.columns.size());
+    if (selector.size() == stored_block.blockRows())
+        columnar_columns = stored_block.columns;
+    else if (selector.isContinuousRange())
+    {
+        auto [start, end] = selector.getRange();
+        for (const auto & c : stored_columns)
+            columnar_columns.push_back(c->cut(start, end - start));
+    }
+    else
+    {
+        const auto & indexes = selector.getIndexes();
+        for (const auto & c : stored_columns)
+            columnar_columns.push_back(c->index(indexes, /*limit*/ 0));
+    }
+
+    if (access_indexes.empty())
+        return columnar_columns;
+
+    Columns result(access_indexes.size());
+    for (size_t i = 0; i < access_indexes.size(); ++i)
+    {
+        const auto & access_index = access_indexes[i];
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            result[i] = std::move(row_store_columns[access_index.index]);
+        else
+            result[i] = std::move(columnar_columns[access_index.index]);
+    }
+    return result;
+}
+
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 {
     /// A set map stores the right blocks only for the algorithm that says it may take them. Asking
@@ -2012,59 +2071,8 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
     const auto column_access_indexes = data->column_access_indexes;
 
-    /// Reconstruct full column list from compact columns and row store
-    /// using the access indexes to place each column back at its original position.
     /// TODO: make the row store spillable.
-    auto materialize_columns = [&](StoredBlock & stored_block)
-    {
-        const auto & stored_columns = stored_block.columns;
-        const auto & access_indexes = column_access_indexes;
-        const auto & selector = stored_block.selector;
-
-        MutableColumns row_store_columns;
-        if (stored_block.hasRowStore())
-        {
-            if (selector.isContinuousRange())
-            {
-                auto [start, end] = selector.getRange();
-                row_store_columns = stored_block.row_store->scatterRows(start, end - start);
-            }
-            else
-                row_store_columns = stored_block.row_store->scatterRows(selector.getIndexes().getData());
-            stored_block.row_store.reset();
-        }
-
-        Columns columnar_columns;
-        columnar_columns.reserve(stored_block.columns.size());
-        if (selector.size() == stored_block.blockRows())
-            columnar_columns = stored_block.columns;
-        else if (selector.isContinuousRange())
-        {
-            auto [start, end] = selector.getRange();
-            for (const auto & c : stored_columns)
-                columnar_columns.push_back(c->cut(start, end - start));
-        }
-        else
-        {
-            const auto & indexes = selector.getIndexes();
-            for (const auto & c : stored_columns)
-                columnar_columns.push_back(c->index(indexes, /*limit*/ 0));
-        }
-
-        if (access_indexes.empty())
-            return columnar_columns;
-
-        Columns result(access_indexes.size());
-        for (size_t i = 0; i < access_indexes.size(); ++i)
-        {
-            const auto & access_index = access_indexes[i];
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                result[i] = std::move(row_store_columns[access_index.index]);
-            else
-                result[i] = std::move(columnar_columns[access_index.index]);
-        }
-        return result;
-    };
+    auto materialize_columns = [&](StoredBlock & stored_block) { return materializeStoredBlock(stored_block, column_access_indexes); };
 
     auto extract_source_blocks = [&](StoredBlocksList && columns_list, const Block & sample_block)
     {

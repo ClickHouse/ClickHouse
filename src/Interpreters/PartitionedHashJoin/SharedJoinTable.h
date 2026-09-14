@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 
 #include <bit>
+#include <limits>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -40,10 +41,23 @@ extern const int LOGICAL_ERROR;
     M(low_cardinality_key_fixed_string)
 
 /// Turns a map hash into the bits the shared table addresses by. The home cell is the top `size_degree`
-/// bits of the product and a row's partition the top `partition_bits`, so every key's home cell lies
-/// inside its partition's range by construction, whatever table size the barrier later chooses. The
-/// multiplier is the 64-bit golden ratio; a multiply moves the entropy of a 32-bit CRC into the high
-/// bits without another dependent operation on the probe path.
+/// bits of this word and a row's partition the top `partition_bits`, so every key's home cell lies
+/// inside its partition's range by construction, whatever table size the barrier later chooses.
+///
+/// The low 32 hash bits are shifted into the high half, nothing more. A 32-bit CRC lands whole, a
+/// 64-bit hash contributes 32 good bits, and a table is at most 2^32 cells. The point of not mixing
+/// further: `HashCRC32` is linear over GF(2), so probe keys arriving in sequence visit cells in a pattern
+/// the branch predictor learns, exactly as with `HashMap`'s `hash & mask`. A multiplicative mix made
+/// every empty-cell branch a coin flip on such streams: about one mispredict per probed row against a
+/// 2^11-cell table where the plain placement has 0.08 (modelled on the perf test's sequential keys and
+/// confirmed by `perf stat`); on random keys the two placements behave the same.
+ALWAYS_INLINE inline UInt64 sharedJoinPlacement(size_t hash_value)
+{
+    return static_cast<UInt64>(hash_value) << 32;
+}
+
+/// The distinct-key sketch wants uniform bits, which a raw CRC of structured keys does not give, so it
+/// still sees the multiplicative mix; the multiplier is the 64-bit golden ratio.
 ALWAYS_INLINE inline UInt64 sharedJoinMix(size_t hash_value)
 {
     return static_cast<UInt64>(hash_value) * 0x9E3779B97F4A7C15ULL;
@@ -151,11 +165,11 @@ public:
 
     /// Hashing and placement.
     ALWAYS_INLINE size_t hash(const Key & key) const { return Hash::operator()(key); }
-    ALWAYS_INLINE size_t place(size_t hash_value) const { return sharedJoinMix(hash_value) >> (64 - size_degree); }
+    ALWAYS_INLINE size_t place(size_t hash_value) const { return sharedJoinPlacement(hash_value) >> (64 - size_degree); }
     ALWAYS_INLINE size_t next(size_t pos) const { return (pos + 1) & mask; }
     ALWAYS_INLINE size_t partitionOf(size_t hash_value) const
     {
-        return partition_bits ? static_cast<size_t>(sharedJoinMix(hash_value) >> (64 - partition_bits)) : 0;
+        return partition_bits ? static_cast<size_t>(sharedJoinPlacement(hash_value) >> (64 - partition_bits)) : 0;
     }
     static ALWAYS_INLINE bool isZeroKey(const Key & key) { return Cell::isZero(key, HashTableNoState{}); }
 
@@ -208,7 +222,7 @@ public:
         new_range_committed.assign(partitions(), 0);
     }
 
-    ALWAYS_INLINE size_t newPlace(size_t hash_value) const { return sharedJoinMix(hash_value) >> (64 - new_size_degree); }
+    ALWAYS_INLINE size_t newPlace(size_t hash_value) const { return sharedJoinPlacement(hash_value) >> (64 - new_size_degree); }
     ALWAYS_INLINE size_t newNext(size_t pos) const { return (pos + 1) & new_mask; }
     ALWAYS_INLINE size_t newRangeBegin(size_t partition) const { return partition << new_range_bits; }
     ALWAYS_INLINE size_t newRangeEnd(size_t partition) const { return (partition + 1) << new_range_bits; }
@@ -376,6 +390,51 @@ struct SharedJoinMapsTemplate
             /// A FixedHashTable spans the whole key domain whatever the reserve says.
             static_assert(sizeof(typename Table::key_type) <= 2);
             return (1uz << (sizeof(typename Table::key_type) * 8)) * sizeof(typename Table::cell_type);
+        }
+    }
+
+    /// The bytes a table of `size_degree` cells takes, for a plan that widened the degree past what
+    /// `reserve` alone asks for (the partition floor keeps 2^10 cells per range).
+    template <typename Table>
+    static size_t bufferBytesForDegreeFor(size_t size_degree)
+    {
+        if constexpr (is_shared_join_table<Table>)
+            return (1uz << size_degree) * sizeof(typename Table::cell_type);
+        else
+            return predictedBufferBytesFor<Table>(0);
+    }
+
+    static size_t bufferBytesForDegree(HashJoin::Type which, size_t size_degree)
+    {
+        switch (which)
+        {
+#define M(NAME) \
+    case HashJoin::Type::NAME: return bufferBytesForDegreeFor<typename decltype(SharedJoinMapsTemplate::NAME)::element_type>(size_degree);
+            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+            default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", which);
+        }
+    }
+
+    /// The fill at which the table doubles; a fixed-size map never grows.
+    template <typename Table>
+    static size_t maxFillOf(const Table & table)
+    {
+        if constexpr (is_shared_join_table<Table>)
+            return table.maxFill();
+        else
+            return std::numeric_limits<size_t>::max();
+    }
+
+    size_t maxFill(HashJoin::Type which) const
+    {
+        switch (which)
+        {
+#define M(NAME) \
+    case HashJoin::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
+            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+            default: return 0;
         }
     }
 
@@ -629,6 +688,17 @@ struct SharedJoinMaps
         }
     }
 
+    static size_t bufferBytesForDegree(size_t standard_variant_index, HashJoin::Type which, size_t size_degree)
+    {
+        switch (standard_variant_index)
+        {
+            case 0: return SharedMapsOne::bufferBytesForDegree(which, size_degree);
+            case 1: return SharedMapsAll::bufferBytesForDegree(which, size_degree);
+            case 2: return SharedMapsAsof::bufferBytesForDegree(which, size_degree);
+            default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unexpected join maps variant index {}", standard_variant_index);
+        }
+    }
+
     void create(HashJoin::Type which, size_t size_degree, size_t partition_bits)
     {
         std::visit([&](auto & shape) { shape.create(which, size_degree, partition_bits); }, maps);
@@ -652,6 +722,11 @@ struct SharedJoinMaps
     size_t getReservedBufferBytes(HashJoin::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.getReservedBufferBytes(which); }, maps);
+    }
+
+    size_t maxFill(HashJoin::Type which) const
+    {
+        return std::visit([&](const auto & shape) { return shape.maxFill(which); }, maps);
     }
 };
 

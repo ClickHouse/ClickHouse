@@ -8599,6 +8599,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
+For `partitioned_hash`, a right table estimated below the threshold is built by a single thread without widening the pipeline, and a build with at least this many rows gets at least one build partition per thread.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
