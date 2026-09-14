@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ ORDER BY key
 
 * [String](/ru/reference/data-types/string) и [FixedString](/ru/reference/data-types/fixedstring),
 * [Array(String)](/ru/reference/data-types/array) и [Array(FixedString)](/ru/reference/data-types/array),
-* [Map](/ru/reference/data-types/map) (через функции [mapKeys](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys) и [mapValues](/ru/reference/functions/regular-functions/tuple-map-functions#mapValues)),
+* [Map](/ru/reference/data-types/map) — либо для столбца `Map` целиком с использованием токенизатора [`keyValuePairs`](#tokenizer-key-value-pairs), либо только для ключей или значений map с помощью функции [mapKeys](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys) или [mapValues](/ru/reference/functions/regular-functions/tuple-map-functions#mapValues),
 * [JSON](/ru/reference/data-types/newjson) (через функции [JSONAllPaths](/ru/reference/functions/regular-functions/json-functions#JSONAllPaths) и [`JSONAllValues`](/ru/reference/functions/regular-functions/json-functions#JSONAllValues)).
 
 Также поддерживаются столбцы типа [Nullable(T)](/ru/reference/data-types/nullable) и [LowCardinality()](/ru/reference/data-types/lowcardinality), включая `Array(Nullable(String or FixedString))`.
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   По сравнению с `ngrams(N)`, токенизатор `sparseGrams` создаёт N-граммы переменной длины, что позволяет более гибко представлять исходный текст.
   Например, `tokenizer = sparseGrams(3, 5, 4)` внутренне генерирует из входной строки 3-, 4- и 5-граммы, но возвращаются только 4- и 5-граммы.
 * `array` не выполняет токенизацию, то есть каждое значение строки является токеном (см. функцию [array](/ru/reference/functions/regular-functions/array-functions#array)). Для совместимости с другими системами `keyword` доступен как псевдоним `array`.
+* `keyValuePairs` объединяет пары ключ-значение столбца типа `Map` в один токен. Это позволяет выполнять комбинированный поиск по ключу и значению, например `WHERE map['key'] = 'value'` (см. [токенизатор `keyValuePairs`](#tokenizer-key-value-pairs)).
 
 Все доступные токенизаторы перечислены в [system.tokenizers](/ru/reference/system-tables/tokenizers).
 
@@ -525,7 +528,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 Без `support_phrase_search` функция `hasPhrase` использует индекс только как подсказку и проверяет каждую оставшуюся строку по исходному предикату; постпроцессор дополнительно одинаково нормализует и фразу, и токены в haystack, поэтому результат не зависит от способа чтения, а токены, которые постпроцессор отбрасывает, не нарушают смежность фразы. При `support_phrase_search = 1` функция `hasPhrase` использует точное прямое чтение (при этом постпроцессор, если он задан, всё равно применяется). Поддержка постпроцессоров не распространяется на токенизатор `splitByRegexp`: вызов `hasPhrase` для индекса `splitByRegexp` в сочетании с постпроцессором отклоняется (см. сноску ³ ниже).
 Поисковые токены, которые постпроцессор преобразует в пустую строку, игнорируются, то есть считаются отсутствующими в поисковой фразе.
 
-| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                                          | Поддерживает постпроцессор |
+| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы⁵                                                         | Поддерживает постпроцессор |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- | -------------------------- |
 | `=`                                                                                                     | да                                                           | все                                                                               | да                         |
 | `IN`                                                                                                    | да                                                           | все                                                                               | да                         |
@@ -560,6 +563,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ⁴ `startsWith` и `endsWith` выполняют поиск по полным токенам искомой подстроки, а токен на открытом конце искомой подстроки является неполным, так как значение там продолжается: `startsWith(col, 'ClickHouse is')` ищет токен `ClickHouse`, тогда как у `startsWith(col, 'ClickHouse')` нет полного токена для поиска.
 Последний случай вместо этого вычисляется сканированием по словарю (`use_text_index_like_evaluation_by_dictionary_scan = 1`, токенизатор `splitByNonAlpha` или `array`, без препроцессора и постпроцессора); тем же путем обрабатывается и `col LIKE 'ClickHouse%'`, поскольку проход analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ru/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) переписывает его в `startsWith`.
 См. [Запросы LIKE/ILIKE](#like-ilike-queries-perf).
+
+⁵ В столбце *совместимые токенизаторы* не учитывается токенизатор [`keyValuePairs`](#tokenizer-key-value-pairs) — специализированный токенизатор для столбцов типа `Map`.
 
 **Экспериментально: аргумент поддержки фразового поиска (необязательный)**.
 
@@ -899,7 +904,9 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-Оператор доступа [operator[]](/ru/reference/operators/index#access-operators) можно использовать с текстовым индексом для фильтрации по ключам и значениям. Текстовый индекс используется только в том случае, если он создан для выражений `mapKeys(map)` или `mapValues(map)`, либо для обоих.
+Оператор доступа [operator[]](/ru/reference/operators/index#access-operators) можно использовать с текстовым индексом для фильтрации по ключам и значениям.
+Текстовый индекс задействуется, если он использует токенизатор [`keyValuePairs`](#tokenizer-key-value-pairs) поверх столбца типа `Map`, либо если он построен по индексному выражению `mapKeys(map)` или `mapValues(map)`.
+В первом случае (токенизатор `keyValuePairs`) может использоваться прямое чтение, в противном случае — прямое чтение с подсказкой.
 
 Пример:
 
@@ -965,40 +972,74 @@ ORDER BY (timestamp);
 Без текстового индекса поиск по данным типа [Map](/ru/reference/data-types/map) требует полного сканирования всей таблицы:
 
 ```sql
--- Находит все журналы с данными об ограничении частоты запросов:
-SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- медленное полное сканирование таблицы
+-- Finds all logs with rate limiting data:
+SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
 
--- Находит все журналы с определённого IP-адреса:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- медленное полное сканирование таблицы
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 По мере роста объёма логов эти запросы начинают выполняться медленнее.
 
-Решение — создать текстовый индекс для ключей и значений [Map](/ru/reference/data-types/map).
+Решение — текстовый индекс по столбцу [Map](/ru/reference/data-types/map).
+Какой именно индекс создавать, зависит от того, что вы ищете: ключ вместе с его значением или ключи и значения независимо друг от друга.
+
+#### Комбинированный поиск по паре ключ-значение с токенизатором `keyValuePairs` {#tokenizer-key-value-pairs}
+
+Используйте токенизатор `keyValuePairs` непосредственно для самого столбца `Map`, если вам нужно найти конкретный ключ с конкретным значением:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+Токенизатор объединяет каждую пару `(key, value)` строки в один токен, благодаря чему индекс знает, какое значение какому ключу принадлежит.
+Описанные ниже индексы `mapKeys` и `mapValues` не могут ответить на такой запрос, поскольку индексируют ключи и значения независимо друг от друга: они способны определить, что какой-то атрибут строки имеет значение `error`, но не то, что это был именно атрибут `level`.
+
+Пара сохраняется в виде токена `key ‖ value ‖ length(key)`.
+Завершающая длина делает границу между ключом и значением однозначной, поэтому и ключ, и значение могут содержать произвольные байты: в отличие от объединения через разделитель вида `key=value`, ключ или значение, содержащие разделитель, не приведут к ложному совпадению.
+
+Действуют следующие ограничения:
+
+* Индекс должен быть создан на `Map`, ключи и значения которого имеют тип `String` или `LowCardinality(String)`.
+  `FixedString` отклоняется, потому что столбец хранит байты дополнения, а искомая константа — нет, из-за чего строки молча не находились бы.
+  `Nullable` отклоняется, поскольку кодирование не позволяет отличить пустое значение от `NULL`.
+* Аргументы `preprocessor`, `postprocessor` и `support_phrase_search` отклоняются при создании таблицы.
+* Пока из индекса обслуживается только `=` для элемента map.
+  Другие виды поиска по map — такие как `mapContainsKey`, `mapContainsValue`, их варианты `*Like` и `IN` — выполняются полным перебором.
+* `map['key']` возвращает значение по умолчанию для типа значения, если ключ отсутствует, поэтому `map['key'] = ''` истинно и для строк, которые не содержат этот ключ и, следовательно, не имеют токена.
+  Такой предикат выполняется полным перебором.
+* Если строка содержит один и тот же ключ более одного раза, `map['key']` — это значение его первого вхождения, и индекс сопоставляется именно с этим вхождением.
+
+#### Поиск по ключам и значениям с помощью `mapKeys` и `mapValues` {#text-index-map-keys-and-values}
+
 Используйте [mapKeys](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys), чтобы создать текстовый индекс, если вам нужно находить логи по именам полей или типам атрибутов:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 Используйте [mapValues](/ru/reference/functions/regular-functions/tuple-map-functions#mapValues), чтобы создать текстовый индекс, если вам нужно выполнять поиск по фактическому содержимому атрибутов:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 Примеры запросов:
 
 ```sql
--- Найти все запросы с ограничением частоты:
+-- Find all rate-limited requests:
 SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
--- Найти все записи журнала с определённого IP-адреса:
+-- Finds all logs from a specific IP:
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 
--- Найти все записи журнала, в которых любой атрибут содержит ошибку:
+-- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
@@ -1296,6 +1337,7 @@ WHERE string_search_function(column_with_text_index)
 
 Оптимизация прямого чтения поддерживает функции `hasToken`, `hasAllTokens` и `hasAnyTokens`.
 Если для текстового индекса задан токенизатор `array`, прямое чтение также поддерживается для функций `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey` и `mapContainsValue`.
+Если для текстового индекса задан токенизатор `keyValuePairs`, прямое чтение поддерживается для `equals` по элементу map (`map['key'] = 'value'`).
 Эти функции также можно комбинировать с помощью операторов `AND`, `OR` и `NOT`.
 Секции `WHERE` или `PREWHERE` также могут содержать дополнительные фильтры, не связанные с функциями текстового поиска (для текстовых или других столбцов) — в этом случае оптимизация прямого чтения все равно будет использоваться, но менее эффективно (она применяется только к поддерживаемым функциям текстового поиска).
 

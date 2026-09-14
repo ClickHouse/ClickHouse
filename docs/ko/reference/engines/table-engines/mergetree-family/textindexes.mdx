@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ ORDER BY key
 
 * [String](/ko/reference/data-types/string) 및 [FixedString](/ko/reference/data-types/fixedstring),
 * [Array(String)](/ko/reference/data-types/array) 및 [Array(FixedString)](/ko/reference/data-types/array),
-* [맵](/ko/reference/data-types/map) ([mapKeys](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys) 및 [mapValues](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues) 함수를 사용), 그리고
+* [맵](/ko/reference/data-types/map), [`keyValuePairs`](#tokenizer-key-value-pairs) 토크나이저를 사용하여 `Map` 컬럼에 정의하거나, [mapKeys](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys) 또는 [mapValues](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues) 함수를 사용하여 맵의 키 또는 값에만 정의할 수 있습니다. 그리고
 * [JSON](/ko/reference/data-types/newjson) ([JSONAllPaths](/ko/reference/functions/regular-functions/json-functions#JSONAllPaths) 및 [`JSONAllValues`](/ko/reference/functions/regular-functions/json-functions#JSONAllValues) 함수를 사용).
 
 [Nullable(T)](/ko/reference/data-types/nullable) 및 [LowCardinality()](/ko/reference/data-types/lowcardinality) 타입의 컬럼도 지원되며, `Array(Nullable(String or FixedString))`도 포함됩니다.
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   `ngrams(N)`와 비교하면 `sparseGrams` 토크나이저는 가변 길이 N-그램을 생성하므로 원본 텍스트를 더 유연하게 표현할 수 있습니다.
   예를 들어 `tokenizer = sparseGrams(3, 5, 4)`는 내부적으로 입력 문자열에서 3-, 4-, 5-그램을 생성하지만, 실제로는 4-그램과 5-그램만 반환합니다.
 * `array`는 토큰화를 수행하지 않습니다. 즉, 각 행 값 자체가 하나의 토큰입니다(함수 [array](/ko/reference/functions/regular-functions/array-functions#array) 참조). 다른 시스템과의 호환성을 위해 `keyword`를 `array`의 별칭으로 사용할 수 있습니다.
+* `keyValuePairs`는 `Map` 컬럼의 key-value 쌍을 하나의 토큰으로 결합합니다. 이를 통해 `WHERE map['key'] = 'value'`와 같이 키와 값을 결합한 lookup을 수행할 수 있습니다([`keyValuePairs` 토크나이저](#tokenizer-key-value-pairs) 참조).
 
 사용 가능한 모든 토크나이저는 [system.tokenizers](/ko/reference/system-tables/tokenizers)에 나열되어 있습니다.
 
@@ -525,7 +528,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `support_phrase_search`가 없으면 `hasPhrase`는 인덱스를 힌트로만 사용하고, 남은 각 행은 원본 프레디케이트로 검증합니다. 또한 후처리기가 있으면 구문과 haystack 토큰 모두를 같은 방식으로 정규화하므로 결과는 읽기 경로와 무관하며, 후처리기가 제거한 토큰 때문에 구문 인접성이 깨지지 않습니다. `support_phrase_search = 1`이면 `hasPhrase`는 정확한 직접 읽기를 사용합니다(후처리기가 있으면 계속 적용됨). 이 후처리기 지원은 `splitByRegexp` 토크나이저에는 적용되지 않습니다. 후처리기와 결합된 `splitByRegexp` 인덱스에서의 `hasPhrase`는 거부됩니다(아래 각주 ³ 참조).
 후처리기가 빈 문자열로 매핑하는 검색 토큰은 무시되며, 즉 검색 구문에 없는 것으로 처리됩니다。
 
-| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저                                                                        | 후처리기 지원 |
+| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저⁵                                                                       | 후처리기 지원 |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | ------- |
 | `=`                                                                                                     | 예                            | 모두                                                                                | 예       |
 | `IN`                                                                                                    | 예                            | 모두                                                                                | 예       |
@@ -549,17 +552,19 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                                           | 예       |
 
 ¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔)으로 폴백됩니다.
-또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 dictionary scan을 통한 평가도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화). 아래 [LIKE/ILIKE 쿼리](#like-ilike-queries-perf) 섹션을 참조하십시오.
+또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 딕셔너리 스캔을 통한 평가도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화). 아래 [LIKE/ILIKE 쿼리](#like-ilike-queries-perf) 섹션을 참조하십시오.
 
-² `ILIKE`는 dictionary scan을 통한 평가로만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
-dictionary scan이 지원하지 않는 패턴에 대해 인덱스를 힌트로 사용하는 폴백은 없습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
+² `ILIKE`는 딕셔너리 스캔을 통한 평가로만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
+딕셔너리 스캔이 지원하지 않는 패턴에 대해 인덱스를 힌트로 사용하는 폴백은 없습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
 전처리기가 있는 경우 `lower` 또는 `upper`여야 하며, 후처리기는 지원되지 않습니다.
 
 ³ `splitByRegexp` 텍스트 인덱스에 대한 `hasPhrase`는 후처리기를 지원하지 **않습니다**. 후처리기의 행 수준 재작성이 공백으로 분할하는 `splitByNonAlpha` 방식의 토큰을 전제로 하기 때문에, 이 조합은 예외와 함께 거부됩니다. 후처리기가 없다면 `splitByRegexp`는 `hasPhrase`에서 완전히 지원됩니다.
 
 ⁴ `startsWith`와 `endsWith`는 needle의 완전한 토큰을 검색하며, needle의 열린 쪽 끝에 있는 토큰은 값이 그 지점에서 계속 이어지므로 불완전합니다. `startsWith(col, 'ClickHouse is')`는 토큰 `ClickHouse`를 검색하지만, `startsWith(col, 'ClickHouse')`에는 검색할 완전한 토큰이 없습니다.
-후자는 대신 dictionary scan(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저, 전처리기 및 후처리기 없음)으로 평가되며, 분석기 패스 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ko/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix)가 `col LIKE 'ClickHouse%'`를 `startsWith`로 재작성하기 때문에 이 쿼리 역시 동일한 경로를 따릅니다.
+후자는 대신 딕셔너리 스캔(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저, 전처리기 및 후처리기 없음)으로 평가되며, 분석기 패스 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ko/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix)가 `col LIKE 'ClickHouse%'`를 `startsWith`로 재작성하기 때문에 이 쿼리 역시 동일한 경로를 따릅니다.
 [LIKE/ILIKE 쿼리](#like-ilike-queries-perf)를 참조하십시오.
+
+⁵ *호환 토크나이저* 컬럼은 `Map` 컬럼을 위한 특수 토크나이저인 [`keyValuePairs`](#tokenizer-key-value-pairs) 토크나이저를 제외합니다.
 
 **실험적: 구문 검색 지원 인수(선택 사항)**.
 
@@ -899,7 +904,9 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-접근 [operator[]](/ko/reference/operators/index#access-operators)를 텍스트 인덱스와 함께 사용하면 키와 값을 필터링할 수 있습니다. 텍스트 인덱스는 `mapKeys(map)` 또는 `mapValues(map)` 표현식에 생성되었거나, 두 표현식 모두에 생성된 경우에만 사용됩니다.
+접근 [operator[]](/ko/reference/operators/index#access-operators)를 텍스트 인덱스와 함께 사용하면 키와 값을 필터링할 수 있습니다.
+텍스트 인덱스는 `Map` 컬럼 위에 [`keyValuePairs`](#tokenizer-key-value-pairs) 토크나이저를 사용하거나, `mapKeys(map)` 또는 `mapValues(map)` 인덱스 표현식으로 생성된 경우에 활용됩니다.
+전자(`keyValuePairs` 토크나이저)라면 직접 읽기를 사용할 수 있고, 그렇지 않으면 힌트를 사용한 직접 읽기가 사용됩니다.
 
 예시:
 
@@ -907,7 +914,7 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
 ```
 
-텍스트 인덱스에서 `Array(T)` 및 `맵(K, V)` 유형의 컬럼을 사용하는 예시는 다음과 같습니다.
+텍스트 인덱스에서 `Array(T)` 및 `Map(K, V)` 유형의 컬럼을 사용하는 예시는 다음과 같습니다.
 
 ### Array(String) 컬럼 인덱싱 {#text-index-example-array}
 
@@ -965,41 +972,75 @@ ORDER BY (timestamp);
 텍스트 인덱스가 없으면 [맵](/ko/reference/data-types/map) 데이터를 검색할 때 테이블 전체를 스캔해야 합니다:
 
 ```sql
--- rate limiting 데이터가 있는 모든 로그를 찾습니다:
-SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- 느린 전체 테이블 스캔
+-- Finds all logs with rate limiting data:
+SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
 
--- 특정 IP의 모든 로그를 찾습니다:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 느린 전체 테이블 스캔
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 로그 양이 증가하면 이러한 쿼리의 속도가 느려집니다.
 
-해결 방법은 [맵](/ko/reference/data-types/map) 키와 값에 텍스트 인덱스를 생성하는 것입니다.
+해결 방법은 [맵](/ko/reference/data-types/map) 컬럼에 텍스트 인덱스를 생성하는 것입니다.
+어떤 인덱스를 생성할지는 검색 대상에 따라 달라집니다. 즉, 키와 값을 함께 검색하는지, 아니면 키와 값을 각각 독립적으로 검색하는지에 따라 결정됩니다.
+
+#### `keyValuePairs` 토크나이저를 사용한 키-값 결합 조회 {#tokenizer-key-value-pairs}
+
+특정 값을 가진 특정 키를 검색하는 경우, `Map` 컬럼 자체에 `keyValuePairs` 토크나이저를 사용하십시오:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+이 토크나이저는 행의 각 `(key, value)` 쌍을 하나의 토큰으로 결합하므로, 인덱스는 어떤 값이 어떤 키에 속하는지 알 수 있습니다.
+아래에서 설명하는 `mapKeys` 및 `mapValues` 인덱스는 키와 값을 각각 독립적으로 인덱싱하기 때문에 이러한 쿼리에 답할 수 없습니다. 즉, 어떤 행의 어떤 속성이 `error`라는 값을 가진다는 것까지는 알 수 있지만, 그것이 `level` 속성이었는지는 알 수 없습니다.
+
+쌍은 `key ‖ value ‖ length(key)` 형태의 토큰으로 저장됩니다.
+끝에 붙는 길이 값이 키와 값 사이의 경계를 명확하게 유지해 주므로, 키와 값 모두 임의의 바이트를 포함할 수 있습니다. `key=value`처럼 구분자로 이어 붙이는 방식과 달리, 구분자를 포함하는 키나 값이 잘못된 일치를 일으키지 않습니다.
+
+다음과 같은 제약이 적용됩니다:
+
+* 인덱스는 키와 값이 `String` 또는 `LowCardinality(String)` 타입인 `Map`에 대해 생성해야 합니다.
+  `FixedString`은 거부됩니다. 컬럼에는 패딩 바이트가 저장되지만 검색에 사용되는 상수에는 저장되지 않아, 아무런 경고 없이 행을 놓칠 수 있기 때문입니다.
+  `Nullable`은 인코딩이 빈 값과 `NULL`을 구분할 수 없기 때문에 거부됩니다.
+* `preprocessor`, `postprocessor`, `support_phrase_search` 인수는 테이블 생성 시 거부됩니다.
+* 현재까지는 맵 원소에 대한 `=` 연산만 인덱스로 처리됩니다.
+  `mapContainsKey`, `mapContainsValue`, 이들의 `*Like` 변형, `IN` 등 그 밖의 맵 검색은 브루트포스 스캔으로 폴백됩니다.
+* `map['key']`는 키가 없을 때 값 타입의 기본값을 반환하므로, 해당 키를 포함하지 않아 토큰이 없는 행에 대해서도 `map['key'] = ''`가 참이 됩니다.
+  이러한 프레디케이트는 브루트포스 스캔으로 폴백됩니다.
+* 한 행에 동일한 키가 여러 번 포함되어 있으면 `map['key']`는 첫 번째로 등장한 값이 되며, 인덱스도 그 값과 일치합니다.
+
+#### `mapKeys`와 `mapValues`를 사용한 키 및 값 검색 {#text-index-map-keys-and-values}
+
 필드 이름이나 속성 유형으로 로그를 찾아야 하는 경우 [mapKeys](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys)를 사용해 텍스트 인덱스를 생성하십시오:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 속성의 실제 내용을 검색해야 할 때는 [mapValues](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues)를 사용해 텍스트 인덱스를 생성합니다:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 쿼리 예시:
 
 ```sql
--- 속도 제한된 모든 요청 조회:
-SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- 빠름
+-- Find all rate-limited requests:
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
--- 특정 IP의 모든 로그 조회:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 빠름
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 
--- 속성에 오류가 포함된 모든 로그 조회:
-SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- 빠름
+-- Finds all logs where any attribute includes an error:
+SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
 ### JSON 컬럼 인덱싱 {#text-index-example-json}
@@ -1296,6 +1337,7 @@ WHERE string_search_function(column_with_text_index)
 
 직접 읽기 최적화는 `hasToken`, `hasAllTokens`, `hasAnyTokens` 함수를 지원합니다.
 텍스트 인덱스가 `array` 토크나이저로 정의된 경우에는 `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, `mapContainsValue` 함수에도 직접 읽기가 지원됩니다.
+텍스트 인덱스가 `keyValuePairs` 토크나이저로 정의된 경우에는 맵 원소에 대한 `equals`(`map['key'] = 'value'`)에 직접 읽기가 지원됩니다.
 이 함수들은 `AND`, `OR`, `NOT` 연산자로 조합할 수도 있습니다.
 `WHERE` 또는 `PREWHERE` 절에는 추가적인 비텍스트 검색 함수 필터(텍스트 컬럼 또는 다른 컬럼에 대한 필터)도 포함될 수 있습니다. 이 경우에도 직접 읽기 최적화는 사용되지만 효과는 다소 떨어집니다(지원되는 텍스트 검색 함수에만 적용됩니다).
 
@@ -1372,7 +1414,7 @@ SETTINGS query_plan_text_index_add_hint = 0
 FORMAT TSV
 ```
 
-반환
+반환값
 
 ```text
 [...]

@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ Los índices de texto pueden definirse en columnas de estos tipos:
 
 * [String](/es/reference/data-types/string) y [FixedString](/es/reference/data-types/fixedstring),
 * [Array(String)](/es/reference/data-types/array) y [Array(FixedString)](/es/reference/data-types/array),
-* [Map](/es/reference/data-types/map) (mediante las funciones [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) y [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapValues)), y
+* [Map](/es/reference/data-types/map), ya sea sobre la columna `Map` usando el tokenizador [`keyValuePairs`](#tokenizer-key-value-pairs), o solo sobre las claves o los valores del mapa mediante la función [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) o [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapValues), y
 * [JSON](/es/reference/data-types/newjson) (mediante las funciones [JSONAllPaths](/es/reference/functions/regular-functions/json-functions#JSONAllPaths) y [`JSONAllValues`](/es/reference/functions/regular-functions/json-functions#JSONAllValues)).
 
 También se admiten columnas de tipo [Nullable(T)](/es/reference/data-types/nullable) y [LowCardinality()](/es/reference/data-types/lowcardinality), incluido `Array(Nullable(String or FixedString))`.
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   En comparación con `ngrams(N)`, el tokenizador `sparseGrams` produce N-grams de longitud variable, lo que permite una representación más flexible del texto original.
   Por ejemplo, `tokenizer = sparseGrams(3, 5, 4)` genera internamente 3-, 4- y 5-grams a partir de la cadena de entrada, pero solo se devuelven los 4- y 5-grams.
 * `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte la función [array](/es/reference/functions/regular-functions/array-functions#array)). Para garantizar la compatibilidad con otros sistemas, `keyword` está disponible como alias de `array`.
+* `keyValuePairs` combina los key-value pairs de una columna `Map` en un único token. Esto ayuda a realizar lookups combinados de key-value como `WHERE map['key'] = 'value'` (consulte [el tokenizador `keyValuePairs`](#tokenizer-key-value-pairs)).
 
 Todos los tokenizadores disponibles se enumeran en [system.tokenizers](/es/reference/system-tables/tokenizers).
 
@@ -525,7 +528,7 @@ Para las funciones de búsqueda de tokens (`hasToken`, `hasAllTokens`, `hasAnyTo
 Sin `support_phrase_search`, `hasPhrase` usa el índice solo como indicación y verifica cada fila resultante con el predicado original; además, un posprocesamiento normaliza de la misma manera tanto la frase como los tokens del texto buscado, por lo que el resultado es independiente de la ruta de lectura, y los tokens que el posprocesamiento descarta no rompen la adyacencia de la frase. Con `support_phrase_search = 1`, `hasPhrase` usa lecturas directas exactas (y sigue aplicando el posprocesamiento, si lo hay). Esta compatibilidad con el posprocesamiento no se extiende al tokenizador `splitByRegexp`: se rechaza `hasPhrase` en un índice `splitByRegexp` combinado con un posprocesamiento (consulte la nota al pie ³ a continuación).
 Los tokens de búsqueda que el posprocesamiento convierte en una cadena vacía se ignoran; es decir, se tratan como ausentes de la frase de búsqueda.
 
-| Función                                                                                                 | Admite un preprocesador                                     | Tokenizadores compatibles                                                         | Admite un posprocesamiento |
+| Función                                                                                                 | Admite un preprocesador                                     | Tokenizadores compatibles⁵                                                        | Admite un posprocesamiento |
 | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------- |
 | `=`                                                                                                     | sí                                                          | todos                                                                             | sí                         |
 | `IN`                                                                                                    | sí                                                          | todos                                                                             | sí                         |
@@ -560,6 +563,8 @@ El preprocesador, si está presente, debe ser `lower` o `upper`; los posprocesam
 ⁴ `startsWith` y `endsWith` buscan los tokens completos del needle, y el token situado en el extremo abierto del needle está incompleto porque el valor continúa allí: `startsWith(col, 'ClickHouse is')` busca el token `ClickHouse`, mientras que `startsWith(col, 'ClickHouse')` no tiene ningún token completo que buscar.
 Este último se evalúa en su lugar mediante un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` o `array`, sin preprocesador ni posprocesamiento), que es también la vía que toma `col LIKE 'ClickHouse%'`, porque la pasada del analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/es/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) la reescribe como `startsWith`.
 Consulte [consultas LIKE/ILIKE](#like-ilike-queries-perf).
+
+⁵ La columna *tokenizadores compatibles* omite el tokenizador [`keyValuePairs`](#tokenizer-key-value-pairs), que es un tokenizador especializado para columnas `Map`.
 
 **Experimental: argumento de soporte de búsqueda de frases (opcional)**.
 
@@ -899,7 +904,9 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-El [operator[]](/es/reference/operators/index#access-operators) de acceso puede usarse con el índice de texto para filtrar claves y valores. El índice de texto solo se utiliza si se crea sobre las expresiones `mapKeys(map)` o `mapValues(map)`, o sobre ambas.
+El [operator[]](/es/reference/operators/index#access-operators) de acceso puede usarse con el índice de texto para filtrar claves y valores.
+El índice de texto se utiliza si emplea un tokenizador [`keyValuePairs`](#tokenizer-key-value-pairs) sobre la columna `Map`, o si se construye sobre una expresión de índice `mapKeys(map)` o `mapValues(map)`.
+En el primer caso (tokenizador `keyValuePairs`), puede usarse la lectura directa; en caso contrario, lectura directa con hint.
 
 Ejemplo:
 
@@ -965,41 +972,75 @@ ORDER BY (timestamp);
 Sin un índice de texto, buscar en datos de tipo [Map](/es/reference/data-types/map) requiere un escaneo completo de la tabla:
 
 ```sql
--- Encuentra todos los logs con datos de rate limiting:
-SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- escaneo lento de tabla completa
+-- Finds all logs with rate limiting data:
+SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
 
--- Encuentra todos los logs de una IP específica:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- escaneo lento de tabla completa
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 A medida que aumenta el volumen de logs, estas consultas se vuelven lentas.
 
-La solución es crear un índice de texto para las claves y los valores de [Map](/es/reference/data-types/map).
+La solución es un índice de texto sobre la columna [Map](/es/reference/data-types/map).
+Qué índice crear depende de qué busques: una clave junto con su valor, o claves y valores de forma independiente.
+
+#### Búsquedas combinadas de key-value con el tokenizador `keyValuePairs` {#tokenizer-key-value-pairs}
+
+Utilice el tokenizador `keyValuePairs` sobre la propia columna `Map` cuando busque una key concreta que contenga un valor concreto:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+El tokenizador combina cada par `(key, value)` de una fila en un único token, de modo que el índice sabe qué valor pertenece a qué clave.
+Los índices `mapKeys` y `mapValues` descritos más abajo no pueden responder a una consulta así, porque indexan claves y valores de forma independiente: pueden indicar que algún atributo de una fila tiene el valor `error`, pero no que se tratara del atributo `level`.
+
+Un par se almacena como el token `key ‖ value ‖ length(key)`.
+La longitud final al final mantiene inequívoco el límite entre la clave y el valor, por lo que ambos pueden contener bytes arbitrarios: a diferencia de unirlos con un separador como `key=value`, una clave o un valor que contenga el separador no puede producir una coincidencia falsa.
+
+Se aplican las siguientes restricciones:
+
+* El índice debe crearse sobre un `Map` cuyas claves y valores sean de tipo `String` o `LowCardinality(String)`.
+  `FixedString` se rechaza porque la columna almacena los bytes de relleno mientras que la constante buscada no, lo que provocaría que se omitieran filas de forma silenciosa.
+  `Nullable` se rechaza porque la codificación no permite distinguir un valor vacío de `NULL`.
+* Los argumentos `preprocessor`, `postprocessor` y `support_phrase_search` se rechazan al crear la tabla.
+* Por ahora, solo `=` sobre un elemento de map se resuelve mediante el índice.
+  Otras búsquedas en map, como `mapContainsKey`, `mapContainsValue`, sus variantes `*Like` e `IN`, recurren a un escaneo por fuerza bruta.
+* `map['key']` devuelve el valor predeterminado del tipo del valor cuando la clave no existe, por lo que `map['key'] = ''` también es `true` para las filas que no contienen la clave y, por tanto, no tienen token.
+  Un predicado de este tipo recurre a un escaneo por fuerza bruta.
+* Si una fila contiene la misma clave más de una vez, `map['key']` es el valor de su primera aparición, y el índice hace coincidir esa aparición.
+
+#### Búsqueda de claves y valores con `mapKeys` y `mapValues` {#text-index-map-keys-and-values}
+
 Usa [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) para crear un índice de texto cuando necesites encontrar logs por nombres de campos o tipos de atributos:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 Usa [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapValues) para crear un índice de texto cuando necesites buscar dentro del contenido propiamente dicho de los atributos:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 Consultas de ejemplo:
 
 ```sql
--- Encuentra todas las solicitudes con límite de tasa:
-SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- rápido
+-- Find all rate-limited requests:
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
--- Encuentra todos los logs de una IP específica:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- rápido
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 
--- Encuentra todos los logs donde algún atributo incluye un error:
-SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- rápido
+-- Finds all logs where any attribute includes an error:
+SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
 ### Indexación de columnas JSON {#text-index-example-json}
@@ -1296,6 +1337,7 @@ Lectura directa se controla con dos ajustes:
 
 La optimización de lectura directa admite las funciones `hasToken`, `hasAllTokens` y `hasAnyTokens`.
 Si el índice de texto se define con un tokenizador `array`, lectura directa también es compatible con las funciones `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey` y `mapContainsValue`.
+Si el índice de texto se define con un tokenizador `keyValuePairs`, lectura directa es compatible con `equals` sobre un elemento de un map (`map['key'] = 'value'`).
 Estas funciones también pueden combinarse mediante los operadores `AND`, `OR` y `NOT`.
 Las cláusulas `WHERE` o `PREWHERE` también pueden contener filtros adicionales distintos de las funciones de búsqueda de texto (para columnas de texto u otras columnas); en ese caso, la optimización de lectura directa seguirá utilizándose, pero será menos eficaz (solo se aplica a las funciones de búsqueda de texto compatibles).
 

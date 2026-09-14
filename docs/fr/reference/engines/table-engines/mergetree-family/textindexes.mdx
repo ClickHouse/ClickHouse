@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ Les index de texte peuvent être définis sur des colonnes des types suivants :
 
 * [String](/fr/reference/data-types/string) et [FixedString](/fr/reference/data-types/fixedstring),
 * [Array(String)](/fr/reference/data-types/array) et [Array(FixedString)](/fr/reference/data-types/array),
-* [Map](/fr/reference/data-types/map) (à l’aide des fonctions [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) et [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues)), et
+* [Map](/fr/reference/data-types/map), soit sur la colonne `Map` à l’aide du tokenizer [`keyValuePairs`](#tokenizer-key-value-pairs), soit uniquement sur les clés ou les valeurs de la map à l’aide de la fonction [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) ou [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues), et
 * [JSON](/fr/reference/data-types/newjson) (à l’aide des fonctions [JSONAllPaths](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths) et [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues)).
 
 Les colonnes de type [Nullable(T)](/fr/reference/data-types/nullable) et [LowCardinality()](/fr/reference/data-types/lowcardinality) sont également prises en charge, y compris `Array(Nullable(String or FixedString))`.
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Comparé à `ngrams(N)`, le tokenizer `sparseGrams` produit des N-grammes de longueur variable, ce qui permet une représentation plus souple du texte d&#39;origine.
   Par exemple, `tokenizer = sparseGrams(3, 5, 4)` génère en interne des 3-, 4- et 5-grammes à partir de la chaîne d&#39;entrée, mais seuls les 4- et 5-grammes sont renvoyés.
 * `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)). Pour assurer la compatibilité avec d’autres systèmes, `keyword` est disponible comme alias de `array`.
+* `keyValuePairs` combine les key-value pairs d’une colonne `Map` en un seul token. Cela permet d’effectuer des lookups combinés clé-valeur tels que `WHERE map['key'] = 'value'` (voir [le tokenizer `keyValuePairs`](#tokenizer-key-value-pairs)).
 
 Tous les tokenizers disponibles sont répertoriés dans [system.tokenizers](/fr/reference/system-tables/tokenizers).
 
@@ -525,7 +528,7 @@ Pour les fonctions de recherche de tokens (`hasToken`, `hasAllTokens`, `hasAnyTo
 Sans `support_phrase_search`, `hasPhrase` utilise l’index uniquement comme indication et vérifie chaque ligne conservée à l’aide du prédicat d’origine ; un postprocesseur normalise en outre l’expression et les tokens du haystack de la même manière, afin que le résultat soit indépendant du chemin de lecture, et les tokens supprimés par le postprocesseur ne rompent pas l’adjacence de l’expression. Avec `support_phrase_search = 1`, `hasPhrase` utilise des lectures directes exactes (tout en appliquant le postprocesseur, le cas échéant). Cette prise en charge du postprocesseur ne s’étend pas au tokenizer `splitByRegexp` : `hasPhrase` sur un index `splitByRegexp` associé à un postprocesseur est rejeté (voir la note de bas de page ³ ci-dessous).
 Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ignorés, c’est-à-dire traités comme absents de l’expression de recherche.
 
-| Fonction                                                                                                | Prend en charge un préprocesseur                                    | Tokenizers compatibles                                                            | Prend en charge un postprocesseur |
+| Fonction                                                                                                | Prend en charge un préprocesseur                                    | Tokenizers compatibles⁵                                                           | Prend en charge un postprocesseur |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
 | `=`                                                                                                     | oui                                                                 | tous                                                                              | oui                               |
 | `IN`                                                                                                    | oui                                                                 | tous                                                                              | oui                               |
@@ -560,6 +563,8 @@ Le préprocesseur, s&#39;il est présent, doit être `lower` ou `upper` ; les po
 ⁴ `startsWith` et `endsWith` recherchent les tokens complets du needle, et le token situé à l&#39;extrémité ouverte du needle est incomplet car la valeur s&#39;y poursuit : `startsWith(col, 'ClickHouse is')` recherche le token `ClickHouse`, tandis que `startsWith(col, 'ClickHouse')` n&#39;a aucun token complet à rechercher.
 Ce dernier est alors évalué par un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`, sans préprocesseur ni postprocesseur), qui est également le chemin emprunté par `col LIKE 'ClickHouse%'`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) la réécrit en `startsWith`.
 Voir [requêtes LIKE/ILIKE](#like-ilike-queries-perf).
+
+⁵ La colonne *tokenizers compatibles* ignore le tokenizer [`keyValuePairs`](#tokenizer-key-value-pairs), qui est un tokenizer spécialisé pour les colonnes `Map`.
 
 **Expérimental : argument de prise en charge de la phrase search (facultatif)**.
 
@@ -899,15 +904,17 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-L’[operator[]](/fr/reference/operators/index#access-operators) d’accès peut être utilisé avec l’index de texte pour filtrer les clés et les valeurs. L’index de texte n’est utilisé que s’il est créé sur les expressions `mapKeys(map)` ou `mapValues(map)`, ou sur les deux.
+L’[operator[]](/fr/reference/operators/index#access-operators) d’accès peut être utilisé avec l’index de texte pour filtrer les clés et les valeurs.
+L’index de texte est utilisé s’il emploie un tokenizer [`keyValuePairs`](#tokenizer-key-value-pairs) au-dessus de la colonne `Map`, ou s’il est construit sur une expression d’index `mapKeys(map)` ou `mapValues(map)`.
+Dans le premier cas (tokenizer `keyValuePairs`), la lecture directe peut être utilisée ; sinon, il s’agit d’une lecture directe avec hint.
 
-Exemple :
+Exemple :
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
 ```
 
-Voir les exemples suivants pour savoir comment utiliser des colonnes de type `Array(T)` et `Map(K, V)` avec l’index de texte intégral.
+Voir les exemples suivants pour savoir comment utiliser des colonnes de type `Array(T)` et `Map(K, V)` avec l’index de texte.
 
 ### Indexation des colonnes Array(String) {#text-index-example-array}
 
@@ -948,7 +955,7 @@ Dans de nombreux cas d’usage en observabilité, les messages de log sont déco
 Les champs de métriques sont de préférence stockés sous forme de paires clé-valeur.
 Les équipes d’exploitation doivent pouvoir rechercher efficacement dans les logs à des fins de débogage, d’investigation d’incidents de sécurité et de supervision.
 
-Considérez cette table de logs :
+Considérez cette table de logs :
 
 ```sql
 CREATE TABLE logs
@@ -962,7 +969,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp);
 ```
 
-Sans index de texte, la recherche dans des données [Map](/fr/reference/data-types/map) nécessite de parcourir l’intégralité de la table :
+Sans index de texte, la recherche dans des données [Map](/fr/reference/data-types/map) nécessite de parcourir l’intégralité de la table :
 
 ```sql
 -- Finds all logs with rate limiting data:
@@ -974,22 +981,56 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 
 À mesure que le volume de logs augmente, ces requêtes ralentissent.
 
-La solution consiste à créer un index de texte intégral sur les clés et les valeurs de [Map](/fr/reference/data-types/map).
-Utilisez [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) pour créer un index de texte intégral lorsque vous devez retrouver des logs à partir des noms de champ ou des types d’attribut :
+La solution consiste à créer un index de texte sur la colonne [Map](/fr/reference/data-types/map).
+L’index à créer dépend de ce que vous recherchez : une clé avec sa valeur, ou les clés et les valeurs indépendamment.
+
+#### Recherches key-value combinées avec le tokenizer `keyValuePairs` {#tokenizer-key-value-pairs}
+
+Utilisez le tokenizer `keyValuePairs` directement sur la colonne `Map` lorsque vous recherchez une key précise contenant une valeur précise :
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+Le tokenizer combine chaque paire `(key, value)` d&#39;une ligne en un seul token, de sorte que l&#39;index sait quelle valeur appartient à quelle clé.
+Les index `mapKeys` et `mapValues` décrits ci-dessous ne peuvent pas répondre à une telle requête, car ils indexent les clés et les valeurs indépendamment : ils peuvent indiquer qu&#39;un attribut d&#39;une ligne a la valeur `error`, mais pas qu&#39;il s&#39;agissait de l&#39;attribut `level`.
+
+Une paire est stockée sous la forme du token `key ‖ value ‖ length(key)`.
+La longueur placée à la fin lève toute ambiguïté sur la frontière entre la clé et la valeur, si bien que l&#39;une comme l&#39;autre peuvent contenir des octets arbitraires : contrairement à une concaténation au moyen d&#39;un séparateur tel que `key=value`, une clé ou une valeur contenant le séparateur ne peut pas produire de faux appariement.
+
+Les restrictions suivantes s&#39;appliquent :
+
+* L&#39;index doit être créé sur un `Map` dont les clés et les valeurs sont de type `String` ou `LowCardinality(String)`.
+  `FixedString` est rejeté car la colonne stocke les octets de complétion alors que la constante recherchée ne les contient pas, ce qui conduirait à ignorer silencieusement des lignes.
+  `Nullable` est rejeté car l&#39;encodage ne permet pas de distinguer une valeur vide de `NULL`.
+* Les arguments `preprocessor`, `postprocessor` et `support_phrase_search` sont rejetés à la création de la table.
+* Seul `=` sur un élément de map est pour l&#39;instant résolu à partir de l&#39;index.
+  Les autres recherches sur map, telles que `mapContainsKey`, `mapContainsValue`, leurs variantes `*Like` et `IN`, basculent vers un balayage exhaustif.
+* `map['key']` renvoie la valeur par défaut du type de la valeur lorsque la clé est absente, si bien que `map['key'] = ''` vaut également `true` pour les lignes qui ne contiennent pas la clé et n&#39;ont donc aucun token.
+  Un tel prédicat bascule vers un balayage exhaustif.
+* Si une ligne contient plusieurs fois la même clé, `map['key']` correspond à la valeur de sa première occurrence, et l&#39;index apparie cette occurrence.
+
+#### Recherche de clés et de valeurs avec `mapKeys` et `mapValues` {#text-index-map-keys-and-values}
+
+Utilisez [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) pour créer un index de texte lorsque vous devez retrouver des logs à partir des noms de champ ou des types d’attribut :
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
-Utilisez [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues) pour créer un index de texte intégral lorsque vous devez rechercher dans le contenu même des attributs :
+Utilisez [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues) pour créer un index de texte lorsque vous devez rechercher dans le contenu même des attributs :
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
-Exemples de requêtes :
+Exemples de requêtes :
 
 ```sql
 -- Find all rate-limited requests:
@@ -1276,7 +1317,7 @@ La ligne 3 (`'weather in New Orleans'`) ne correspond pas, car elle ne contient 
 
 Certaines requêtes textuelles peuvent être considérablement accélérées grâce à une optimisation appelée &quot;lecture directe&quot;.
 
-Exemple :
+Exemple :
 
 ```sql
 SELECT column_a, column_b, ...
@@ -1287,7 +1328,7 @@ WHERE string_search_function(column_with_text_index)
 L’optimisation de lecture directe répond à la requête en s’appuyant exclusivement sur l’index de texte (c’est-à-dire sur des consultations de l’index de texte), sans accéder à la colonne de texte sous-jacente.
 Les consultations de l’index de texte lisent relativement peu de données et sont donc bien plus rapides que les skip indexes habituels dans ClickHouse (qui effectuent une consultation du skip index, puis chargent et filtrent les granules restantes).
 
-La lecture directe est contrôlée par deux paramètres :
+La lecture directe est contrôlée par deux paramètres :
 
 * Le paramètre [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (`true` par défaut) indique si la lecture directe est activée de manière générale.
 * Le paramètre [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/fr/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) était un prérequis pour la lecture directe dans les versions de ClickHouse &lt; 26.4.
@@ -1296,6 +1337,7 @@ La lecture directe est contrôlée par deux paramètres :
 
 L’optimisation de lecture directe prend en charge les fonctions `hasToken`, `hasAllTokens` et `hasAnyTokens`.
 Si l’index de texte est défini avec un tokenizer `array`, la lecture directe est également prise en charge pour les fonctions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey` et `mapContainsValue`.
+Si l’index de texte est défini avec un tokenizer `keyValuePairs`, la lecture directe est prise en charge pour `equals` sur un élément de map (`map['key'] = 'value'`).
 Ces fonctions peuvent également être combinées avec les opérateurs `AND`, `OR` et `NOT`.
 Les clauses `WHERE` ou `PREWHERE` peuvent également contenir des filtres supplémentaires autres que les fonctions de recherche textuelle (sur des colonnes de texte ou d’autres colonnes) - dans ce cas, l’optimisation de lecture directe sera tout de même utilisée, mais sera moins efficace (elle s’applique uniquement aux fonctions de recherche textuelle prises en charge).
 
@@ -1350,18 +1392,18 @@ Si cette colonne est présente, la lecture directe est utilisée.
 Si la clause WHERE ne contient que des fonctions de recherche textuelle, la requête peut éviter complètement de lire les données de la colonne et tirer le plus grand bénéfice en termes de performances de la lecture directe.
 Cependant, même si la colonne de texte est utilisée ailleurs dans la requête, la lecture directe apportera tout de même un gain de performances.
 
-**Lecture directe comme indice**
+**Lecture directe en tant qu’indice**
 
-La lecture directe comme indice repose sur les mêmes principes que la lecture directe normale, mais ajoute en plus un filtre supplémentaire construit à partir des données de l’index de texte, sans éliminer la colonne de texte sous-jacente.
+La lecture directe en tant qu’indice repose sur les mêmes principes que la lecture directe normale, mais ajoute en plus un filtre supplémentaire construit à partir des données de l’index de texte, sans éliminer la colonne de texte sous-jacente.
 Elle est utilisée pour les fonctions pour lesquelles une lecture uniquement depuis l’index de texte produirait des faux positifs.
 
-Les fonctions prises en charge sont : `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey` et `mapContainsValue`.
+Les fonctions prises en charge sont : `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey` et `mapContainsValue`.
 
 Le filtre supplémentaire peut apporter une sélectivité supplémentaire pour restreindre davantage le jeu de résultats en combinaison avec d’autres filtres, ce qui aide à réduire la quantité de données lues depuis d’autres colonnes.
 
-La lecture directe comme indice est contrôlée par le paramètre [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/fr/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (activé par défaut).
+La lecture directe en tant qu’indice est contrôlée par le paramètre [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/fr/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (activé par défaut).
 
-Exemple de requête sans indice :
+Exemple de requête sans indice :
 
 ```sql
 EXPLAIN actions = 1

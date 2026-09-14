@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ ORDER BY key
 
 * [String](/zh/reference/data-types/string) 和 [FixedString](/zh/reference/data-types/fixedstring)，
 * [Array(String)](/zh/reference/data-types/array) 和 [Array(FixedString)](/zh/reference/data-types/array)，
-* [Map](/zh/reference/data-types/map) (通过 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 和 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapValues) 函数) ，以及
+* [Map](/zh/reference/data-types/map)，既可以使用 [`keyValuePairs`](#tokenizer-key-value-pairs) 分词器直接在 `Map` 列上定义，也可以使用 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 或 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapValues) 函数仅在 map 的键或值上定义，以及
 * [JSON](/zh/reference/data-types/newjson) (通过 [JSONAllPaths](/zh/reference/functions/regular-functions/json-functions#JSONAllPaths) 和 [`JSONAllValues`](/zh/reference/functions/regular-functions/json-functions#JSONAllValues) 函数) 。
 
 同样支持 [Nullable(T)](/zh/reference/data-types/nullable) 和 [LowCardinality()](/zh/reference/data-types/lowcardinality) 类型的列，包括 `Array(Nullable(String or FixedString))`。
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   与 `ngrams(N)` 相比，`sparseGrams` 分词器会生成长度可变的 N-grams，因此能更灵活地表示原始文本。
   例如，`tokenizer = sparseGrams(3, 5, 4)` 会在内部从输入字符串生成 3-、4-、5-grams，但只返回 4- 和 5-grams。
 * `array` 不执行分词，也就是说，每行的值都是一个标记 (参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。为兼容其他系统，`keyword` 可作为 `array` 的别名使用。
+* `keyValuePairs` 将 `Map` 列的键值对合并为单个标记。这有助于执行组合的键值查找，例如 `WHERE map['key'] = 'value'` (参见 [`keyValuePairs` 分词器](#tokenizer-key-value-pairs)) 。
 
 所有可用的分词器都列在 [system.tokenizers](/zh/reference/system-tables/tokenizers) 中。
 
@@ -524,7 +527,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 在未使用 `support_phrase_search` 时，`hasPhrase` 仅将索引用作提示，并使用原始谓词验证每一条保留下来的行；后处理器还会以相同方式对短语和 haystack 标记进行归一化，因此结果与读取路径无关，而且被后处理器丢弃的标记也不会破坏短语的相邻关系。在 `support_phrase_search = 1` 时，`hasPhrase` 会使用精确的直接读取 (如果有后处理器，仍会应用) 。此后处理器支持不适用于 `splitByRegexp` 分词器：在结合后处理器的 `splitByRegexp` 索引上使用 `hasPhrase` 会被拒绝 (请参阅下方脚注 ³) 。
 被后处理器映射为空字符串的搜索标记会被忽略，也就是视为在搜索短语中不存在。
 
-| 函数                                                                                                      | 支持预处理器                  | 兼容的分词器                                                                            | 支持后处理器 |
+| 函数                                                                                                      | 支持预处理器                  | 兼容的分词器⁵                                                                           | 支持后处理器 |
 | ------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- | ------ |
 | `=`                                                                                                     | 是                       | 全部                                                                                | 是      |
 | `IN`                                                                                                    | 是                       | 全部                                                                                | 是      |
@@ -559,6 +562,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ⁴ `startsWith` 和 `endsWith` 搜索 needle 中完整的标记，而 needle 开放端的标记是不完整的，因为该处的值仍在延续：`startsWith(col, 'ClickHouse is')` 会搜索标记 `ClickHouse`，而 `startsWith(col, 'ClickHouse')` 则没有可供搜索的完整标记。
 后者转而通过字典扫描进行求值 (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` 或 `array` 分词器、无预处理器或后处理器) ，`col LIKE 'ClickHouse%'` 也会走这条路径，因为 analyzer 阶段的 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) 会将其重写为 `startsWith`。
 参见 [LIKE/ILIKE 查询](#like-ilike-queries-perf)。
+
+⁵ *兼容分词器*列不包含 [`keyValuePairs`](#tokenizer-key-value-pairs) 分词器，它是专用于 `Map` 列的分词器。
 
 **实验性功能：短语搜索支持参数 (可选) **。
 
@@ -898,7 +903,9 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-访问 [operator[]](/zh/reference/operators/index#access-operators) 可与文本索引配合使用，以过滤键和值。只有在 `mapKeys(map)` 或 `mapValues(map)` 表达式上创建了文本索引，或同时在两者上创建时，才会使用该文本索引。
+访问 [operator[]](/zh/reference/operators/index#access-operators) 可与文本索引配合使用，以过滤键和值。
+如果文本索引在 `Map` 列之上使用 [`keyValuePairs`](#tokenizer-key-value-pairs) 分词器，或者构建在 `mapKeys(map)` 或 `mapValues(map)` 索引表达式上，则会使用该文本索引。
+在前一种情况下 (`keyValuePairs` 分词器) 可以使用直接读取，否则使用带提示的直接读取。
 
 示例：
 
@@ -964,40 +971,74 @@ ORDER BY (timestamp);
 如果没有文本索引，搜索 [Map](/zh/reference/data-types/map) 数据时需要进行全表扫描：
 
 ```sql
--- 查找所有包含限流数据的日志：
-SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- 全表扫描，速度较慢
+-- Finds all logs with rate limiting data:
+SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
 
--- 查找所有来自特定 IP 的日志：
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 全表扫描，速度较慢
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 随着日志量的增长，这些查询会变慢。
 
-解决方案是为 [Map](/zh/reference/data-types/map) 的键和值创建文本索引。
+解决方案是在 [Map](/zh/reference/data-types/map) 列上创建文本索引。
+具体创建哪种索引，取决于你的搜索方式：是将键与其值一起搜索，还是独立搜索键和值。
+
+#### 使用 `keyValuePairs` 分词器进行组合键值查找 {#tokenizer-key-value-pairs}
+
+当需要查找某个特定键是否持有某个特定值时，可直接在 `Map` 列上使用 `keyValuePairs` 分词器：
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+该分词器会将一行中的每个 `(key, value)` 对合并为一个标记，因此索引能够知道哪个值属于哪个键。
+下文介绍的 `mapKeys` 和 `mapValues` 索引无法回答这类查询，因为它们分别独立地对键和值建立索引：它们只能判断某一行的某个属性取值为 `error`，却无法判断该属性就是 `level`。
+
+键值对以标记 `key ‖ value ‖ length(key)` 的形式存储。
+末尾的长度使键与值之间的边界不存在歧义，因此两者都可以包含任意字节：与使用 `key=value` 这类分隔符拼接不同，即使键或值本身包含该分隔符，也不会产生误匹配。
+
+适用以下限制：
+
+* 索引必须创建在键和值类型为 `String` 或 `LowCardinality(String)` 的 `Map` 上。
+  `FixedString` 会被拒绝，因为列中存储了填充字节而待搜索的常量没有，这会导致静默漏掉部分行。
+  `Nullable` 会被拒绝，因为其编码无法区分空值与 `NULL`。
+* 建表时会拒绝 `preprocessor`、`postprocessor` 和 `support_phrase_search` 这几个参数。
+* 目前仅有针对 map 元素的 `=` 能借助索引来回答。
+  其他 map 搜索，如 `mapContainsKey`、`mapContainsValue`、它们的 `*Like` 变体以及 `IN`，都会回退为穷举扫描。
+* 当键不存在时，`map['key']` 返回值类型的默认值，因此对于不包含该键、从而没有对应标记的行，`map['key'] = ''` 同样成立。
+  此类谓词会回退为穷举扫描。
+* 如果某一行中同一个键出现多次，`map['key']` 取其首次出现处的值，索引也会匹配该次出现。
+
+#### 使用 `mapKeys` 和 `mapValues` 进行键和值搜索 {#text-index-map-keys-and-values}
+
 当你需要按字段名或属性类型查找日志时，可使用 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 创建文本索引：
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 当你需要在属性的实际值中搜索时，可使用 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapValues) 创建文本索引：
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 查询示例：
 
 ```sql
--- 查找所有受速率限制的请求：
+-- Find all rate-limited requests:
 SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
--- 查找来自特定 IP 的所有日志：
+-- Finds all logs from a specific IP:
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 
--- 查找任意属性值包含错误信息的所有日志：
+-- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
@@ -1295,6 +1336,7 @@ WHERE string_search_function(column_with_text_index)
 
 直接读取优化支持 `hasToken`、`hasAllTokens` 和 `hasAnyTokens` 函数。
 如果文本索引是使用 `array` 分词器定义的，则直接读取还支持 `equals`、`has`、`hasAny`、`hasAll`、`mapContainsKey` 和 `mapContainsValue` 函数。
+如果文本索引是使用 `keyValuePairs` 分词器定义的，则直接读取支持针对 map 元素的 `equals` (`map['key'] = 'value'`) 。
 这些函数也可以通过 `AND`、`OR` 和 `NOT` 运算符进行组合。
 `WHERE` 或 `PREWHERE` 子句中也可以包含额外的非文本搜索函数过滤器 (针对文本列或其他列) ——在这种情况下，仍会使用直接读取优化，但效果会打一些折扣 (它仅适用于受支持的文本搜索函数) 。
 

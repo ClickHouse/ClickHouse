@@ -89,6 +89,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -108,7 +109,7 @@ ORDER BY key
 
 * [String](/ja/reference/data-types/string) と [FixedString](/ja/reference/data-types/fixedstring)
 * [Array(String)](/ja/reference/data-types/array) と [Array(FixedString)](/ja/reference/data-types/array)
-* [Map](/ja/reference/data-types/map) ([mapKeys](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) および [mapValues](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) 関数経由)
+* [Map](/ja/reference/data-types/map)。[`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーを使用して `Map` カラムに定義するか、[mapKeys](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) または [mapValues](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) 関数を使用してマップのキーまたは値のみに定義します
 * [JSON](/ja/reference/data-types/newjson) ([JSONAllPaths](/ja/reference/functions/regular-functions/json-functions#JSONAllPaths) および [`JSONAllValues`](/ja/reference/functions/regular-functions/json-functions#JSONAllValues) 関数経由)
 
 [Nullable(T)](/ja/reference/data-types/nullable) 型および [LowCardinality()](/ja/reference/data-types/lowcardinality) 型のカラムにも対応しており、`Array(Nullable(String or FixedString))` も含まれます。
@@ -129,6 +130,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -183,6 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   `ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。
   たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力文字列から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
 * `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。他のシステムとの互換性のため、`keyword` は `array` のエイリアスとして使用できます。
+* `keyValuePairs` は、`Map` カラムのキー・バリューのペアを 1 つのトークンにまとめます。これにより、`WHERE map['key'] = 'value'` のようなキーと値を組み合わせたルックアップを実行しやすくなります ([`keyValuePairs` トークナイザー](#tokenizer-key-value-pairs) を参照) 。
 
 使用可能なすべてのトークナイザーは [system.tokenizers](/ja/reference/system-tables/tokenizers) に一覧表示されています。
 
@@ -525,7 +528,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な direct read を使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。このポストプロセッサのサポートは `splitByRegexp` トークナイザーには適用されません。ポストプロセッサと組み合わせた `splitByRegexp` 索引に対する `hasPhrase` は拒否されます (以下の脚注 ³ を参照) 。
 ポストプロセッサによって空文字列にマップされる検索トークンは無視され、つまり検索フレーズに存在しないものとして扱われます。
 
-| 関数                                                                                                      | プリプロセッサ対応                   | 対応トークナイザー                                                                         | ポストプロセッサ対応 |
+| 関数                                                                                                      | プリプロセッサ対応                   | 互換性のあるトークナイザー⁵                                                                        | ポストプロセッサ対応 |
 | ------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- | ---------- |
 | `=`                                                                                                     | はい                          | すべて                                                                               | はい         |
 | `IN`                                                                                                    | はい                          | すべて                                                                               | はい         |
@@ -560,6 +563,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ⁴ `startsWith` と `endsWith` は needle の完全なトークンを検索しますが、needle の開いた側の端にあるトークンは値がそこから続くため不完全です: `startsWith(col, 'ClickHouse is')` はトークン `ClickHouse` を検索しますが、`startsWith(col, 'ClickHouse')` には検索できる完全なトークンがありません。
 後者は代わりに辞書スキャン (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー、プリプロセッサ および ポストプロセッサ なし) によって評価されます。これは `col LIKE 'ClickHouse%'` が取るパスでもあります。アナライザのパス [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) がこれを `startsWith` に rewrite するためです。
 [LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
+
+⁵ *互換性のあるトークナイザー* カラムでは、`Map` カラム向けの特殊なトークナイザーである [`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーは対象外としています。
 
 **Experimental: フレーズ検索サポートの引数 (任意)**。
 
@@ -899,7 +904,9 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-アクセス[operator[]](/ja/reference/operators/index#access-operators)は、テキスト索引と組み合わせて使用することで、キーと値を絞り込めます。テキスト索引が使用されるのは、`mapKeys(map)` または `mapValues(map)` 式、あるいはその両方に対して作成されている場合のみです。
+アクセス[operator[]](/ja/reference/operators/index#access-operators)は、テキスト索引と組み合わせて使用することで、キーと値を絞り込めます。
+テキスト索引が使用されるのは、`Map` カラムに対して [`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーを使用している場合、または `mapKeys(map)` もしくは `mapValues(map)` の索引式に対して構築されている場合です。
+前者 (`keyValuePairs` トークナイザー) の場合は direct read が使用でき、それ以外の場合はヒント付きの direct read が使用されます。
 
 例:
 
@@ -965,40 +972,74 @@ ORDER BY (timestamp);
 テキスト索引がない場合、[Map](/ja/reference/data-types/map) データを検索するには、テーブル全体をスキャンする必要があります。
 
 ```sql
--- rate limitingデータを含むすべてのログを検索:
-SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- 低速なフルテーブルスキャン
+-- Finds all logs with rate limiting data:
+SELECT * FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
 
--- 特定のIPからのすべてのログを検索:
-SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 低速なフルテーブルスキャン
+-- Finds all logs from a specific IP:
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 ログの量が増えると、これらのクエリは遅くなります。
 
-解決策は、[Map](/ja/reference/data-types/map) のキーと値に対してテキスト索引を作成することです。
+解決策は、[Map](/ja/reference/data-types/map) カラムに対するテキスト索引です。
+どの索引を作成すべきかは、検索対象によって決まります。すなわち、キーとその値をまとめて検索するのか、キーと値を個別に検索するのかによります。
+
+#### `keyValuePairs` トークナイザーによるキー・バリューの複合ルックアップ {#tokenizer-key-value-pairs}
+
+特定の値を持つ特定のキーを検索する場合は、`Map` カラム自体に `keyValuePairs` トークナイザーを使用します:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+このトークナイザーは、行の各 `(key, value)` ペアを1つのトークンに結合するため、索引はどの値がどのキーに属するかを把握できます。
+後述の `mapKeys` および `mapValues` 索引はキーと値を独立に索引付けするため、このようなクエリには答えられません。ある行のいずれかの属性が `error` という値を持つことは分かっても、それが `level` 属性であったかどうかは分からないのです。
+
+ペアは `key ‖ value ‖ length(key)` というトークンとして格納されます。
+末尾の長さによってキーと値の境界が一意に定まるため、どちらにも任意のバイト列を含められます。`key=value` のように区切り文字で連結する場合と異なり、区切り文字を含むキーや値があっても誤った一致は発生しません。
+
+以下の制約が適用されます:
+
+* 索引は、キーと値が `String` または `LowCardinality(String)` 型である `Map` に対して作成する必要があります。
+  `FixedString` は拒否されます。カラムはパディングバイトを格納する一方、検索対象の定数は格納しないため、行を暗黙のうちに取りこぼすことになるからです。
+  `Nullable` は拒否されます。エンコーディングが空の値と `NULL` を区別できないためです。
+* `preprocessor`、`postprocessor`、`support_phrase_search` の各引数はテーブル作成時に拒否されます。
+* 現時点では、マップ要素に対する `=` のみが索引から回答されます。
+  `mapContainsKey`、`mapContainsValue`、それらの `*Like` バリアント、`IN` など、その他のマップ検索は総当たりスキャンにフォールバックします。
+* キーが存在しない場合、`map['key']` は値型のデフォルト値を返すため、`map['key'] = ''` はキーを含まずトークンも持たない行に対しても true になります。
+  このような述語は総当たりスキャンにフォールバックします。
+* ある行に同じキーが複数回含まれる場合、`map['key']` は最初に出現した値となり、索引もその出現に一致します。
+
+#### `mapKeys` と `mapValues` を使ったキーと値の検索 {#text-index-map-keys-and-values}
+
 フィールド名や属性タイプでログを検索する必要がある場合は、[mapKeys](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) を使ってテキスト索引を作成します。
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 属性の実際の内容内を検索する必要がある場合は、[mapValues](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) を使用してテキスト索引を作成します。
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 クエリの例:
 
 ```sql
--- レート制限されたリクエストをすべて検索:
+-- Find all rate-limited requests:
 SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
--- 特定のIPからのログをすべて検索:
+-- Finds all logs from a specific IP:
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 
--- いずれかの属性にエラーが含まれるログをすべて検索:
+-- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
@@ -1296,6 +1337,7 @@ direct read は 2 つの設定で制御されます。
 
 direct read 最適化は、`hasToken`、`hasAllTokens`、`hasAnyTokens` 関数をサポートします。
 テキスト索引が `array` トークナイザーで定義されている場合、direct read は `equals`、`has`、`hasAny`、`hasAll`、`mapContainsKey`、`mapContainsValue` 関数でもサポートされます。
+テキスト索引が `keyValuePairs` トークナイザーで定義されている場合、direct read は map の要素に対する `equals` (`map['key'] = 'value'`) でサポートされます。
 これらの関数は、`AND`、`OR`、`NOT` 演算子で組み合わせることもできます。
 `WHERE` 句または `PREWHERE` 句には、追加の非テキスト検索関数のフィルタ (テキストカラムまたは他のカラムに対するフィルタ) を含めることもできます。この場合でも direct read 最適化は使用されますが、効果はやや低下します (適用されるのはサポート対象のテキスト検索関数のみです) 。
 
@@ -1372,7 +1414,7 @@ SETTINGS query_plan_text_index_add_hint = 0
 FORMAT TSV
 ```
 
-戻り値
+返す
 
 ```text
 [...]
