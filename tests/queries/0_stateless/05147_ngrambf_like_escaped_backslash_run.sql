@@ -17,6 +17,22 @@ SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%';
 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%xxab%';
 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%other%';
 
+-- The same two literal backslashes reached through a custom ESCAPE character: under ESCAPE '!' a
+-- backslash is literal, and both index conditions fold the escape character into a backslash-escaped
+-- pattern before tokenizing it, so '%ab\\\\%cd%' here is the pattern above.
+
+SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!';
+
+-- Two agreeing counts are also what an index that prunes nothing gives, so the granule count index
+-- analysis reached is asserted as well; `use_skip_indexes_on_data_read` keeps the filtering at that
+-- stage, and the assertion fails by producing no row at all if the index is not applied.
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
+    SETTINGS use_skip_indexes_on_data_read = 0
+) WHERE explain LIKE '%Granules: %/%';
+
 DROP TABLE t_ngram_backslash;
 
 -- With an n-gram size of 1 a single literal backslash before the wildcard is already enough.
@@ -44,5 +60,13 @@ INSERT INTO t_text_index_backslash VALUES ('xxab\\\\cdyy'), ('other1'), ('other2
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\\\\\%cd%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\\\\\%cd%'
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+
+SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
+SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
+    SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0, use_skip_indexes_on_data_read = 0
+) WHERE explain LIKE '%Granules: %/%';
 
 DROP TABLE t_text_index_backslash;
