@@ -110,6 +110,23 @@ ClickHouse rejects the complete request when native histograms are present.
 ClickHouse rejects the complete request when exemplars are present.
 Senders can set `send_exemplars: false` to omit exemplars.
 
+Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so a sender cannot use it to omit native histograms.
+A sender drops native histogram series with a `write_relabel_configs` rule on the `__type__` label.
+Prometheus sets `__type__` only when it runs with `--enable-feature=type-and-unit-labels`.
+Without that feature flag the rule matches nothing, and ClickHouse rejects every request that carries a native histogram.
+The rule removes the complete series, not only its histogram samples.
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    protobuf_message: io.prometheus.write.v2.Request
+    send_exemplars: false
+    write_relabel_configs:
+      - source_labels: [__type__]
+        regex: histogram
+        action: drop
+```
+
 To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
 
 ```yaml
