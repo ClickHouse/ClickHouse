@@ -51,12 +51,40 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
 }
 
+namespace
+{
+
+/// The object storages whose generations can be pinned: their endpoints name a generation with an
+/// `ETag`, take it back as a precondition of a read and of a copy, and refuse a create-if-absent
+/// write (`If-None-Match: *`) of a key that a blob is at.
+bool pinsGenerations(const IObjectStorage & object_storage)
+{
+    const auto type = object_storage.getType();
+    return type == ObjectStorageType::Azure || type == ObjectStorageType::S3;
+}
+
+/// Names the generation that is at `remote_path` right now, together with its size, or nothing
+/// when the blob is not there or the endpoint reports no `ETag` for it.
+std::optional<StoredObject> nameTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
+{
+    auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
+    if (!metadata || metadata->etag.empty())
+        return {};
+
+    StoredObject object(remote_path);
+    object.bytes_size = metadata->size_bytes;
+    object.etag = metadata->etag;
+    return object;
+}
+
+}
+
 StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
 {
     StoredObject object(remote_path);
 
     const auto type = object_storage.getType();
-    if (type != ObjectStorageType::Azure && type != ObjectStorageType::S3)
+    if (!pinsGenerations(object_storage))
         return object;
 
     auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
@@ -117,7 +145,9 @@ bool restoreTheSavedBlobWithoutWritingOver(
 {
     auto log = getLogger("PlainRewritableRollback");
 
-    if (object_storage.getType() != ObjectStorageType::Azure)
+    /// An object storage that does not pin restores by key, the way its execute side deletes and
+    /// writes by key.
+    if (!pinsGenerations(object_storage))
     {
         object_storage.copyObject(StoredObject(remote_tmp_path), StoredObject(remote_path), read_settings, write_settings);
         return true;
@@ -125,7 +155,7 @@ bool restoreTheSavedBlobWithoutWritingOver(
 
     /// The saved blob is read pinned to its own generation, so that a restore cannot stitch together
     /// what this transaction saved aside with something written over the temporary key since.
-    auto saved = nameTheGenerationThatWasJustWritten(object_storage, remote_tmp_path);
+    auto saved = nameTheGenerationThatIsThereNow(object_storage, remote_tmp_path);
     if (!saved)
     {
         LOG_WARNING(
@@ -138,9 +168,10 @@ bool restoreTheSavedBlobWithoutWritingOver(
     }
 
     /// The restore creates the destination and never replaces one: `If-None-Match: *` makes the
-    /// endpoint refuse the write when a blob is at the key, so a writer that recreated the key at
-    /// any moment - including after a probe of the key would have found it free - keeps its
-    /// generation. There is no way to express this through `copyObject`, which writes by key alone.
+    /// endpoint refuse the write when a blob is at the key (Azure answers `409 Conflict`, S3 `412
+    /// Precondition Failed`), so a writer that recreated the key at any moment - including after a
+    /// probe of the key would have found it free - keeps its generation. There is no way to express
+    /// this through `copyObject`, which writes by key alone.
     WriteSettings create_if_absent = write_settings;
     create_if_absent.object_storage_write_if_none_match = "*";
 
@@ -173,18 +204,10 @@ bool restoreTheSavedBlobWithoutWritingOver(
 
 std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
 {
-    StoredObject object(remote_path);
-
     if (object_storage.getType() != ObjectStorageType::Azure)
-        return object;
+        return StoredObject(remote_path);
 
-    auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
-    if (!metadata || metadata->etag.empty())
-        return {};
-
-    object.bytes_size = metadata->size_bytes;
-    object.etag = metadata->etag;
-    return object;
+    return nameTheGenerationThatIsThereNow(object_storage, remote_path);
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(

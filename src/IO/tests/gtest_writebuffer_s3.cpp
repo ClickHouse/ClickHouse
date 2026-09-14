@@ -22,6 +22,8 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
+#include <aws/core/utils/stream/ResponseStream.h>
+#include <Poco/Net/HTTPBasicStreamBuf.h>
 
 #include <array>
 
@@ -115,6 +117,9 @@ public:
     /// The `ETag` of the generation at each key, a new one for every write to the key, served by
     /// HeadObject and checked by the copies against `x-amz-copy-source-if-match`. Quoted, as S3 quotes it.
     std::map<Key, ETag> object_etags;
+    /// The `If-None-Match` header of every PutObject that reached the store, empty for an
+    /// unconditional one, so a test can assert that a write was a create-if-absent one.
+    std::vector<std::string> put_if_none_match;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
     /// Metadata of an in-flight upload, carried from CreateMultipartUpload onto the completed object
     /// the way real S3 does -- that is what makes a HEAD after completion see it.
@@ -350,6 +355,12 @@ struct Client : DB::S3::Client
         }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
+        bStore.put_if_none_match.push_back(request.GetIfNoneMatch());
+        /// `If-None-Match: *` as a real endpoint evaluates it: the write is refused with
+        /// `412 Precondition Failed` when a generation is at the key.
+        if (request.GetIfNoneMatch() == "*" && bStore.object_etags.contains(request.GetKey()))
+            return makePreconditionFailedError();
+
         const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
         BucketMemStore::Metadata metadata;
         for (const auto & [name, value] : request.GetMetadata())
@@ -362,11 +373,67 @@ struct Client : DB::S3::Client
         return result;
     }
 
+    /// The body of a GetObject the way `ReadBufferFromIStream` reads it: it reads from the stream
+    /// buffer of a real HTTP response directly, and requires it to be a `Poco::Net::HTTPBasicStreamBuf`,
+    /// so a body served over a `std::stringstream` cannot be read by a `ReadBufferFromS3`.
+    class HTTPBodyStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+    {
+    public:
+        explicit HTTPBodyStreamBuf(String data_)
+            : Poco::Net::HTTPBasicStreamBuf(1024, std::ios::in)
+            , data(std::move(data_))
+        {
+        }
+
+    private:
+        int readFromDevice(char * buffer, std::streamsize length) override
+        {
+            const size_t n = std::min<size_t>(static_cast<size_t>(length), data.size() - pos);
+            memcpy(buffer, data.data() + pos, n);
+            pos += n;
+            return static_cast<int>(n);
+        }
+
+        String data;
+        size_t pos = 0;
+    };
+
+    /// The stream buffer is a base rather than a member so that it is constructed before the stream
+    /// that is initialised with it.
+    struct HTTPBodyStreamBufHolder
+    {
+        explicit HTTPBodyStreamBufHolder(String data) : buf(std::move(data)) {}
+        HTTPBodyStreamBuf buf;
+    };
+
+    class HTTPBodyStream : private HTTPBodyStreamBufHolder, public Aws::IOStream
+    {
+    public:
+        explicit HTTPBodyStream(String data)
+            : HTTPBodyStreamBufHolder(std::move(data))
+            , Aws::IOStream(&buf)
+        {
+        }
+    };
+
+    /// `If-Match`, as a real endpoint evaluates it: against the generation that is at the key now, with
+    /// `412 Precondition Failed` when it does not hold. `ReadBufferFromS3` tells that refusal apart by
+    /// the response code, so it is set here.
     Aws::S3::Model::GetObjectOutcome GetObject(const Aws::S3::Model::GetObjectRequest & request) const override
     {
         ++counters.getObject;
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
+        if (const auto & if_match = request.GetIfMatch(); !if_match.empty())
+        {
+            auto it = bStore.object_etags.find(request.GetKey());
+            if (it == bStore.object_etags.end() || it->second != if_match)
+            {
+                auto error = makePreconditionFailedError();
+                error.SetResponseCode(Aws::Http::HttpResponseCode::PRECONDITION_FAILED);
+                return error;
+            }
+        }
         const String data = bStore.objects[request.GetKey()];
 
         size_t begin = 0;
@@ -380,12 +447,14 @@ struct Client : DB::S3::Client
             chassert(ret == 2);
         }
 
-        auto factory = request.GetResponseStreamFactory();
-        Aws::Utils::Stream::ResponseStream responseStream(factory);
-        responseStream.GetUnderlyingStream() << std::stringstream(data.substr(begin, end - begin + 1)).rdbuf();
+        const String body = data.substr(begin, end - begin + 1);
+        Aws::Utils::Stream::ResponseStream responseStream(Aws::New<HTTPBodyStream>("MockS3::GetObject", body));
 
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> awsStream(std::move(responseStream), Aws::Http::HeaderValueCollection());
         Aws::S3::Model::GetObjectResult getObjectResult(std::move(awsStream));
+        getObjectResult.SetContentLength(static_cast<long long>(body.size()));
+        if (auto it = bStore.object_etags.find(request.GetKey()); it != bStore.object_etags.end())
+            getObjectResult.SetETag(it->second);
         return Aws::S3::Model::GetObjectOutcome(std::move(getObjectResult));
     }
 
@@ -2244,6 +2313,75 @@ TEST_F(S3PlainRewritablePinningTest, AnObjectWithoutAnETagCannotBePinned)
     const auto error_code = errorCodeOf([&] { pinToTheGenerationThatIsThereNow(*object_storage, "src"); });
     ASSERT_TRUE(error_code.has_value());
     EXPECT_EQ(*error_code, ErrorCodes::S3_ERROR);
+}
+
+/// Rolling back a `plain_rewritable` operation on S3 after its remote delete succeeded, the same way
+/// `AzurePlainRewritableRollback` does on Azure. The key is free by then, so another writer can
+/// recreate it, and the blob it puts there is a generation this transaction has never seen. The
+/// restore is a create-if-absent write (`If-None-Match: *`) that the endpoint refuses while a
+/// generation is at the key, so the newer blob stays and the saved one is left aside.
+class S3PlainRewritableRollbackTest : public S3PlainRewritablePinningTest
+{
+protected:
+    /// The write buffer of `S3ObjectStorage::writeObject` schedules its uploads on the writer pool
+    /// of the global context, which the unit test does not have.
+    static WriteSettings inlineWriteSettings()
+    {
+        WriteSettings write_settings;
+        write_settings.s3_allow_parallel_part_upload = false;
+        return write_settings;
+    }
+
+    const std::vector<String> & putIfNoneMatchHeaders() { return client->store->GetBucketStore(bucket).put_if_none_match; }
+
+    String dataAt(const String & key) { return client->store->GetBucketStore(bucket).objects.at(key); }
+
+    bool isThere(const String & key) { return client->store->GetBucketStore(bucket).object_etags.contains(key); }
+};
+
+TEST_F(S3PlainRewritableRollbackTest, ARecreatedKeyIsNotRestoredOver)
+{
+    putSource("tmp_blob", /* size= */ 100);
+    const String recreated = putSource("blob", /* size= */ 200);
+    const String recreated_generation = generationAt("blob");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_FALSE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    ASSERT_EQ(putIfNoneMatchHeaders(), std::vector<String>{"*"});
+    /// The generation that was recreated stays, and so does the saved blob, for a recovery by hand.
+    EXPECT_EQ(generationAt("blob"), recreated_generation);
+    EXPECT_EQ(dataAt("blob"), recreated);
+    EXPECT_TRUE(isThere("tmp_blob"));
+}
+
+/// The same rollback when the key really is free: nobody recreated the blob this transaction
+/// deleted, so the copy it saved aside is put back. This keeps the test above from passing for the
+/// wrong reason - by refusing every restore.
+TEST_F(S3PlainRewritableRollbackTest, AFreeKeyIsRestored)
+{
+    const String saved = putSource("tmp_blob", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_TRUE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    ASSERT_EQ(putIfNoneMatchHeaders(), std::vector<String>{"*"});
+    EXPECT_EQ(dataAt("blob"), saved);
+}
+
+/// The saved blob cannot be named - the endpoint reports no `ETag` for it - so its bytes cannot be
+/// read pinned to a generation, and nothing is written: a restore that could stitch together the
+/// saved blob with whatever was written over the temporary key since is not attempted.
+TEST_F(S3PlainRewritableRollbackTest, ASavedBlobWithoutAGenerationIsNotRestored)
+{
+    putSource("tmp_blob", /* size= */ 100);
+    client->store->GetBucketStore(bucket).object_etags.erase("tmp_blob");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_FALSE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    EXPECT_TRUE(putIfNoneMatchHeaders().empty());
+    EXPECT_FALSE(isThere("blob"));
 }
 
 

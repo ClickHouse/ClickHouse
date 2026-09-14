@@ -63,9 +63,10 @@ std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage &
 /// Puts the blob that a rollback saved aside at `remote_tmp_path` back at `remote_path`, without
 /// ever writing over what is at that key. Asking whether the key is free and then copying over it
 /// are two requests, and a writer that recreates the key in between the two would be overwritten by
-/// the copy - the very loss the pinning of the execute side exists to prevent. So on Azure the
+/// the copy - the very loss the pinning of the execute side exists to prevent. So on Azure and on
+/// S3 - the object storages whose moves are pinned, see `pinToTheGenerationThatIsThereNow` - the
 /// restore is a create-if-absent write (`If-None-Match: *`), which the endpoint refuses when a blob
-/// is at the key, and the bytes are read pinned to the generation of the saved blob.
+/// is at the key, and the bytes are read pinned to the generation of the saved blob (`If-Match`).
 ///
 /// Returns whether the blob was restored. A restore that did not happen - the key was taken over,
 /// the saved blob cannot be named, the write did not go through - is reported rather than retried
