@@ -347,19 +347,33 @@ def test_remote_write_v2_zstd():
     assert series[0].samples[0].value == 42.0
 
 
-def test_remote_write_v2_drops_native_histograms():
+@pytest.mark.parametrize(
+    "case, include_float, separate_histogram_series",
+    [
+        ("histogram_only", False, False),
+        ("separate_float_and_histogram_series", True, True),
+        ("samples_and_histograms_in_one_series", True, False),
+    ],
+)
+def test_remote_write_v2_rejects_native_histograms(
+    case, include_float, separate_histogram_series
+):
     start_time = 1724118350
-    metric_name = "rw2_float_data"
+    metric_name = f"rw2_{case}"
     protobuf = convert_time_series_to_write_v2_protobuf(
-        [({"__name__": metric_name}, {start_time: 42.0})]
+        [({"__name__": metric_name}, {start_time: 42.0} if include_float else {})]
     )
-    protobuf.symbols.append("rw2_native_histogram")
-    histogram_series = protobuf.timeseries.add(
-        labels_refs=[
-            list(protobuf.symbols).index("__name__"),
-            len(protobuf.symbols) - 1,
-        ]
-    )
+    histogram_metric_name = metric_name
+    histogram_series = protobuf.timeseries[0]
+    if separate_histogram_series:
+        histogram_metric_name = f"{metric_name}_histogram"
+        protobuf.symbols.append(histogram_metric_name)
+        histogram_series = protobuf.timeseries.add(
+            labels_refs=[
+                list(protobuf.symbols).index("__name__"),
+                len(protobuf.symbols) - 1,
+            ]
+        )
     histogram_series.histograms.add(timestamp=start_time * 1000)
 
     response = get_response_to_remote_write(
@@ -370,13 +384,10 @@ def test_remote_write_v2_drops_native_histograms():
         content_type=WRITE_V2_CONTENT_TYPE,
         headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
     )
-    assert response.status_code == requests.codes.no_content
-    assert_remote_write_v2_written_headers(response, 1)
-    series = _read_samples(metric_name, start_time, start_time + 1)
-    assert len(series) == 1
-    assert len(series[0].samples) == 1
-    assert series[0].samples[0].value == 42.0
-    assert _read_samples("rw2_native_histogram", start_time, start_time + 1) == []
+    assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
+    assert _read_samples(metric_name, start_time, start_time + 1) == []
+    assert _read_samples(histogram_metric_name, start_time, start_time + 1) == []
 
 
 def test_remote_write_v2_invalid_first_symbol():
