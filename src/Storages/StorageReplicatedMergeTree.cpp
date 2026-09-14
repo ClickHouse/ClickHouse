@@ -1889,7 +1889,12 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    /// This is the application of an already-committed `ALTER_METADATA` log entry - possibly one a
+    /// replica running an older version committed. Validation must not reject it: entries execute
+    /// in version order, so a reject would wedge the replication queue behind an entry it can
+    /// never apply. `local_context` cannot carry that fact - outside a `Replicated` database
+    /// `executeMetadataAlter` has no query context at all - so it is passed explicitly.
+    setProperties(new_metadata, old_metadata, /*attach=*/ false, /*local_context=*/ nullptr, /*is_metadata_replay=*/ true);
 
     try
     {
@@ -1898,7 +1903,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        setProperties(old_metadata, new_metadata, /*attach=*/ false, /*local_context=*/ nullptr, /*is_metadata_replay=*/ true);
         throw;
     }
 }

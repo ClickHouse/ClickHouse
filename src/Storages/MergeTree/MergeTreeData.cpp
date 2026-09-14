@@ -789,7 +789,12 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
+    /// `SYSTEM RESTORE DATABASE REPLICA` re-creates tables from the metadata stored in Keeper at
+    /// `mode == CREATE` (it builds no ZooKeeper metadata transaction, unlike a lost-replica
+    /// recovery, which arrives at `SECONDARY_CREATE`), so `mode` cannot tell that replay apart
+    /// and the context carries it. A definition that was legal when persisted must load the same
+    /// way an `ATTACH` of it would.
+    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE && !context_->isRecoveryFromStoredMetadata();
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
@@ -1010,7 +1015,6 @@ namespace
 {
 
 /// Collects every ALIAS column named anywhere in `ast`.
-/// Collects every ALIAS column named anywhere in `ast`.
 ///
 /// A lambda parameter is a name bound by the expression itself, not a reference to a table column,
 /// so it is masked while its body is walked - otherwise `arrayMap(x -> lower(x), arr)` would be read
@@ -1088,18 +1092,34 @@ DataTypePtr tryGetAliasExpressionType(const String & column_name, const ColumnsD
     }
 }
 
-/// The ALIAS columns referenced by a text index whose declared type differs from the type their own
+/// The index types whose condition matches a query predicate to the indexed expression by its
+/// exact column name: `MergeTreeIndexConditionText` (`text`), `MergeTreeConditionBloomFilterText`
+/// (`tokenbf_v1`, `ngrambf_v1`, `sparse_grams`) and `MergeTreeIndexConditionBloomFilter`
+/// (`bloom_filter`). For these, the `_CAST` that query analysis wraps a mismatched ALIAS in can
+/// never equal the indexed expression, so the index is dead.
+///
+/// Deliberately excluded: `minmax` builds a `KeyCondition` that traverses the cast and stays
+/// usable whenever the cast is monotonic, and `set` matches the expression DAG through the cast,
+/// so an index of either kind over a mistyped ALIAS can still be used.
+bool isIndexMatchedByExactColumnName(const String & index_type)
+{
+    return index_type == TEXT_INDEX_NAME || index_type == "tokenbf_v1" || index_type == "ngrambf_v1"
+        || index_type == "sparse_grams" || index_type == "bloom_filter";
+}
+
+/// The ALIAS columns referenced by an index whose declared type differs from the type their own
 /// expression produces, mapped to that expression type.
 ///
-/// Such an index can never be used. `IndexDescription::initExpressionInfo` expands the ALIAS, so the
+/// For an index type matched by exact column name (`isIndexMatchedByExactColumnName`) such an
+/// index can never be used. `IndexDescription::initExpressionInfo` expands the ALIAS, so the
 /// index is built over the expression as written, while query analysis reads the column through a
-/// `CAST` to the declared type. `MergeTreeIndexConditionText` matches a predicate to an index by
-/// column name, so the two spellings never agree and the index is silently skipped - the files are
-/// written and merged all the same, so the cost is paid and nothing reads them.
+/// `CAST` to the declared type, so the two spellings never agree and the index is silently
+/// skipped - the files are written and merged all the same, so the cost is paid and nothing
+/// reads them.
 ///
 /// The mismatch belongs to the ALIAS column, not to the shape of the index expression, so every
 /// identifier in that expression is examined rather than only a bare `INDEX idx alias_col`.
-std::map<String, DataTypePtr> findMistypedAliasColumnsOfTextIndex(
+std::map<String, DataTypePtr> findMistypedAliasColumnsOfIndex(
     const IndexDescription & index, const ColumnsDescription & columns, ContextPtr context)
 {
     const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
@@ -1161,6 +1181,7 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
+    bool is_metadata_replay,
     const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
@@ -1345,124 +1366,127 @@ void MergeTreeData::checkProperties(
                         backQuote(index.column_names[0]));
 
                 columns_with_text_indexes.insert(column);
+            }
 
-                /// A text index over a mistyped ALIAS column can never be used - see
-                /// `findMistypedAliasColumnsOfTextIndex`. Existing tables are left alone: `attach`
-                /// must keep loading whatever is already on disk.
-                if (!attach)
+            /// An index whose condition matches query predicates to the indexed expression by its
+            /// exact column name can never be used over a mistyped ALIAS column - see
+            /// `findMistypedAliasColumnsOfIndex`. Existing tables are left alone: `attach` must keep
+            /// loading whatever is already on disk, and applying a committed replicated metadata entry
+            /// must not throw either (`is_metadata_replay`) - entries execute in version order, so a
+            /// reject would wedge the replication queue behind an entry it can never apply.
+            if (isIndexMatchedByExactColumnName(index.type) && !attach && !is_metadata_replay)
+            {
+                /// `setProperties` defaults `local_context` to null and the constructor takes
+                /// that default, so the create path has none of its own.
+                ContextPtr type_context = local_context;
+                if (!type_context)
+                    type_context = getContext();
+
+                auto mistyped_columns = findMistypedAliasColumnsOfIndex(index, new_metadata.columns, type_context);
+
+                if (!mistyped_columns.empty())
                 {
-                    /// `setProperties` defaults `local_context` to null and the constructor takes
-                    /// that default, so the create path has none of its own.
-                    ContextPtr type_context = local_context;
-                    if (!type_context)
-                        type_context = getContext();
+                    /// Reject only a violation this operation introduces, not one it inherits.
+                    /// `checkProperties` also runs for every `ALTER` (`checkAlterIsPossible`) with
+                    /// `attach = false`. Re-reporting a pre-existing violation there would leave a
+                    /// table grandfathered by the `attach` exemption loadable but un-alterable.
+                    /// (Replay of a committed `ALTER_METADATA` entry is exempted wholesale by
+                    /// `is_metadata_replay` above and does not rely on this comparison.)
+                    ///
+                    /// "Inherited" has to mean the whole violation was carried over untouched. Each
+                    /// of the parts that produce it can be rewritten on its own while the others
+                    /// stay put: `MODIFY COLUMN` retypes the ALIAS, `MODIFY COLUMN` on a column the
+                    /// ALIAS is written in terms of changes what the index resolves to, and
+                    /// `DROP INDEX ... , ADD INDEX ...` replaces the index under its own name. So
+                    /// the index declaration, the resolved expression types and the set of
+                    /// offending columns are all compared.
+                    ///
+                    /// On the create path `setProperties` is called with the same metadata as both
+                    /// arguments, so there is no older state to inherit from and nothing to exempt.
+                    const bool inherited = &old_metadata != &new_metadata
+                        && std::ranges::any_of(
+                               old_metadata.secondary_indices,
+                               [&](const auto & old_index)
+                               {
+                                   if (old_index.name != index.name)
+                                       return false;
 
-                    auto mistyped_columns = findMistypedAliasColumnsOfTextIndex(index, new_metadata.columns, type_context);
+                                   /// The declaration carries the index type and its arguments,
+                                   /// which the expanded expression below does not: replacing the
+                                   /// index under its own name with a different tokenizer builds a
+                                   /// different index over the same expression.
+                                   if (!old_index.definition_ast || !index.definition_ast
+                                       || old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
+                                           != index.definition_ast->getTreeHash(/*ignore_aliases=*/true))
+                                       return false;
 
-                    if (!mistyped_columns.empty())
-                    {
-                        /// Reject only a violation this operation introduces, not one it inherits.
-                        /// `checkProperties` also runs for every `ALTER` (`checkAlterIsPossible`) and on
-                        /// the replica side of a committed `ALTER_METADATA` (`setTableStructure` ->
-                        /// `setProperties`), both with `attach = false`. Re-reporting a pre-existing
-                        /// violation there would leave a table grandfathered by the `attach` exemption
-                        /// loadable but un-alterable, and would wedge the replication queue of an
-                        /// upgraded replica behind an entry it can never apply.
-                        ///
-                        /// "Inherited" has to mean the whole violation was carried over untouched. Each
-                        /// of the parts that produce it can be rewritten on its own while the others
-                        /// stay put: `MODIFY COLUMN` retypes the ALIAS, `MODIFY COLUMN` on a column the
-                        /// ALIAS is written in terms of changes what the index resolves to, and
-                        /// `DROP INDEX ... , ADD INDEX ...` replaces the index under its own name. So
-                        /// the index declaration, the resolved expression types and the set of
-                        /// offending columns are all compared.
-                        ///
-                        /// On the create path `setProperties` is called with the same metadata as both
-                        /// arguments, so there is no older state to inherit from and nothing to exempt.
-                        const bool inherited = &old_metadata != &new_metadata
-                            && std::ranges::any_of(
-                                   old_metadata.secondary_indices,
-                                   [&](const auto & old_index)
-                                   {
-                                       if (old_index.name != index.name)
-                                           return false;
+                                   /// The index is built over its expression with every ALIAS
+                                   /// expanded, so comparing that expanded form settles the index
+                                   /// declaration and the whole chain of ALIAS definitions beneath
+                                   /// it at once: editing any link rebuilds the index over
+                                   /// something else, even where the link itself is typed
+                                   /// consistently and the mistyped ALIAS under it did not move.
+                                   if (!old_index.expression_list_ast || !index.expression_list_ast
+                                       || old_index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true)
+                                           != index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true))
+                                       return false;
 
-                                       /// The declaration carries the index type and its arguments,
-                                       /// which the expanded expression below does not: replacing the
-                                       /// index under its own name with a different tokenizer builds a
-                                       /// different index over the same expression.
-                                       if (!old_index.definition_ast || !index.definition_ast
-                                           || old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
-                                               != index.definition_ast->getTreeHash(/*ignore_aliases=*/true))
-                                           return false;
+                                   /// That expanded form is syntactic, so it does not move when a
+                                   /// column it reads is retyped. The resolved types do.
+                                   if (!std::ranges::equal(
+                                           old_index.data_types,
+                                           index.data_types,
+                                           [](const auto & old_type, const auto & new_type)
+                                           { return old_type->equals(*new_type); }))
+                                       return false;
 
-                                       /// The index is built over its expression with every ALIAS
-                                       /// expanded, so comparing that expanded form settles the index
-                                       /// declaration and the whole chain of ALIAS definitions beneath
-                                       /// it at once: editing any link rebuilds the index over
-                                       /// something else, even where the link itself is typed
-                                       /// consistently and the mistyped ALIAS under it did not move.
-                                       if (!old_index.expression_list_ast || !index.expression_list_ast
-                                           || old_index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true)
-                                               != index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true))
-                                           return false;
+                                   const auto old_mistyped = findMistypedAliasColumnsOfIndex(
+                                       old_index, old_metadata.columns, type_context);
 
-                                       /// That expanded form is syntactic, so it does not move when a
-                                       /// column it reads is retyped. The resolved types do.
-                                       if (!std::ranges::equal(
-                                               old_index.data_types,
-                                               index.data_types,
-                                               [](const auto & old_type, const auto & new_type)
-                                               { return old_type->equals(*new_type); }))
-                                           return false;
-
-                                       const auto old_mistyped = findMistypedAliasColumnsOfTextIndex(
-                                           old_index, old_metadata.columns, type_context);
-
-                                       /// Both halves of what makes each ALIAS mistyped have to match, not
-                                       /// just which columns they are. The declared type is one half: the
-                                       /// expanded expression and the resolved index types both come from the
-                                       /// expression, so neither moves when only the declaration is retyped.
-                                       /// The type the ALIAS expression itself produces is the other, and an
-                                       /// index expression that normalises it away - `arrayMap(x -> lower(x), a)`
-                                       /// over a retyped dependency - leaves every other comparison here equal
-                                       /// while the `CAST` the column is read through changes.
-                                       if (!std::ranges::equal(
-                                               old_mistyped,
-                                               mistyped_columns,
-                                               [](const auto & old_entry, const auto & new_entry)
-                                               {
-                                                   return old_entry.first == new_entry.first
-                                                       && old_entry.second->equals(*new_entry.second);
-                                               }))
-                                           return false;
-
-                                       return std::ranges::all_of(
-                                           mistyped_columns | std::views::keys,
-                                           [&](const String & column_name)
+                                   /// Both halves of what makes each ALIAS mistyped have to match, not
+                                   /// just which columns they are. The declared type is one half: the
+                                   /// expanded expression and the resolved index types both come from the
+                                   /// expression, so neither moves when only the declaration is retyped.
+                                   /// The type the ALIAS expression itself produces is the other, and an
+                                   /// index expression that normalises it away - `arrayMap(x -> lower(x), a)`
+                                   /// over a retyped dependency - leaves every other comparison here equal
+                                   /// while the `CAST` the column is read through changes.
+                                   if (!std::ranges::equal(
+                                           old_mistyped,
+                                           mistyped_columns,
+                                           [](const auto & old_entry, const auto & new_entry)
                                            {
-                                               const auto * old_column = old_metadata.columns.tryGet(column_name);
-                                               const auto * new_column = new_metadata.columns.tryGet(column_name);
-                                               return old_column && new_column
-                                                   && old_column->type->equals(*new_column->type);
-                                           });
-                                   });
+                                               return old_entry.first == new_entry.first
+                                                   && old_entry.second->equals(*new_entry.second);
+                                           }))
+                                       return false;
 
-                        if (!inherited)
-                        {
-                            const auto & [column_name, expression_type] = *mistyped_columns.begin();
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Text index {} is defined over ALIAS column {}, which is declared as {} while its "
-                                "expression produces {}. The column is read through a conversion to the declared "
-                                "type, so the index would never be used. Declare the column as {}, or index the "
-                                "expression directly.",
-                                backQuote(index.name),
-                                backQuote(column_name),
-                                new_metadata.columns.get(column_name).type->getName(),
-                                expression_type->getName(),
-                                expression_type->getName());
-                        }
+                                   return std::ranges::all_of(
+                                       mistyped_columns | std::views::keys,
+                                       [&](const String & column_name)
+                                       {
+                                           const auto * old_column = old_metadata.columns.tryGet(column_name);
+                                           const auto * new_column = new_metadata.columns.tryGet(column_name);
+                                           return old_column && new_column
+                                               && old_column->type->equals(*new_column->type);
+                                       });
+                               });
+
+                    if (!inherited)
+                    {
+                        const auto & [column_name, expression_type] = *mistyped_columns.begin();
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Index {} of type {} is defined over ALIAS column {}, which is declared as {} while "
+                            "its expression produces {}. The column is read through a conversion to the declared "
+                            "type, so the index would never be used. Declare the column as {}, or index the "
+                            "expression directly.",
+                            backQuote(index.name),
+                            index.type,
+                            backQuote(column_name),
+                            new_metadata.columns.get(column_name).type->getName(),
+                            expression_type->getName(),
+                            expression_type->getName());
                     }
                 }
             }
@@ -1521,7 +1545,8 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context);
+                local_context,
+                is_metadata_replay);
 
             projections_names.insert(projection.name);
         }
@@ -1707,7 +1732,8 @@ void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool is_metadata_replay)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1721,7 +1747,8 @@ void MergeTreeData::setProperties(
         attach,
         false,
         allow_nullable_key,
-        local_context);
+        local_context,
+        is_metadata_replay);
 
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
@@ -6243,7 +6270,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/ false,
+        /*allow_empty_sorting_key=*/ false,
+        allow_nullable_key,
+        local_context,
+        /*is_metadata_replay=*/ false,
+        alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

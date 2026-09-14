@@ -1870,6 +1870,10 @@ protected:
     /// after the operation (used only by `checkAlterIsPossible`, which runs before the live
     /// settings are updated). When null the live `getSettings()` is used. See the block in
     /// `checkProperties` validating `enable_block_number_column` / `enable_block_offset_column`.
+    /// `is_metadata_replay` marks the application of an already-committed replicated metadata
+    /// entry (`setTableStructure`). Validation that would reject the entry must not run there:
+    /// the entry cannot be taken back, and entries execute in version order, so a reject wedges
+    /// the replication queue behind it.
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
@@ -1877,6 +1881,7 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
+        bool is_metadata_replay = false,
         const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
@@ -1891,7 +1896,8 @@ protected:
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
-        ContextPtr local_context = nullptr);
+        ContextPtr local_context = nullptr,
+        bool is_metadata_replay = false);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
