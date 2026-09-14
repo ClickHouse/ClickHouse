@@ -14,6 +14,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
@@ -882,8 +883,12 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
         {
             const auto & type = primary_key.data_types.at(i);
 
-            // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
+            // The key columns are already in the stream: every caller runs the table's sorting expression right
+            // before this filter (`readByLayers`, `MergeTreeFinalMerge`), so refer to them by name instead of
+            // re-resolving the key AST. Resolved again in the query context, a key expression whose result type
+            // depends on a setting (`CAST(json.b, 'String')` under `cast_keep_nullable`) becomes a different
+            // function with different values, and rows the table sorted into a layer fall out of its filter.
+            ASTPtr pk_ast = make_intrusive<ASTIdentifier>(primary_key.column_names.at(i));
 
             // If PK is nullable, prepend a null mask column for > comparison.
             // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
@@ -1228,7 +1233,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 /// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
 /// is null (the open first/last interval) or when the pipe is empty. `pipe`'s streams must be sorted by
 /// the primary key.
-static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
+static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, ContextPtr context)
 {
     /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
     /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
@@ -1244,7 +1249,9 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     if (!filter_function || pipe.empty())
         return;
 
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
+    /// The filter refers to the key columns the sorting expression has already put into the stream, see
+    /// `buildFilters`, so it is resolved against the stream header and not against the table columns.
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, pipe.getHeader().getNamesAndTypesList());
     auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
     reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
@@ -1279,7 +1286,7 @@ Pipes readByLayers(
                                                   "filter values in ({}, {}]",
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
-        applyRangeFilterFromAST(merging_pipes[i], filters[i], description, primary_key, context);
+        applyRangeFilterFromAST(merging_pipes[i], filters[i], description, context);
     }
 
     return merging_pipes;
@@ -1294,7 +1301,7 @@ void addLayerRangeFilterToPipe(
     ContextPtr context)
 {
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
-    applyRangeFilterFromAST(pipe, filters.at(layer_index), "filter distributed FINAL layer", primary_key, context);
+    applyRangeFilterFromAST(pipe, filters.at(layer_index), "filter distributed FINAL layer", context);
 }
 
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
