@@ -18,15 +18,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [UInt8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt8(256) == 0;`.
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toUInt8OrZero`](#toUInt8OrZero).
@@ -74,15 +74,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toUInt16OrZero`](#toUInt16OrZero).
@@ -133,15 +133,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toUInt32OrZero`](#toUInt32OrZero).
@@ -191,15 +191,15 @@ Unsupported types:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toUInt64OrZero`](#toUInt64OrZero).
@@ -250,10 +250,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of UInt128, the result over or under flows.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt128OrZero`](#toUInt128OrZero).
@@ -302,10 +302,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of UInt256, the result over or under flows.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt256OrZero`](#toUInt256OrZero).
@@ -355,15 +355,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt8(128) == -128;`.
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toInt8OrZero`](#toInt8OrZero).
@@ -413,15 +413,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt16(32768) == -32768;`.
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toInt16OrZero`](#toInt16OrZero).
@@ -471,15 +471,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt32(2147483648) == -2147483648;`
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toInt32OrZero`](#toInt32OrZero).
@@ -529,15 +529,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-:::
+</Note>
 
-:::note
+<Note>
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-:::
+</Note>
 
 See also:
 - [`toInt64OrZero`](#toInt64OrZero).
@@ -588,10 +588,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of Int128, the result over or under flows.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt128OrZero`](#toInt128OrZero).
@@ -642,10 +642,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of Int256, the result over or under flows.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt256OrZero`](#toInt256OrZero).
@@ -832,17 +832,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
 
-:::note
+<Note>
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
+</Note>
 
-:::warning
+<Warning>
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal64 = "toDecimal64(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64 = {
@@ -888,17 +888,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
-:::note
+<Note>
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
+</Note>
 
-:::warning
+<Warning>
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32 = "toDecimal32(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32 = {
@@ -945,17 +945,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
 
-:::note
+<Note>
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
+</Note>
 
-:::warning
+<Warning>
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128 = "toDecimal128(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128 = {
@@ -1001,17 +1001,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
 
-:::note
+<Note>
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
+</Note>
 
-:::warning
+<Warning>
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal256 = "toDecimal256(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal256 = {
@@ -1164,7 +1164,7 @@ Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
-:::note Legacy `toTime`
+<Note title="Legacy `toTime`">
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
 time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -1172,7 +1172,7 @@ Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_t
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
@@ -1273,11 +1273,11 @@ SELECT toTime64(52225.123456, 6)
     FunctionDocumentation::Description description_toDateTime = R"(
 Converts an input value to type [DateTime](/reference/data-types/datetime).
 
-:::note
+<Note>
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
 If `expr` is a [String](/reference/data-types/string), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toDateTime = "toDateTime(expr[, time_zone])";
     FunctionDocumentation::Arguments arguments_toDateTime = {
@@ -1642,10 +1642,10 @@ Unsupported arguments (return `0`):
 - String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt8`](#toUInt8).
@@ -1691,10 +1691,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt16`](#toUInt16).
@@ -1740,10 +1740,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt32`](#toUInt32).
@@ -1789,10 +1789,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt64`](#toUInt64).
@@ -1838,10 +1838,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt128`](#toUInt128).
@@ -1887,10 +1887,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt256`](#toUInt256).
@@ -1936,10 +1936,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt8`](#toInt8).
@@ -1985,10 +1985,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt16`](#toInt16).
@@ -2034,10 +2034,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt32`](#toInt32).
@@ -2204,9 +2204,9 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 - Numeric values.
 
-:::note
+<Note>
 The function allows a silent loss of precision while converting from the string representation.
-:::
+</Note>
 
 See also:
 - [`toBFloat16`](#toBFloat16).
@@ -2524,9 +2524,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-:::note
+<Note>
 If the input value exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`, the function returns `0`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32OrZero = "toDecimal32OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32OrZero = {
@@ -2566,9 +2566,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-:::note
+<Note>
 If the input value exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, the function returns `0`.
-:::
+</Note>
 
 See also:
 - [`toDecimal64`](#toDecimal64).
@@ -2613,9 +2613,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-:::note
+<Note>
 If the input value exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, the function returns `0`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrZero = "toDecimal128OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128OrZero = {
@@ -2655,9 +2655,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-:::note
+<Note>
 If the input value exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, the function returns `0`.
-:::
+</Note>
 
 See also:
 - [`toDecimal256`](#toDecimal256).
@@ -2823,10 +2823,10 @@ Unsupported arguments (return `NULL`):
 - String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt8`](#toUInt8).
@@ -2873,10 +2873,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt16`](#toUInt16).
@@ -2923,10 +2923,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt32`](#toUInt32).
@@ -2973,10 +2973,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt64`](#toUInt64).
@@ -3023,10 +3023,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt128`](#toUInt128).
@@ -3073,10 +3073,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toUInt256`](#toUInt256).
@@ -3123,10 +3123,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt8`](#toInt8).
@@ -3173,10 +3173,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt16`](#toInt16).
@@ -3223,10 +3223,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt32`](#toInt32).
@@ -3273,10 +3273,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt64`](#toInt64).
@@ -3323,10 +3323,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int128](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt128`](#toInt128).
@@ -3373,10 +3373,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
-:::note
+<Note>
 If the input value cannot be represented within the bounds of [Int256](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-:::
+</Note>
 
 See also:
 - [`toInt256`](#toInt256).
@@ -3424,9 +3424,9 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values.
 - Numeric values.
 
-:::note
+<Note>
 The function allows a silent loss of precision while converting from the string representation.
-:::
+</Note>
 
 See also:
 - [`toBFloat16`](#toBFloat16).

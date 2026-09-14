@@ -80,8 +80,7 @@ bool injectRequiredColumnsRecursively(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
     Names & columns,
-    NameSet & required_columns,
-    NameSet & injected_columns)
+    NameSet & required_columns)
 {
     /// This is needed to prevent stack overflow in case of cyclic defaults or
     /// huge AST which for some reason was not validated on parsing/interpreter
@@ -95,7 +94,6 @@ bool injectRequiredColumnsRecursively(
         {
             columns.emplace_back(name);
             required_columns.emplace(name);
-            injected_columns.emplace(name);
         }
     };
 
@@ -103,8 +101,13 @@ bool injectRequiredColumnsRecursively(
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
-        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+        /// The condition has to match IMergeTreeReader::getStorageAndSubcolumnNameInPart, which decides
+        /// the name the column is actually read under.
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part,
+                [&](const auto & name) { return data_part_info_for_reader.getColumns().contains(name); }))
+        {
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+        }
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
@@ -138,8 +141,8 @@ bool injectRequiredColumnsRecursively(
         }
     }
 
-    /// Column doesn't have default value and don't exist in part
-    /// don't need to add to required set.
+    /// The column is not in the part, so it will be filled from its default. Whatever that default
+    /// expression reads has to be added to `columns` as well; with no default there is nothing to add.
     auto column_default = storage_snapshot->getDefault(column_name);
 
     /// A subcolumn does not have its own default expression: it is extracted from the evaluated
@@ -160,26 +163,25 @@ bool injectRequiredColumnsRecursively(
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            options, columns, required_columns);
 
     return result;
-}
-
 }
 
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
+  * Throws when the part holds data that neither the table structure nor a pending conversion
+  * accounts for, since such a part must not be read as rows of defaults.
   */
-NameSet injectRequiredColumns(
+void injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
-    NameSet injected_columns;
 
     bool have_at_least_one_physical_column = false;
     AlterConversionsPtr alter_conversions;
@@ -206,38 +208,50 @@ NameSet injectRequiredColumns(
             data_part_info_for_reader,
             options,
             columns,
-            required_columns,
-            injected_columns);
+            required_columns);
     }
 
-    /** Add a column of the minimum size.
-        * Used in case when no column is needed or files are missing, but at least you need to know number of rows.
-        * Adds to the columns.
-        */
+    /// No requested column has a file in this part, possibly because none was requested. Nothing is
+    /// injected in their place: a read of no columns still reports the right number of rows, taken
+    /// from the index granularity. What the part is checked for instead is data that neither the
+    /// table structure nor a pending conversion accounts for.
     if (!have_at_least_one_physical_column)
     {
-        /// Use the intersection of part columns and metadata columns to find the minimum size column.
-        /// The column must exist both physically in the part (to be readable) and in the current metadata
-        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
-        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
-        const auto & part_columns = data_part_info_for_reader.getColumns();
-        NamesAndTypesList available_columns;
-        for (const auto & column : part_columns)
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        /// Reading the part as rows of defaults is correct only when the structure and the pending
+        /// conversions account for everything it holds: then each requested column is legitimately
+        /// absent. A part column that is neither in the structure nor being dropped is unexplained
+        /// data -- a part attached after the schema moved on, say -- and defaults for it would hide
+        /// rows that exist on disk (issue #79110).
+        for (const auto & column : data_part_info_for_reader.getColumns())
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            /// A pending rename has not reached the part's files yet, so the structure knows such a
+            /// column under the name the rename gives it. Mapped forward, unlike everywhere else in
+            /// this file, because here it is the part's name that is in hand.
+            auto name_in_metadata = column.name;
+            if (alter_conversions && alter_conversions->columnHasNewName(name_in_metadata))
+                name_in_metadata = alter_conversions->getColumnNewName(name_in_metadata);
+
+            if (storage_snapshot->tryGetColumn(options, name_in_metadata))
+                continue;
+
+            /// A drop that followed a rename is recorded under the column's name in the part,
+            /// `addMutationCommand` having resolved it through the rename and erased that mapping,
+            /// so the part-side name is the only one to ask about.
+            if (alter_conversions && alter_conversions->isColumnDropped(column.name, share_nested))
+                continue;
+
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Part {} of table {} holds column {}, which is not part of the table structure and "
+                "is not being dropped, so the part cannot be read",
+                data_part_info_for_reader.getPartName(), data_part_info_for_reader.getTableName(), column.name);
         }
-
-        if (available_columns.empty())
-            available_columns = part_columns;
-
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
-        columns.push_back(minimum_size_column_name);
-        /// correctly report added column
-        injected_columns.insert(columns.back());
     }
+}
 
-    return injected_columns;
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
@@ -510,11 +524,11 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 step_column_names.push_back(name);
         }
 
-        const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
-
-        /// If part has non-adaptive granularity we always have to read at least one column
-        /// because we cannot determine the correct size of the last granule without reading data.
-        if (!step_column_names.empty() || !has_adaptive_granularity)
+        /// A step that needs no column of its own used to read one anyway when the granularity was
+        /// not adaptive, the last granule being assumed full. `fixFromRowsCount` corrects it at part
+        /// load and at write finalize, so the row count no longer costs a column read, and the call
+        /// above has already checked this part for data the structure does not account for.
+        if (!step_column_names.empty())
         {
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,

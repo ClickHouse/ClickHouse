@@ -2069,6 +2069,14 @@ public:
         bound_statement.reset();
     }
 
+    void dropUnnamedStatementAndPortal()
+    {
+        /// The unnamed prepared statement is the one stored under the empty name, and the
+        /// single bind slot is the unnamed portal (see `attachBindQuery`).
+        statements.erase("");
+        resetBindQuery();
+    }
+
 private:
     struct PreparedStatement
     {

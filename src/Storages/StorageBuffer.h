@@ -100,6 +100,8 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
+    size_t flushBufferedRowsBeforeShutdown() override;
+
     void flushAndPrepareForShutdown() override;
     bool optimize(
         const ASTPtr & query,

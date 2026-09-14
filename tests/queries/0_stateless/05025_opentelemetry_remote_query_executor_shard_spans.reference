@@ -10,3 +10,8 @@ exactly one fragment span per shard: OK	fragment span attributes: OK
 sync span covers the remote sleep: OK
 === cancellation ===
 buffered attributes flushed on cancellation: OK
+killed fragment is UNSET and tagged cancelled by initiator: OK
+=== LIMIT cancels the shards, async_socket_for_remote=1 ===
+both fragments are UNSET and tagged cancelled by limit: OK
+=== LIMIT cancels the shards, async_socket_for_remote=0 ===
+both fragments are UNSET and tagged cancelled by limit: OK

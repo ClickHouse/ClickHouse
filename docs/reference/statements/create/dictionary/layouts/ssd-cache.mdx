@@ -11,6 +11,8 @@ doc_type: 'reference'
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and does not query the source. See [cache](/reference/statements/create/dictionary/layouts/cache).
+
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
 <Tabs>

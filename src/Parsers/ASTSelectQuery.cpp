@@ -73,6 +73,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    hash_state.update(limit_after_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -275,17 +276,40 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if (limitLength())
+    if (limitLength() || limitAfter() || limitUntil())
     {
-        ostr << s.nl_or_ws << indent_str << "LIMIT ";
+        ostr << s.nl_or_ws << indent_str << "LIMIT";
         if (limitOffset())
         {
+            ostr << " ";
             limitOffset()->format(ostr, s, state, frame);
             ostr << ", ";
         }
-        limitLength()->format(ostr, s, state, frame);
+        else if (limitLength())
+        {
+            ostr << " ";
+        }
+        if (limitLength())
+            limitLength()->format(ostr, s, state, frame);
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
+        if (limitAfter())
+        {
+            ostr << s.nl_or_ws << indent_str << " AFTER ";
+            limitAfter()->format(ostr, s, state, frame);
+            if (limit_after_all)
+                ostr << " ALL";
+            if (limitUntil())
+            {
+                ostr << s.nl_or_ws << indent_str << " UNTIL ";
+                limitUntil()->format(ostr, s, state, frame);
+            }
+        }
+        else if (limitUntil())
+        {
+            ostr << s.nl_or_ws << indent_str << " UNTIL ";
+            limitUntil()->format(ostr, s, state, frame);
+        }
     }
     else if (limitOffset())
     {
@@ -595,6 +619,8 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_BY,
         Expression::LIMIT_OFFSET,
         Expression::LIMIT_LENGTH,
+        Expression::LIMIT_AFTER,
+        Expression::LIMIT_UNTIL,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
     };
@@ -650,6 +676,19 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
 }
 
+bool astContainsArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 void ASTSelectQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SelectQuery");
@@ -678,6 +717,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("limit_with_ties", true);
     if (limit_by_all)
         w.writeBool("limit_by_all", true);
+    if (limit_after_all)
+        w.writeBool("limit_after_all", true);
 
     w.writeChild("with", with());
     w.writeChild("select", select());
@@ -696,6 +737,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("limit_by", limitBy());
     w.writeChild("limit_offset", limitOffset());
     w.writeChild("limit_length", limitLength());
+    w.writeChild("limit_after", limitAfter());
+    w.writeChild("limit_until", limitUntil());
     w.writeChild("settings", settings());
     w.writeChild("interpolate", interpolate());
 }
@@ -717,6 +760,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     order_by_all = r.getBool("order_by_all");
     limit_with_ties = r.getBool("limit_with_ties");
     limit_by_all = r.getBool("limit_by_all");
+    limit_after_all = r.getBool("limit_after_all");
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
     {
@@ -773,6 +817,8 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExprList("limit_by", Expression::LIMIT_BY);
     setExpr("limit_offset", Expression::LIMIT_OFFSET);
     setExpr("limit_length", Expression::LIMIT_LENGTH);
+    setExpr("limit_after", Expression::LIMIT_AFTER);
+    setExpr("limit_until", Expression::LIMIT_UNTIL);
     /// `settings` (`SELECT ... SETTINGS`) is parser-produced as an `ASTSetQuery`; `QueryTreeBuilder`
     /// does `select_settings->as<ASTSetQuery &>()`, so reject any other node type here.
     if (auto settings_child = r.readChildOfType<ASTSetQuery>("settings"))
@@ -877,6 +923,15 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// Reject the parser-impossible shape at the JSON boundary.
     if (limit_with_ties && !orderBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
+
+    /// `ALL` is a modifier of `LIMIT AFTER`; `formatImpl` only emits it after the `AFTER` expression.
+    if (limit_after_all && !limitAfter())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_after_all requires a LIMIT AFTER expression during AST JSON deserialization");
+
+    /// `ParserSelectQuery` never produces an offset without a length next to a range, and `formatImpl`
+    /// has no syntax for that shape.
+    if (limitOffset() && !limitLength() && (limitAfter() || limitUntil()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_offset requires a LIMIT length clause together with LIMIT AFTER/UNTIL during AST JSON deserialization");
 }
 
 }

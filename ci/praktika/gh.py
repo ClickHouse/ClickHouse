@@ -575,6 +575,30 @@ class GH:
         return ""
 
     @classmethod
+    def _json_loads_paginated(cls, output):
+        """Parse the output of a ``gh api --paginate`` call into a single list.
+
+        ``gh api --paginate`` prints one JSON document per page, so on a
+        resource with more than one page the output is a concatenation of
+        several documents and ``json.loads`` fails with ``Extra data``. Decode
+        the documents one after another and concatenate them, which also
+        handles the single-page case unchanged.
+        """
+        decoder = json.JSONDecoder()
+        result = []
+        position = 0
+        while position < len(output):
+            if output[position].isspace():
+                position += 1
+                continue
+            page, position = decoder.raw_decode(output, position)
+            if isinstance(page, list):
+                result.extend(page)
+            else:
+                result.append(page)
+        return result
+
+    @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
         """Run a GraphQL query via ``gh api graphql`` and return parsed JSON."""
         parts = [f"gh api graphql -f query={shlex.quote(query)}"]
@@ -934,7 +958,7 @@ class GH:
         output = cls.get_output_with_retries(cmd_list, verbose=verbose)
         if output:
             try:
-                for comment in json.loads(output):
+                for comment in cls._json_loads_paginated(output):
                     if TAG_START in comment["body"] and TAG_END in comment["body"]:
                         comment_id = comment["id"]
                         if verbose:
@@ -1005,7 +1029,7 @@ class GH:
             )
             return False
         try:
-            comments = json.loads(output)
+            comments = cls._json_loads_paginated(output)
         except json.JSONDecodeError as e:
             print(
                 f"WARNING: failed to parse gh api response as JSON ({e}); "
@@ -1326,7 +1350,7 @@ class GH:
             print("ERROR: Failed to fetch commit statuses")
             return None
         try:
-            statuses_list = json.loads(output)
+            statuses_list = cls._json_loads_paginated(output)
         except json.JSONDecodeError as ex:
             print(f"ERROR: Failed to parse commit statuses: {ex}")
             return None

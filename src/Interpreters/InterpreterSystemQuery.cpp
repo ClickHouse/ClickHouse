@@ -1480,6 +1480,10 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);

@@ -3352,6 +3352,34 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
+/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
+/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
+static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
+{
+    return castBothTypes(from, to, [](const auto & left, const auto & right)
+    {
+        using LeftDataType = std::decay_t<decltype(left)>;
+        using RightDataType = std::decay_t<decltype(right)>;
+
+        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        {
+            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+            {
+                if constexpr (is_floating_point<typename LeftDataType::FieldType>
+                    && !is_floating_point<typename RightDataType::FieldType>)
+                    return isBool(right.getPtr());
+                return true;
+            }
+            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                return !is_floating_point<typename LeftDataType::FieldType>;
+            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+        }
+        return false;
+    });
+}
+
 bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type)
 {
     if (types.empty())
@@ -3360,25 +3388,7 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
     if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
         return false;
 
-    return castBothTypes(
-        types[0].get(),
-        result_type.get(),
-        [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-            {
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-            }
-            return false;
-        });
+    return isCompilableNumericConversion(types[0].get(), result_type.get());
 }
 
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
@@ -3480,21 +3490,7 @@ bool FunctionCast::isCompilable() const
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
         return false;
 
-    return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-        {
-            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-        }
-        return false;
-    });
+    return isCompilableNumericConversion(denull_input_type.get(), denull_result_type.get());
 }
 
 llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const

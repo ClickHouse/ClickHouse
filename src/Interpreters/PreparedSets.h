@@ -74,6 +74,15 @@ public:
     /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
     SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
 
+    /// Whether the contents of the set can change while the query runs, without the query doing it.
+    /// Today that means an `ENGINE = Set` table (`SharedSet` in ClickHouse Cloud): `StorageSet::insertBlock`
+    /// inserts into the very `Set` object held here, so a concurrent `INSERT` is visible to a query that
+    /// already started. A set the query builds for itself is filled once and frozen. A caller that derives
+    /// a decision from the set and never revisits it - index analysis that prunes granules, say - must
+    /// refuse a mutable one. Deliberately abstract: a new kind of set has to answer this before index
+    /// analysis will trust it, rather than inheriting "immutable" by omission.
+    virtual bool isMutableDuringQuery() const = 0;
+
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
@@ -87,7 +96,10 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
+    /// `is_mutable_during_query_` says whether `set_` is a table's own set, which keeps changing under
+    /// the query, or one the query built for itself. Not derived from `storage_id_`: the two agree
+    /// today, but a storage id is an identity, not a statement about who may write to the set.
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id, bool is_mutable_during_query_);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -95,12 +107,15 @@ public:
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
 
+    bool isMutableDuringQuery() const override { return is_mutable_during_query; }
+
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
     Hash hash;
     ASTPtr ast;
     std::optional<StorageID> storage_id;
     SetPtr set;
+    bool is_mutable_during_query;
 };
 
 using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
@@ -114,6 +129,9 @@ public:
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+
+    /// Filled from the literal list in the constructor and never touched again.
+    bool isMutableDuringQuery() const override { return false; }
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
@@ -196,6 +214,10 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
+    /// The query runs the subquery that fills this set, once; nothing outside the query can write to it.
+    /// Whether it is filled *yet* is a different question, answered by `get`.
+    bool isMutableDuringQuery() const override { return false; }
+
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
@@ -270,6 +292,8 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
+    /// The set lives in a table (`ENGINE = Set`, or `SharedSet` in ClickHouse Cloud), so it is mutable:
+    /// both hand over the table's own `Set` object, which an `INSERT` writes into in place.
     FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 

@@ -69,7 +69,7 @@ import subprocess
 import traceback
 from typing import Dict, List, Optional
 
-from ci.jobs.scripts.log_cluster import LogCluster
+from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -206,6 +206,8 @@ class Section:
 
 class Db:
     def __init__(self):
+        # CI_LOGS_USER only for local runs
+        user = os.environ.get("CI_LOGS_USER", BUILD_PROFILE_USER)
         # This job only reads, so it goes to the read-only sub-service of the
         # CI logs cluster (LogCluster.READONLY_URL) rather than to the endpoint
         # that ingests the logs and profiles of the whole CI fleet.
@@ -215,15 +217,15 @@ class Db:
         if url:
             if not url.startswith("http"):
                 url = f"https://{url}:8443"
-            password = os.environ.get("CI_LOGS_PASSWORD", os.environ.get("CI_LOGS_PASWORD", ""))
+            password = os.environ.get("CI_LOGS_PASSWORD", "")
             self._cluster = LogCluster(
                 url=url,
-                user=os.environ.get("CI_LOGS_USER", "default"),
+                user=user,
                 password=password,
                 readonly=True,
             )
         else:
-            self._cluster = LogCluster(readonly=True)
+            self._cluster = LogCluster(readonly=True, user=user)
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts. Raises on failure."""
@@ -1501,7 +1503,12 @@ def update_comment(body: str, only_update: bool = False) -> None:
 
 
 def run_comparison(db, info, args, pr_number: int, pr_sha: str):
-    """Resolve both sides, compare every aspect and render the comment body."""
+    """Resolve both sides, compare every aspect and render the comment body.
+
+    Returns None when the PR side has no build profile data to compare.
+    """
+    if not has_pr_data(db, pr_number, pr_sha, info.repo_name):
+        return None
     master_shas = get_master_shas(info)
     if not master_shas:
         if not args.local:
@@ -1569,9 +1576,29 @@ def main():
         Result.create_from(status=Result.Status.SKIPPED, info="Not a PR run").complete_job()
         return
 
-    db = Db()
+    try:
+        db = Db()
+        comparison = run_comparison(db, info, args, pr_number, pr_sha)
+    except Exception as e:
+        # The tagged comment is pinned to the pull request, not to a commit, so
+        # every exit path has to refresh it: the cluster handle, any of the
+        # baseline lookups, run resolutions or cluster reads can fail-close
+        # after an earlier commit already posted a comparison, and leaving that
+        # one in place would present a previous revision - possibly one the head
+        # reverted - as the current comparison. only_update, like the no-data
+        # path: a pull request that never got a comparison does not need one to
+        # say the job failed, the red check says it.
+        if not args.local:
+            update_comment(
+                f"### Build profile diff ({CHECK_NAME})\n\n"
+                f"Comparing commit `{pr_sha}` with master failed: "
+                f"{md_code(f'{type(e).__name__}: {e}'.replace(chr(10), ' '))}.\n\n"
+                "See the job log for details.",
+                only_update=True,
+            )
+        raise
 
-    if not has_pr_data(db, pr_number, pr_sha, info.repo_name):
+    if comparison is None:
         info_text = f"No {CHECK_NAME} build profile data for commit {pr_sha} - the build was skipped, reused from cache, or predates profile upload"
         print(info_text)
         if args.local:
@@ -1584,26 +1611,7 @@ def main():
         Result.create_from(status=Result.Status.OK, info=info_text).complete_job()
         return
 
-    try:
-        body, sections, base_sha = run_comparison(db, info, args, pr_number, pr_sha)
-    except Exception as e:
-        # The tagged comment is pinned to the pull request, not to a commit, so
-        # every exit path has to refresh it: any of the baseline lookups, run
-        # resolutions or cluster reads can fail-close after an earlier commit
-        # already posted a comparison, and leaving that one in place would
-        # present a previous revision - possibly one the head reverted - as the
-        # current comparison. only_update, as above: a pull request that never
-        # got a comparison does not need one to say the job failed, the red
-        # check says it.
-        if not args.local:
-            update_comment(
-                f"### Build profile diff ({CHECK_NAME})\n\n"
-                f"Comparing commit `{pr_sha}` with master failed: "
-                f"{md_code(f'{type(e).__name__}: {e}'.replace(chr(10), ' '))}.\n\n"
-                "See the job log for details.",
-                only_update=True,
-            )
-        raise
+    body, sections, base_sha = comparison
 
     significant = [s for s in sections if s.significant]
 

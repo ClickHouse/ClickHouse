@@ -708,6 +708,19 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
     return true;
 }
 
+/// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.
+static const ActionsDAG::Node & addBooleanCondition(
+    const ActionsDAG::Node & node,
+    const DataTypePtr & result_type,
+    ActionsDAG::Nodes & additional_nodes,
+    const ContextPtr & context)
+{
+    ActionsDAG tmp_dag;
+    const auto & res = tmp_dag.addBooleanCondition(node, result_type, context);
+    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+    return res;
+}
+
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, const ContextPtr & context, bool allow_partial_result)
 {
@@ -737,33 +750,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
-                {
-                    /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
-                    /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
-                    /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
-                    ///
-                    /// Use removeLowCardinalityAndNullable to get the nested scalar type's default
-                    /// (zero, not NULL).  DataTypeNullable::getDefault() returns Null(), but
-                    /// notEquals(x, NULL) always returns NULL (SQL three-valued logic), which is
-                    /// treated as false and would incorrectly filter out all rows/parts. See
-                    /// #101433 and #103049.  A LowCardinality wrapper must be stripped as well —
-                    /// removeNullable alone leaves LowCardinality(Nullable(X)) unchanged because
-                    /// the outer type is LowCardinality (not Nullable), so its getDefault falls
-                    /// through to the dictionary type's default which is Null again. See #104393.
-                    /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
-                    /// Nothing has no getDefault, so fall back to the Nullable default
-                    /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
-                    ActionsDAG tmp_dag;
-                    auto nested_type = removeLowCardinalityAndNullable(res->result_type);
-                    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
-                        ? res->result_type->getDefault()
-                        : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
-                    auto ne_func = FunctionFactory::instance().get("notEquals", context);
-                    res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
-                    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
-                }
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
 
                 return res;
             }
@@ -787,10 +774,15 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 {
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
+                    /// An atom whose type has no boolean interpretation is dropped, so the hint
+                    /// contributes no filter rather than throwing or inventing a truth value.
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
+                    {
+                        const auto * child_copy
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result);
+                        if (child_copy && child_copy->result_type->canBeUsedInBooleanContext())
                             atoms.push_back(child_copy);
+                    }
 
                     if (!atoms.empty())
                     {
@@ -803,10 +795,11 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
-                        if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag.addCast(*res, node->result_type, {}, context);
-
                         additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
+
+                        if (!res->result_type->equals(*node->result_type))
+                            res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
                         return res;
                     }
                 }

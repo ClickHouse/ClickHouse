@@ -17,6 +17,7 @@
 #include <Interpreters/TraceLog.h>
 #include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Dwarf.h>
@@ -78,6 +79,8 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of sampling moment."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision."},
@@ -218,6 +221,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     const auto & hostname = getFQDNOrHostName();
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    const std::string_view version = VERSION_STRING;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(version.data(), version.size());
+    const std::string_view system_processor = SYSTEM_PROCESSOR;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);

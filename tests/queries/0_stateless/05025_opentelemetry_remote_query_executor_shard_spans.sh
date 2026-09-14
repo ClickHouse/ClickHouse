@@ -211,3 +211,76 @@ poll_spans "
     where finish_date >= yesterday() and trace_id = t" "1" \
 || exit 1
 echo "buffered attributes flushed on cancellation: OK"
+
+# A fragment cancelled by the initiator is neither a success nor a failure: its status stays
+# UNSET (so it does not skew success-latency statistics) and it is tagged
+# `clickhouse.cancelled` with the reason `initiator`. The query also produces a short OK span
+# for the auxiliary structure inference query of remote() over a view, hence the counts.
+${CLICKHOUSE_CLIENT} -q "
+    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+    select if(countIf(status_code = 'UNSET'
+                      and attribute['clickhouse.cancelled'] = '1'
+                      and attribute['clickhouse.cancel_reason'] = 'initiator') = 1
+                  and countIf(status_code = 'ERROR') = 0
+                  and countIf(attribute['clickhouse.cancelled'] != '' and status_code != 'UNSET') = 0,
+              'killed fragment is UNSET and tagged cancelled by initiator: OK',
+              'killed fragment is UNSET and tagged cancelled by initiator: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
+    from system.opentelemetry_span_log
+    where finish_date >= yesterday() and trace_id = t
+      and operation_name = 'RemoteQueryExecutor::execute'
+      and attribute['clickhouse.initial_query_id'] = '$kill_query_id'
+    format TSV
+"
+
+# LIMIT: the initiator stops reading once it has enough rows and cancels the shards through
+# finish(), which sends the cancel and drains the connections. That drain ends with the
+# server's EndOfStream, but the fragment did not deliver its full result, so the span must not
+# be OK: it stays UNSET, tagged `clickhouse.cancelled` with the reason `limit`. Checked on the
+# asynchronous path (fiber span) and on the synchronous path (span closed by finish() itself).
+# The LIMIT is also pushed down to the shards, so each shard streams 20 one-row blocks, one
+# every 0.2 s, and finishes on its own after 4 s. The initiator has its 20 rows from the two
+# shards together after ~2 s, and cancels both while they are still streaming. (A shard that
+# has not sent anything yet cannot be cancelled this way: its source waits on the socket and
+# is not re-scheduled until data arrives, hence the row-by-row streaming instead of one slow
+# block.)
+${CLICKHOUSE_CLIENT} -q "drop table if exists limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table if exists dist_limit_src"
+${CLICKHOUSE_CLIENT} -q "create view limit_src as select number from numbers(20)"
+${CLICKHOUSE_CLIENT} -q "create table dist_limit_src (number UInt64) engine = Distributed(test_cluster_two_shards, currentDatabase(), limit_src)"
+
+for async_socket in 1 0; do
+    echo "=== LIMIT cancels the shards, async_socket_for_remote=$async_socket ==="
+
+    trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+    limit_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-limit-$async_socket"
+
+    ${CLICKHOUSE_CLIENT} \
+        --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+        --async_socket_for_remote="$async_socket" \
+        --prefer_localhost_replica=0 \
+        --max_block_size=1 \
+        --max_threads=1 \
+        --query_id "$limit_query_id" \
+        --query "select * from dist_limit_src where sleepEachRow(0.2) = 0 limit 20 format Null"
+
+    poll_spans "$(fragment_counts_query "$trace_id" "$limit_query_id")" "2 2 2 2 2" || exit 1
+
+    ${CLICKHOUSE_CLIENT} -q "
+        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+        select if(countIf(status_code = 'UNSET'
+                          and attribute['clickhouse.cancelled'] = '1'
+                          and attribute['clickhouse.cancel_reason'] = 'limit') = 2
+                      and count() = 2,
+                  'both fragments are UNSET and tagged cancelled by limit: OK',
+                  'both fragments are UNSET and tagged cancelled by limit: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
+        from system.opentelemetry_span_log
+        where finish_date >= yesterday() and trace_id = t
+          and operation_name = 'RemoteQueryExecutor::execute'
+          and attribute['clickhouse.initial_query_id'] = '$limit_query_id'
+        format TSV
+    "
+done
+
+${CLICKHOUSE_CLIENT} -q "drop table dist_limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table dist_over_two_shards"

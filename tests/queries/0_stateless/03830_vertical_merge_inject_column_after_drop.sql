@@ -2,13 +2,15 @@
 -- Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 -- Vertical merge should not fail when a dropped column is still physically present in parts.
--- `injectRequiredColumns` must not pick a dropped column as the minimum-size column to inject.
+-- `injectRequiredColumns` must treat such a column as accounted for by the pending mutation.
 --
 -- The bug triggers during vertical merge when reading a "gathering" column that has no
 -- physical file in the part (added after insertion with constant DEFAULT). Since the default
--- has no column dependencies, `have_at_least_one_physical_column` remains false, and
--- `injectRequiredColumns` picks the minimum-size physical column. Without the fix, it may
--- pick a dropped column still on disk, causing `NO_SUCH_COLUMN_IN_TABLE`.
+-- has no column dependencies, `have_at_least_one_physical_column` remains false and the part is
+-- examined on its own. The original defect was that the examination injected the minimum-size
+-- physical column and could pick a dropped column still on disk, which the caller cannot resolve
+-- against the metadata: `NO_SUCH_COLUMN_IN_TABLE`. Nothing is injected any more, and the part must
+-- still be accepted -- a dropped column is explained by the pending mutation.
 
 DROP TABLE IF EXISTS data;
 
@@ -41,8 +43,8 @@ ALTER TABLE data DROP COLUMN h;
 -- Trigger vertical merge. The merge reads original parts (which still have `h`),
 -- applying the DROP on-the-fly via alter_conversions. Reading the gathering column
 -- `value` (not physical, constant default) makes `have_at_least_one_physical_column`
--- false, so `injectRequiredColumns` picks the minimum-size column from part's columns.
--- Without the fix, it picks dropped `h` → `NO_SUCH_COLUMN_IN_TABLE`.
+-- false, so the part itself is examined: `key` is in the structure and `h` is being dropped,
+-- so the merge proceeds.
 OPTIMIZE TABLE data FINAL;
 
 SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
