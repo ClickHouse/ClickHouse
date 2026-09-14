@@ -427,7 +427,19 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                     workspace.aggregate_function->getName());
             }
         }
-
+        else if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
+            && workspace.aggregate_function->allocatesMemoryInArena())
+        {
+            /// The hole moves with the current row, so the state is rebuilt for every row of the
+            /// partition. Destroying a state does not give back what it took from the arena, which
+            /// is only released when the partition ends, so a function that allocates there would
+            /// hold one state per row of the partition at once. Refuse rather than run out of
+            /// memory on a large partition; the states of the other functions are of a fixed size,
+            /// and they are what the rebuild was written for.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Window frame exclusion is not supported for function '{}', which allocates memory in an arena",
+                workspace.aggregate_function->getName());
+        }
     }
 }
 
