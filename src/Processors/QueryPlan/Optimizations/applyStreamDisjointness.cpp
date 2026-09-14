@@ -111,10 +111,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         const auto & size_limits = distinct->getSetSizeLimits();
         const bool has_size_limits = size_limits.max_rows != 0 || size_limits.max_bytes != 0;
 
-        /// A deserialized step no longer knows whether a downstream `LIMIT`, `OFFSET` or `LIMIT BY` on
-        /// the initiator consumes the order of its output, and this fragment is being optimized on a
-        /// follower. Fail close and keep the merge, as `scatterStreamsByHash` does for the same reason.
-        if (settings.distinct_partitions_independently && !has_size_limits && distinct->isOrderGuardStateKnown()
+        if (settings.distinct_partitions_independently && !has_size_limits && !distinct->mustPreserveInputOrder()
             && partitionDeterminedByKeys(property, distinct->getColumnNames()))
         {
             distinct->skipStreamMerging();
