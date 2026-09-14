@@ -36,11 +36,11 @@ ASTPtr ICompressionCodec::makeCodecDescription(const String & name, const ASTs &
     return makeASTFunction(name, arguments);
 }
 
-ASTPtr ICompressionCodec::getFullCodecDesc() const
+ASTPtr ICompressionCodec::getFullCodecDescription() const
 {
     if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(this))
-        return multiple->getFullCodecDesc();
-    return makeASTFunction("CODEC", getCodecDesc());
+        return multiple->getFullCodecDescription();
+    return makeASTFunction("CODEC", getCodecDescription());
 }
 
 UInt64 ICompressionCodec::getHash() const
@@ -90,7 +90,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
             "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) for codec '{}'",
             final_decompressed_size,
             decompressed_size,
-            getCodecDesc()->formatForErrorMessage());
+            getCodecDescription()->formatForErrorMessage());
 
     return final_decompressed_size;
 }
