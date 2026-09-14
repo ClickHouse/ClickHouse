@@ -12,9 +12,11 @@ BASE_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_H
 DB="${CLICKHOUSE_DATABASE}"
 TABLE="put_table_05030"
 ROUNDTRIP_TABLE="put_table_05030_roundtrip"
+BASIC_SNAPPY_PAYLOAD=$(mktemp "${CLICKHOUSE_TMP}/05030_snappy_payload.XXXXXX")
 
 cleanup()
 {
+    rm -f "${BASIC_SNAPPY_PAYLOAD}"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.${TABLE}"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.${ROUNDTRIP_TABLE}"
 }
@@ -28,8 +30,18 @@ echo "===== PUT table upload with Snappy ====="
 echo "-- snappy compression suffix decompresses the request body"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compression=snappy&snappy_mode=basic" \
     -d "SELECT concat('17,\"snappy\"', char(10)) FORMAT RawBLOB" \
-    | ${CLICKHOUSE_CURL} -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
-        "${BASE_URL}/${DB}/${TABLE}.CSV.snappy"
+    > "${BASIC_SNAPPY_PAYLOAD}"
+${CLICKHOUSE_CURL} -sS -X PUT -H 'Content-Type: text/csv' --data-binary @"${BASIC_SNAPPY_PAYLOAD}" \
+    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 17 AND b = 'snappy'" | grep -qx '1'
+
+echo "-- an explicit HTTP Snappy header keeps framed mode"
+if ${CLICKHOUSE_CURL} -fsS -o /dev/null -X PUT -H 'Content-Type: text/csv' -H 'Content-Encoding: snappy' \
+    --data-binary @"${BASIC_SNAPPY_PAYLOAD}" \
+    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy?snappy_mode=basic"; then
+    echo "basic Snappy payload was accepted as framed HTTP Snappy"
+    exit 1
+fi
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 17 AND b = 'snappy'" | grep -qx '1'
 
 echo "-- matching path-table reads and uploads use the same default Snappy mode"

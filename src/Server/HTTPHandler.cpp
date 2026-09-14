@@ -2073,19 +2073,49 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
     /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
     boost::algorithm::trim(predefined_query);
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     /// Whether this handler's query can read the request body at all. Computed once here, at config load time,
     /// and not per request: the HTTP layer needs it to decide whether an unframed body-carrying request (in
     /// particular a `DELETE`, which is otherwise presented to the handler as an empty body stream) must be
-    /// rejected with `411 Length Required` instead of running the query with a silently dropped body.
-    /// Parse failures are not swallowed - the query has to be parseable anyway, `analyzeReceiveQueryParams`
-    /// above already throws on a malformed one.
+    /// rejected with `411 Length Required` instead of running the query with a silently dropped body. Parse the
+    /// configured query once and use the resulting AST for both body analysis and receive-parameter analysis.
     const char * query_begin = predefined_query.data();
     const char * query_end = query_begin + predefined_query.size();
     ParserQuery parser(query_end);
     ASTPtr predefined_query_ast = parseQuery(
-        parser, query_begin, query_end, "predefined_query_handler query", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        parser,
+        query_begin,
+        query_end,
+        "predefined_query_handler query",
+        0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query_ast);
+
+    /// Keep config-defined handlers subject to the same body-input checks as SQL-defined handlers. A wrapped
+    /// body-reading query would silently lose its data, while binding `_request_body` alongside a query input
+    /// would consume the single request body before the query could read it.
+    if (queryWrapsBodyConsumingStatement(*predefined_query_ast))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Configured predefined query handler `{}` wraps a query that takes its data from the HTTP request body "
+            "inside EXECUTE AS or PARALLEL WITH. Those clauses run their statements without the request body, so "
+            "the uploaded data would be silently discarded. Make the body-reading INSERT the handler's own query.",
+            config_prefix);
+    }
+
+    if (queryConsumesRequestBody(*predefined_query_ast) && analyze_receive_params.contains("_request_body"))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Configured predefined query handler `{}` runs a query that takes its data from the HTTP request body "
+            "and also uses the `_request_body` parameter. Binding `_request_body` consumes the request body before "
+            "the query reads its input data, so the uploaded data would be silently lost. Use either the query's own "
+            "body input or the `_request_body` parameter, not both.",
+            config_prefix);
+    }
+
     const bool query_may_consume_request_body
         = queryConsumesRequestBody(*predefined_query_ast) || analyze_receive_params.contains("_request_body");
 

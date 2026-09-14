@@ -15,6 +15,11 @@ class IAST;
 /// knows whether an unframed body-carrying request can be accepted (see `HTTPHandler::handleRequest`).
 bool queryConsumesRequestBody(const IAST & query);
 
+/// Whether the query wraps a statement that reads the HTTP request body inside `EXECUTE AS` or `PARALLEL WITH`.
+/// Those wrappers execute their child statements without the request body, so such a handler would silently lose
+/// its uploaded data.
+bool queryWrapsBodyConsumingStatement(const IAST & query);
+
 /// Build a ready-to-match handler from a CREATE HANDLER AST.
 /// Fills in defaults (METHODS -> GET, TYPE -> query), validates the type and the URL regexp,
 /// and computes the canonical CREATE HANDLER statement (stored in create_statement).

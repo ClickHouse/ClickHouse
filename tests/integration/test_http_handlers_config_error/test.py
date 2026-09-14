@@ -19,6 +19,10 @@ node = cluster.add_instance(
 )
 
 BAD_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_handler.xml"
+BAD_PREDEFINED_BODY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_predefined_body.xml"
+BAD_PREDEFINED_REQUEST_BODY_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_predefined_request_body.xml"
+)
 LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
 NO_HTTP_PORT_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/no_http_port.xml"
 HTTPS_ONLY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/https_only.xml"
@@ -102,6 +106,40 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure(start_cluster)
     finally:
         node.exec_in_container(["bash", "-c", f"rm -f {BAD_CONFIG_IN_CONTAINER}"], user="root")
         node.start_clickhouse()
+
+
+def _assert_predefined_handler_config_error(config_name, config_path, message):
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", config_name),
+        config_path,
+    )
+    try:
+        node.start_clickhouse(expected_to_fail=True)
+        assert node.grep_in_log(
+            substring=message, filename=ERR_LOG, only_latest=True
+        ) != ""
+    finally:
+        node.exec_in_container(["bash", "-c", "rm -f " + config_path], user="root")
+        node.start_clickhouse()
+
+
+def test_predefined_handler_rejects_wrapped_body_query(start_cluster):
+    # Config-defined handlers must reject the same body-losing wrapper shape as SQL-defined handlers.
+    _assert_predefined_handler_config_error(
+        "bad_predefined_body.xml",
+        BAD_PREDEFINED_BODY_CONFIG_IN_CONTAINER,
+        "wraps a query that takes its data from the HTTP request body",
+    )
+
+
+def test_predefined_handler_rejects_body_parameter_conflict(start_cluster):
+    # A configured query must not consume the one request body through both input() and `_request_body`.
+    _assert_predefined_handler_config_error(
+        "bad_predefined_request_body.xml",
+        BAD_PREDEFINED_REQUEST_BODY_CONFIG_IN_CONTAINER,
+        "the uploaded data would be silently lost",
+    )
 
 
 def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_cluster):
