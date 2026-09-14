@@ -33,7 +33,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
@@ -193,8 +192,8 @@ bool StorageObjectStorageCluster::optimize(
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
 {
     updateExternalDynamicMetadataIfExists(context);
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    configuration->mutate(commands, context, shared_from_this(), getStorageID(), metadata_snapshot, catalog, format_settings);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    configuration->mutate(commands, context, getStorageID(), metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
@@ -204,13 +203,10 @@ void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands
 
 void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    checkMetadataDoesNotExceedMaxQuerySize(getStorageID(), new_metadata, context);
-
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+    configuration->alter(object_storage, params, context);
 
     if (catalog)
         return;
@@ -247,7 +243,7 @@ void StorageObjectStorageCluster::drop()
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        catalog->dropTable(namespace_name, table_name);
     }
     configuration->drop(drop_context);
 }
