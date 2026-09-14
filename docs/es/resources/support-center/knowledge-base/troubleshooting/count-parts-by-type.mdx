@@ -6,6 +6,10 @@ tags: ['Solución de problemas']
 keywords: ['partes compactas', 'partes anchas']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <br />
 
 La siguiente consulta se puede usar para contar el número de partes por tipo:
@@ -25,7 +29,7 @@ ORDER BY
     part_type ASC
 ```
 
-A continuación se muestra un ejemplo de respuesta:
+A continuación se muestra una respuesta de ejemplo:
 
 ```response
 ┌─table───────────────────┬─part_type─┬─count()─┐

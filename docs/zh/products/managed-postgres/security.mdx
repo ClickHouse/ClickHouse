@@ -7,18 +7,18 @@ keywords: ['Postgres 安全', 'IP 白名单', '加密', 'tls', 'ssl', 'private l
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-ClickHouse Managed Postgres 具备企业级安全功能，可保护您的数据并满足合规要求。本页介绍网络安全、加密和备份保留策略。
+Managed Postgres 具备企业级安全功能，可保护您的数据并满足合规要求。本页介绍网络安全、加密和备份保留策略。
 
 <div id="ip-whitelisting">
   ## IP 白名单
 </div>
 
-IP 过滤器用于控制哪些源 IP 地址可以连接到您的 ClickHouse Managed Postgres 实例，从网络层面实施访问控制，保护数据库免受未经授权的连接。
+IP 过滤器用于控制哪些源 IP 地址可以连接到您的 Managed Postgres 实例，从网络层面实施访问控制，保护数据库免受未经授权的连接。
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP 访问列表配置" size="md" border />
 
@@ -55,13 +55,13 @@ IP 过滤器用于控制哪些源 IP 地址可以连接到您的 ClickHouse Mana
   ## 加密
 </div>
 
-ClickHouse Managed Postgres 会对静态数据和传输中的数据进行加密，确保数据得到全面保护。
+Managed Postgres 会对静态数据和传输中的数据进行加密，确保数据得到全面保护。
 
 <div id="encryption-at-rest">
   ### 静态加密
 </div>
 
-ClickHouse Managed Postgres 存储的所有数据都会在静止状态下加密，以防止对底层存储基础设施的未授权访问。
+Managed Postgres 存储的所有数据都会在静止状态下加密，以防止对底层存储基础设施的未授权访问。
 
 <div id="nvme-encryption">
   #### NVMe 存储加密
@@ -82,14 +82,14 @@ ClickHouse Managed Postgres 存储的所有数据都会在静止状态下加密�
 所有备份数据都存储在专用且隔离的存储桶中，并且访问凭据的权限范围仅限于各个实例，从而确保备份数据安全，且只有经授权的系统才能访问。
 
 <Info>
-  默认情况下，所有 ClickHouse Managed Postgres 实例均启用静态加密，且无法禁用。无需额外配置。
+  默认情况下，所有 Managed Postgres 实例均启用静态加密，且无法禁用。无需额外配置。
 </Info>
 
 <div id="encryption-in-transit">
   ### 传输中加密
 </div>
 
-所有连接到 ClickHouse Managed Postgres 的网络连接都使用 TLS (传输层安全) 进行保护，以确保数据在您的应用程序与数据库之间传输时的安全。
+所有连接到 Managed Postgres 的网络连接都使用 TLS (传输层安全) 进行保护，以确保数据在您的应用程序与数据库之间传输时的安全。
 
 <div id="tls-ssl">
   #### TLS/SSL 配置
@@ -103,7 +103,7 @@ ClickHouse Managed Postgres 存储的所有数据都会在静止状态下加密�
   ## Private Link
 </div>
 
-Private Link 可在您的 ClickHouse Managed Postgres 实例与虚拟私有云 (VPC) 之间建立私有连接，无需将流量暴露到公共互联网。这进一步增强了网络隔离性和安全性。
+Private Link 可在您的 Managed Postgres 实例与虚拟私有云 (VPC) 之间建立私有连接，无需将流量暴露到公共互联网。这进一步增强了网络隔离性和安全性。
 
 <Info>
   **需要手动设置**
@@ -115,18 +115,18 @@ Private Link 可在您的 ClickHouse Managed Postgres 实例与虚拟私有云 (
   ### 请求设置 Private Link
 </div>
 
-要为您的 ClickHouse Managed Postgres 实例启用 Private Link：
+要为您的 Managed Postgres 实例启用 Private Link：
 
 1. **创建支持工单，联系 ClickHouse 支持团队**
 
 2. **提供以下信息**：
    * 您的 ClickHouse Organization ID
    * Postgres service 的 ID/主机名
-   * 您希望通过 Private Link 连接的 AWS 账户 ID/ARN
+   * 您希望通过 Private Link 连接的 AWS account ID/ARN
      * (可选) 您希望发起连接的、除 Postgres 实例所在区域之外的其他区域
 
 3. **ClickHouse 支持团队将**：
-   * 在 ClickHouse Managed Postgres 侧预配 Private Link 端点
+   * 在 Managed Postgres 侧预配 Private Link 端点
    * 向您提供端点连接详细信息，您可使用这些信息创建端点接口。
 
 4. **设置您的 Private Link**：
@@ -137,7 +137,7 @@ Private Link 可在您的 ClickHouse Managed Postgres 实例与虚拟私有云 (
   ## 备份保留策略
 </div>
 
-ClickHouse Managed Postgres 会自动备份您的数据，以防止因意外删除、数据损坏或其他数据丢失情况而导致的数据丢失。
+Managed Postgres 会自动备份您的数据，以防止因意外删除、数据损坏或其他数据丢失情况而导致的数据丢失。
 
 <div id="retention-policy">
   ### 保留策略
@@ -148,13 +148,13 @@ ClickHouse Managed Postgres 会自动备份您的数据，以防止因意外删�
 * **恢复粒度**：可在保留窗口内进行时间点恢复到任意时刻
 
 <div id="backup-security">
-  ### 备份安全
+  ### 备份安全性
 </div>
 
-备份的存储具备与您的主数据相同的安全保障：
+备份在存储时享有与主数据相同的安全保障：
 
 * 对象存储中的**静态加密**
-* 每个实例都有各自隔离的**存储桶**，并配有权限受限的凭证
-* **访问控制**仅限于与该备份关联的 Postgres 实例
+* 每个实例配备隔离的**存储桶**和范围受限的凭证
+* **访问控制**仅限于与该备份关联的 Postgres 实例。
 
-有关备份策略和时间点恢复的更多信息，请参阅 [备份与恢复](/zh/products/managed-postgres/backup-and-restore) 页面。
+有关备份策略和时间点恢复的更多信息，请参阅[备份与恢复](/zh/products/managed-postgres/backup-and-restore)页面。

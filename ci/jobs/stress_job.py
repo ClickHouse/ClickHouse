@@ -245,66 +245,6 @@ def process_results(
     return test_results, additional_files
 
 
-def select_replica_failures(
-    replica_log_pairs: List[Tuple[str, Path, Path]],
-) -> List[Tuple[str, str, List[str]]]:
-    """Pick the failures to report from every replica's (server, stderr) log pair.
-
-    A failure on one replica must not hide a (possibly higher-signal) failure on
-    another, so every pair is scanned - never breaking early. All specific
-    classifications (sanitizer, logical error, oracle mismatch, ...) are
-    collected and every distinct one is returned. A generic `<Fatal>` fallback
-    and "Unknown error" are lower-confidence signals used only when no replica
-    yielded a specific classification.
-
-    Returns a list of `(name, description, files)` tuples: all distinct specific
-    findings; otherwise a single generic-fatal finding; otherwise a single
-    "Unknown error" finding; otherwise an empty list (nothing parsed at all).
-    """
-    specific_results: List[Tuple[str, str, List[str]]] = []
-    seen_specific_names = set()
-    generic_fatal_result = None
-    fallback_result = None
-
-    for replica_name, server_log_file, stderr_log in replica_log_pairs:
-        log_parser = FuzzerLogParser(
-            server_log=server_log_file,
-            stderr_log=str(stderr_log) if stderr_log.exists() else "",
-            fuzzer_log="",
-        )
-        try:
-            name, description, files = log_parser.parse_failure()
-            file_pair_info = f"Log files: {server_log_file.name}"
-            if stderr_log.exists():
-                file_pair_info += f", {stderr_log.name}"
-            description = f"{file_pair_info}\n{description}"
-            if name == FuzzerLogParser.UNKNOWN_ERROR:
-                if fallback_result is None:
-                    fallback_result = (name, description, files)
-            elif log_parser.is_generic_fatal:
-                if generic_fatal_result is None:
-                    generic_fatal_result = (name, description, files)
-            elif name not in seen_specific_names:
-                # The same failure often surfaces on several replicas (shared
-                # storage / replication); report each distinct classification once.
-                seen_specific_names.add(name)
-                specific_results.append((name, description, files))
-        except Exception as e:
-            print(
-                f"ERROR: Failed to parse failure logs for {replica_name} "
-                f"({server_log_file.name}): {e}\n"
-                f"Server logs should still be collected."
-            )
-
-    if specific_results:
-        return specific_results
-    if generic_fatal_result:
-        return [generic_fatal_result]
-    if fallback_result:
-        return [fallback_result]
-    return []
-
-
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
@@ -369,14 +309,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     # Generate fatal.log from all server logs
     fatal_log = result_path / "fatal.log"
-    crash_evidence = False
     if server_log_path.exists():
         Shell.check(
             f"rg --text '\\s<Fatal>\\s' {server_log_path}/clickhouse-server*.log > {fatal_log}"
         )
-        # rg also exits non-zero when it did match but could not read some file of
-        # the glob, so key on the collected content rather than on its exit code.
-        crash_evidence = fatal_log.is_file() and fatal_log.stat().st_size > 0
 
     test_results, additional_logs = process_results(result_path, server_log_path)
 
@@ -389,7 +325,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         if not test_result.is_ok():
             failed_results.append(test_result)
 
-    if server_died or crash_evidence:
+    if server_died:
         # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
         # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
         # sc1/sc2: their dedicated server log + matching stderr log
@@ -423,17 +359,44 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            results = select_replica_failures(replica_log_pairs)
-            if results:
-                for name, description, files in results:
-                    failed_results.append(
-                        Result.create_from(
-                            name=name,
-                            info=description,
-                            status=Result.Status.FAIL,
-                            files=files,
-                        )
+            definitive_result = None
+            fallback_result = None
+
+            for replica_name, server_log_file, stderr_log in replica_log_pairs:
+                log_parser = FuzzerLogParser(
+                    server_log=server_log_file,
+                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
+                    fuzzer_log="",
+                )
+                try:
+                    name, description, files = log_parser.parse_failure()
+                    file_pair_info = f"Log files: {server_log_file.name}"
+                    if stderr_log.exists():
+                        file_pair_info += f", {stderr_log.name}"
+                    description = f"{file_pair_info}\n{description}"
+                    if name != FuzzerLogParser.UNKNOWN_ERROR:
+                        definitive_result = (name, description, files)
+                        break
+                    if fallback_result is None:
+                        fallback_result = (name, description, files)
+                except Exception as e:
+                    print(
+                        f"ERROR: Failed to parse failure logs for {replica_name} "
+                        f"({server_log_file.name}): {e}\n"
+                        f"Server logs should still be collected."
                     )
+
+            result = definitive_result or fallback_result
+            if result:
+                name, description, files = result
+                failed_results.append(
+                    Result.create_from(
+                        name=name,
+                        info=description,
+                        status=Result.Status.FAIL,
+                        files=files,
+                    )
+                )
             else:
                 failed_results.append(
                     Result.create_from(

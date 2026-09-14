@@ -8,13 +8,10 @@ keywords: ['upgrades', 'gerenciamento de versões', 'recursos da nuvem', 'manute
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Com o ClickHouse Cloud, você nunca precisa se preocupar com patches e upgrades. Lançamos upgrades que incluem correções, novos recursos e melhorias de desempenho periodicamente.
-
-* Para ver a lista completa de novidades do ClickHouse, consulte nosso [changelog da Cloud](/pt-BR/resources/changelogs/cloud/2026)
-* Para saber quando as versões são lançadas, consulte a página de [status do lançamento](/pt-BR/resources/changelogs/cloud/release-status)
+Com o ClickHouse Cloud, você nunca precisa se preocupar com patches e upgrades. Lançamos upgrades que incluem correções, novos recursos e melhorias de desempenho periodicamente. Para ver a lista completa de novidades do ClickHouse, consulte nosso [changelog da Cloud](/pt-BR/resources/changelogs/cloud/2026).
 
 <Note>
   Estamos introduzindo um novo mecanismo de upgrade, um conceito que chamamos de &quot;make before break&quot; (ou MBB). Com essa nova abordagem, adicionamos réplicas atualizadas antes de remover as antigas durante a operação de upgrade. Isso resulta em upgrades mais suaves e menos impactantes para as cargas de trabalho em execução.
@@ -26,11 +23,11 @@ Com o ClickHouse Cloud, você nunca precisa se preocupar com patches e upgrades.
   ## Compatibilidade de versão
 </div>
 
-Quando você cria um serviço, a configuração [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) é definida com a versão mais recente do ClickHouse oferecida no ClickHouse Cloud no momento em que seu serviço é provisionado pela primeira vez.
+Quando você cria um serviço, a configuração [`compatibility`](/pt-BR/reference/settings/session-settings#compatibility) é definida com a versão mais recente do ClickHouse oferecida no ClickHouse Cloud no momento em que o serviço é provisionado pela primeira vez.
 
-A configuração `compatibility` permite usar os valores padrão das configurações de versões anteriores. Quando seu serviço é atualizado para uma nova versão, a versão especificada para a configuração `compatibility` não muda. Isso significa que os valores padrão das configurações que existiam quando você criou seu serviço pela primeira vez não mudarão (a menos que você já tenha substituído esses valores padrão; nesse caso, eles serão preservados após o upgrade).
+A configuração `compatibility` permite usar os valores padrão das configurações de versões anteriores. Quando o serviço é atualizado para uma nova versão, a versão especificada para a configuração `compatibility` não muda. Isso significa que os valores padrão das configurações que existiam quando você criou o serviço inicialmente não serão alterados (a menos que você já tenha substituído esses valores padrão; nesse caso, eles serão preservados após a atualização).
 
-Você não pode gerenciar a configuração `compatibility` padrão no nível do serviço. É necessário [entrar em contato com o suporte](https://clickhouse.com/support/program) se quiser alterar a versão definida para a configuração `compatibility` padrão do seu serviço. No entanto, é possível substituir a configuração `compatibility` no nível de usuário, função, perfil, consulta ou sessão usando os mecanismos padrão de configuração do ClickHouse, como `SET compatibility = '22.3'` em uma sessão ou `SETTINGS compatibility = '22.3'` em uma consulta.
+Você não pode gerenciar a configuração `compatibility` padrão no nível do serviço. É necessário [entrar em contato com o suporte](https://clickhouse.com/support/program) se quiser alterar a versão definida para a configuração `compatibility` padrão do serviço. No entanto, é possível substituir a configuração `compatibility` no nível de usuário, função, perfil, consulta ou sessão usando os mecanismos padrão de configuração do ClickHouse, como `SET compatibility = '22.3'` em uma sessão ou `SETTINGS compatibility = '22.3'` em uma consulta.
 
 <div id="maintenance-mode">
   ## Modo de manutenção
@@ -57,12 +54,12 @@ Os três canais de lançamento são:
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Canal de lançamento rápido (upgrades antecipados)
+  ### Canal de lançamento rápido (atualizações antecipadas)
 </div>
 
 <ScalePlanFeatureBadge feature="O canal de lançamento rápido" />
 
-Além do cronograma regular de upgrades, oferecemos um canal de **lançamento rápido** caso você queira que seus serviços recebam atualizações antes do cronograma regular de lançamento.
+Além do cronograma regular de atualizações, oferecemos um canal de **lançamento rápido** caso você queira que seus serviços recebam atualizações antes do cronograma regular de lançamento.
 
 Especificamente, os serviços irão:
 
