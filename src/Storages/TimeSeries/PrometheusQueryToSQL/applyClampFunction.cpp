@@ -85,7 +85,12 @@ SQLQueryPiece applyClampFunction(
     /// PromQL: clamp() returns an empty vector if max < min. If both bounds are constant we know that already,
     /// otherwise the same check is added to the SQL expression below.
     if (min_is_const && max_is_const && (arguments[max_index].scalar_value < arguments[min_index].scalar_value))
-        return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{function_node, function_node->result_type, StoreMethod::EMPTY};
+        for (const auto & argument : arguments)
+            res.value_data_type = mergeValueDataType(res.value_data_type, argument.value_data_type);
+        return res;
+    }
 
     /// PromQL: the result is NaN if any of the bounds is NaN.
     bool const_nan_bound = (min_is_const && std::isnan(arguments[min_index].scalar_value))

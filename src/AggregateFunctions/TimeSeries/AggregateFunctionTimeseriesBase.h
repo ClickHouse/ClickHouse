@@ -72,7 +72,7 @@ public:
     using ValueType = typename Traits::ValueType;
 
     /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
-    /// return timestamps in seconds as `Float64` regardless of the value type.
+    /// and `timeSeriesTimestampToGrid` return timestamps in seconds as `Float64` regardless of the value type.
     using ResultType = typename Traits::ResultType;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;

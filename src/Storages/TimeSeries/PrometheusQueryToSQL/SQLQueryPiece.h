@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
@@ -80,17 +81,25 @@ struct SQLQueryPiece
     String string_value;
 
     /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
-    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
-    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.
-    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(scalar_data_type))).
-    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
+    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (the effective value type) with a single row.
+    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(effective value type)) with a single row.
+    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(effective value type))).
+    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (the effective value type).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
+
+    /// Overrides the sample value type of this piece. Most pieces use `context.scalar_data_type`, which is the
+    /// value type of the source TimeSeries table. Some PromQL operations, such as `timestamp`, always produce
+    /// Float64 values independently of the source value type.
+    DataTypePtr value_data_type;
 };
 
 String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext & context);
 
 /// Called when the store method can't be handled because it's incompatible with the type of `query_piece`.
 [[noreturn]] void throwUnexpectedStoreMethod(const SQLQueryPiece & query_piece, const ConverterContext & context);
+
+/// Combines value type overrides carried by arguments of the same expression.
+DataTypePtr mergeValueDataType(const DataTypePtr & left, const DataTypePtr & right);
 
 }

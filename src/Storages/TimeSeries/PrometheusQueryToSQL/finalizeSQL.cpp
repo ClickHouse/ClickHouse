@@ -40,6 +40,7 @@ namespace
     ASTPtr finalizeScalarAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::SCALAR);
+        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         ASTPtr value;
 
@@ -56,7 +57,7 @@ namespace
                 ///        <scalar_value> AS value
 
                 /// <scalar_value> AS value
-                value = timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type);
+                value = timeSeriesScalarToAST(result.scalar_value, scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -68,7 +69,7 @@ namespace
                 /// FROM <subquery>
 
                 /// value::scalar_data_type AS value
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type);
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -82,7 +83,7 @@ namespace
                 /// values[1] AS value
                 value = timeSeriesScalarASTCast(
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    context.scalar_data_type);
+                    scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -162,6 +163,7 @@ namespace
     ASTPtr finalizeInstantVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::INSTANT_VECTOR);
+        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         ASTPtr tags;
         ASTPtr value;
@@ -178,7 +180,7 @@ namespace
                 String structure = fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
                     ColumnNames::Tags,
                     ColumnNames::Timestamp, context.timestamp_data_type->getName(),
-                    ColumnNames::Value, context.scalar_data_type->getName());
+                    ColumnNames::Value, scalar_data_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -192,7 +194,7 @@ namespace
                 ///        <scalar_value> AS value
 
                 /// <scalar_value> AS value
-                value = timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type);
+                value = timeSeriesScalarToAST(result.scalar_value, scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -205,7 +207,7 @@ namespace
                 /// FROM <subquery>
 
                 /// value::scalar_data_type
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type);
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -220,7 +222,7 @@ namespace
                 /// values[1]::scalar_data_type AS value
                 value = timeSeriesScalarASTCast(
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    context.scalar_data_type);
+                    scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -243,7 +245,7 @@ namespace
                         "assumeNotNull",
                         makeASTFunction(
                             "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))),
-                    context.scalar_data_type);
+                    scalar_data_type);
                 value->setAlias(ColumnNames::Value);
 
                 /// WHERE isNotNull(values[1])
@@ -301,6 +303,7 @@ namespace
     ASTPtr finalizeRangeVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::RANGE_VECTOR);
+        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         ASTPtr tags;
         ASTPtr time_series;
@@ -319,7 +322,7 @@ namespace
 
                 String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                     ColumnNames::Tags,
-                    ColumnNames::TimeSeries, context.timestamp_data_type->getName(), context.scalar_data_type->getName());
+                    ColumnNames::TimeSeries, context.timestamp_data_type->getName(), scalar_data_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -337,7 +340,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type));
+                    timeSeriesScalarToAST(result.scalar_value, scalar_data_type));
                 break;
             }
 
@@ -353,7 +356,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
+                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type));
                 break;
             }
 
@@ -368,7 +371,7 @@ namespace
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName())));
+                    make_intrusive<ASTLiteral>(fmt::format("Array({})", scalar_data_type->getName())));
                 break;
             }
 
@@ -387,7 +390,7 @@ namespace
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName())));
+                    make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", scalar_data_type->getName())));
 
                 where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
                 break;
@@ -409,7 +412,7 @@ namespace
                 time_series = makeASTFunction(
                     "timeSeriesGroupArray",
                     timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.timestamp_data_type),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
+                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type));
                 time_series->setAlias(ColumnNames::TimeSeries);
 
                 group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
