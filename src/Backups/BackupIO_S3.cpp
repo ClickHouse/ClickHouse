@@ -486,6 +486,15 @@ BackupReaderS3::CheckedBackupFile BackupReaderS3::checkBackupFile(
     /// whole object would restore the whole replacement. It is refused here, before a single byte is
     /// read or copied, and with the same `HeadObject` that names the generation the read is pinned
     /// to: what is measured is what is read.
+    ///
+    /// That last sentence holds for a pinned read only. With `s3_validate_etag_on_read = 0` the
+    /// size check stays on, but it measures the object at the instant of this `HeadObject` and
+    /// nothing more: a replacement that lands between it and the `GET` of the buffered restore (or
+    /// the `CopyObject` of the native one, which copies the whole object whatever size the caller
+    /// names) is read or copied under the recorded size, because the read carries no generation to
+    /// refuse it by. That window is exactly what opting out of the pinning gives up, for the reads of
+    /// a backup as for every other S3 read; what the check still catches is the replacement that is
+    /// already there when the restore starts - the one a backup made some time ago meets.
     if (expected_file_size && object.size != *expected_file_size)
         throw Exception(
             ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
@@ -592,7 +601,9 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             /// `checkBackupFile`): the native copy carries it as `x-amz-copy-source-if-match`, and
             /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version and
             /// gets no token, and `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
-            /// it does every other plain read of the backup, but not out of the size check.
+            /// it does every other plain read of the backup, but not out of the size check - which
+            /// then holds for the object at the `HeadObject` only; a replacement between it and the
+            /// copy is not caught with the pinning off (see `checkBackupFile`).
             const String src_etag = checkBackupFile(path_in_backup, file_size, /*generation=*/ {}).generation;
             auto create_read_buffer = [&, this]
             {
@@ -720,7 +731,10 @@ void BackupWriterS3::copyFileFromDisk(
             /// `S3_OBJECT_CHANGED_DURING_READ` rather than backed up as a newer whole object or as parts
             /// of two generations stitched into one entry. `s3_validate_etag_on_read = 0` opts the copy
             /// out of the pinning only, as it does every other S3 read, and not out of the size check,
-            /// the same way it does not for the reads of `BackupReaderS3` (see `checkBackupFile`).
+            /// the same way it does not for the reads of `BackupReaderS3` (see `checkBackupFile`). The
+            /// check then holds for the object at this `HeadObject` only: an object replaced between
+            /// it and the `CopyObject` or the `GET`s of the fallback is backed up under `length` with
+            /// the pinning off, the copy having no generation to refuse it by.
             const S3::ObjectInfo src_object = S3::getObjectInfo(*src_client, src_bucket, src_key);
             if (src_object.size != source_size)
                 throw Exception(
@@ -829,7 +843,8 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
     /// The same measure and pinning as in `copyFileFromDisk`: one `HeadObject` measures the source (a
     /// file this backup has just written) against the size the backup metadata records for it, whatever
     /// the settings say, and names its generation, which the copy and its fallback both carry when
-    /// `s3_validate_etag_on_read` is on.
+    /// `s3_validate_etag_on_read` is on; with it off, the measure holds for the object at this
+    /// `HeadObject` only.
     const S3::ObjectInfo src_object = S3::getObjectInfo(*client, s3_uri.bucket, source_key, s3_uri.version_id);
     if (src_object.size != size)
         throw Exception(

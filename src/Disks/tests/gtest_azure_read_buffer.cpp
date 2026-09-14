@@ -19,6 +19,8 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <Common/PageCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
@@ -1552,6 +1554,77 @@ TEST(AzureReadWithoutRightBound, KnownSizeTruncatedObject)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
     }
+}
+
+/// The size known locally is the length of the file the buffer serves, so it is the size the
+/// buffer reports too: `getFileSize` answers with it, without any `HEAD`, whatever generation is at
+/// the key by then. Without a locally known size, the size comes from a `HEAD` as before.
+TEST(AzureReadWithoutRightBound, KnownSizeIsTheFileSize)
+{
+    auto make_buffer = [](std::optional<size_t> known_object_size, std::shared_ptr<MisbehavingRangeTransport> & transport)
+    {
+        transport = std::make_shared<MisbehavingRangeTransport>(
+            /* max_response_size */ 200, /* served_size */ 200, /* blob_size */ 200, /* send_etag */ true);
+
+        Azure::Storage::Blobs::BlobClientOptions client_options;
+        client_options.Retry.MaxRetries = 0;
+        client_options.Transport.Transport = transport;
+
+        auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+            Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+        return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+            container_client,
+            "blob",
+            DB::ReadSettings{},
+            /* max_single_read_retries */ 1,
+            /* max_single_download_retries */ 1,
+            /* use_external_buffer */ false,
+            /* restricted_seek */ false,
+            /* read_until_position */ 0,
+            /* blob_storage_log */ DB::BlobStorageLogWriterPtr{},
+            /* container_for_logging */ std::string{},
+            known_object_size,
+            /* expected_etag */ std::string{});
+    };
+
+    std::shared_ptr<MisbehavingRangeTransport> transport;
+    auto buffer = make_buffer(/* known_object_size */ 100, transport);
+    ASSERT_EQ(buffer->getFileSize(), static_cast<size_t>(100));
+    ASSERT_EQ(transport->headRequests(), static_cast<size_t>(0));
+
+    auto unsized = make_buffer(/* known_object_size */ std::nullopt, transport);
+    ASSERT_EQ(unsized->getFileSize(), static_cast<size_t>(200));
+    ASSERT_EQ(transport->headRequests(), static_cast<size_t>(1));
+}
+
+/// The page cache sizes itself by `getFileSize` of the buffer it wraps before it reads a byte, and
+/// then reads the whole file through `readBigAt`. The object was listed as 100 bytes and has been
+/// replaced by a 200-byte generation since (the read is not pinned, so the replacement is served):
+/// the wrapper must learn the 100 bytes the buffer ends at, not the 200 a fresh `HEAD` reports,
+/// or its first cold miss asks for bytes the buffer never delivers and ends in an error instead of
+/// the listed file.
+TEST(AzureReadWithoutRightBound, KnownSizeThroughThePageCache)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 200, /* blob_size */ 200, /* ignore_range */ false, /* known_object_size */ 100);
+
+    DB::PageCacheSettings page_cache_settings;
+    page_cache_settings.cache = std::make_shared<DB::PageCache>(
+        std::chrono::milliseconds(2000), "LRU", 0.5,
+        /* min_size_in_bytes */ 1 << 20,
+        /* max_size_in_bytes */ 1 << 20,
+        /* free_memory_ratio */ 0.0,
+        /* num_shards */ 1);
+
+    DB::CachedInMemoryReadBufferFromFile cached(
+        DB::PageCacheFile{.path = "azure:container/blob", .file_version = "listed"}, page_cache_settings.cache, std::move(buffer), page_cache_settings);
+
+    ASSERT_EQ(cached.getFileSize(), static_cast<size_t>(100));
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, cached));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
 }
 
 /// A read of an object whose generation does not change must not be disturbed by the `If-Match`

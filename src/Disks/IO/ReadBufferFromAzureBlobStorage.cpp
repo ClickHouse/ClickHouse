@@ -163,6 +163,14 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
 {
+    /// The size known locally is the length of the file this buffer serves - `nextImpl` and
+    /// `readBigAt` end the data there - so it is what `getFileSize` reports too, the same way
+    /// `ReadBufferFromS3` seeds its own from the size it is given. Otherwise `tryGetFileSize` would
+    /// take a fresh `HEAD`, and a wrapper that sizes itself by `getFileSize` before it reads (the
+    /// page cache, `CachedInMemoryReadBufferFromFile`) would learn the length of whatever generation
+    /// is at the key by then, and expect more (or fewer) bytes than the ones this buffer ends at.
+    file_size = known_object_size;
+
     if (!use_external_buffer)
     {
         tmp_buffer.resize(tmp_buffer_size);
