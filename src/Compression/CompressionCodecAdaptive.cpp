@@ -128,7 +128,11 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, con
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
 {
     chassert(!pool.empty());
-    setCodecDescription("Adaptive");
+}
+
+ASTPtr CompressionCodecAdaptive::getCodecDesc() const
+{
+    return makeCodecDescription("Adaptive");
 }
 
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const

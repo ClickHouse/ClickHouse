@@ -648,6 +648,15 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
+# Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
+# then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
+# Resolving everything at startup costs nothing here because we link dynamically only against libc
+# and we forbid dlopen (see programs/main.cpp).
+# Not on Darwin: ld64 does not accept '-z' options.
+if (NOT OS_DARWIN)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
