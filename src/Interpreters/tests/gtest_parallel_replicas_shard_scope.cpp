@@ -7,7 +7,12 @@
 #include <Interpreters/Context.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/XMLConfiguration.h>
+
 #include <gtest/gtest.h>
+
+#include <sstream>
 
 using namespace DB;
 using namespace DB::ClusterProxy;
@@ -86,6 +91,31 @@ ClusterPtr makeReplicatedDatabaseCluster(const Settings & settings, const String
 
     const ConnectionParameterStorage storage;
     return std::make_shared<Cluster>(settings, infos, storage.params(name));
+}
+
+/// A cluster read out of `remote_servers`, as each server reads its own configuration. The initiator and
+/// a shard resolve `cluster_for_parallel_replicas` independently, so while a configuration change rolls
+/// out the same name can stand for a different shard numbering on the two sides. `shard_names` names
+/// every shard (`<name>`) or none.
+ClusterPtr makeConfigCluster(
+    const Settings & settings, const String & name, const HostsByShard & shards, const Strings & shard_names = {})
+{
+    std::ostringstream xml;
+    xml << "<clickhouse><remote_servers><" << name << ">";
+    for (size_t i = 0; i < shards.size(); ++i)
+    {
+        xml << "<shard>";
+        if (!shard_names.empty())
+            xml << "<name>" << shard_names.at(i) << "</name>";
+        for (const auto & host : shards[i])
+            xml << "<replica><host>" << host << "</host><port>9000</port></replica>";
+        xml << "</shard>";
+    }
+    xml << "</" << name << "></remote_servers></clickhouse>";
+
+    std::istringstream stream(xml.str());
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+    return std::make_shared<Cluster>(*config, settings, "remote_servers", name);
 }
 
 ContextMutablePtr makeContextWithScalar(const Block & shard_num_scalar)
@@ -190,8 +220,8 @@ TEST(ParallelReplicasShardScope, MatchingProvenanceIsScoped)
 
 TEST(ParallelReplicasShardScope, ForeignProvenanceIsRejected)
 {
+    /// Provenance an initiator running another build might spell; no identity here is a bare name.
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, String("producing_cluster")));
-    /// A config cluster's identity is its bare name, which is what the provenance above stands for.
     auto cluster = makeDiscoveredCluster(context->getSettingsRef(), "another_cluster", {"0", "1", "2"});
 
     const auto scope = getShardScopeCompat(context, *cluster);
@@ -397,23 +427,103 @@ TEST(ParallelReplicasShardScope, ShardNameIdentityIsUnambiguous)
     EXPECT_EQ(getShardScopeCompat(context, *impostor).kind, SCOPE_FOREIGN);
 }
 
-/// A config cluster's identity is its bare name, and a shard-key identity must not be confusable with one:
-/// a config cluster name is an XML element name, so the shape prefix is spelled with a space.
+/// No identity is a bare cluster name, and no two shapes spell the same identity: a config cluster, a
+/// discovered cluster and a `Replicated` database can all share a name, and their shard `1` is not the
+/// same shard. A cluster name is an XML element name, so the shape prefix is spelled with a space.
 TEST(ParallelReplicasShardScope, ShardKeyIdentityIsNotSpellableAsAClusterName)
 {
     const auto & settings = getContext().context->getSettingsRef();
 
-    /// The same name and the same single shard key in both shapes, so only the shape prefix differs: a
-    /// discovered cluster and a `Replicated` database can share a name, and their shard `1` is not the
-    /// same shard.
+    /// The same name and the same single shard key in every shape, so only the shape prefix differs.
+    const String configured = getShardScopeIdentityCompat(*makeConfigCluster(settings, "x", {{"127.0.0.1"}}, {"s"}));
     const String discovered = getShardScopeIdentityCompat(*makeDiscoveredCluster(settings, "x", {"s"}));
     const String replicated = getShardScopeIdentityCompat(*makeReplicatedDatabaseCluster(settings, "x", {"s"}));
     EXPECT_NE(discovered, replicated);
+    EXPECT_NE(configured, discovered);
+    EXPECT_NE(configured, replicated);
 
-    EXPECT_NE(discovered, "x");
-    EXPECT_NE(replicated, "x");
-    EXPECT_NE(discovered.find(' '), String::npos);
-    EXPECT_NE(replicated.find(' '), String::npos);
+    for (const auto & identity : {configured, discovered, replicated})
+    {
+        EXPECT_NE(identity, "x");
+        EXPECT_NE(identity.find(' '), String::npos);
+    }
+}
+
+/// `remote_servers` is per-server configuration. While a change to it rolls out, the initiator ships a
+/// shard number of the cluster as it reads it, and the shard resolves the same name against its own copy.
+/// With the shards reordered there, the number is in range and denotes a different shard: the silent
+/// wrong-shard read.
+TEST(ParallelReplicasShardScope, ConfigClusterWithReorderedShardsIsForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    const HostsByShard shard_a = {{"127.0.0.1", "127.0.0.2"}};
+    const HostsByShard shard_b = {{"127.0.0.3", "127.0.0.4"}};
+
+    auto initiator = makeConfigCluster(settings, "rolling", {shard_a[0], shard_b[0]});
+    auto follower = makeConfigCluster(settings, "rolling", {shard_b[0], shard_a[0]});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*initiator)));
+    const auto scope = getShardScopeCompat(context, *follower);
+    EXPECT_EQ(scope.kind, SCOPE_FOREIGN);
+    EXPECT_EQ(scope.shard_num, 2u);
+}
+
+/// A shard the follower's copy of the configuration does not have yet: the number is out of range there,
+/// which used to be thrown on as `Shard number is greater than shard count`. Now the scope is declined.
+TEST(ParallelReplicasShardScope, ConfigClusterWithAnAddedShardIsForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+
+    auto initiator = makeConfigCluster(settings, "rolling", {{"127.0.0.1"}, {"127.0.0.2"}, {"127.0.0.3"}});
+    auto follower = makeConfigCluster(settings, "rolling", {{"127.0.0.1"}, {"127.0.0.2"}});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(3, getShardScopeIdentityCompat(*initiator)));
+    EXPECT_EQ(getShardScopeCompat(context, *follower).kind, SCOPE_FOREIGN);
+}
+
+/// The control: two servers reading the same configuration identify the same numbering, so parallel
+/// replicas over a plain config cluster keep engaging.
+TEST(ParallelReplicasShardScope, ConfigClusterWithTheSameShardsIsScoped)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    const HostsByShard shards = {{"127.0.0.1", "127.0.0.2"}, {"127.0.0.3", "127.0.0.4"}};
+
+    auto initiator = makeConfigCluster(settings, "same", shards);
+    auto follower = makeConfigCluster(settings, "same", shards);
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*initiator)));
+    const auto scope = getShardScopeCompat(context, *follower);
+    EXPECT_EQ(scope.kind, SCOPE_SCOPED);
+    EXPECT_EQ(scope.shard_num, 2u);
+}
+
+/// Named shards are identified by their names: a replica added to a shard on one side does not change
+/// which shard a number denotes, so the scope holds, while the same names in another order do not.
+TEST(ParallelReplicasShardScope, ConfigClusterNamedShardsAreIdentifiedByName)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+
+    auto initiator = makeConfigCluster(settings, "named", {{"127.0.0.1"}, {"127.0.0.3"}}, {"s1", "s2"});
+    auto more_replicas = makeConfigCluster(settings, "named", {{"127.0.0.1", "127.0.0.2"}, {"127.0.0.3", "127.0.0.4"}}, {"s1", "s2"});
+    auto reordered = makeConfigCluster(settings, "named", {{"127.0.0.3"}, {"127.0.0.1"}}, {"s2", "s1"});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*initiator)));
+    EXPECT_EQ(getShardScopeCompat(context, *more_replicas).kind, SCOPE_SCOPED);
+    EXPECT_EQ(getShardScopeCompat(context, *reordered).kind, SCOPE_FOREIGN);
+}
+
+/// Without shard names, the replicas are all that says which shard a number denotes, so a replica set
+/// that differs between the two copies declines the scope rather than guessing that the shards still
+/// line up.
+TEST(ParallelReplicasShardScope, ConfigClusterUnnamedShardsAreIdentifiedByReplicas)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+
+    auto initiator = makeConfigCluster(settings, "unnamed", {{"127.0.0.1"}, {"127.0.0.3"}});
+    auto more_replicas = makeConfigCluster(settings, "unnamed", {{"127.0.0.1", "127.0.0.2"}, {"127.0.0.3", "127.0.0.4"}});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*initiator)));
+    EXPECT_EQ(getShardScopeCompat(context, *more_replicas).kind, SCOPE_FOREIGN);
 }
 
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the

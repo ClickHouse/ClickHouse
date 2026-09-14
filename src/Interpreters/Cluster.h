@@ -323,8 +323,9 @@ private:
     /// Namespaces of `shard_scope_identity` values. A cluster name and a `Replicated` database name share
     /// one namespace, so an identity a reader can spell is also one a user can name a database - and then
     /// that database's cluster would authenticate a shard number it never produced. Every identity is
-    /// therefore prefixed with the shape that built it, and only a config cluster's identity is a bare
-    /// name: a config cluster name is an XML element name, which cannot contain a space.
+    /// therefore prefixed with the shape that built it, and no identity is a bare name: a name is equal on
+    /// both sides of a hop by construction and so identifies no numbering.
+    static constexpr auto CONFIG_SHARDS_SCOPE = "config-shards ";
     static constexpr auto HOSTS_BY_SHARD_SCOPE = "hosts-by-shard ";
     static constexpr auto REPLICAS_BY_SHARD_SCOPE = "replicas-by-shard ";
 

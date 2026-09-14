@@ -437,7 +437,7 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name), shard_scope_identity(cluster_name)
+    const String & cluster_name) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -470,6 +470,26 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     std::unordered_set<String> used_shard_names;
     UInt32 current_shard_num = 1;
 
+    /// `remote_servers` is each server's own configuration, so the same cluster name can describe a
+    /// different shard numbering on the initiator and on a shard while a configuration change rolls out.
+    /// The identity is therefore built from what a shard number denotes here rather than from the name:
+    /// the shard's `<name>` when the shards are named (it says which shard this is however many replicas
+    /// currently serve it), otherwise the shard's replicas in configuration order.
+    Strings shard_keys;
+    shard_keys.reserve(config_keys.size());
+    auto shard_key_from_addresses = [](const Addresses & shard_addresses)
+    {
+        String key;
+        for (const auto & address : shard_addresses)
+        {
+            if (!key.empty())
+                key += ',';
+            /// `toString` escapes the host name, so neither separator can occur inside a part.
+            key += address.toString();
+        }
+        return key;
+    };
+
     for (const auto & key : config_keys)
     {
         bool shard_with_replicas = startsWith(key, "shard");
@@ -493,6 +513,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             Addresses addresses;
             addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
             const auto & address = addresses.back();
+            shard_keys.push_back(use_shards_names ? shard_name : shard_key_from_addresses(addresses));
 
             ShardInfo info;
             info.shard_num = current_shard_num;
@@ -561,6 +582,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
+            shard_keys.push_back(use_shards_names ? shard_name : shard_key_from_addresses(replica_addresses));
+
             addShard(
                 settings,
                 replica_addresses,
@@ -576,6 +599,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     if (addresses_with_failover.empty())
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
+
+    shard_scope_identity = makeShardScopeIdentity(CONFIG_SHARDS_SCOPE, cluster_name, shard_keys);
 
     initMisc();
 }

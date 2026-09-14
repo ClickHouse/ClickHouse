@@ -4,9 +4,20 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+# `remote_servers` is per-server configuration. The n1 group and the n4 group read two different copies
+# of the test_config_drift cluster, see test_config_drift_between_servers_declines_shard_scope.
 nodes = [
     cluster.add_instance(
-        f"n{i}", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+        f"n{i}",
+        main_configs=[
+            "configs/remote_servers.xml",
+            (
+                "configs/remote_servers_drift_initiator.xml"
+                if i <= 3
+                else "configs/remote_servers_drift_follower.xml"
+            ),
+        ],
+        with_zookeeper=True,
     )
     for i in (1, 2, 3, 4, 5, 6)
 ]
@@ -65,8 +76,7 @@ def create_tables(cluster, table_name):
 
     # create distributed table
     nodes[0].query(f"DROP TABLE IF EXISTS {table_name}_d SYNC")
-    nodes[0].query(
-        f"""
+    nodes[0].query(f"""
             CREATE TABLE {table_name}_d AS {table_name}
             Engine=Distributed(
                 {cluster},
@@ -74,8 +84,7 @@ def create_tables(cluster, table_name):
                 {table_name},
                 key
             )
-            """
-    )
+            """)
 
     # populate data
     nodes[0].query(
@@ -281,4 +290,63 @@ def test_foreign_shard_scope_on_collaborator(start_cluster):
     assert (
         nodes[0].query(f"SELECT sum(key) FROM {table_name}_d", settings=settings)
         == "90\n"
+    )
+
+
+def test_config_drift_between_servers_declines_shard_scope(start_cluster):
+    # `remote_servers` is each server's own configuration, so while a change to it rolls out the same
+    # cluster name can number the shards differently on the initiator and on a shard. The n4 group's
+    # copy of test_config_drift lists the two shards in the other order: the initiator ships
+    # `_shard_num = 2` to the n4 group, where shard 2 is the n1 group. Applying that number there made
+    # the n4 group answer with the n1 group's rows, so the initiator saw them twice and its own rows
+    # never. The shipped shard number must be declined when the two copies do not identify the same
+    # numbering, and honoured on the n1 group, whose copy matches the initiator's.
+    table_name = "test_config_drift"
+    group_a = nodes[0:3]  # shard 1 on the initiator, shard 2 on the n4 group
+    group_b = nodes[3:6]  # shard 2 on the initiator, shard 1 on the n4 group
+
+    for node in nodes:
+        node.query(f"DROP TABLE IF EXISTS {table_name}_d SYNC")
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+    for shard, group in ((1, group_a), (2, group_b)):
+        for i, node in enumerate(group):
+            node.query(
+                f"CREATE TABLE {table_name} (key Int64) "
+                f"Engine=ReplicatedMergeTree('/test_config_drift/shard{shard}/{table_name}', 'r{i}') ORDER BY key"
+            )
+
+    # Distinct per-shard data is the oracle: every replica of a shard holds the same rows, so only
+    # reading the wrong SHARD can change the values.
+    group_a[0].query(f"INSERT INTO {table_name} SELECT number FROM numbers(10)")
+    group_b[0].query(
+        f"INSERT INTO {table_name} SELECT 1000000 + number FROM numbers(10)"
+    )
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table_name}")
+
+    nodes[0].query(
+        f"CREATE TABLE {table_name}_d (key Int64) "
+        f"Engine=Distributed(test_config_drift, currentDatabase(), {table_name}, key)"
+    )
+
+    # prefer_localhost_replica = 0 is mandatory: a shard served by the local replica ships no
+    # `_shard_num` over the wire, so with the default 1 the n1 group's hop never reaches the code
+    # under test.
+    settings = {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 3,
+        "prefer_localhost_replica": 0,
+    }
+
+    expected = [str(i) for i in range(10)] + [str(1000000 + i) for i in range(10)]
+    assert (
+        nodes[0]
+        .query(f"SELECT key FROM {table_name}_d ORDER BY key", settings=settings)
+        .split()
+        == expected
+    )
+    assert (
+        nodes[0].query(f"SELECT sum(key) FROM {table_name}_d", settings=settings)
+        == "10000090\n"
     )
