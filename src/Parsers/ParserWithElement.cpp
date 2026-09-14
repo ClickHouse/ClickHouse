@@ -258,7 +258,8 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. Otherwise `MATERIALIZED` results in a `SUPPORT_IS_DISABLED` exception, unless `force_materialized_cte = 0`, in which case the keyword is ignored and the CTE is inlined like an ordinary CTE.
 - **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`). Otherwise `MATERIALIZED` results in a `SUPPORT_IS_DISABLED` exception, unless `force_materialized_cte = 0`, in which case the keyword is ignored and the CTE is inlined.
-- **Not supported in view definitions or lightweight `UPDATE`**: the CTE would be inlined when the definition is stored, so it is rejected unless `force_materialized_cte = 0`. This includes materialized CTEs introduced by SQL user-defined functions used in the definition.
+- **Not supported in view definitions**: the CTE would be inlined when the definition is stored, so `CREATE VIEW`, `CREATE MATERIALIZED VIEW` and `ALTER TABLE ... MODIFY QUERY` reject it unless `force_materialized_cte = 0`. This includes materialized CTEs introduced by SQL user-defined functions used in the definition.
+- **Lightweight `UPDATE` and `DELETE`**: materialized CTEs work with the analyzer. Without the analyzer such a statement cannot run a CTE at all, so `MATERIALIZED` is rejected there regardless of `force_materialized_cte`.
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 

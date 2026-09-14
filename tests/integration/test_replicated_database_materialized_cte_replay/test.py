@@ -1,11 +1,13 @@
 # A Replicated database replica replays DDL committed by the initiator. When the initiator
-# predates `force_materialized_cte`, its committed `CREATE VIEW` / `MODIFY QUERY` / `UPDATE` may
+# predates `force_materialized_cte`, its committed `CREATE VIEW` / `MODIFY QUERY` may
 # carry a materialized CTE that the guard would reject on a fresh statement; the replay must not
 # reject it, or the replica's DDL queue stalls. node1 plays the old initiator (guard off in its
 # profile), node2 the upgraded replica (guard on, `enable_materialized_cte = 1` so only the guard
 # could reject). DDL entry format 1 carries no settings, so the initial execution (which runs
 # through the DDL worker with the worker's profile, not the session's settings) and the replay
-# both see their own node's profile.
+# both see their own node's profile. A lightweight `UPDATE` with a materialized CTE is replayed
+# as well; with the analyzer it materializes the CTE on every node, so it exercises the replay,
+# not the guard.
 
 import pytest
 
@@ -78,8 +80,8 @@ def test_replay_of_materialized_cte_definitions_is_not_rejected(started_cluster)
     )
     assert "c AS MATERIALIZED" in node1.query("SHOW CREATE rdb.mv")
 
-    # Lightweight UPDATE: same rule. Plain MergeTree, so each replica applies it to its own
-    # copy of the data.
+    # Lightweight UPDATE with a materialized CTE: replayed and executed with the analyzer on each
+    # replica. Plain MergeTree, so each replica applies it to its own copy of the data.
     node1.query(
         "CREATE TABLE rdb.t (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id "
         "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1",

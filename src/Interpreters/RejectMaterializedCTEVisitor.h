@@ -16,13 +16,14 @@ namespace ErrorCodes
 }
 
 /// Throws for a `WITH` element declared `AS MATERIALIZED` anywhere in the query, so a path that cannot
-/// materialize it (old analyzer, stored view definition, lightweight `UPDATE`) never inlines it silently.
+/// materialize it (old analyzer, stored view definition, a mutation without the analyzer) never inlines it silently.
 class RejectMaterializedCTEMatcher
 {
 public:
     struct Data
     {
         std::string_view reason;
+        std::string_view remedy = "Disable setting `force_materialized_cte` to inline it as a regular CTE";
     };
 
     static void visit(const ASTPtr & ast, Data & data)
@@ -30,9 +31,8 @@ public:
         const auto * with_element = ast->as<ASTWithElement>();
         if (with_element && with_element->is_materialized)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "CTE `{}` is declared `AS MATERIALIZED`, but materialized CTEs {}. "
-                "Disable setting `force_materialized_cte` to inline it as a regular CTE",
-                with_element->name, data.reason);
+                "CTE `{}` is declared `AS MATERIALIZED`, but materialized CTEs {}. {}",
+                with_element->name, data.reason, data.remedy);
     }
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }

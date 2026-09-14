@@ -5674,11 +5674,13 @@ Propagate WITH statements to UNION queries and all subqueries
 Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<subquery>)`).
 When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
 When disabled, a CTE declared as `MATERIALIZED` results in an exception, unless the setting `force_materialized_cte` is also disabled; then the `MATERIALIZED` keyword is ignored, the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
+In a lightweight `UPDATE` or `DELETE` executed without the analyzer, a CTE declared as `MATERIALIZED` is rejected regardless of `force_materialized_cte`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, force_materialized_cte, true, R"(
 If a common table expression is declared `AS MATERIALIZED` but cannot be materialized, throw an exception instead of silently inlining it as a regular CTE.
 A CTE cannot be materialized when the setting `enable_materialized_cte` is disabled or when the analyzer is not used.
-A CTE in a view definition (`CREATE VIEW`, `CREATE MATERIALIZED VIEW`, `ALTER TABLE ... MODIFY QUERY`) or in a lightweight `UPDATE` cannot be materialized either, because the definition is stored with the CTE inlined.
+A CTE in a view definition (`CREATE VIEW`, `CREATE MATERIALIZED VIEW`, `ALTER TABLE ... MODIFY QUERY`) cannot be materialized either, because the definition is stored with the CTE inlined.
+A lightweight `UPDATE` or `DELETE` materializes its CTEs when the analyzer is used. Without the analyzer such a statement cannot run a CTE at all, so a CTE declared `AS MATERIALIZED` is rejected there regardless of this setting.
 )", 0) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
