@@ -340,10 +340,6 @@ Block makeBlock(
         TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata, samples_column_name);
         for (const auto & element : request.timeseries())
         {
-            /// Remote Write v2 always transmits available native histograms because `send_native_histograms` is a no-op.
-            /// Ignoring unsupported data preserves supported float samples from mixed requests.
-            if (element.samples().empty())
-                continue;
             if (element.labels_refs_size() % 2 != 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
 
@@ -465,6 +461,8 @@ size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Req
     {
         if (element.exemplars_size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 exemplars are not supported");
+        if (element.histograms_size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 native histograms are not supported");
         if (element.samples().empty() && element.histograms().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 time series must contain samples or histograms");
         samples_written += element.samples_size();

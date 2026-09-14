@@ -347,10 +347,11 @@ def test_remote_write_v2_zstd():
     assert series[0].samples[0].value == 42.0
 
 
-def test_remote_write_v2_skips_unsupported_data():
+def test_remote_write_v2_rejects_native_histograms():
     start_time = 1724118350
+    metric_name = "rw2_float_data"
     protobuf = convert_time_series_to_write_v2_protobuf(
-        [({"__name__": "rw2_float_data"}, {start_time: 42.0})]
+        [({"__name__": metric_name}, {start_time: 42.0})]
     )
     protobuf.symbols.append("rw2_native_histogram")
     histogram_series = protobuf.timeseries.add(
@@ -369,11 +370,10 @@ def test_remote_write_v2_skips_unsupported_data():
         content_type=WRITE_V2_CONTENT_TYPE,
         headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
     )
-    assert response.status_code == requests.codes.no_content
-    assert_remote_write_v2_written_headers(response, 1)
-    series = _read_samples("rw2_float_data", start_time, start_time + 1)
-    assert len(series) == 1
-    assert series[0].samples[0].value == 42.0
+    assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
+    series = _read_samples(metric_name, start_time, start_time + 1)
+    assert series == []
 
 
 def test_remote_write_v2_invalid_first_symbol():

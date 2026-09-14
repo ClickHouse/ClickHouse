@@ -171,7 +171,10 @@ Remote Write 1.0 is enabled by default. To accept Remote Write 2.0 (`io.promethe
 SET enable_prometheus_remote_write_v2 = 1;
 ```
 
-Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata. ClickHouse drops native histograms from mixed requests. Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so senders cannot omit those histograms. ClickHouse rejects the whole request when exemplars are present. Senders can set `send_exemplars: false`.
+Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata.
+ClickHouse rejects the complete request when native histograms or exemplars are present.
+Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so senders cannot use it to omit native histograms.
+Senders can set `send_exemplars: false` to omit exemplars.
 
 To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
 
