@@ -420,7 +420,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -963,8 +964,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
-        if (mode < LoadingStrictnessLevel::ATTACH)
-            properties.constraints.assertPreserveRowCount();
     }
     else if (!create.as_table.empty())
     {
@@ -1201,6 +1200,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
+    /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
+    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
+    /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
+    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// still attaches.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        properties.constraints.checkExpressionsPreserveRowCount();
+
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
@@ -1235,9 +1243,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// If it's not attach and not materialized view to existing table,
-    /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
+    /// a materialized view's inner table is created by its own statement and validated there.
+    if (!create.attach && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
@@ -1280,7 +1288,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         check_columns = true;
     }
 
-    if (create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -1827,7 +1835,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.isTemporary() && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
@@ -2879,7 +2887,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
     /// built while the view being replaced still owns it, so reject only when a different view owns it.
     /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
-    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         auto target_table_id = create.getTargetTableID(ViewTarget::To);
         if (!target_table_id.empty())
