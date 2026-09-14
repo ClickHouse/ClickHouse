@@ -2107,13 +2107,17 @@ GRANT SYSTEM DROP S3QUEUE FAILED FILES ON database.table TO user;
 
 **Example**
 
+To view current failed files for an S3Queue table, query `system.s3queue_metadata_cache`. For an AzureQueue table, query `system.azure_queue_metadata_cache` instead:
+
 ```sql
--- View current failed files
 SELECT file_name, status, exception
 FROM system.s3queue_metadata_cache
 WHERE zookeeper_path = '/clickhouse/s3queue/my_table' AND status = 'Failed';
+```
 
--- Clear all failed files
+To clear all failed files (works for both S3Queue and AzureQueue tables):
+
+```sql
 SYSTEM DROP S3QUEUE FAILED FILES default.my_s3queue_table;
 ```
 )DOCS_MD",

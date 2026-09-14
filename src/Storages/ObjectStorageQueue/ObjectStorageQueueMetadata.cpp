@@ -293,6 +293,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 bucket_info,
                 buckets_num,
                 table_metadata.loading_retries,
+                table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
                 zookeeper_name,
@@ -306,6 +307,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 path,
                 file_status,
                 table_metadata.loading_retries,
+                table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
                 zookeeper_name,
@@ -314,6 +316,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
             return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
                 path,
                 file_status,
+                table_metadata.loading_retries,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 *this,
@@ -696,6 +699,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     std::make_shared<ObjectStorageQueueIFileMetadata::FileStatus>(table_metadata.last_processed_path),
                     /* bucket_info */nullptr,
                     buckets_num,
+                    table_metadata.loading_retries,
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.

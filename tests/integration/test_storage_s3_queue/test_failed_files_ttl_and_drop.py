@@ -1703,6 +1703,22 @@ def test_drop_failed_files_privilege(started_cluster):
     #    mechanism as step 4 - reaching the next statement means no error was raised.
     node.query(on_cluster_query, user=user_name)
 
+    # 5b. Prove the documented contract that `GRANT SYSTEM DROP S3QUEUE FAILED FILES`
+    # alone is sufficient for the direct form: InterpreterSystemQuery only calls
+    # checkAccess(SYSTEM_DROP_S3QUEUE_FAILED_FILES, ...) and DatabaseCatalog::getTable
+    # does no visibility check of its own, so SHOW TABLES should not be required here.
+    # A fresh, single-node-scoped user is used deliberately, holding only this one
+    # grant - unlike `user_name` above, which also has SHOW TABLES and CLUSTER for the
+    # ON CLUSTER path and so cannot prove this narrower claim on its own.
+    direct_only_user = f"user_drop_priv_direct_only_{uuid.uuid4().hex[:8]}"
+    node.query(f"CREATE USER {direct_only_user} IDENTIFIED WITH no_password")
+    node.query(
+        f"GRANT SYSTEM DROP S3QUEUE FAILED FILES ON default.{table_name} "
+        f"TO {direct_only_user}"
+    )
+    node.query(direct_query, user=direct_only_user)
+    node.query(f"DROP USER {direct_only_user}")
+
     # 6. The privilege is table-scoped and must not leak to a different table.
     other_table_name = f"test_drop_priv_other_{uuid.uuid4().hex[:8]}"
     create_table(

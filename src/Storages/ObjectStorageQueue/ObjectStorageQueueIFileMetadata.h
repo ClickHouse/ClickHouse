@@ -103,6 +103,7 @@ public:
         const std::string & failed_node_path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<UInt64> & loading_retries_ref_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         LoggerPtr log_);
@@ -272,6 +273,10 @@ protected:
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
+    /// Live reference to the table-level loading_retries setting, so that commit-time
+    /// failure decisions honor an ALTER TABLE ... MODIFY SETTING made while this file
+    /// was already claimed (max_loading_retries above is frozen at construction time).
+    std::atomic<UInt64> & loading_retries_ref;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
     const std::string processing_node_path;

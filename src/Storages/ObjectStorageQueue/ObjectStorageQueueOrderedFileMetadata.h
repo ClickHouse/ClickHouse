@@ -35,6 +35,7 @@ public:
         BucketInfoPtr bucket_info_,
         size_t buckets_num_,
         size_t max_loading_retries_,
+        std::atomic<UInt64> & loading_retries_ref_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         const std::string & zookeeper_name_,

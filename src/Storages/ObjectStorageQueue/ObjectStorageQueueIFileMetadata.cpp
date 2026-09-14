@@ -143,6 +143,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & failed_node_path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<UInt64> & loading_retries_ref_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
     LoggerPtr log_)
@@ -151,6 +152,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
+    , loading_retries_ref(loading_retries_ref_)
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , processing_node_path(processing_node_path_)
@@ -350,6 +352,13 @@ bool ObjectStorageQueueIFileMetadata::tryTerminalizeExhaustedRetriableMarker() c
     /// Best-effort: the caller denies processing this round regardless of the outcome here -
     /// the file is exhausted either way - so a failed/raced attempt is not fatal, it just
     /// leaves the terminalization for the next time this file is looked at.
+    ///
+    /// Exclusive mode does not use Keeper for failed/retriable state tracking (failed_node_path
+    /// is empty there; retries are tracked purely in-memory), so there is no `.retriable` marker
+    /// to terminalize - skip the Keeper round-trip entirely, mirroring isRetriableMarkerExhausted().
+    if (failed_node_path.empty())
+        return false;
+
     auto retrieable_failed_node_path = failed_node_path + ".retriable";
 
     Coordination::Stat retriable_stat;
@@ -773,7 +782,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
 
     try
     {
-        prepareFailedRequestsImpl(requests, /* retriable */max_loading_retries != 0);
+        prepareFailedRequestsImpl(requests, /* retriable */loading_retries_ref.load() != 0);
     }
     catch (...)
     {
@@ -915,13 +924,14 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     else
         chassert(!file_status->retries && !node_metadata.retries);
 
+    const auto current_max_loading_retries = loading_retries_ref.load();
     LOG_TRACE(
         log,
         "File {} failed at try {}/{}, "
         "retries node exists: {} (failed node path: {})",
-        path, node_metadata.retries, max_loading_retries, has_failed_before, failed_node_path);
+        path, node_metadata.retries, current_max_loading_retries, has_failed_before, failed_node_path);
 
-    if (node_metadata.retries >= max_loading_retries)
+    if (node_metadata.retries >= current_max_loading_retries)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
