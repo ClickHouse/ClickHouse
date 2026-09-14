@@ -69,6 +69,8 @@ SEARCH_METHOD = "search_method"
 SESSION_SETTINGS = "session_settings"
 QBIT_COLUMN = "qbit_column"
 QBIT_PRECISIONS = "qbit_precisions"
+QBIT_STRIDE = "qbit_stride"
+QBIT_USED_DIMS = "qbit_used_dims"
 FETCH_MULTIPLIERS = "fetch_multipliers"
 
 TRUTH_SET_QUERY_SOURCE_ID = "id"
@@ -89,9 +91,12 @@ def rotate_for_qbit(expression, dimension):
     return f"arrayMap(x -> x * sqrt({dimension}), {rotated})"
 
 
-def quantize_for_qbit(expression, dimension):
+def quantize_for_qbit(expression, dimension, stride=None):
     codes = f"quantizeBFloat16ToInt8(CAST({rotate_for_qbit(expression, dimension)} AS Array(BFloat16)))"
-    return f"CAST({codes} AS QBit(Int8, {dimension}))"
+    # A stride splits the dimensions into `dimension / stride` groups, each in its own stream, so a search over
+    # only the leading dimensions reads only the groups it needs.
+    qbit_type = f"QBit(Int8, {dimension})" if stride is None else f"QBit(Int8, {dimension}, {stride})"
+    return f"CAST({codes} AS {qbit_type})"
 
 
 dataset_hackernews_openai = {
@@ -231,6 +236,29 @@ dataset_laion_5b_10m_qbit_int8 = {
     DIMENSION: 768,
 }
 
+# Same `QBit(Int8)` codes, but split into 4 stride groups of 192 dimensions, each stored in its own stream, so a
+# search over only the leading 192 dimensions reads a quarter of the planes (Matryoshka-style prefix search)
+dataset_laion_5b_10m_qbit_int8_strided = {
+    TABLE: "laion_10m_qbit_strided",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
+    SCHEMA: """
+        id Int32,
+        vector Array(BFloat16) CODEC(NONE),
+        vector_qbit QBit(Int8, 768, 192)
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",  # full precision, used for the truth set
+    QBIT_COLUMN: "vector_qbit",
+    QBIT_STRIDE: 192,
+    SOURCE_SELECT_LIST: "id, vector, "
+    + quantize_for_qbit("CAST(vector AS Array(BFloat16))", 768, 192)
+    + " AS vector_qbit",
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 768,
+}
+
 test_params_laion_5b_full_run = {
     LIMIT_N: None,
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
@@ -359,6 +387,30 @@ test_params_laion_5b_10m_qbit_int8 = {
     QBIT_PRECISIONS: [1, 8],
 }
 
+test_params_laion_5b_10m_qbit_int8_strided = {
+    LIMIT_N: 10000000,  # match the other runs
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: None,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 100,
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit_strided",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+    SEARCH_METHOD: SEARCH_METHOD_QBIT,
+    SESSION_SETTINGS: None,
+    QBIT_PRECISIONS: [1, 8],
+    # Read one of the four stride groups; recall is still measured against the full 768-dimension truth set
+    QBIT_USED_DIMS: 192,
+}
+
 test_params_hackernews_10m = {
     LIMIT_N: None,
     TRUTH_SET_FILES: [
@@ -403,6 +455,26 @@ test_params_cohere_wiki_20m = {
 }
 
 
+# One entry per (test, search variant), rendered as a table at the end of the job
+SUMMARY_ROWS = []
+
+
+class phase_timer:
+    """Records the wall time of a `with` block into `store[key]`."""
+
+    def __init__(self, store, key):
+        self._store = store
+        self._key = key
+
+    def __enter__(self):
+        self._start = time.time()
+        return self
+
+    def __exit__(self, *unused):
+        self._store[self._key] = time.time() - self._start
+        return False
+
+
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
@@ -438,6 +510,10 @@ class RunTest:
 
         self._search_method = test_params.get(SEARCH_METHOD, SEARCH_METHOD_INDEX)
 
+        self._rows_inserted = 0
+        self._timings = {}
+        self._variant_results = []
+
         self._truth_set = []
         self._result_set = {}
         self._query_source_warning_logged = False
@@ -461,8 +537,10 @@ class RunTest:
                 for m in self._test_params[FETCH_MULTIPLIERS]
             ]
         if self._search_method == SEARCH_METHOD_QBIT:
+            used_dims = self._test_params.get(QBIT_USED_DIMS)
+            dims_label = "" if used_dims is None else f", {used_dims}/{self._dimension} dims"
             return [
-                (f"QBit, {p} bit precision", p)
+                (f"QBit, {p} bit precision{dims_label}", p)
                 for p in self._test_params[QBIT_PRECISIONS]
             ]
         return [("vector similarity index", None)]
@@ -471,7 +549,9 @@ class RunTest:
         if self._search_method == SEARCH_METHOD_QBIT:
             qbit_column = self._dataset[QBIT_COLUMN]
             reference = rotate_for_qbit(query_source, self._dimension)
-            distance = f"{self._distance_metric}TransposedQuantized({qbit_column}, {reference}, {variant})"
+            used_dims = self._test_params.get(QBIT_USED_DIMS)
+            dims_argument = "" if used_dims is None else f", {used_dims}"
+            distance = f"{self._distance_metric}TransposedQuantized({qbit_column}, {reference}, {variant}{dims_argument})"
             return f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {distance} AS distance LIMIT {self._k}"
 
         query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
@@ -522,6 +602,13 @@ class RunTest:
             rows = result.result_rows[0][0]
             self._rows_inserted = rows
             logger(f"Loaded total {rows} rows")
+
+        result = self._chclient.query(
+            f"SELECT sum(bytes_on_disk), formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE table = '{self._table}' AND active"
+        )
+        self._table_bytes = result.result_rows[0][0] or 0
+        self._table_size = result.result_rows[0][1]
+        logger(f"Table {self._table} occupies {self._table_size}")
 
     def optimize_table(self):
         logger("Optimizing table...")
@@ -844,6 +931,7 @@ class RunTest:
     # Run ANN on the query vectors in the truth set
     def run_search_for_truth_set(self, variant=None, use_chclient=None):
         runtime = 0
+        read_bytes = 0
         result_set = []
         if use_chclient is not None:
             chclient = use_chclient
@@ -888,6 +976,7 @@ class RunTest:
 
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
+            read_bytes = read_bytes + int((result.summary or {}).get("read_bytes", 0))
 
             neighbours = []
             distances = []
@@ -909,8 +998,11 @@ class RunTest:
 
         # self._result_set = result_set
         logger(f"Runtime for ANN : {runtime / 1000} seconds")
+        self._last_search_ms = runtime / len(result_set) if result_set else 0.0
+        self._last_read_mib = read_bytes / len(result_set) / 1048576 if result_set else 0.0
         if result_set:
-            logger(f"Average latency per query : {runtime / len(result_set)} ms")
+            logger(f"Average latency per query : {self._last_search_ms} ms")
+            logger(f"Average bytes read per query : {self._last_read_mib} MiB")
         return result_set
 
     # Recall and latency for every search variant of the current truth set
@@ -918,7 +1010,10 @@ class RunTest:
         for label, variant in self.search_variants():
             logger(f"Running ANN search : {label}")
             result_set = self.run_search_for_truth_set(variant)
-            self.calculate_recall(result_set)
+            recall = self.calculate_recall(result_set)
+            self._variant_results.append(
+                (label, recall, self._last_search_ms, self._last_read_mib)
+            )
 
     def run_search_and_calculate_recall_mt(self, thread_number):
         chclient = get_new_connection()
@@ -970,6 +1065,85 @@ class RunTest:
         )
 
 
+def record_summary(test_name, test_runner, ok):
+    timings = test_runner._timings
+    variants = test_runner._variant_results or [("(no search ran)", None, None, None)]
+    for label, recall, latency_ms, read_mib in variants:
+        SUMMARY_ROWS.append(
+            {
+                "test": test_name,
+                "table": test_runner._table,
+                "rows": test_runner._rows_inserted,
+                "size": getattr(test_runner, "_table_size", "-"),
+                "load": timings.get("load"),
+                "merge": timings.get("merge"),
+                "index": timings.get("index"),
+                "truth_set": timings.get("truth_set"),
+                "variant": label,
+                "recall": recall,
+                "latency_ms": latency_ms,
+                "read_mib": read_mib,
+                "ok": ok,
+            }
+        )
+
+
+def print_summary():
+    if not SUMMARY_ROWS:
+        return
+
+    # (header, key, width, left-aligned)
+    columns = [
+        ("Table", "table", 22, True),
+        ("Rows", "rows", 10, False),
+        ("Size", "size", 10, False),
+        ("Load s", "load", 8, False),
+        ("Merge s", "merge", 8, False),
+        ("Index s", "index", 8, False),
+        ("Truth s", "truth_set", 8, False),
+        ("Search variant", "variant", 38, True),
+        ("Recall", "recall", 8, False),
+        ("ms/query", "latency_ms", 9, False),
+        ("MiB/query", "read_mib", 10, False),
+        ("Status", "ok", 6, True),
+    ]
+    seconds = ("load", "merge", "index", "truth_set", "latency_ms")
+    per_variant = ("variant", "recall", "latency_ms", "read_mib")
+
+    def render(row, key):
+        value = row[key]
+        if key == "ok":
+            return "ok" if value else "FAIL"
+        if value is None:
+            return "-"
+        if key == "recall":
+            return f"{value:.4f}"
+        if key in seconds:
+            return f"{value:.1f}"
+        if key == "read_mib":
+            return f"{value:.1f}"
+        return str(value)
+
+    def pad(text, width, left):
+        return text.ljust(width) if left else text.rjust(width)
+
+    header = "  ".join(pad(name, width, left) for name, _, width, left in columns)
+    logger("Summary of all runs:")
+    print(header)
+    print("-" * len(header))
+    previous = None
+    for row in SUMMARY_ROWS:
+        # Repeat the per-table columns only on the first variant of each table
+        cells = [
+            " " * width
+            if previous == row["table"] and key not in per_variant
+            else pad(render(row, key), width, left)
+            for _, key, width, left in columns
+        ]
+        print("  ".join(cells).rstrip())
+        previous = row["table"]
+
+
 def run_single_test(test_name, dataset, test_params):
     chclient = None
     test_runner = None
@@ -978,16 +1152,21 @@ def run_single_test(test_name, dataset, test_params):
         chclient = get_new_connection()
         test_runner = RunTest(chclient, dataset, test_params)
 
-        test_runner.load_data()
-        test_runner.optimize_table()
+        timings = test_runner._timings
+        with phase_timer(timings, "load"):
+            test_runner.load_data()
+        with phase_timer(timings, "merge"):
+            test_runner.optimize_table()
 
         # Run KNN queries first before building the index.
         if test_runner._test_params[GENERATE_TRUTH_SET]:
-            test_runner.generate_truth_set()
+            with phase_timer(timings, "truth_set"):
+                test_runner.generate_truth_set()
             test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
         if test_runner.uses_vector_index():
-            test_runner.build_index()
+            with phase_timer(timings, "index"):
+                test_runner.build_index()
 
         if test_runner._test_params[GENERATE_TRUTH_SET]:
             test_runner.run_search_variants_and_calculate_recall()
@@ -1009,6 +1188,7 @@ def run_single_test(test_name, dataset, test_params):
         result = False
     finally:
         if test_runner is not None:
+            record_summary(test_name, test_runner, result)
             try:
                 test_runner.drop_table()
             except Exception:
@@ -1060,6 +1240,11 @@ TESTS_TO_RUN = [
         dataset_laion_5b_10m_qbit_int8,
         test_params_laion_5b_10m_qbit_int8,
     ),
+    (
+        "Test using the laion dataset with a strided QBit(Int8) column",
+        dataset_laion_5b_10m_qbit_int8_strided,
+        test_params_laion_5b_10m_qbit_int8_strided,
+    ),
     # (
     #     "Test using the hackernews dataset",
     #     dataset_hackernews_openai,
@@ -1109,6 +1294,8 @@ def main():
         )
 
     logger("CPUSTAT end: " + os.popen("head -1 /proc/stat").read().strip())
+
+    print_summary()
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"
