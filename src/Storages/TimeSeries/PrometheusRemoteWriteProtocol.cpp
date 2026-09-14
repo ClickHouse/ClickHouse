@@ -89,16 +89,16 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 class TimeSeriesBlockBuilder
 {
 public:
-    TimeSeriesBlockBuilder(size_t num_rows, const StorageInMemoryMetadata & metadata)
+    TimeSeriesBlockBuilder(size_t num_rows, const StorageInMemoryMetadata & metadata, const String & samples_column_name)
         : metric_name_type(metadata.columns.get(TimeSeriesColumnNames::MetricName).type)
         , metric_name_column(metric_name_type->createColumn())
         , tags_type(typeid_cast<std::shared_ptr<const DataTypeMap>>(metadata.columns.get(TimeSeriesColumnNames::Tags).type))
-        , time_series_type(typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::TimeSeries).type))
+        , time_series_type(typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(samples_column_name).type))
     {
         if (!tags_type)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
         if (!time_series_type)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::TimeSeries);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", samples_column_name);
 
         metric_name_column->reserve(num_rows);
         tags_names = tags_type->getKeyType()->createColumn();
@@ -142,7 +142,7 @@ public:
         metric_name = {};
     }
 
-    Block finish(size_t num_metadata_rows)
+    Block finish(size_t num_metadata_rows, const String & samples_column_name)
     {
         metric_name_column->insertManyDefaults(num_metadata_rows);
         for (size_t i = 0; i != num_metadata_rows; ++i)
@@ -166,7 +166,7 @@ public:
         Block block;
         block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
         block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
-        block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
+        block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, samples_column_name});
         return block;
     }
 
@@ -188,9 +188,10 @@ private:
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
-    const StorageInMemoryMetadata & metadata)
+    const StorageInMemoryMetadata & metadata,
+    const String & samples_column_name)
 {
-    TimeSeriesBlockBuilder builder(time_series.size() + num_metadata_rows, metadata);
+    TimeSeriesBlockBuilder builder(time_series.size() + num_metadata_rows, metadata, samples_column_name);
     for (const auto & element : time_series)
     {
         for (const auto & label : element.labels())
@@ -199,7 +200,7 @@ Block makeTimeSeriesBlock(
             builder.addSample(sample.timestamp(), sample.value());
         builder.finishTimeSeries(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS);
     }
-    return builder.finish(num_metadata_rows);
+    return builder.finish(num_metadata_rows, samples_column_name);
 }
 
 struct MetricsMetadata
@@ -260,14 +261,15 @@ void appendBlock(Block & block, Block block_to_append)
 Block makeBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
-    const StorageInMemoryMetadata & metadata)
+    const StorageInMemoryMetadata & metadata,
+    const String & samples_column_name)
 {
     Block block;
     if (!time_series.empty())
     {
         appendBlock(
             block,
-            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata));
+            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, samples_column_name));
     }
     if (!metrics_metadata.empty())
     {
@@ -291,7 +293,10 @@ size_t countFloatTimeSeries(const io::prometheus::write::v2::Request & request)
     return count;
 }
 
-Block makeBlock(const io::prometheus::write::v2::Request & request, const StorageInMemoryMetadata & metadata)
+Block makeBlock(
+    const io::prometheus::write::v2::Request & request,
+    const StorageInMemoryMetadata & metadata,
+    const String & samples_column_name)
 {
     const auto num_time_series = countFloatTimeSeries(request);
     const auto & symbols = request.symbols();
@@ -332,7 +337,7 @@ Block makeBlock(const io::prometheus::write::v2::Request & request, const Storag
     Block block;
     if (num_time_series)
     {
-        TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata);
+        TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata, samples_column_name);
         for (const auto & element : request.timeseries())
         {
             /// Remote Write v2 always transmits available native histograms because `send_native_histograms` is a no-op.
@@ -348,7 +353,7 @@ Block makeBlock(const io::prometheus::write::v2::Request & request, const Storag
                 builder.addSample(sample.timestamp(), sample.value());
             builder.finishTimeSeries(ErrorCodes::BAD_ARGUMENTS);
         }
-        appendBlock(block, builder.finish(metrics_metadata.size()));
+        appendBlock(block, builder.finish(metrics_metadata.size(), samples_column_name));
     }
     if (!metrics_metadata.empty())
         appendBlock(block, makeMetricsMetadataBlock(metrics_metadata, num_time_series, metadata));
@@ -442,7 +447,8 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
@@ -473,7 +479,8 @@ size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Req
         num_time_series);
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    insertBlock(makeBlock(request, *metadata), *time_series_storage, getContext());
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    insertBlock(makeBlock(request, *metadata, samples_column_name), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
