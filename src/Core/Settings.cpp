@@ -9030,29 +9030,29 @@ With the `array` tokenizer, where any pattern qualifies, the threshold is compar
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large (non-embedded) posting lists to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum number of posting lists the text index may read for a LIKE/ILIKE pattern when LIKE evaluation by the dictionary scan is enabled.
 
-Each matched token with a non-embedded posting list counts once, regardless of its size; `text_index_like_max_postings_rows_to_read` bounds the total rows instead. Exceeding either limit cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
+Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; `text_index_like_max_postings_rows_to_read` limits the total number of rows instead. If either limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_rows_to_read, 1000000, R"(
-Maximum total number of posting rows to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum total number of rows the posting lists read for a LIKE/ILIKE pattern may point at when text index LIKE evaluation by the dictionary scan is enabled.
 
-Each matched token with a large (non-embedded) posting list costs its cardinality in rows, so one very common token can exhaust the budget. Exceeding either this limit or `text_index_like_max_postings_to_read` cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
+Each matched token whose posting list is stored outside the dictionary counts its number of rows, so one very common token can exhaust the limit; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
-A token that the rows surviving earlier pruning cannot reach costs nothing; a reachable token costs its full stored cardinality. The budget applies to the index-analysis scan; the exact direct read applies only `text_index_like_max_postings_to_read`, so a combined predicate such as `pk = ... AND message LIKE ...` is no longer abandoned on whole-part counts.
+This limit applies when the index is used to skip granules. A direct read from the text index applies only `text_index_like_max_postings_to_read`, so a combined predicate such as `pk = ... AND message LIKE ...` is not abandoned because of whole-part row counts.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
-Whether a LIKE/ILIKE pattern query whose matched tokens provably cover every row of the part may skip reading their posting lists.
+Whether a LIKE/ILIKE pattern whose matched tokens are known to occur in every row of the part may skip reading their posting lists, because those posting lists could not skip anything. The pattern is then evaluated on the column directly.
 
-The proof is exact and costs no extra read: it holds when a matched token's row count, stored in the dictionary next to the token, equals the part's row count, or when the embedded posting lists the dictionary scan has already folded in cover the part on their own. An estimate is never used. A query whose matched posting lists are all read already is left alone, because bypassing it would trade a finished answer for a column scan.
+The decision uses only what the index already stores, never an estimate: a matched token's row count equals the row count of the part, or the small posting lists kept inside the dictionary (and read during the dictionary scan) together cover every row. A pattern whose posting lists are all read already is left alone.
 
-The bypass runs only in the index-analysis scan, where whole-part accounting is the right context. The exact direct read never bypasses. "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
+The bypass applies only when the index is used to skip granules; a direct read from the text index never bypasses. "Every row" means every row of the part, not only the rows left after an earlier filter, so a combined predicate does not make the bypass more eager.
 
-Disabling turns off only this exact-proof bypass; it does not by itself force the posting lists to be read, because `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still cut the dictionary scan short. A test that must reach the posting-list reader on a broad pattern also needs both budgets set high enough for its data.
+Disabling this setting turns off only the bypass; `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still stop the dictionary scan. A test that must reach the posting-list reader on a broad pattern also needs both limits set high enough for its data.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
