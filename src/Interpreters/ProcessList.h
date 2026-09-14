@@ -41,6 +41,8 @@ class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
+class LoadJob;
+using LoadJobPtr = std::shared_ptr<LoadJob>;
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -612,5 +614,11 @@ public:
 
     void killAllQueries();
 };
+
+/// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs that a user query may have
+/// to wait for. Such a query is registered as waiting in the process list while it is blocked in
+/// `AsyncLoader::wait()`; past `max_waiting_queries` the increment throws, which cancels the wait.
+void onLoadJobWaitersIncrement(const LoadJobPtr & job);
+void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
 }

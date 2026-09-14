@@ -1167,4 +1167,33 @@ void ProcessList::decrementWaiters(const QueryStatusPtr & status)
         decreaseWaitingQueryAmount(status);
 }
 
+/// The process list and the query to account for, or nullptr when the blocking thread is not one of
+/// the queries these counters cover: server or `clickhouse-local` startup, an AsyncLoader worker, or
+/// an internal query. All three inputs are fixed while the query's own thread is blocked, so the
+/// increment and the decrement of one wait always see the same verdict.
+static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return nullptr;
+    status = query_context->getProcessListElementSafe();
+    if (!status || status->isInternal())
+        return nullptr;
+    return &query_context->getGlobalContext()->getProcessList();
+}
+
+void onLoadJobWaitersIncrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->incrementWaiters(status);
+}
+
+void onLoadJobWaitersDecrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->decrementWaiters(status);
+}
+
 }
