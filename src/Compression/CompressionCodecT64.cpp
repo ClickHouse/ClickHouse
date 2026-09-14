@@ -246,24 +246,42 @@ void transpose64x8(UInt64 * src_dst)
     memcpy(src_dst, dst, 8 * sizeof(UInt64));
 }
 
-void reverseTranspose64x8(UInt64 * src_dst)
+/// Inverse of `transpose64x8`. Bit i of plane p (UInt64) becomes bit p of byte i. Reads only the first `num_bits` planes (the rest are 0).
+/// Please do not touch this function unless you really know what you are doing – it's tightly vectorised.
+void reverseTranspose64x8(UInt64 * matrix, UInt32 num_bits)
 {
-    UInt8 dst8[64];
+    /// pattern[i] = 1 << (i % 8): the bit of output byte i inside its plane byte.
+    static constexpr UInt8 pattern[64] = {
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+    };
 
-    for (UInt32 i = 0; i < 64; ++i)
+    /// For every output i in 0..63, if bit i of the word matrix[bit] is set, set bit bit in output[i].
+    /// Below is a fancy way to do `output[i] |= ((matrix[bit] >> i) & 1) << bit;`.
+    UInt8 output[64] = {};
+    const auto * bytes = reinterpret_cast<const unsigned char *>(matrix);
+    for (UInt32 bit = 0; bit < num_bits; ++bit)
     {
-        dst8[i] = static_cast<UInt8>(
-            ((src_dst[0] >> i) & 0x1)
-            | (((src_dst[1] >> i) & 0x1) << 1)
-            | (((src_dst[2] >> i) & 0x1) << 2)
-            | (((src_dst[3] >> i) & 0x1) << 3)
-            | (((src_dst[4] >> i) & 0x1) << 4)
-            | (((src_dst[5] >> i) & 0x1) << 5)
-            | (((src_dst[6] >> i) & 0x1) << 6)
-            | (((src_dst[7] >> i) & 0x1) << 7));
+        const UInt8 weight = static_cast<UInt8>(1u << bit);
+
+        /// Splat each plane byte over a 32-bit lane so the test loop vectorises as 64 lanes.
+        UInt32 expanded[16];
+        for (UInt32 lane = 0; lane < 16; ++lane)
+        {
+            UInt32 byte_index = lane / 2;
+            if constexpr (std::endian::native != std::endian::little)
+                byte_index = 7 - byte_index;
+            expanded[lane] = bytes[8 * bit + byte_index] * 0x01010101u;
+        }
+
+        const auto * expanded_bytes = reinterpret_cast<const unsigned char *>(expanded);
+        for (UInt32 i = 0; i < 64; ++i)
+            output[i] |= (expanded_bytes[i] & pattern[i]) ? weight : 0;
     }
 
-    memcpy(src_dst, dst8, 8 * sizeof(UInt64));
+    memcpy(matrix, output, sizeof(output));
 }
 
 template <typename T>
@@ -415,7 +433,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         memcpy(matrix, src, num_bits * sizeof(UInt64));
 
         if (full || part_bits)
-            reverseTranspose64x8(matrix);
+            reverseTranspose64x8(matrix, num_bits);
 
         const auto * values = reinterpret_cast<const UInt8 *>(matrix);
         for (UInt32 col = 0; col < tail; ++col)
@@ -436,13 +454,13 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     {
         UInt64 * matrix_line = matrix;
         for (UInt32 byte = 0; byte < full_bytes; ++byte, matrix_line += 8)
-            reverseTranspose64x8(matrix_line);
+            reverseTranspose64x8(matrix_line, /* num_bits */ 8);
     }
 
     if (part_bits)
     {
         UInt64 * matrix_line = &matrix[full_bytes * 8];
-        reverseTranspose64x8(matrix_line);
+        reverseTranspose64x8(matrix_line, part_bits);
     }
 
     for (UInt32 col = 0; col < tail; ++col)
