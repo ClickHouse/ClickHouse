@@ -3679,33 +3679,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
     }
 
-    /// `t1.k = t2.k` above a join on `t1.k = t3.k AND t2.k = t3.k` is copied to the `t3` side as `t3.k = t3.k`. The
-    /// copy holds for every row the join keeps, but the statistics take it for a real predicate and misjudge the
-    /// join order. The conjunct itself stays on its own side, so such a copy is simply not made.
-    auto is_trivial_copy = [](const Node * conjunct, const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
-    {
-        if (conjunct->type != ActionType::FUNCTION || conjunct->children.size() != 2 || conjunct->function_base->getName() != "equals")
-            return false;
-
-        auto replaced_name = [&](const Node * child) -> std::string_view
-        {
-            auto it = columns_to_replace.find(child->result_name);
-            return it == columns_to_replace.end() ? std::string_view(child->result_name) : std::string_view(it->second.name);
-        };
-        return replaced_name(conjunct->children[0]) == replaced_name(conjunct->children[1]);
-    };
-
-    std::erase_if(right_stream_allowed_conjunctions, [&](const Node * conjunct)
-    {
-        return left_stream_allowed_conjunctions_set.contains(conjunct)
-            && is_trivial_copy(conjunct, equivalent_left_stream_column_to_right_stream_column);
-    });
-    std::erase_if(left_stream_allowed_conjunctions, [&](const Node * conjunct)
-    {
-        return right_stream_allowed_conjunctions_set.contains(conjunct)
-            && is_trivial_copy(conjunct, equivalent_right_stream_column_to_left_stream_column);
-    });
-
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());

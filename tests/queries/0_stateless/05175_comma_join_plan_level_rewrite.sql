@@ -67,10 +67,6 @@ FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2 WHERE t1.a = t2.a SETTINGS cross_
 SELECT '-- explicit CROSS JOIN is never forced';
 SELECT count() FROM t1 CROSS JOIN t2 WHERE t1.a > t2.a SETTINGS cross_to_inner_join_rewrite = 2;
 
-SELECT '-- the leftover equality is not copied to the other side as a tautology';
-SELECT countIf(explain LIKE '%equals(__table3.a, __table3.a)%')
-FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a AND t2.a = t3.a);
-
 SELECT '-- without statistics the cross product is placed last';
 DROP TABLE IF EXISTS l1;
 DROP TABLE IF EXISTS l2;

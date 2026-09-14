@@ -29,8 +29,6 @@
 1	0
 -- explicit CROSS JOIN is never forced
 1
--- the leftover equality is not copied to the other side as a tautology
-0
 -- without statistics the cross product is placed last
 Join: l1 ⋈ l3 × l2
 Join: l1 ⋈ l3
