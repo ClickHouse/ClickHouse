@@ -562,8 +562,6 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// A conditional completion needs no separate guard: the id proves the object is this upload's,
-    /// which is what the condition was asking in the first place.
     if (!outcome.IsSuccess()
         && !request.getIdempotencyId().empty()
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
