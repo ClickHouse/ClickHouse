@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
@@ -38,6 +39,7 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
+    double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
@@ -55,6 +57,7 @@ struct DPJoinEntry
     DPJoinEntry(DPJoinEntryPtr lhs,
                 DPJoinEntryPtr rhs,
                 double cost_,
+                double selectivity_,
                 std::optional<UInt64> cardinality_,
                 JoinOperator join_operator_,
                 JoinMethod join_method_ = JoinMethod::Hash);
@@ -157,6 +160,11 @@ namespace QueryPlanOptimizations
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
 /// single-argument function of it (which cannot increase the distinct count).
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+/// Estimate the number of rows and per-column statistics of the relation produced by the subtree
+/// rooted at `node`, keyed by the subtree's output column names. `filter` is an optional predicate
+/// over these columns to account for.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 }
 

@@ -7,11 +7,14 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -84,7 +87,7 @@ namespace QueryPlanOptimizations
 static String dumpStatsForLogs(const RelationStats & stats);
 
 /// If we have stats for storage column names, find the corresponding `ActionsDAG` outputs.
-/// Both identity and weaker NDV-bound lineage are valid for this existing statistics use.
+/// Identity and NDV-bound lineage are both valid for the NDV and width; the value range needs value-preserving lineage.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
@@ -115,6 +118,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         /// width to unknown.
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
+        /// The value range and NULL set survive only lineage known to pass the value through
+        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
+        /// or a `CAST`, which may rewrite NULL rows into real values.
+        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
+        {
+            stats.min_value.reset();
+            stats.max_value.reset();
+            stats.null_fraction.reset();
+        }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
@@ -287,7 +299,20 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+/// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
+/// sorted range), so the child's value ranges and NULL fraction do not describe the output.
+/// Applied whenever a limit is present: the row estimate cannot prove the limit does not
+/// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
+static void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+{
+    for (auto & [_, stats] : column_stats)
+    {
+        stats.min_value.reset();
+        stats.max_value.reset();
+        stats.null_fraction.reset();
+    }
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
@@ -421,6 +446,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
+        clearColumnValueRanges(estimated.column_stats);
         return estimated;
     }
 
@@ -465,6 +491,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
+            clearColumnValueRanges(stats.column_stats);
         }
         return stats;
     }
@@ -732,11 +759,43 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
+/// raw inputs - once for the join key that decides matching and once for the output column - and can also
+/// evaluate it on rows the original join order would have discarded. An expression whose result or whose
+/// side effects depend on how many times and on which rows it runs is therefore not safe to merge: a
+/// non-deterministic function draws independently in the two places, so the returned rows can violate the
+/// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
+/// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
+/// spends a different amount of time and accounts different profile events. A lambda without captures is
+/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
+/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
+static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, is_insensitive))
+            return true;
+    }
+
+    return false;
+}
+
 /// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
 /// allows it and the expression cannot be applied twice by the name-based merge.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
+    if (!merge_expression_into_join)
+        return false;
+
+    if (isSensitiveToEvaluationCount(dag))
+        return false;
+
+    return !hasOutputShadowingInputName(dag);
 }
 
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
@@ -847,17 +906,32 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 /// The set is intentionally small and conservative -- an unknown function is treated as opaque
 /// (contributes nothing), which can only make CD-A miss a valid reordering, never admit an invalid
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
-static bool isNullPropagatingFunction(const String & name)
+static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
     static const std::unordered_set<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
         "plus", "minus", "multiply", "divide", "modulo", "negate",
-        /// a CAST of NULL is NULL
         "CAST", "_CAST",
     };
-    return names.contains(name);
+    const auto & name = node.function_base->getName();
+    if (!names.contains(name))
+        return false;
+    /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
+    /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
+    /// matches `NULL` to `NULL`. Neither shape rejects a null-extended row, so neither counts.
+    if (name == "CAST" || name == "_CAST")
+        return isNullableOrLowCardinalityNullable(node.result_type);
+    return true;
+}
+
+/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
+/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
+/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
+static bool nullExtensionIsNull(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -868,13 +942,15 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
     {
         case ActionsDAG::ActionType::INPUT:
         case ActionsDAG::ActionType::PLACEHOLDER:
+            if (!nullExtensionIsNull(node->result_type))
+                return {};
             /// A leaf column reference is null exactly on its own relation.
             return JoinActionRef(node, actions).getSourceRelations();
         case ActionsDAG::ActionType::ALIAS:
             return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
         case ActionsDAG::ActionType::FUNCTION:
         {
-            if (!node->function_base || !isNullPropagatingFunction(node->function_base->getName()))
+            if (!node->function_base || !isNullPropagatingFunction(*node))
                 return {};
             BitSet result;
             for (const auto * child : node->children)
@@ -1230,6 +1306,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+    const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
@@ -1557,7 +1634,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 
