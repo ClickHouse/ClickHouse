@@ -70,6 +70,9 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 max_wkb_geometry_elements;
     extern const SettingsUInt64 function_base58_max_input_size;
     extern const SettingsBool validate_polygons;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_for_nulls;
+    extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -198,6 +201,16 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::max_wkb_geometry_elements].value);
     hash.update(settings[Setting::function_base58_max_input_size].value);
     hash.update(settings[Setting::validate_polygons].value);
+    /// Execution settings that never reach the DAG at all. `ExpressionActions` reads `short_circuit_function_evaluation`
+    /// to decide whether the branches of `if` / `multiIf` / `and` / `or` are evaluated only on the rows that need
+    /// them or on every row, so `if(flag, intDiv(42, x), 0) = 1` over rows with `flag = 0, x = 0` matches no row
+    /// under `'enable'` and throws under `'disable'`. `IExecutableFunction` snapshots the two `..._for_nulls`
+    /// settings in its constructor: with them, a function is not evaluated at all for the rows where an argument is
+    /// `NULL`; without them, it is evaluated on the values stored behind the `NULL`s and may throw on them. The
+    /// DAG and the result type are identical in both modes.
+    hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
+    hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
+    hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
     return hash.get64();
 }
 
