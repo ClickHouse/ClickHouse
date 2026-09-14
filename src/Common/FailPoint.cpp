@@ -202,6 +202,7 @@ static struct InitFiu
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     REGULAR(refresh_mv_skip_execution) \
+    REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
@@ -237,6 +238,7 @@ static struct InitFiu
     PAUSEABLE(database_replicated_stop_entry_execution) \
     PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
     PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
+    PAUSEABLE(database_replicated_pause_after_database_name_fetch) \
     REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
@@ -378,7 +380,9 @@ static struct InitFiu
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
-    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
+    PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
 
 namespace FailPoints
 {

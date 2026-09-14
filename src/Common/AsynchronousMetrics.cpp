@@ -1108,7 +1108,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
+                "Microseconds of stall time since last measurement. "
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
