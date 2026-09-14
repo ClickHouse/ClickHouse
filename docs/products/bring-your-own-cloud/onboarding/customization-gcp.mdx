@@ -44,8 +44,21 @@ In the ClickHouse Cloud console, configure the following when setting up new inf
 1. Under **VPC configuration**, select **Use existing VPC**.
 2. Enter your **VPC network name**.
 3. Enter the **Subnet name** you allocated for ClickHouse.
-4. Click **Set up Infrastructure** to begin provisioning.
+4. Optionally enter **Secondary range names** to pin which of the subnet's secondary ranges GKE uses for pods. Leave it empty to use all of them; every name you list must already exist on the subnet.
+5. If your VPC lives in a Shared VPC host project, enter the **Shared VPC host project ID**. Leave it empty when the VPC is in the same project as the infrastructure. See [Shared VPC from a host project](#shared-vpc-host-project) below.
+6. Click **Set up Infrastructure** to begin provisioning.
 
 <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="ClickHouse Cloud BYOC setup UI with Use existing VPC selected for GCP" />
 </Step>
 </Steps>
+
+### Shared VPC from a host project {#shared-vpc-host-project}
+
+You can run BYOC in a service project on a network that lives in a separate [Shared VPC](https://cloud.google.com/vpc/docs/shared-vpc) host project, which lets you keep networking centralized. The VPC and its subnets are owned by the **host** project, while the BYOC infrastructure runs in an attached **service** project. The requirements above are unchanged; they simply apply to the subnet in the host project.
+
+Two prerequisites are specific to this setup:
+
+- **Attach the service project to the host project before you begin.** A Shared VPC GKE cluster requires the attachment to already exist. Pre-flight validation reads the network and subnet through the host-project grants whether or not the attachment is in place, so it passes either way and provisioning then fails later at cluster creation. Whoever administers Shared VPC in your organization must do this; the onboarding Terraform cannot grant it.
+- **Run the onboarding Terraform with the host project set.** Pass `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region` and `shared_vpc_host_private_subnet_id` to the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp). A single invocation writes into both projects, so the credentials running it need IAM admin on the service project and on the host project. The grants it adds to the host project are read and use only — ClickHouse gets no write access to your network topology.
+
+Then enter the host project in the **Shared VPC host project ID** field described above. If you want private link, create the `PRIVATE_SERVICE_CONNECT` subnet in the host project as well, in the same region as the infrastructure.
