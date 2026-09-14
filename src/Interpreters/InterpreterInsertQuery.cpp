@@ -55,6 +55,7 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/RowWrapper.h>
 #include <Interpreters/JoinedTables.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -283,6 +284,16 @@ Block InterpreterInsertQuery::getSampleBlock(
                 /// Column is materialized
                 if (!allow_materialized)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
+
+                /// A Row wrapper stands in for its source columns at read time, so its stored
+                /// values must always equal tuple(<sources>). Even `insert_allow_materialized_columns`
+                /// must not let a user write diverging bytes into it.
+                const auto & table_columns = metadata_snapshot->getColumns();
+                if (tryDescribeRowWrapper(table_columns.get(current_name), table_columns))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot insert column {}, because it is a Row wrapper column "
+                        "whose value is always computed from the columns it wraps", current_name);
+
                 res[pos] = table_sample_physical.getByName(current_name);
             }
             else if (table_sample_virtuals.has(current_name))

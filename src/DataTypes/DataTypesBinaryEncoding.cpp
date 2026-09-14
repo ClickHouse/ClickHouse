@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -206,6 +207,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                     return BinaryTypeIndex::JSON;
             }
         }
+        case TypeIndex::Row:
+            return BinaryTypeIndex::Row;
     }
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Type {} is not supported for binary encoding", type->getName());
@@ -391,6 +394,19 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
             const auto & types = tuple_type.getElements();
             const auto & names = tuple_type.getElementNames();
+            writeVarUInt(types.size(), buf);
+            for (size_t i = 0; i != types.size(); ++i)
+            {
+                writeStringBinary(names[i], buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(types[i], buf);
+            }
+            break;
+        }
+        case BinaryTypeIndex::Row:
+        {
+            const auto & row_type = assert_cast<const DataTypeRow &>(*type);
+            const auto & types = row_type.getElements();
+            const auto & names = row_type.getElementNames();
             writeVarUInt(types.size(), buf);
             for (size_t i = 0; i != types.size(); ++i)
             {
@@ -671,6 +687,26 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
+        }
+        case BinaryTypeIndex::Row:
+        {
+            size_t size = 0;
+            readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many fields during Row type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
+            DataTypes elements;
+            elements.reserve(size);
+            Strings names;
+            names.reserve(size);
+            for (size_t i = 0; i != size; ++i)
+            {
+                names.emplace_back();
+                readStringBinary(names.back(), buf);
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+            }
+
+            return std::make_shared<DataTypeRow>(elements, names);
         }
         case BinaryTypeIndex::UnnamedTuple:
         {

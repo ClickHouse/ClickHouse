@@ -976,6 +976,10 @@ FunctionCast::ElementWrappers FunctionCast::getElementWrappers(const DataTypes &
 
 FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
 {
+    /// Row shares ColumnTuple with Tuple, so a Row source is converted as the equivalent named Tuple.
+    if (const auto * from_row = typeid_cast<const DataTypeRow *>(from_type_untyped.get()))
+        return createTupleWrapper(std::make_shared<DataTypeTuple>(from_row->getElements(), from_row->getElementNames()), to_type);
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -1183,6 +1187,13 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 
         return ColumnTuple::create(converted_columns);
     };
+}
+
+FunctionCast::WrapperType FunctionCast::createRowWrapper(const DataTypePtr & from_type_untyped, const DataTypeRow * to_type) const
+{
+    /// Row shares ColumnTuple with Tuple, so lower the cast to a Tuple conversion.
+    auto tuple_equivalent = std::make_shared<DataTypeTuple>(to_type->getElements(), to_type->getElementNames());
+    return createTupleWrapper(from_type_untyped, tuple_equivalent.get());
 }
 
 FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const
@@ -3226,6 +3237,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
         case TypeIndex::Tuple:
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
+        case TypeIndex::Row:
+            return createRowWrapper(from_type, checkAndGetDataType<DataTypeRow>(to_type.get()));
         case TypeIndex::QBit:
             return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
         case TypeIndex::Map:
