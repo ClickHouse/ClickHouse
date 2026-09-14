@@ -47,9 +47,8 @@ def wait_for_export_status(
     expected_status="COMPLETED",
     timeout=60,
     poll_interval=0.5,
-    system_table="partition_exports",
 ):
-    """Poll a partition-exports system table until status matches.
+    """Poll `system.partition_exports` until status matches.
 
     *dest_table* may be ``None`` to skip filtering by destination table
     (useful for catalog-based tests where the destination is a database-qualified path).
@@ -61,7 +60,7 @@ def wait_for_export_status(
             f" AND destination_table = '{dest_table}'" if dest_table else ""
         )
         status = node.query(
-            f"SELECT status FROM system.{system_table}"
+            f"SELECT status FROM system.partition_exports"
             f" WHERE source_table = '{source_table}'"
             f"{dest_filter}"
             f" AND partition_id = '{partition_id}'"
@@ -84,12 +83,11 @@ def export_transaction_id(
     source_table,
     dest_table,
     partition_id,
-    system_table="partition_exports",
 ):
     """Return the current transaction id of a partition export, or an empty string if none."""
     dest_filter = f" AND destination_table = '{dest_table}'" if dest_table else ""
     return node.query(
-        f"SELECT transaction_id FROM system.{system_table}"
+        f"SELECT transaction_id FROM system.partition_exports"
         f" WHERE source_table = '{source_table}'"
         f"{dest_filter}"
         f" AND partition_id = '{partition_id}'"
@@ -104,7 +102,6 @@ def wait_for_new_export_transaction(
     previous_transaction_id,
     timeout=60,
     poll_interval=0.2,
-    system_table="partition_exports",
 ):
     """Wait until the export entry carries a transaction id other than *previous_transaction_id*.
 
@@ -116,7 +113,7 @@ def wait_for_new_export_transaction(
     last_transaction_id = None
     while time.time() - start_time < timeout:
         last_transaction_id = export_transaction_id(
-            node, source_table, dest_table, partition_id, system_table=system_table
+            node, source_table, dest_table, partition_id
         )
         if last_transaction_id and last_transaction_id != previous_transaction_id:
             return last_transaction_id
@@ -135,13 +132,12 @@ def wait_for_export_to_start(
     partition_id,
     timeout=10,
     poll_interval=0.2,
-    system_table="partition_exports",
 ):
-    """Poll until at least one row exists in the given partition-exports system table."""
+    """Poll until at least one row exists in `system.partition_exports`."""
     start_time = time.time()
     while time.time() - start_time < timeout:
         count = node.query(
-            f"SELECT count() FROM system.{system_table}"
+            f"SELECT count() FROM system.partition_exports"
             f" WHERE source_table = '{source_table}'"
             f"   AND destination_table = '{dest_table}'"
             f"   AND partition_id = '{partition_id}'"
@@ -165,13 +161,12 @@ def wait_for_exception_count(
     min_exception_count=1,
     timeout=60,
     poll_interval=0.5,
-    system_table="partition_exports",
 ):
     """Wait for exception_count to reach at least *min_exception_count*.
 
     The default timeout is intentionally larger than one manifest-updater poll
     cycle (~30s, see StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask).
-    For a ReplicatedMergeTree source, system.partition_exports is served from the
+    For a ReplicatedMergeTree source, `system.partition_exports` is served from the
     in-memory mirror, which is refreshed on (a) the periodic poll tick and (b)
     status changes. While the task is still PENDING (e.g. transient part-export
     failures with a generous max_retries), no status watch fires, so newly written
@@ -182,7 +177,7 @@ def wait_for_exception_count(
     last_exception_count = None
     while time.time() - start_time < timeout:
         exception_count_str = node.query(
-            f"SELECT exception_count FROM system.{system_table}"
+            f"SELECT exception_count FROM system.partition_exports"
             f" WHERE source_table = '{source_table}'"
             f"   AND destination_table = '{dest_table}'"
             f"   AND partition_id = '{partition_id}'"
