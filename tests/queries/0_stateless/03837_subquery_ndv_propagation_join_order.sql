@@ -1,13 +1,9 @@
-SET explain_query_plan_default = 'legacy';
-SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS test_sales;
 DROP TABLE IF EXISTS test_partners;
 DROP TABLE IF EXISTS test_region_subsidies;
 DROP TABLE IF EXISTS test_product_catalog;
-
-SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE test_sales (
     sale_id UInt64,
@@ -52,9 +48,14 @@ INSERT INTO test_product_catalog
     SELECT number + 1, concat('catalog_', toString(number))
     FROM numbers(300);
 
+-- Merge parts to materialize column statistics
+OPTIMIZE TABLE test_sales FINAL;
+OPTIMIZE TABLE test_partners FINAL;
+OPTIMIZE TABLE test_region_subsidies FINAL;
+OPTIMIZE TABLE test_product_catalog FINAL;
+
 SET enable_analyzer = 1;
 SET allow_statistic_optimize = 1;
-SET use_statistics = 1; -- NDV propagation relies on statistics; runner may inject use_statistics=0
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
