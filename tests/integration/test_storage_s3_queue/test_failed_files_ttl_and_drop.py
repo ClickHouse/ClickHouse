@@ -3444,13 +3444,13 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
     made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a
     retry-limit value captured when the wait started.
 
-    A file is failed once (one retry) against a generous initial limit (5), so the wait's first
-    terminality check finds it still retryable and would otherwise proceed to watch for further
-    Keeper changes. The pause failpoint parks the wait right before that check runs. While parked,
-    the limit is lowered to 1 - at or below the file's already-recorded retry count - which should
-    make the wait's next check of the (now live) limit see the file as terminal. Disabling the
-    failpoint lets that check run: if it still used the value captured when the wait started, it
-    would see the original, higher limit and keep waiting instead of raising promptly.
+    The file is failed with `s3queue_loading_retries=0`, so it becomes terminal on its very first
+    failure and the background streaming loop never touches it again - no ongoing retry race to
+    control for. The pause failpoint then parks the wait right before its terminality check. While
+    parked, the limit is *raised* to 5, which is at or above zero retries, so the file should no
+    longer read as terminal once the check re-reads it - the wait should keep waiting rather than
+    raise immediately. If the check still used the value captured when the wait started (0), it
+    would raise ABORTED right away instead.
     """
     node = started_cluster.instances["instance"]
     table_name = f"test_wait_live_retries_{uuid.uuid4().hex[:8]}"
@@ -3468,7 +3468,7 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_loading_retries": 5,
+            "s3queue_loading_retries": 0,
             "failed_files_ttl_sec": 0,
             "tracked_files_limit": 0,
         },
@@ -3490,7 +3490,10 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
             failed_ready = True
             break
         time.sleep(1)
-    assert failed_ready, "expected the file to reach a Failed state before the retry limit is hit"
+    assert failed_ready, (
+        "expected the file to reach a terminal Failed state (loading_retries=0 means "
+        "terminal on the first failure)"
+    )
 
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
 
@@ -3512,18 +3515,26 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
         "SYSTEM WAIT FAILPOINT object_storage_queue_pause_before_wait_retry_check PAUSE"
     )
 
-    node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=1")
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=5")
     node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
 
-    flush_thread.join(timeout=30)
-    assert not flush_thread.is_alive(), (
-        "SYSTEM FLUSH did not return after the retry limit was lowered mid-wait - "
+    # With the limit raised past the file's single recorded retry, the wait must not raise
+    # immediately - it should keep waiting. Give it a few seconds to prove it does *not*
+    # return, then tear the table down to unblock the thread (which then sees
+    # QUERY_WAS_CANCELLED rather than ABORTED - either way, it must not be an ABORTED
+    # "failed to be processed" error).
+    flush_thread.join(timeout=5)
+    assert flush_thread.is_alive(), (
+        "SYSTEM FLUSH returned immediately after the retry limit was raised mid-wait - "
         "the terminality check is still reading a stale limit instead of the live one"
-    )
-    assert len(flush_errors) == 1, f"expected exactly one ABORTED error, got: {flush_errors}"
-    assert "failed to be processed" in str(flush_errors[0]), (
-        f"expected a 'failed to be processed' ABORTED error, got: {flush_errors[0]}"
     )
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+    flush_thread.join(timeout=30)
+    assert not flush_thread.is_alive(), "flush thread did not exit after the table was dropped"
+    assert len(flush_errors) == 1, f"expected exactly one error after drop, got: {flush_errors}"
+    assert "failed to be processed" not in str(flush_errors[0]), (
+        f"expected a cancellation error from the drop, not an ABORTED failure: {flush_errors[0]}"
+    )
