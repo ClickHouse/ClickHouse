@@ -10,6 +10,9 @@ SELECT arraySlice(arrayMap(x -> (toString(x), x), range(3)), 1);
 
 SELECT arraySlice([1, 2, 3], 1, NULL);
 
+SELECT number, arraySlice(arrayMap(x -> number + x, range(3)), 1, NULL)
+FROM numbers(3);
+
 SELECT arraySlice([1, 2, 3], 2);
 SELECT arraySlice([1, 2, 3], 1, 2);
 
