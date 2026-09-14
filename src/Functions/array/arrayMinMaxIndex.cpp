@@ -198,7 +198,7 @@ namespace ArrayMinMaxIndexImpl
 
 constexpr size_t small_tournament_limit = 48;
 constexpr size_t medium_two_pass_limit = 256;
-constexpr size_t record_block_limit = 16384;
+constexpr size_t record_block_limit_64_bit_integer = 16384;
 
 static bool useAVX2()
 {
@@ -532,7 +532,7 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
         {
             result[row] = static_cast<UInt32>(findIndexSmallOrOnePass<strategy>(data + begin, size) + 1);
         }
-        else if (size < record_block_limit)
+        else if (std::is_integral_v<Element> && sizeof(Element) == 8 && size < record_block_limit_64_bit_integer)
         {
             result[row] = static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
         }
