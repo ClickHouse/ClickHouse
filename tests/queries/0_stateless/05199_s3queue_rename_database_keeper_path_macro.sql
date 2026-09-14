@@ -1,7 +1,6 @@
--- Tags: no-fasttest, zookeeper, no-ordinary-database
+-- Tags: no-fasttest, zookeeper
 -- no-fasttest: S3Queue is not built in the fast test.
 -- zookeeper: the queue keeps its metadata in Keeper.
--- no-ordinary-database: RENAME DATABASE is refused with the same error code there, which would mask this check.
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
