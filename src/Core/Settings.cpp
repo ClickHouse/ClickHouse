@@ -34,6 +34,7 @@
 
 #include <array>
 #include <bit>
+#include <bitset>
 #include <cstring>
 
 namespace
@@ -3081,7 +3082,7 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis. Currently, 2D analysis skips curves with `UInt64` arguments because the curve implementations use only 32 bits per argument.
 )", 0) \
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
 Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
@@ -7532,9 +7533,11 @@ Use schema from cache for URL with last modification time validation (for URLs w
 )", 0) \
     \
     DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, with exceptions recorded in the settings changes history.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
@@ -8882,6 +8885,21 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
+    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
+Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
+
+Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
+
+The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+
+The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
+Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
+)", 0) \
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
+The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
+)", 0) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -9857,6 +9875,7 @@ struct ResolvedCompatibilityChange
     const Field * previous_value;
     /// Whether `previous_value` is what the setting holds when nothing changed it.
     bool previous_value_is_default;
+    SettingsChangesHistory::SettingChange::CompatibilitySetting compatibility_mode;
 };
 
 using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
@@ -9887,7 +9906,7 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
                 const bool previous_value_is_default
                     = accessor.getValue(default_settings, index) == change.previous_value;
 
-                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default, change.compatibility_mode});
             }
             result.emplace_back(version, std::move(resolved_changes));
         }
@@ -9930,6 +9949,8 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     ClickHouseVersion version(compatibility_value);
     const auto & accessor = Traits::Accessor::instance();
     const auto & resolved_history = getResolvedCompatibilityHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
+    std::bitset<static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS)> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
@@ -9940,6 +9961,12 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
+                blocked_settings.set(change.index);
+
+            if (blocked_settings[change.index])
+                continue;
+
             const bool changed_by_compatibility = isChangedByCompatibility(change.index);
 
             /// If this setting was changed manually, we don't change it
