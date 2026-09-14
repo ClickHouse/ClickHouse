@@ -13,8 +13,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// NOINLINE (also LTO-proof) keeps the injected wait as its own profiler frame, not smeared over the caller.
-NOINLINE void simulateObjectStorageLatency(UInt64 sleep_ms)
+/// NO_INLINE (also LTO-proof) keeps the injected wait as its own profiler frame, not smeared over the caller.
+NO_INLINE void simulateObjectStorageLatency(UInt64 sleep_ms)
 {
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::SimulatedObjectStorageLatencyMicroseconds);
     sleepForMilliseconds(sleep_ms);
