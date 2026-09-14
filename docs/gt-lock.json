@@ -7,37 +7,37 @@
       "versionId": "0b240341596183431a2c0d2988a1d4211d0dfcc018e1a88b8cfa67f4b0deaf22",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-14T17:46:16.227Z",
+          "updatedAt": "2026-09-14T19:23:29.949Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-14T17:46:16.480Z",
+          "updatedAt": "2026-09-14T19:23:29.465Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-14T17:46:16.742Z",
+          "updatedAt": "2026-09-14T19:23:29.293Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-14T17:46:16.969Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-14T19:23:30.425Z",
+          "fileName": "docs.json",
+          "postProcessHash": "caff8db5c6a380686b6539de6f92456b0b843fbedde432ab0e8ebb81276f52ea"
         },
         "ko": {
-          "updatedAt": "2026-09-14T17:46:17.199Z",
+          "updatedAt": "2026-09-14T19:23:29.628Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-14T17:46:17.435Z",
+          "updatedAt": "2026-09-14T19:23:29.791Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-14T17:46:17.707Z",
+          "updatedAt": "2026-09-14T19:23:30.112Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-14T17:46:17.962Z",
-          "fileName": "docs.json",
-          "postProcessHash": "49920716e600c4ae4ace43b75b87bad0df8dcf5b9e79aa4cb99f92b71be859de"
+          "updatedAt": "2026-09-14T19:23:30.285Z",
+          "fileName": "docs.json"
         }
       },
       "fileName": "docs.json"
@@ -66239,47 +66239,47 @@
     },
     {
       "fileId": "a43d6fd1e7a78db3ec3826e857dc222c824cb73aa4898775521b64d7d37ba41e",
-      "versionId": "515de75e2ba9f6e9129497d7f8457fa4873ce64644688e5340caf76d1870fd29",
+      "versionId": "0c7ea33e5a9f504bdaa60f5bc6a54e1c48c084799ca42a6e247bd24957567c78",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-09-12T22:33:57.523Z",
-          "fileName": "zh/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "9743449e39677807d297e818e0ce55bac8d19d8e48ad0faf99eaa21faa0a05fb"
-        },
-        "ru": {
-          "updatedAt": "2026-09-12T22:33:57.525Z",
-          "fileName": "ru/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "a7c44826aabe56da2e4b045fd66ef1145e7ac6f36b037c75451c390438b80fd7"
-        },
-        "ko": {
-          "updatedAt": "2026-09-12T22:33:57.527Z",
-          "fileName": "ko/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "291ddd9e46706e011f7fd1a78834b921f52ff6aeb6ffe5f50d530a3e2c8c6205"
-        },
         "ja": {
-          "updatedAt": "2026-09-12T22:33:57.528Z",
+          "updatedAt": "2026-09-14T19:23:34.133Z",
           "fileName": "ja/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "7892379db5c9a3bc9178765dcdb4eca6e9d86b06016b02a2f9815e2f2b429557"
+          "postProcessHash": "84ba8b2241deb20890176f7c0ef576f759c317f569c8229737b9e3912e57669c"
         },
         "fr": {
-          "updatedAt": "2026-09-12T22:33:57.530Z",
+          "updatedAt": "2026-09-14T19:23:34.134Z",
           "fileName": "fr/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "05669edbe38faaa3b7438d149fd8a3cd99a5744adab5de421a8e42469ddad0a8"
+          "postProcessHash": "d9cd93b36ae779079eee5b8b402f961087e6a38453ec2c6c73bc3a69b9b74fe5"
+        },
+        "ru": {
+          "updatedAt": "2026-09-14T19:23:34.136Z",
+          "fileName": "ru/reference/interfaces/specs/NativeProtocol.mdx",
+          "postProcessHash": "f4fc8a15a2bae14e4a446b556bd97833889636a1de17b4d8e0fc806f4d696bfc"
+        },
+        "zh": {
+          "updatedAt": "2026-09-14T19:23:34.137Z",
+          "fileName": "zh/reference/interfaces/specs/NativeProtocol.mdx",
+          "postProcessHash": "c761024bf52b44eaa591bfd9f9fbaf6dae0929564c4f7d03d705622718c8cf6b"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-12T22:33:57.533Z",
+          "updatedAt": "2026-09-14T19:23:34.138Z",
           "fileName": "pt-BR/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "edb2a0e3f3b70c5195a15c0ef418addc74a7b5f94703d2fa45eee34973933668"
+          "postProcessHash": "4beee93ed4a2d970b04047dca01ed85a6982101a6a0fc19bb27ea3c1e731e6e3"
+        },
+        "ko": {
+          "updatedAt": "2026-09-14T19:23:34.139Z",
+          "fileName": "ko/reference/interfaces/specs/NativeProtocol.mdx",
+          "postProcessHash": "962f1461fe01542ed29e545ab989ac6573e0432fd960e0635125766e1f31aab5"
         },
         "es": {
-          "updatedAt": "2026-09-12T22:33:57.534Z",
+          "updatedAt": "2026-09-14T19:23:34.140Z",
           "fileName": "es/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "144376051412a6acf4e77d8523c277f89bf361c3e55e42d92b27c3e9b8a4eec2"
+          "postProcessHash": "94ae5ef552993853f89261cb84a6c44d0f2a26fc3c8900b0cce631168d07a7f4"
         },
         "ar": {
-          "updatedAt": "2026-09-12T22:33:57.540Z",
+          "updatedAt": "2026-09-14T19:23:34.141Z",
           "fileName": "ar/reference/interfaces/specs/NativeProtocol.mdx",
-          "postProcessHash": "11d6f7408de4475981b38025be7f446571390ec231ebcb231a87cb87fb5bcce1"
+          "postProcessHash": "a7e6295864efeba7756157c82298b767a9a646edb991458b9ce77ffac9f50225"
         }
       },
       "fileName": "reference/interfaces/specs/NativeProtocol.mdx"
