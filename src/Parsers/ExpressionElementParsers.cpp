@@ -1804,7 +1804,6 @@ const char * ParserAlias::restricted_keywords[] =
     "SETTINGS",
     "STREAM",
     "UNION",
-    "UNPIVOT",
     "USING",
     "WHERE",
     "WINDOW",
@@ -1842,6 +1841,21 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// Special case: an implicit alias literally named UNPIVOT is only ambiguous where the
+        /// UNPIVOT clause of a table expression can start, which is where it is followed by the
+        /// opening bracket of that clause (`FROM t UNPIVOT (v FOR k IN (a, b))`). Everywhere else
+        /// -- `SELECT 1 unpivot`, `FROM t unpivot, u` -- it stays a perfectly good implicit alias,
+        /// so that adding the clause does not reserve a word that queries already use.
+        if (0 == strcasecmp(name.data(), "UNPIVOT"))
+        {
+            Pos peek = pos;
+            Expected peek_expected;
+            if (!ParserKeyword(Keyword::INCLUDE_NULLS).ignore(peek, peek_expected))
+                ParserKeyword(Keyword::EXCLUDE_NULLS).ignore(peek, peek_expected);
+            if (peek->type == TokenType::OpeningRoundBracket)
+                return false;
+        }
 
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the

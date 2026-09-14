@@ -1103,8 +1103,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 auto node = buildSelectWithUnionExpression(
                     unpivot_subquery, true /*is_subquery*/, {} /*cte*/, select_query.aliases(), context);
 
-                /// `t AS s UNPIVOT (...)` names the result `s`: the source becomes an inner subquery,
-                /// so its alias would otherwise stop resolving. An alias on the clause itself wins.
+                /// The source becomes an inner subquery, so whatever named it outside the clause
+                /// has to name the result instead: the alias of the source, or its table name when
+                /// it has no alias, both of which were valid qualifiers before the rewrite. An
+                /// alias written on the clause itself wins over either.
+                /// A `database.table` qualifier is not carried over, because no subquery of
+                /// ClickHouse answers to one.
                 String result_alias = unpivot.result_alias;
                 if (result_alias.empty())
                 {
@@ -1113,6 +1117,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         : (table_expression.table_function ? table_expression.table_function : table_expression.subquery);
                     if (source)
                         result_alias = source->tryGetAlias();
+
+                    if (result_alias.empty() && table_expression.database_and_table_name)
+                    {
+                        const auto & name_parts = table_expression.database_and_table_name->as<ASTTableIdentifier &>().name_parts;
+                        if (!name_parts.empty())
+                            result_alias = name_parts.back();
+                    }
                 }
                 node->setAlias(result_alias);
                 node->setOriginalAST(unpivot_subquery);

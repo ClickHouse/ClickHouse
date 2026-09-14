@@ -36,6 +36,10 @@ SELECT t.k, u.empid, u.month FROM (SELECT 'jan' AS k) AS t JOIN monthly_sales UN
 SELECT count() FROM (SELECT 1 AS x) AS t, monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) AS u;
 SELECT month, sales, a FROM monthly_sales UNPIVOT (sales FOR month IN (jan)) ARRAY JOIN [1, 2] AS a ORDER BY ALL;
 
+SELECT '-- the name of an unaliased source still qualifies the result';
+SELECT monthly_sales.month, monthly_sales.sales FROM monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
+SELECT monthly_sales.* FROM monthly_sales UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
+
 SELECT '-- an alias on the source names the result, and an alias on the clause wins over it';
 SELECT s.month, s.sales FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
 SELECT s.empid, s.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
@@ -65,6 +69,9 @@ SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan + 1)); -- { clientE
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month); -- { clientError SYNTAX_ERROR }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb)) SETTINGS enable_analyzer = 0; -- { serverError UNSUPPORTED_METHOD }
 
--- `UNPIVOT` is still usable as an identifier.
+-- `UNPIVOT` is not a reserved word: it is only the clause where the clause can start, so an alias
+-- named after it keeps working, with or without `AS`.
 SELECT 1 AS unpivot, unpivot;
+SELECT 1 unpivot;
 SELECT number FROM numbers(1) AS unpivot ORDER BY unpivot.number;
+SELECT number FROM numbers(1) unpivot ORDER BY unpivot.number;

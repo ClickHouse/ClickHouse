@@ -41,6 +41,13 @@ jan	10	1
 jan	10	2
 jan	100	1
 jan	100	2
+-- the name of an unaliased source still qualifies the result
+jan	10
+jan	100
+mar	30
+mar	300
+1	electronics	200	300	jan	100
+2	clothes	\N	30	jan	10
 -- an alias on the source names the result, and an alias on the clause wins over it
 jan	10
 jan	100
@@ -60,4 +67,6 @@ SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))
 SELECT * FROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u
 -- errors
 1	1
+1
+0
 0
