@@ -69,7 +69,7 @@ def wait_for_uploads(count):
 def check_data(expected_sum=780):
     assert node.query("SELECT count(), sum(v) FROM t") == f"40\t{expected_sum}\n"
     assert node.query("CHECK TABLE t SETTINGS check_query_single_value_result = 1") == "1\n"
-    node.query("DETACH TABLE t")
+    node.query("DETACH TABLE t SYNC")
     node.query("ATTACH TABLE t")
     assert node.query("SELECT count(), sum(v) FROM t") == f"40\t{expected_sum}\n"
 

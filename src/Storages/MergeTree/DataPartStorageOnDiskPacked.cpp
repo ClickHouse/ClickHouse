@@ -771,8 +771,9 @@ void DataPartStorageOnDiskPacked::preFinalizeWriter()
 
     /// The writer keeps the whole part in memory, so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
+    /// Small asynchronous uploads must not retain a full default-sized buffer each.
     auto buf = transaction->writeFile(
-        archive_path, DBMS_DEFAULT_BUFFER_SIZE,
+        archive_path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, plan.total_size),
         WriteMode::Rewrite, writer->getWriteSettings());
 
     writer->finalize(*buf, plan);
@@ -794,6 +795,9 @@ void DataPartStorageOnDiskPacked::preFinalizeWriter()
 
 void DataPartStorageOnDiskPacked::finalizeWriter()
 {
+    if (writer)
+        preFinalizeWriter();
+
     if (!pending_writer_finalization)
         return;
 
