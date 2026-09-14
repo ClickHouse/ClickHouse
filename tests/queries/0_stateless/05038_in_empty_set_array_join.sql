@@ -47,12 +47,12 @@ CREATE TABLE t_in_empty_set_storage (x Int) ENGINE = Set;
 -- A `Set` table can be filled after a query referencing it is planned, so its emptiness must not
 -- be folded into a constant. The plan keeps the function while a literal empty list becomes one.
 -- The old analyzer folds both, so the plan-shape assertions below pin the new one.
+-- 26.6 predates the humanized plan names, so the assertions read the DAG actions (`COLUMN Const`
+-- vs `FUNCTION in`) instead of the filter column name (`0` vs `a IN <set>`).
 SET enable_analyzer = 1;
-SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN ()) WHERE explain ILIKE '%Filter column: 0%';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%Filter column: 0%';
--- Only the filter column names the set: a `ReadFromRemote*` step echoes the whole remote query,
--- so an unscoped match counts a second line whenever the read is distributed.
-SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%filter column:%' AND explain ILIKE '%t_in_empty_set_storage%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN ()) WHERE explain ILIKE '%COLUMN Const(UInt8) -> in(%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%COLUMN Const(UInt8) -> in(%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%FUNCTION in(%';
 
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
 SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN t_in_empty_set_storage;

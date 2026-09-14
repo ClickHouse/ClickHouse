@@ -1,13 +1,141 @@
-(\n    SELECT 1\n    FROM system.one\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
 -
-(\n    SELECT 1\n    FROM system.one\n)\nUNION ALL\n(\n    (\n        SELECT 1\n        FROM system.one\n    )\n    UNION DISTINCT\n    (\n        SELECT 1\n        FROM system.one\n    )\n    UNION DISTINCT\n    (\n        SELECT 1\n        FROM system.one\n    )\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
 -
-SELECT x\nFROM\n(\n    (\n        SELECT 1 AS x\n        FROM system.one\n    )\n    UNION ALL\n    (\n        (\n            SELECT 1\n            FROM system.one\n        )\n        UNION DISTINCT\n        (\n            SELECT 1\n            FROM system.one\n        )\n        UNION DISTINCT\n        (\n            SELECT 1\n            FROM system.one\n        )\n    )\n    UNION ALL\n    (\n        SELECT 1\n        FROM system.one\n    )\n)
+SELECT x
+FROM
+(
+    (
+        SELECT 1 AS x
+        FROM system.one
+    )
+    UNION ALL
+    (
+        (
+            SELECT 1
+            FROM system.one
+        )
+        UNION DISTINCT
+        (
+            SELECT 1
+            FROM system.one
+        )
+        UNION DISTINCT
+        (
+            SELECT 1
+            FROM system.one
+        )
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
 -
-SELECT x\nFROM\n(\n    (\n        SELECT 1 AS x\n        FROM system.one\n    )\n    UNION ALL\n    (\n        SELECT 1\n        FROM system.one\n    )\n    UNION ALL\n    (\n        SELECT 1\n        FROM system.one\n    )\n)
+SELECT x
+FROM
+(
+    (
+        SELECT 1 AS x
+        FROM system.one
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
 -
-(\n    SELECT 1\n    FROM system.one\n)\nUNION DISTINCT\n(\n    SELECT 1\n    FROM system.one\n)\nUNION DISTINCT\n(\n    SELECT 1\n    FROM system.one\n)
+(
+    SELECT 1
+    FROM system.one
+)
+UNION DISTINCT
+(
+    SELECT 1
+    FROM system.one
+)
+UNION DISTINCT
+(
+    SELECT 1
+    FROM system.one
+)
 -
-SELECT 1\nFROM system.one
+SELECT 1
+FROM system.one
 -
-(\n    (\n        SELECT 1\n        FROM system.one\n    )\n    UNION DISTINCT\n    (\n        SELECT 1\n        FROM system.one\n    )\n    UNION DISTINCT\n    (\n        SELECT 1\n        FROM system.one\n    )\n)\nUNION ALL\n(\n    SELECT 1\n    FROM system.one\n)
+(
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)

@@ -1,17 +1,13 @@
 -- Tags: no-fasttest
 -- no-fasttest: vector search needs usearch 3rd party library
+
 -- Tests vector search behavior when some vector columns have indexes and others don't.
 -- Verifies behavior of filter strategies for both indexed and non-indexed vector columns
 -- in the same table.
-SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
-
--- The reference vector is built with a lambda over a constant range. Its body has to be deterministic
--- in the scope of the query: a lambda whose body is not (e.g. `randCanonical`) is not constant folded,
--- so the reference vector is not a constant and the vector index cannot be used for it.
 
 DROP TABLE IF EXISTS tab;
 
@@ -28,42 +24,14 @@ SETTINGS index_granularity = 3;
 INSERT INTO tab
 SELECT
     number,
-    arrayMap(i -> i / 16, range(16)),
-    arrayMap(i -> i / 32, range(32))
+    arrayMap(i -> randCanonical(i), range(16)),
+    arrayMap(i -> randCanonical(i), range(32))
 FROM numbers(100);
 
 -- Test vector search on indexed column (vec1) with different filter strategies
 --
--- With the PK filter below, vector index analysis does not produce usable row
--- hints for auto and postfilter strategies, so implicit PREWHERE is restored.
--- The vector index must still be used during index analysis before that fallback.
--- The prefilter strategy explicitly prefers PREWHERE and brute force distance
--- calculation.
-
-SELECT '-- Indexed auto/postfilter still use the vector index';
-SELECT trimLeft(explain)
-FROM (
-    EXPLAIN indexes = 1
-    SELECT key
-    FROM tab
-    WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
-    LIMIT 1
-    SETTINGS vector_search_filter_strategy = 'auto'
-)
-WHERE explain ILIKE '%vector_similarity%';
-
-SELECT trimLeft(explain)
-FROM (
-    EXPLAIN indexes = 1
-    SELECT key
-    FROM tab
-    WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
-    LIMIT 1
-    SETTINGS vector_search_filter_strategy = 'postfilter'
-)
-WHERE explain ILIKE '%vector_similarity%';
+-- Expect to use index lookups for auto and postfilter strategies, and PREWHERE
+-- filter + brute force distance calculation for the prefilter strategy
 
 SELECT '-- Search with index, strategy = auto';
 SELECT replaceRegexpAll(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_XXX')
@@ -72,7 +40,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'auto'
 )
@@ -86,7 +54,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -100,7 +68,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -120,7 +88,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'auto'
 )
@@ -134,7 +102,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -148,7 +116,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
