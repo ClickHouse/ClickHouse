@@ -218,6 +218,21 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     return true;
 }
 
+size_t ReadBufferFromEncryptedFile::readBigAt(char * to, size_t n, size_t offset_, const std::function<bool(size_t)> & progress_callback) const
+{
+    size_t bytes_read = in->readBigAt(to, n, offset_ + FileEncryption::Header::kSize, {});
+
+    /// A per-call encryptor: `setOffset` mutates it, while concurrent `readBigAt` calls are allowed.
+    FileEncryption::Encryptor local_encryptor = encryptor;
+    local_encryptor.setOffset(offset_);
+    local_encryptor.decrypt(to, bytes_read, to);
+
+    if (bytes_read && progress_callback)
+        progress_callback(bytes_read);
+
+    return bytes_read;
+}
+
 void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 {
     std::optional<off_t> in_position;

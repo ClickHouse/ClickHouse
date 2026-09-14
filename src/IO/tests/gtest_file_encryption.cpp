@@ -11,6 +11,9 @@
 #include <IO/ReadHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <filesystem>
+#include <thread>
+#include <utility>
+#include <vector>
 
 
 using namespace DB;
@@ -258,6 +261,142 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     ASSERT_EQ(rb.getPosition(), 6);
     readStringUntilEOF(res, rb);
     ASSERT_EQ(res, data.substr(6));
+}
+
+namespace
+{
+    /// An encrypted file plus the plaintext it was built from, for the `readBigAt` tests below.
+    struct EncryptedFileFixture
+    {
+        String path;
+        String key = "1234567812345678";
+        FileEncryption::Header header;
+        String data;
+
+        EncryptedFileFixture(const String & name, size_t size)
+            : path(std::filesystem::current_path() / name)
+            , data(getRandomASCIIString(size))
+        {
+            if (std::filesystem::exists(path))
+                std::filesystem::remove(path);
+
+            header.algorithm = Algorithm::AES_128_CTR;
+            header.key_fingerprint = calculateKeyFingerprint(key);
+            header.init_vector = InitVector::random();
+
+            auto out = std::make_unique<WriteBufferFromFile>(path);
+            WriteBufferFromEncryptedFile wb(
+                DBMS_DEFAULT_BUFFER_SIZE, std::move(out), key, header, /*old_file_size=*/0,
+                /*use_adaptive_buffer_size_=*/false, /*adaptive_buffer_initial_size=*/0);
+            wb.write(data.data(), data.size());
+            wb.finalize();
+        }
+
+        ~EncryptedFileFixture()
+        {
+            std::filesystem::remove(path);
+        }
+
+        /// `ReadBufferFromFilePRead` is the inner buffer because plain `ReadBufferFromFile`
+        /// uses `read` and so reports no `readBigAt` support.
+        std::unique_ptr<ReadBufferFromEncryptedFile> open() const
+        {
+            return std::make_unique<ReadBufferFromEncryptedFile>(
+                path, DBMS_DEFAULT_BUFFER_SIZE, std::make_unique<ReadBufferFromFilePRead>(path), key, header);
+        }
+    };
+}
+
+/// `readBigAt` must return the same plaintext as a sequential read for any range, including
+/// ranges that do not start or end on a 16-byte cipher block boundary, and must deliver the
+/// whole requested range rather than stopping at the first short read.
+TEST(FileEncryptionReadBigAtTest, ArbitraryRanges)
+{
+    constexpr size_t file_size = 1000;
+    EncryptedFileFixture file{"test_read_big_at_ranges", file_size};
+
+    auto rb = file.open();
+    ASSERT_TRUE(rb->supportsReadAt());
+
+    /// Block-aligned, unaligned, block-crossing, whole-file, and past-the-end ranges.
+    const std::vector<std::pair<size_t, size_t>> ranges = {
+        {0, 16}, {0, 1}, {1, 5}, {15, 2}, {16, 32}, {7, 100}, {63, 130},
+        {0, file_size}, {file_size - 3, 3}, {file_size - 3, 10}, {file_size, 10},
+    };
+
+    for (auto [offset, count] : ranges)
+    {
+        String got(count, 0);
+        size_t bytes_read = rb->readBigAt(got.data(), count, offset, {});
+
+        size_t expected_size = offset >= file_size ? 0 : std::min(count, file_size - offset);
+        ASSERT_EQ(bytes_read, expected_size) << "offset=" << offset << " count=" << count;
+        ASSERT_EQ(got.substr(0, bytes_read), file.data.substr(offset, bytes_read))
+            << "offset=" << offset << " count=" << count;
+    }
+}
+
+/// `readBigAt` must not disturb the buffer state, so a sequential read interleaved with
+/// positional reads still returns an uninterrupted stream.
+TEST(FileEncryptionReadBigAtTest, DoesNotDisturbSequentialRead)
+{
+    constexpr size_t file_size = 500;
+    EncryptedFileFixture file{"test_read_big_at_sequential", file_size};
+
+    auto rb = file.open();
+    ASSERT_TRUE(rb->supportsReadAt());
+
+    String head(100, 0);
+    ASSERT_EQ(rb->read(head.data(), head.size()), 100u);
+    ASSERT_EQ(head, file.data.substr(0, 100));
+
+    String scratch(64, 0);
+    ASSERT_EQ(rb->readBigAt(scratch.data(), scratch.size(), 300, {}), 64u);
+    ASSERT_EQ(scratch, file.data.substr(300, 64));
+
+    ASSERT_EQ(rb->getPosition(), 100);
+    String tail;
+    readStringUntilEOF(tail, *rb);
+    ASSERT_EQ(tail, file.data.substr(100));
+}
+
+/// The contract allows concurrent `readBigAt` calls. Decryption state is per-call, so a shared
+/// mutable encryptor would make these results interfere.
+TEST(FileEncryptionReadBigAtTest, ConcurrentReads)
+{
+    constexpr size_t file_size = 4096;
+    EncryptedFileFixture file{"test_read_big_at_concurrent", file_size};
+
+    auto rb = file.open();
+    ASSERT_TRUE(rb->supportsReadAt());
+
+    constexpr size_t num_threads = 8;
+    constexpr size_t chunk = file_size / num_threads;
+
+    std::vector<String> results(num_threads);
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < num_threads; ++i)
+    {
+        threads.emplace_back([&, i]
+        {
+            /// Deliberately unaligned to the cipher block size where possible.
+            size_t offset = i * chunk + (i % 2);
+            size_t count = chunk - (i % 2);
+            String got(count, 0);
+            size_t bytes_read = rb->readBigAt(got.data(), count, offset, {});
+            got.resize(bytes_read);
+            results[i] = std::move(got);
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    for (size_t i = 0; i < num_threads; ++i)
+    {
+        size_t offset = i * chunk + (i % 2);
+        size_t count = chunk - (i % 2);
+        ASSERT_EQ(results[i], file.data.substr(offset, count)) << "thread " << i;
+    }
 }
 
 #endif
