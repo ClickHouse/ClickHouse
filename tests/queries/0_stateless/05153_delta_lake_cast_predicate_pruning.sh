@@ -12,27 +12,46 @@ ROOT="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_delta_cast"
 trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
+# A clickhouse-local launch costs seconds on slow builds, and one launch per query used to blow
+# past the 180s test limit. The test therefore records everything first - `make_table`, `check`
+# and `expect_error` only declare work - and `run_all` at the bottom executes it in five batched
+# launches: one for the data files, then one per engine-predicate mode for the checks and one
+# per mode for the expected errors. Per-query numbers are recovered from consecutive reads of
+# the cumulative counters in `system.events` and `system.errors`, which is exact because the
+# statements of one launch run sequentially in a single process.
+
+TABLES=()
+declare -A TABLE_TYPE TABLE_STATS TABLE_DATES
+FIXTURE_QUERIES=""
+
 # make_table <table> <column type> <full|none|no_min|no_max> <dates>...
 # Each argument is one file: sorted, comma-separated ISO dates, or a single NULL.
 # `no_min` / `no_max` omit only that bound; `none` emits only `numRecords`.
-# The log is hand-written because ClickHouse's Delta writer emits no per-column stats.
 make_table() {
     local table=$1 type=$2 stats_mode=$3
     shift 3
-
-    ## Phase 1: the data files. Written first - the log below embeds their byte sizes.
     mkdir -p "${ROOT}/${table}/_delta_log"
+    TABLES+=("${table}")
+    TABLE_TYPE[$table]="${type}"
+    TABLE_STATS[$table]="${stats_mode}"
+    TABLE_DATES[$table]="$*"
     local date value
     for date in "$@"; do
         value="'${date//,/\',\'}'"
         [[ "${date}" == NULL ]] && value=NULL
-        ${CLICKHOUSE_LOCAL} --query "
+        FIXTURE_QUERIES+="
             INSERT INTO FUNCTION file('${ROOT}/${table}/${date}.parquet', Parquet, 'd ${type}')
-            SELECT CAST(arrayJoin([${value}]), '${type}')"
+            SELECT CAST(arrayJoin([${value}]), '${type}');"
     done
+}
 
-    ## Phase 2: the log - protocol, metaData, then one add action per file. schemaString and
-    ## stats are JSON documents embedded as JSON strings, hence the escaped quotes.
+# The second phase of `make_table`: protocol, metaData, then one add action per file. The log is
+# hand-written because ClickHouse's Delta writer emits no per-column stats, and it can only be
+# written after the fixture batch ran - it embeds the data files' byte sizes. `schemaString` and
+# `stats` are JSON documents embedded as JSON strings, hence the escaped quotes.
+write_log() {
+    local table=$1
+    local type="${TABLE_TYPE[$table]}" stats_mode="${TABLE_STATS[$table]}"
     local nullable=false
     [[ "${type}" == Nullable* ]] && nullable=true
     local log="${ROOT}/${table}/_delta_log/00000000000000000000.json"
@@ -40,10 +59,11 @@ make_table() {
 {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
 {"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"d\\",\\"type\\":\\"date\\",\\"nullable\\":${nullable},\\"metadata\\":{}}]}","partitionColumns":[],"configuration":{}}}
 EOF
-    local stats size
-    local -a dates
-    for date in "$@"; do
-        IFS=, read -r -a dates <<< "$date"
+    local date stats size
+    local -a all_dates dates
+    read -r -a all_dates <<< "${TABLE_DATES[$table]}"
+    for date in "${all_dates[@]}"; do
+        IFS=, read -r -a dates <<< "${date}"
         stats="{\"numRecords\":${#dates[@]}"
         if [[ "${stats_mode}" != none ]]; then
             if [[ "${date}" == NULL ]]; then
@@ -62,47 +82,147 @@ EOF
     done
 }
 
-# Fresh processes isolate `system.events`. Disable every applicable Parquet pruning path.
-query() {
-    local table="$1" where="$2" enabled="$3"
+ITEMS=()
+CHECK_TABLES=() CHECK_WHERES=() CHECK_SETTINGS=()
+ERR_HEADERS=() ERR_TABLES=() ERR_WHERES=() ERR_ENABLED=() ERR_CODES=() ERR_SETTINGS=()
+OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=()
+
+# check <table> <where> [settings]: rows with the engine predicate on must match the rows with
+# it off, the off run must scan every file, and the on rows and scan count go to the reference.
+check() {
+    ITEMS+=("check ${#CHECK_TABLES[@]}")
+    CHECK_TABLES+=("$1")
+    CHECK_WHERES+=("$2")
+    CHECK_SETTINGS+=("${3:-}")
+}
+
+# expect_error <header> <table> <where> <enabled> <error> [settings]: the query must fail with
+# the given error identity; scan counts are not pinned after cancellation.
+expect_error() {
+    ITEMS+=("error ${#ERR_HEADERS[@]}")
+    ERR_HEADERS+=("$1")
+    ERR_TABLES+=("$2")
+    ERR_WHERES+=("$3")
+    ERR_ENABLED+=("$4")
+    ERR_CODES+=("$5")
+    ERR_SETTINGS+=("${6:-}")
+}
+
+# The data query of one recorded case, with its per-case settings attached.
+data_query() {
+    printf "SELECT arraySort(groupArray(ifNull(toString(d), 'NULL'))) FROM deltaLakeLocal('%s') WHERE %s%s;" \
+        "${ROOT}/$1" "$2" "${3:+ SETTINGS $3}"
+}
+
+# Disable every applicable Parquet pruning path, so only the engine predicate can skip files.
+run_batch() {
+    local enabled=$1
+    shift
     ${CLICKHOUSE_LOCAL} --date_time_overflow_behavior=ignore --convert_query_to_cnf=0 \
         --short_circuit_function_evaluation=disable \
         --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 \
         --input_format_parquet_bloom_filter_push_down=0 --input_format_parquet_dictionary_filter_push_down=0 \
-        --delta_lake_enable_engine_predicate="$enabled" --delta_lake_throw_on_engine_predicate_error=1 --query "
-        SELECT arraySort(groupArray(ifNull(toString(d), 'NULL')))
-        FROM deltaLakeLocal('${ROOT}/${table}') WHERE ${where} ${4:+SETTINGS $4};
-        SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;
-    "
+        --delta_lake_enable_engine_predicate="${enabled}" --delta_lake_throw_on_engine_predicate_error=1 "$@"
 }
 
-# Compare rows, not scan counts. The reference independently checks rows and selected files.
-check() {
-    local table="$1" where="$2" off on
-    local files=("${ROOT}/${table}/"*.parquet)
-    printf '%s: %s%s\n' "$table" "$where" "${3:+ SETTINGS $3}"
-    off=$(query "$table" "$where" 0 "${3:-}")
-    on=$(query "$table" "$where" 1 "${3:-}")
-    diff -u <(printf '%s\n' "${off%$'\n'*}") <(printf '%s\n' "${on%$'\n'*}")
-    if [[ "${off##*$'\n'}" != "${#files[@]}" ]]; then
-        printf 'Unexpected unpruned file count: %s\n' "$off" >&2
+# Runs every recorded check in one launch. Each data query is followed by a read of the
+# cumulative `DeltaLakeScannedFiles` counter; consecutive differences give per-query scan counts.
+run_checks() {
+    local enabled=$1
+    local -n rows_out=$2 deltas_out=$3
+    local i batch="" out
+    for i in "${!CHECK_TABLES[@]}"; do
+        batch+="$(data_query "${CHECK_TABLES[$i]}" "${CHECK_WHERES[$i]}" "${CHECK_SETTINGS[$i]}")
+            SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;"
+    done
+    out=$(run_batch "${enabled}" --query "${batch}")
+    local -a lines
+    mapfile -t lines <<< "${out}"
+    if [[ "${#lines[@]}" != "$(( 2 * ${#CHECK_TABLES[@]} ))" ]]; then
+        printf 'Expected %s lines from the check batch (engine predicate %s), got %s:\n%s\n' \
+            "$(( 2 * ${#CHECK_TABLES[@]} ))" "${enabled}" "${#lines[@]}" "${out}" >&2
         return 1
     fi
-    printf '%s\n' "$on"
+    local previous=0 cumulative
+    for i in "${!CHECK_TABLES[@]}"; do
+        rows_out+=("${lines[2 * i]}")
+        cumulative="${lines[2 * i + 1]}"
+        deltas_out+=("$(( cumulative - previous ))")
+        previous="${cumulative}"
+    done
 }
 
-# Check both failure status and error identity; do not pin scan counts after cancellation.
-expect_error() {
-    local table="$1" where="$2" enabled="$3" error="$4" output
-    if output=$(query "$table" "$where" "$enabled" "${5:-}" 2>&1); then
-        printf 'Expected %s, query succeeded: %s\n' "$error" "$where" >&2
+# Runs the recorded error cases of one mode in one launch under `--ignore-error`, which in
+# clickhouse-local silently skips a failed query and continues. A failed SELECT contributes no
+# result row, so each case must produce exactly one line: the cumulative count of its expected
+# error code, read from `system.errors` right after it. The count must grow across the case,
+# which both proves the query failed and pins the error identity.
+run_errors() {
+    local enabled=$1
+    local i batch="" out
+    local -a case_ids=()
+    for i in "${!ERR_HEADERS[@]}"; do
+        [[ "${ERR_ENABLED[$i]}" == "${enabled}" ]] || continue
+        case_ids+=("$i")
+        batch+="$(data_query "${ERR_TABLES[$i]}" "${ERR_WHERES[$i]}" "${ERR_SETTINGS[$i]}")
+            SELECT sumIf(value, name = '${ERR_CODES[$i]}') FROM system.errors;"
+    done
+    out=$(run_batch "${enabled}" --ignore-error --query "${batch}") || true
+    local -a lines
+    mapfile -t lines <<< "${out}"
+    if [[ "${#lines[@]}" != "${#case_ids[@]}" ]]; then
+        printf 'Expected %s failing queries (engine predicate %s), got output:\n%s\n' \
+            "${#case_ids[@]}" "${enabled}" "${out}" >&2
         return 1
     fi
-    if [[ "$output" != *"($error)"* ]]; then
-        printf 'Expected %s, got: %s\n' "$error" "$output" >&2
-        return 1
-    fi
-    printf '1\n'
+    local j code
+    declare -A previous=()
+    for j in "${!case_ids[@]}"; do
+        i="${case_ids[$j]}"
+        code="${ERR_CODES[$i]}"
+        if [[ ! "${lines[$j]}" =~ ^[0-9]+$ ]] || [[ "${lines[$j]}" -le "${previous[$code]:-0}" ]]; then
+            printf 'Expected %s (engine predicate %s) from: %s\n' "${code}" "${enabled}" "${ERR_WHERES[$i]}" >&2
+            return 1
+        fi
+        previous[$code]="${lines[$j]}"
+    done
+}
+
+# Prints the results in declaration order; the reference interleaves checks and expected errors.
+emit_results() {
+    local item kind idx
+    for item in "${ITEMS[@]}"; do
+        read -r kind idx <<< "${item}"
+        if [[ "${kind}" == error ]]; then
+            printf '%s\n' "${ERR_HEADERS[$idx]}"
+            printf '1\n'
+            continue
+        fi
+        local table="${CHECK_TABLES[$idx]}" where="${CHECK_WHERES[$idx]}" settings="${CHECK_SETTINGS[$idx]}"
+        local files=("${ROOT}/${table}/"*.parquet)
+        printf '%s: %s%s\n' "${table}" "${where}" "${settings:+ SETTINGS ${settings}}"
+        # Compare rows, not scan counts. The reference independently checks rows and selected files.
+        diff -u <(printf '%s\n' "${OFF_ROWS[$idx]}") <(printf '%s\n' "${ON_ROWS[$idx]}")
+        if [[ "${OFF_DELTAS[$idx]}" != "${#files[@]}" ]]; then
+            printf 'Unexpected unpruned file count %s for: %s\n' "${OFF_DELTAS[$idx]}" "${where}" >&2
+            return 1
+        fi
+        printf '%s\n' "${ON_ROWS[$idx]}"
+        printf '%s\n' "${ON_DELTAS[$idx]}"
+    done
+}
+
+run_all() {
+    ${CLICKHOUSE_LOCAL} --query "${FIXTURE_QUERIES}"
+    local table
+    for table in "${TABLES[@]}"; do
+        write_log "${table}"
+    done
+    run_checks 0 OFF_ROWS OFF_DELTAS
+    run_checks 1 ON_ROWS ON_DELTAS
+    run_errors 0
+    run_errors 1
+    emit_results
 }
 
 # `Date` wraps modulo 65536 days: the alias matches equality but stays scanned even for `!=`.
@@ -149,8 +269,8 @@ check no_stats "toDate(d) = '2026-01-01'"
 
 # A non-nullable cast must still reject the stats-bearing NULL file.
 for enabled in 0 1; do
-    printf 'nullable: cast rejects NULL (engine predicate %s)\n' "$enabled"
-    expect_error nullable "CAST(d AS Date) = '2026-01-01'" "$enabled" \
+    expect_error "nullable: cast rejects NULL (engine predicate ${enabled})" \
+        nullable "CAST(d AS Date) = '2026-01-01'" "${enabled}" \
         CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
 done
 
@@ -186,9 +306,11 @@ for table in lower upper; do
     for where in "CAST(d AS Date) = '2026-01-01'" "toDate(d) != '2026-01-01'" \
         "NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01'))"; do
         for enabled in 0 1; do
-            printf '%s: %s (engine predicate %s, throw)\n' "$table" "$where" "$enabled"
-            expect_error "$table" "$where" "$enabled" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+            expect_error "${table}: ${where} (engine predicate ${enabled}, throw)" \
+                "${table}" "${where}" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
                 "date_time_overflow_behavior='throw'"
         done
     done
 done
+
+run_all
