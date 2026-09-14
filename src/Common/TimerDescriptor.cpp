@@ -312,11 +312,14 @@ TimerDescriptor::TimerDescriptor()
         int flags = ::fcntl(fd, F_GETFL, 0);
         if (-1 == flags || -1 == ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) || -1 == ::fcntl(fd, F_SETFD, FD_CLOEXEC))
         {
-            ::close(timer_fd);
-            ::close(wakeup_fd);
+            /// Construction failed, so the destructor will not run and both ends have to be closed here.
+            /// Nothing can be done about a failing close on this path, but errno has to survive it.
+            int fcntl_errno = errno;
+            [[maybe_unused]] int read_end_closed = ::close(timer_fd);
+            [[maybe_unused]] int write_end_closed = ::close(wakeup_fd);
             timer_fd = -1;
             wakeup_fd = -1;
-            throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Cannot configure timer pipe");
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_CREATE_TIMER, fcntl_errno, "Cannot configure timer pipe");
         }
     }
 }
