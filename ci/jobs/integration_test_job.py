@@ -1867,6 +1867,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         + ", ".join(str(f.name) for f in compose_files)
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
+    # The instance image is interpolated into the generated per-instance compose file, so it is in
+    # every project's `docker compose config --images` but in no file under compose/.
+    server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
+    if server_image not in images_to_prefetch:
+        images_to_prefetch.append(server_image)
     if not prefetch_images(images_to_prefetch):
         prefetch_failure_result().complete_job()
 
@@ -1878,9 +1883,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
-        # Read by tests/integration/helpers/cluster.py: this job's batch prefetch ran and
-        # succeeded. Not a completeness promise, so the helper still checks the daemon.
-        "CLICKHOUSE_TESTS_IMAGES_PREFETCHED": "1",
+        # Read by tests/integration/helpers/cluster.py: the references this job's batch prefetch
+        # fetched. A reference outside this set may be a stale floating tag, so it is still pulled.
+        "CLICKHOUSE_TESTS_PREFETCHED_IMAGES": " ".join(sorted(set(images_to_prefetch))),
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
         # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).

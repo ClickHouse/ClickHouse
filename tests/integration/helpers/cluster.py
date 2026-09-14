@@ -3688,21 +3688,26 @@ class ClickHouseCluster:
                         )
 
     def _images_prefetched_and_present(self) -> bool:
-        """Whether the job prefetched images and every image of this project is in the daemon.
+        """Whether this job prefetched every image of this project and each is in the daemon.
+
+        A reference the job did not prefetch may be a floating tag whose local copy is stale, and
+        a prefetched one can still be absent (the prefetch skips an image with no manifest for
+        this architecture), so both questions are asked.
 
         `docker image inspect` prints one id per reference it finds and nothing for one it does
         not, so an equal count means none is missing. A non-zero exit or an empty enumeration
         answers False.
         """
-        if os.environ.get("CLICKHOUSE_TESTS_IMAGES_PREFETCHED") != "1":
+        prefetched = set(os.environ.get("CLICKHOUSE_TESTS_PREFETCHED_IMAGES", "").split())
+        if not prefetched:
             return False
-        images = sorted(
-            set(run_and_check(self.base_cmd + ["config", "--images"], nothrow=True).split())
-        )
+        images = set(run_and_check(self.base_cmd + ["config", "--images"], nothrow=True).split())
         if not images:
             return False
+        if not images <= prefetched:
+            return False
         found = run_and_check(
-            ["docker", "image", "inspect", "--format", "{{.Id}}"] + images, nothrow=True
+            ["docker", "image", "inspect", "--format", "{{.Id}}"] + sorted(images), nothrow=True
         ).split()
         return len(found) == len(images)
 
