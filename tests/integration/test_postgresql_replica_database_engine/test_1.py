@@ -1127,11 +1127,12 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
     started_cluster,
 ):
     # `getTableAllowedColumns` looks a relation up by the quoted spelling `fetchRequiredTables` writes
-    # into `materialized_postgresql_tables_list`. On the ATTACH path, when the existing publication
-    # publishes a different set of tables than the setting lists, that function returns before it
-    # rewrites the list, so the lookup misses and the requested column subset is silently dropped: the
-    # nested table covers columns the publication does not publish, and the consumer then refuses the
-    # table because its attributes no longer match the nested table.
+    # into `materialized_postgresql_tables_list`, and that spelling has to be in place on every path out
+    # of it, including the early return taken on attach when the existing publication publishes a
+    # different set of tables than the setting lists. Reached with the setting's own spelling instead,
+    # the lookup misses and the requested column subset is dropped: the nested table covers columns the
+    # publication does not publish, the consumer refuses a table whose attributes no longer match it,
+    # and the row inserted below never arrives.
     ip = started_cluster.postgres_ip
     port = started_cluster.postgres_port
     conn = get_postgres_conn(ip=ip, port=port, database=True)
@@ -1170,7 +1171,9 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
             f"CREATE TABLE {restricted} "
             "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
         )
-        cursor.execute(f"CREATE TABLE {unpublished} (key integer PRIMARY KEY, val integer)")
+        cursor.execute(
+            f"CREATE TABLE {unpublished} (key integer PRIMARY KEY, val integer)"
+        )
         cursor.execute(
             f"INSERT INTO {restricted} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
         )
@@ -1195,7 +1198,9 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         # `ALTER PUBLICATION` on the PostgreSQL side (or by dropping a listed table there).
         cursor.execute("SELECT pubname FROM pg_publication")
         publications = [row[0] for row in cursor.fetchall()]
-        assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+        assert (
+            len(publications) == 1
+        ), f"expected exactly one publication, got {publications}"
         publication = publications[0]
 
         instance.stop_clickhouse()
@@ -1214,6 +1219,48 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         pg_manager.drop_materialized_db()
         cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
         cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+
+
+def test_materialized_postgresql_tables_list_rejects_empty_element(started_cluster):
+    # `materialized_postgresql_tables_list` is split on commas without dropping empty tokens, so a
+    # doubled comma leaves an element with no bytes while the quoting pass reads that element's last
+    # byte. The setting has to be rejected: the database engine parses it in a background task, where
+    # an out-of-range read takes the whole server down instead of failing one statement.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    table = "empty_elem_table"
+    database = "empty_elem_database"
+    try:
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
+        cursor.execute(f"CREATE TABLE {table} (key integer PRIMARY KEY, val integer)")
+
+        instance.query(
+            f"CREATE DATABASE {database} ENGINE = MaterializedPostgreSQL("
+            f"'{ip}:{port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS materialized_postgresql_tables_list = '{table},,{table}', "
+            "materialized_postgresql_backoff_min_ms = 100, "
+            "materialized_postgresql_backoff_max_ms = 100"
+        )
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if instance.contains_in_log("Empty element in tables list"):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError(
+                "the empty element in the tables list was not rejected"
+            )
+
+        assert (
+            instance.query("SELECT 1").strip() == "1"
+        ), "the server did not survive the setting"
+    finally:
+        instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
 
 if __name__ == "__main__":

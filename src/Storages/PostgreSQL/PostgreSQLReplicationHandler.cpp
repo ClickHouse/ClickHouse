@@ -1267,6 +1267,9 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         for (auto & part : parts)
         {
             boost::trim(part);
+            /// `splitInto` keeps empty tokens, and the `part.back()` below needs a byte to read.
+            if (part.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty element in tables list: {}", tables_list);
 
             size_t bracket_pos = part.find('(');
             if (bracket_pos != std::string::npos)
