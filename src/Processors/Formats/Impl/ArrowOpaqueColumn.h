@@ -4,7 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferValidUTF8.h>
+#include <IO/writeValidUTF8.h>
 
 #include <string_view>
 
@@ -50,14 +50,7 @@ inline std::string_view makeValidUTF8View(std::string_view value, String & scrat
         return value;
 
     WriteBufferFromString scratch_out(scratch);
-    {
-        WriteBufferValidUTF8 validating_out(scratch_out);
-        validating_out.write(value.data(), value.size());
-        /// The trailing bytes stay buffered inside the validating buffer until it is flushed, and its
-        /// destructor catches and suppresses a failure of that flush, which would silently truncate the
-        /// value. Flush explicitly so such a failure propagates as itself.
-        validating_out.finalize();
-    }
+    writeValidUTF8(value.data(), value.data() + value.size(), scratch_out);
     scratch_out.finalize();
     return scratch;
 }
