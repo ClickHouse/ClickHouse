@@ -103,7 +103,7 @@ size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) cons
 std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
 {
     if (looksLikePackedSkipIndexFile(file_name))
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+        if (auto reader = getSkipIndicesPackedReader({}); reader && reader->exists(file_name))
             return reader->getFileUncompressedSize(file_name);
     return {};
 }

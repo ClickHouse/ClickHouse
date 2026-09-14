@@ -1167,14 +1167,14 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveRe
 
 bool DataPartStorageOnDiskBase::existsFile(const std::string & name) const
 {
-    if (getArchiveReaderForFile(name))
+    if (getArchiveReaderForFile(name, {}))
         return true;
     return existsFileImpl(name);
 }
 
 size_t DataPartStorageOnDiskBase::getFileSize(const std::string & file_name) const
 {
-    if (auto reader = getArchiveReaderForFile(file_name))
+    if (auto reader = getArchiveReaderForFile(file_name, {}))
         return reader->getFileSize(file_name);
     return getFileSizeImpl(file_name);
 }
@@ -1210,7 +1210,7 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    if (auto reader = getArchiveReaderForFile(name))
+    if (auto reader = getArchiveReaderForFile(name, {}))
         return reader->readFile(
             volume->getDisk(),
             fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
@@ -1276,7 +1276,7 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
     /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
     /// load if it hasn't been read yet.
-    auto source_archive = source_disk->getSkipIndicesPackedReader();
+    auto source_archive = source_disk->getSkipIndicesPackedReader({});
     if (!source_archive)
         return;
 
@@ -1285,13 +1285,13 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
-    auto reader = getSkipIndicesPackedReader();
+    auto reader = getSkipIndicesPackedReader({});
     return reader != nullptr && reader->exists(name);
 }
 
 bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
 {
-    return getSkipIndicesPackedReader() != nullptr;
+    return getSkipIndicesPackedReader({}) != nullptr;
 }
 
 void DataPartStorageOnDiskBase::copyArchiveEntryTo(

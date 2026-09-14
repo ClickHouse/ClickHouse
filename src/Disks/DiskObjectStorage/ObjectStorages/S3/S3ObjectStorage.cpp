@@ -711,7 +711,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
-                [&, this] { return readObjectForCopy(object_from, read_settings_to_use, cancellation_hook); },
+                [&, this]
+                {
+                    return readObjectForCopy(
+                        object_from, read_settings_to_use, cancellation_hook, /* read_hint */ {}, /* use_external_buffer */ false, /* restrict_seek */ false);
+                },
                 object_to_attributes,
                 cancellation_hook);
             return;

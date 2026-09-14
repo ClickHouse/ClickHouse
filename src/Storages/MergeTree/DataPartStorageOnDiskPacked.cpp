@@ -216,7 +216,7 @@ bool DataPartStorageOnDiskPacked::existsFileImpl(const std::string & file_name) 
     /// must consult the skip-indices overlay before falling through to the outer reader.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = getSkipIndicesPackedReader({}); skip_reader && skip_reader->exists(file_name))
             return true;
     }
 
@@ -235,7 +235,7 @@ size_t DataPartStorageOnDiskPacked::getFileSizeImpl(const String & file_name) co
     /// See existsFileImpl() for why we consult the skip-indices overlay first.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = getSkipIndicesPackedReader({}); skip_reader && skip_reader->exists(file_name))
             return skip_reader->getFileSize(file_name);
     }
 
@@ -283,7 +283,7 @@ std::optional<UInt64> DataPartStorageOnDiskPacked::getPackedFileUncompressedSize
     /// Consults only the skip-indices overlay index (seeded at write time or loaded lazily), so it
     /// stays usable while the part is being written, when the outer reader is not initialized yet.
     if (looksLikePackedSkipIndexFile(file_name))
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = getSkipIndicesPackedReader({}); skip_reader && skip_reader->exists(file_name))
             return skip_reader->getFileUncompressedSize(file_name);
     return {};
 }

@@ -173,9 +173,9 @@ private:
         const StoredObject & object,
         const ReadSettings & read_settings,
         const std::function<void()> & cancellation_hook,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
+        std::optional<size_t> read_hint,
+        bool use_external_buffer,
+        bool restrict_seek) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjectImpl(
         const StoredObject & object,

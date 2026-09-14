@@ -87,7 +87,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         return;
     }
 
-    auto in = readObjectForCopy(object_from, read_settings, cancellation_hook);
+    auto in = readObjectForCopy(object_from, read_settings, cancellation_hook, /* read_hint */ {}, /* use_external_buffer */ false, /* restrict_seek */ false);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     out->setCancellationHook(cancellation_hook);
     copyData(*in, *out, cancellation_hook);
