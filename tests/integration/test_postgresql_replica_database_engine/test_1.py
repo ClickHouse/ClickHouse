@@ -1123,6 +1123,99 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
+def test_materialized_postgresql_attach_with_mismatched_publication_keeps_columns(
+    started_cluster,
+):
+    # `getTableAllowedColumns` looks a relation up by the quoted spelling `fetchRequiredTables` writes
+    # into `materialized_postgresql_tables_list`. On the ATTACH path, when the existing publication
+    # publishes a different set of tables than the setting lists, that function returns before it
+    # rewrites the list, so the lookup misses and the requested column subset is silently dropped: the
+    # nested table covers columns the publication does not publish, and the consumer then refuses the
+    # table because its attributes no longer match the nested table.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    restricted = "attach_mismatch_cols"
+    unpublished = "attach_mismatch_other"
+
+    def wait_for_rows(ch_table, expected):
+        deadline = time.monotonic() + 120
+        last = None
+        while time.monotonic() < deadline:
+            try:
+                last = instance.query(f"SELECT count() FROM {ch_table}").strip()
+                if last == str(expected):
+                    return
+            except Exception as e:
+                last = str(e)
+            time.sleep(1)
+        raise AssertionError(
+            f"{ch_table} did not reach {expected} rows within 120 seconds, last: {last}"
+        )
+
+    def replicated_columns(table):
+        return sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{table}'"
+            ).splitlines()
+        )
+
+    try:
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+        cursor.execute(
+            f"CREATE TABLE {restricted} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(f"CREATE TABLE {unpublished} (key integer PRIMARY KEY, val integer)")
+        cursor.execute(
+            f"INSERT INTO {restricted} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+        cursor.execute(
+            f"INSERT INTO {unpublished} SELECT i, 200 + i FROM generate_series(0, 2) AS i"
+        )
+
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{restricted}(key, val), {unpublished}'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, restricted)
+        wait_for_rows(f"`test_database`.`{restricted}`", 5)
+        assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"]
+
+        # The publication and the setting disagree from here on, which is reachable with a plain
+        # `ALTER PUBLICATION` on the PostgreSQL side (or by dropping a listed table there).
+        cursor.execute("SELECT pubname FROM pg_publication")
+        publications = [row[0] for row in cursor.fetchall()]
+        assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+        publication = publications[0]
+
+        instance.stop_clickhouse()
+        cursor.execute(f"ALTER PUBLICATION {publication} DROP TABLE {unpublished}")
+        # Written while the server is down, so it can only arrive through ongoing replication after
+        # the restart: the snapshot is not reloaded while the replication slot is intact.
+        cursor.execute(f"INSERT INTO {restricted} VALUES (5, 105, 905)")
+        instance.start_clickhouse()
+
+        wait_for_rows(f"`test_database`.`{restricted}`", 6)
+        assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"], (
+            "the requested column subset was not applied on the attach path whose publication differs "
+            "from the tables list"
+        )
+    finally:
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

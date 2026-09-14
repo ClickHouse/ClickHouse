@@ -1249,6 +1249,64 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         }
     }
 
+    /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
+    /// or
+    /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
+    /// or
+    /// `table1, table2(id,name), ...` + setting `schema` -> `"schema"."table1", "schema"."table2"("id","name"), ...`
+    /// Every return below leaves `tables_list` in the spelling `getTableAllowedColumns` looks up by.
+    if (!tables_list.empty())
+    {
+        Strings parts;
+        splitInto<','>(parts, tables_list);
+        if (parts.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
+
+        bool is_column = false;
+        WriteBufferFromOwnString buf;
+        for (auto & part : parts)
+        {
+            boost::trim(part);
+
+            size_t bracket_pos = part.find('(');
+            if (bracket_pos != std::string::npos)
+            {
+                is_column = true;
+                std::string table_name = part.substr(0, bracket_pos);
+                boost::trim(table_name);
+                buf << doubleQuoteWithSchema(table_name);
+
+                part = part.substr(bracket_pos + 1);
+                boost::trim(part);
+                buf << '(';
+                buf << doubleQuoteStringPostgreSQL(part);
+            }
+            else if (part.back() == ')')
+            {
+                is_column = false;
+                part = part.substr(0, part.size() - 1);
+                boost::trim(part);
+                buf << doubleQuoteStringPostgreSQL(part);
+                buf << ')';
+            }
+            else if (is_column)
+            {
+                buf << doubleQuoteStringPostgreSQL(part);
+            }
+            else
+            {
+                buf << doubleQuoteWithSchema(part);
+            }
+            buf << ",";
+        }
+        tables_list = buf.str();
+        tables_list.resize(tables_list.size() - 1);
+    }
+    /// Also we make sure that queries in postgres always use quoted version "table_schema"."table_name".
+    /// But tables in ClickHouse in case of multi-schame database are never double-quoted.
+    /// It is ok, because they are accessed with backticks: postgres_database.`table_schema.table_name`.
+    /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
+
     /// Try to fetch tables list from publication if there is not tables list.
     /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
     if (publication_exists_before_startup)
@@ -1352,64 +1410,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             }
         }
     }
-
-
-    /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
-    /// or
-    /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
-    /// or
-    /// `table1, table2(id,name), ...` + setting `schema` -> `"schema"."table1", "schema"."table2"("id","name"), ...`
-    if (!tables_list.empty())
-    {
-        Strings parts;
-        splitInto<','>(parts, tables_list);
-        if (parts.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
-
-        bool is_column = false;
-        WriteBufferFromOwnString buf;
-        for (auto & part : parts)
-        {
-            boost::trim(part);
-
-            size_t bracket_pos = part.find('(');
-            if (bracket_pos != std::string::npos)
-            {
-                is_column = true;
-                std::string table_name = part.substr(0, bracket_pos);
-                boost::trim(table_name);
-                buf << doubleQuoteWithSchema(table_name);
-
-                part = part.substr(bracket_pos + 1);
-                boost::trim(part);
-                buf << '(';
-                buf << doubleQuoteStringPostgreSQL(part);
-            }
-            else if (part.back() == ')')
-            {
-                is_column = false;
-                part = part.substr(0, part.size() - 1);
-                boost::trim(part);
-                buf << doubleQuoteStringPostgreSQL(part);
-                buf << ')';
-            }
-            else if (is_column)
-            {
-                buf << doubleQuoteStringPostgreSQL(part);
-            }
-            else
-            {
-                buf << doubleQuoteWithSchema(part);
-            }
-            buf << ",";
-        }
-        tables_list = buf.str();
-        tables_list.resize(tables_list.size() - 1);
-    }
-    /// Also we make sure that queries in postgres always use quoted version "table_schema"."table_name".
-    /// But tables in ClickHouse in case of multi-schame database are never double-quoted.
-    /// It is ok, because they are accessed with backticks: postgres_database.`table_schema.table_name`.
-    /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
 
     return result_tables;
 }
