@@ -11,6 +11,7 @@
 #include <Interpreters/ClientInfo.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <limits>
 #include <optional>
@@ -97,6 +98,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty");
 
+    params.name = name;
+
     const String ldap_server_config = "ldap_servers." + name;
 
     const bool has_host = config.has(ldap_server_config + ".host");
@@ -144,6 +147,28 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         std::string auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
         params.bind_dn = auth_dn_prefix + "{user_name}" + auth_dn_suffix;
     }
+    else if (has_lookup_bind_dn)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'bind_dn' is required; use '{}' to bind as the detected user DN", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+    }
+    else
+    {
+        /// Without any bind DN the client would issue a simple bind with an empty name, i.e. an
+        /// anonymous or unauthenticated bind, and consider every password "verified".
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'bind_dn' or 'lookup_bind_dn' must be specified");
+    }
+
+    if (params.bind_dn.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'bind_dn' entry");
+
+    /// `{user_dn}` in `bind_dn` is only meaningful as the whole value: it selects search-and-bind,
+    /// where the DN to bind as is the one `user_dn_detection` finds under the lookup identity.
+    const bool binds_as_detected_user_dn = params.bindsAsDetectedUserDN();
+    if (!binds_as_detected_user_dn && params.bind_dn.contains(LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'bind_dn' containing '{}' must be exactly '{}'",
+            LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER, LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
 
     if (has_user_dn_detection)
     {
@@ -164,6 +189,46 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Both 'lookup_bind_dn' and 'lookup_password' must be specified together");
 
+    if (binds_as_detected_user_dn)
+    {
+        /// Search-and-bind: the user is located by `user_dn_detection` under the lookup identity
+        /// before any DN is known, so the detection templates can only depend on `{user_name}`
+        /// and the search must yield a DN to bind as. These checks run before the generic
+        /// `lookup_bind_dn` ones below so that a search-and-bind configuration gets the
+        /// mode-specific message (the generic hint to use `{bind_dn}`/`{user_dn}` does not
+        /// apply here).
+        if (!has_lookup_bind_dn)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'lookup_bind_dn' and 'lookup_password'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        if (!params.user_dn_detection)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'user_dn_detection'", LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        const String & udd_base_dn = params.user_dn_detection->base_dn;
+        const String & udd_search_filter = params.user_dn_detection->search_filter;
+
+        if (!udd_base_dn.contains("{user_name}") && !udd_search_filter.contains("{user_name}"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'bind_dn' = '{}' requires 'user_dn_detection.base_dn' or 'user_dn_detection.search_filter' to contain '{{user_name}}'",
+                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+
+        for (const auto * placeholder : {"{bind_dn}", "{user_dn}"})
+        {
+            if (udd_base_dn.contains(placeholder) || udd_search_filter.contains(placeholder))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'user_dn_detection' cannot reference '{}' when 'bind_dn' = '{}': the user DN is not known before the detection",
+                    placeholder, LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
+        }
+
+        /// Whatever `attribute` returns is what the user's password is verified against, so it
+        /// must be the entry DN; any other attribute would be bound as a DN and every login would fail.
+        if (!boost::iequals(params.user_dn_detection->attribute, "dn"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'user_dn_detection.attribute' must be 'dn' when 'bind_dn' = '{}', got '{}'",
+                LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER, params.user_dn_detection->attribute);
+    }
+
     if (has_lookup_bind_dn)
     {
         params.lookup_bind_dn = config.getString(ldap_server_config + ".lookup_bind_dn");
@@ -181,6 +246,10 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         /// `params.password`.
         if (params.lookup_password.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_password' entry");
+
+        /// The lookup identity is fixed by configuration and must not vary with the login.
+        if (params.lookup_bind_dn.contains("{user_name}"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'lookup_bind_dn' must not contain '{{user_name}}'");
 
         if (!params.user_dn_detection)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -520,10 +589,12 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         }
     }
 
+    /// Parse every server into local maps and publish both at once, so a reload never
+    /// leaves a half-applied blueprint behind.
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
-    ldap_client_params_blueprint.clear();
-    ldap_server_parse_errors.clear();
+    LDAPParams new_blueprint;
+    LDAPParseErrors new_parse_errors;
     for (auto ldap_server_name : ldap_server_names)
     {
         try
@@ -532,23 +603,30 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
             if (bracket_pos != std::string::npos)
                 ldap_server_name.resize(bracket_pos);
 
-            if (ldap_client_params_blueprint.contains(ldap_server_name))
+            if (new_blueprint.contains(ldap_server_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple LDAP servers with the same name are not allowed");
 
             LDAPClient::Params ldap_client_params_tmp;
             parseLDAPServer(ldap_client_params_tmp, config, ldap_server_name);
-            ldap_client_params_blueprint.emplace(std::move(ldap_server_name), std::move(ldap_client_params_tmp));
+            new_blueprint.emplace(std::move(ldap_server_name), std::move(ldap_client_params_tmp));
+        }
+        catch (const Exception & e)
+        {
+            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            /// Remember the error so that `checkLDAPCredentials` and `findLDAPUser` can
+            /// surface it at use. Without this the parsed-out server is dropped silently:
+            /// every login through it fails as "no such user" and `EXECUTE AS` collapses to
+            /// `UNKNOWN_USER`, hiding a real operator misconfiguration.
+            new_parse_errors[ldap_server_name] = e.message();
         }
         catch (...)
         {
             tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
-            /// Remember the error so that `findLDAPUser` can surface it as a
-            /// query-time exception. Without this the parsed-out server is
-            /// dropped silently and `EXECUTE AS` collapses to `UNKNOWN_USER`,
-            /// hiding a real operator misconfiguration.
-            ldap_server_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
+            new_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
         }
     }
+    ldap_client_params_blueprint.swap(new_blueprint);
+    ldap_server_parse_errors.swap(new_parse_errors);
 
     kerberos_params.reset();
     try
@@ -581,6 +659,22 @@ static UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPCl
     return hash.get128();
 }
 
+LDAPClient::Params ExternalAuthenticators::getLDAPServerParams(const String & server) const
+{
+    const auto pit = ldap_client_params_blueprint.find(server);
+    if (pit != ldap_client_params_blueprint.end())
+        return pit->second;
+
+    /// A server that failed to parse is deliberately absent from the blueprint; fail close
+    /// with the original reason instead of pretending it does not exist. Otherwise the
+    /// directory references a name with no `<ldap_servers>` block at all (e.g. a typo).
+    const auto eit = ldap_server_parse_errors.find(server);
+    if (eit != ldap_server_parse_errors.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is misconfigured: {}", server, eit->second);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
+}
+
 bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
     const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
 {
@@ -591,11 +685,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
         std::lock_guard lock(mutex);
 
         // Retrieve the server parameters.
-        const auto pit = ldap_client_params_blueprint.find(server);
-        if (pit == ldap_client_params_blueprint.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
-
-        params = pit->second;
+        params = getLDAPServerParams(server);
         params->user = credentials.getUserName();
         params->password = credentials.getPassword();
 
@@ -715,28 +805,14 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
     {
         std::lock_guard lock(mutex);
 
-        const auto pit = ldap_client_params_blueprint.find(server);
-        if (pit == ldap_client_params_blueprint.end())
-        {
-            /// Mirror `checkLDAPCredentials`: an unknown server name is a configuration
-            /// error, not a user miss. If the server failed to parse, attach the saved
-            /// reason; otherwise the directory references a name with no `<ldap_servers>`
-            /// block at all (e.g. a typo).
-            const auto eit = ldap_server_parse_errors.find(server);
-            if (eit != ldap_server_parse_errors.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "LDAP server '{}' is misconfigured and cannot be used for forced "
-                    "user lookup: {}", server, eit->second);
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
-        }
+        params = getLDAPServerParams(server);
 
         /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does
         /// not participate in forced lookups. Returning false here lets the caller fall through
         /// to other access storages.
-        if (pit->second.lookup_bind_dn.empty())
+        if (!params->hasLookupIdentity())
             return false;
 
-        params = pit->second;
         params->user = user_name;
         /// The user's own password is not used in service-bind mode; clear it so it cannot
         /// accidentally bleed into the LDAP exchange via cached state.

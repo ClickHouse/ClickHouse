@@ -60,6 +60,10 @@ public:
 private:
     HTTPAuthClientParams getHTTPAuthenticationParams(const String& server) const;
 
+    /// Copies the parameters of the named LDAP server. Throws `BAD_ARGUMENTS` when the server
+    /// is unknown or, with the original error attached, when its configuration failed to parse.
+    LDAPClient::Params getLDAPServerParams(const String & server) const TSA_REQUIRES(mutex);
+
     struct LDAPCacheEntry
     {
         UInt128 last_successful_params_hash = 0;
@@ -75,8 +79,8 @@ private:
     mutable std::mutex mutex;
     LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
     /// LDAP servers declared in config but rejected by `parseLDAPServer`, with the error.
-    /// `findLDAPUser` rethrows it so a misconfigured server fails loud at query time
-    /// instead of degrading to `UNKNOWN_USER`. Rebuilt on every `setConfiguration`.
+    /// `checkLDAPCredentials` and `findLDAPUser` rethrow it so a misconfigured server fails
+    /// loud at use instead of degrading to "no such user". Rebuilt on every `setConfiguration`.
     LDAPParseErrors ldap_server_parse_errors TSA_GUARDED_BY(mutex) ;
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;

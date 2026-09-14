@@ -118,7 +118,17 @@ public:
             SIMPLE
         };
 
+        /// The value of `bind_dn` that selects search-and-bind: the user is located with
+        /// `user_dn_detection` under the lookup identity first, and the password is then
+        /// verified by binding as the DN that was found.
+        static constexpr auto DETECTED_USER_DN_PLACEHOLDER = "{user_dn}";
+
         ProtocolVersion protocol_version = ProtocolVersion::V3;
+
+        /// Name of the `ldap_servers` entry these parameters were parsed from. Used in
+        /// messages only, so that a log line can tell apart several servers sharing the
+        /// same service account; deliberately not part of `updateHash`.
+        String name;
 
         String host;
         UInt16 port = 636;
@@ -136,15 +146,17 @@ public:
 
         SASLMechanism sasl_mechanism = SASLMechanism::SIMPLE;
 
+        /// Template of the DN the user's password is verified against (`{user_name}` is
+        /// substituted), or exactly `{user_dn}` to bind as the DN found by `user_dn_detection`.
         String bind_dn;
         String user;
         String password;
 
-        /// Optional service-account credentials used for lookups that do not have the user's
-        /// password available (e.g. resolving an LDAP-backed name on `EXECUTE AS` before the
-        /// user has authenticated). When `bind_dn` and `password` are empty the service-bind
-        /// path is disabled and `IAccessStorage::find(..., force_external_lookup=true)` is a
-        /// no-op for this server.
+        /// Optional service-account ("lookup") credentials. Once configured, EVERY search
+        /// (`user_dn_detection` and role mappings) runs under this identity, never under the
+        /// user's, and `IAccessStorage::find(..., force_external_lookup=true)` can resolve a
+        /// user without their password. When empty, the legacy behaviour applies: searches
+        /// run on the connection bound as the user.
         String lookup_bind_dn;
         String lookup_password;
 
@@ -163,6 +175,12 @@ public:
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
         bool follow_referrals = false; /// Whether to follow LDAP referrals for server.
+
+        /// True when a service account is configured and therefore all searches must run under it.
+        bool hasLookupIdentity() const { return !lookup_bind_dn.empty(); }
+
+        /// True for search-and-bind (`bind_dn` is exactly `{user_dn}`).
+        bool bindsAsDetectedUserDN() const { return bind_dn == DETECTED_USER_DN_PLACEHOLDER; }
 
         void updateHash(SipHash & hash) const;
     };
@@ -185,34 +203,64 @@ public:
     LDAPClient & operator= (const LDAPClient &) = delete;
     LDAPClient & operator= (LDAPClient &&) = delete;
 
+    /// The identity a connection is currently bound as.
     enum class BindMode : uint8_t
     {
-        /// Bind as the user being authenticated (the existing behavior).
+        /// Connected, no successful bind yet (or the last bind failed).
+        None,
+        /// Bound as the user being authenticated (`Placeholders::bind_dn` with `params.password`).
         User,
-        /// Bind with the service account (`params.lookup_bind_dn`, `params.lookup_password`)
-        /// and use `user_dn_detection` to confirm the target user exists. Used when looking
-        /// up a user without their password.
+        /// Bound as the service account (`params.lookup_bind_dn`, `params.lookup_password`).
         Service,
     };
 
 protected:
+    /// Values substituted into `bind_dn`, `base_dn` and `search_filter` templates.
+    /// `user_name` is the RAW login; it is escaped exactly once at substitution time
+    /// (`escapeForDN` in DN contexts, `escapeForFilter` in filters).
+    struct Placeholders
+    {
+        String user_name;
+        String bind_dn;
+        String user_dn;
+    };
+
     MAYBE_NORETURN void handleError(int result_code, String text = "");
-    MAYBE_NORETURN bool openConnection(BindMode mode = BindMode::User);
+
+    /// Initializes the handle, applies the options and StartTLS; does not bind.
+    MAYBE_NORETURN void connect();
+
+    /// Performs a simple bind as the given identity on the open connection.
+    /// `BindMode::User`: returns false on `LDAP_INVALID_CREDENTIALS` (after logging the
+    /// Active Directory sub-code, if any, at DEBUG), throws on every other error.
+    /// `BindMode::Service`: throws `LDAP_ERROR` on `LDAP_INVALID_CREDENTIALS` because the
+    /// service credentials come from the configuration, so a failure is an operator error
+    /// and not a "user not found" signal.
+    MAYBE_NORETURN bool bind(BindMode mode);
+
+    /// Runs `params.user_dn_detection` and returns the single DN it yields. Throws
+    /// `LDAP_ERROR` when more than one entry matches. When `tolerate_missing_user` is set an
+    /// empty result yields nullopt, otherwise it throws. `LDAP_NO_SUCH_OBJECT` counts as an
+    /// empty result only when `base_dn` substitutes `{user_name}` (the base then legitimately
+    /// does not exist for an unknown user); for a static `base_dn` it is a misconfiguration
+    /// and always throws.
+    MAYBE_NORETURN std::optional<String> detectUserDN(bool tolerate_missing_user);
+
     void closeConnection() noexcept;
+
+    /// Runs a search on the open connection. Asserts (as `LOGICAL_ERROR`) that the connection
+    /// is bound as the service account when `lookup_bind_dn` is configured, or as the user
+    /// otherwise, so role searches can never accidentally run under the wrong identity.
     /// When `tolerate_no_such_object` is set, an `LDAP_NO_SUCH_OBJECT` (rc=32) reply from the
-    /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`. Used
-    /// by the service-bind `user_dn_detection` lookup so a missing user (whose substituted
-    /// `base_dn` does not exist in the directory) collapses to the canonical `UNKNOWN_USER`
-    /// path rather than surfacing a low-level LDAP error to the caller.
-    SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
+    /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`.
+    MAYBE_NORETURN SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
 
     const Params params;
 #if USE_LDAP
     LDAP * handle = nullptr;
 #endif
-    String final_user_name;
-    String final_bind_dn;
-    String final_user_dn;
+    BindMode bound_as = BindMode::None;
+    Placeholders placeholders;
 };
 
 class LDAPSimpleAuthClient
@@ -220,6 +268,15 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
+
+    /// Verifies `params.user`/`params.password` and optionally runs the role searches.
+    /// Returns false on wrong password (and, in search-and-bind mode, on unknown user),
+    /// throws on every other error. One connection with up to three binds:
+    ///   - `bind_dn` template, no `lookup_bind_dn`: bind as the user, search as the user;
+    ///   - `bind_dn` template + `lookup_bind_dn`: bind as the user, re-bind as the service
+    ///     account, detect the user DN and search;
+    ///   - `bind_dn` = `{user_dn}` + `lookup_bind_dn`: bind as the service account, detect the
+    ///     user DN, bind as it with the user's password, re-bind as the service account, search.
     bool authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
 
     /// Looks up a user in LDAP using the service-account credentials configured in
