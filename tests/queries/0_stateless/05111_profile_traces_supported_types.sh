@@ -106,6 +106,7 @@ for transport in ("native", "HTTP"):
             if remote:
                 query = f"SELECT * FROM remote({quote(remote_address)}, view({query}))"
             types = set()
+            positive_memory_seen = False
             for attempt in range(4):
                 query_id = "profile_trace_types_" + uuid.uuid4().hex
                 samples = execute(transport, query + " FORMAT Null", query_id, sample_settings)
@@ -124,16 +125,29 @@ for transport in ("native", "HTTP"):
                 for sample in samples:
                     if sample["trace_type"] in {"CPU", "Real"}:
                         assert int(sample["size"]) == 0, sample
+                    elif sample["trace_type"] == "Memory":
+                        # A memory check can emit a zero delta without allocating.
+                        assert int(sample["size"]) >= 0, sample
+                    elif sample["trace_type"] == "MemoryPeak":
+                        # A profiled peak is the tracked total above the profiler threshold.
+                        assert int(sample["size"]) > sample_settings.get(
+                            "memory_profiler_step", settings["memory_profiler_step"]
+                        ), sample
                 assert all(sample["query_id"] for sample in samples), samples
                 if remote:
                     samples = [sample for sample in samples if sample["query_id"] != query_id]
                 else:
                     assert all(sample["query_id"] == query_id for sample in samples), samples
                 types.update(sample["trace_type"] for sample in samples)
-                if required_types <= types:
+                positive_memory_seen |= any(
+                    sample["trace_type"] == "Memory" and int(sample["size"]) > 0 for sample in samples
+                )
+                if required_types <= types and ("Memory" not in required_types or positive_memory_seen):
                     break
                 if attempt < 3:
                     time.sleep(0.1)
             assert required_types <= types, (transport, remote, sorted(required_types - types))
+            if "Memory" in required_types:
+                assert positive_memory_seen, (transport, remote, "no positive Memory allocation delta")
         print(f"{transport} {'remote' if remote else 'local'}: supported types streamed; ProfileEvent excluded from stream")
 PY
