@@ -1,3 +1,5 @@
+#include <base/defines.h>
+
 #include <Functions/array/arrayFilter.h>
 #include <Functions/FunctionFactory.h>
 
@@ -27,6 +29,8 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
     const IColumn::Filter & filter = column_filter->getData();
     const IColumn::Offsets & in_offsets = array.getOffsets();
+    chassert(filter.size() == array.getData().size());
+
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
     IColumn::Offsets & out_offsets = column_offsets->getData();
 
@@ -42,13 +46,13 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         out_offsets[i] = out_pos;
     }
 
-    if (out_pos == 0)
-        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), std::move(column_offsets));
-
     if (out_pos == filter.size())
         return array.clone();
 
-    ColumnPtr filtered = array.getData().filter(filter, out_pos);
+    if (out_pos == 0)
+        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), std::move(column_offsets));
+
+    ColumnPtr filtered = array.getData().filter(filter, -1);
     return ColumnArray::create(filtered, std::move(column_offsets));
 }
 

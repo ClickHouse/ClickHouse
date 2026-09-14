@@ -29,3 +29,5 @@ SELECT arraySum(x -> tupleElement(x, 1), arrayFilter((x, keep) -> keep, [(1, 'a'
 SELECT arrayFilter((x, keep) -> keep, CAST([1, NULL, 2], 'Array(Nullable(Int8))'), materialize([1, 1, 1]));
 SELECT arrayFilter((x, keep) -> keep, CAST([1, NULL, 2], 'Array(Nullable(Int8))'), materialize([0, 0, 0]));
 SELECT arrayFilter((x, keep) -> keep, [1, 2, 3], materialize([NULL, 1, 1]));
+
+SELECT arrayFilter((x, keep) -> keep, emptyArrayUInt64(), materialize(emptyArrayUInt8()));
