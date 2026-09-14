@@ -124,6 +124,13 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
             return false;
         }
+        case TypeIndex::MacAddress:
+        {
+            if (to_which_type.isUInt64() || to_which_type.isString())
+                return true;
+
+            return false;
+        }
         case TypeIndex::Nullable:
         {
             if (to_type_was_nullable)

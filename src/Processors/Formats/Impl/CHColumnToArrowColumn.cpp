@@ -1100,6 +1100,23 @@ namespace DB
         checkStatus(status, write_column->getName(), format_name);
     }
 
+    static void fillArrowArrayWithMacAddressColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_data = assert_cast<const ColumnVector<MacAddress> &>(*write_column).getData();
+        auto & builder = assert_cast<arrow::UInt64Builder &>(*array_builder);
+
+        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+        arrow::Status status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
     static void fillArrowArrayWithDateColumnData(
         ColumnPtr write_column,
         const PaddedPODArray<UInt8> * null_bytemap,
@@ -1374,6 +1391,9 @@ namespace DB
                 break;
             case TypeIndex::IPv4:
                 fillArrowArrayWithIPv4ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::MacAddress:
+                fillArrowArrayWithMacAddressColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
             case TypeIndex::Date:
                 fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_date_as_uint16);
@@ -1703,6 +1723,9 @@ namespace DB
 
         if (isIPv4(column_type))
             return arrow::uint32();
+
+        if (isMacAddress(column_type))
+            return arrow::uint64();
 
         if (isVariant(column_type))
         {
