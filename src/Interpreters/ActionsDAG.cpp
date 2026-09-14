@@ -3254,6 +3254,38 @@ bool typeAdaptsPerRow(const DataTypePtr & type)
     return adapts;
 }
 
+/// Whether an `in` node probes a set whose single key type is already the probe column's own type, so
+/// that the per-row cast into the set's key type neither parses nor narrows the value.
+bool probeTypeMatchesSetKey(const ActionsDAG::Node & node)
+{
+    if (node.children.size() != 2)
+        return false;
+
+    const auto * set_node = node.children[1];
+    if (set_node->type != ActionsDAG::ActionType::COLUMN || !set_node->column)
+        return false;
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return false;
+
+    /// Reading the declared key types does not build the set, so no `IN` subquery is executed here.
+    const auto set_types = future_set->getTypes();
+    /// A set whose header the planner has not installed reports no types at all, which is not a
+    /// constraint that can be read as satisfied.
+    if (set_types.size() != 1 || typeAdaptsPerRow(set_types[0]))
+        return false;
+
+    /// The declared types have `LowCardinality` removed recursively, while the type the lookup casts into
+    /// keeps a nested one, so normalize the probe the same way: what is then left between them is a
+    /// `LowCardinality` wrapper, which re-encodes a value against a dictionary without reading it.
+    return recursiveRemoveLowCardinality(node.children[0]->result_type)->equals(*set_types[0]);
+}
+
 /// Total on its argument types, i.e. it has a value for every value of them and cannot throw.
 bool functionIsTotal(const ActionsDAG::Node & node)
 {
@@ -3274,6 +3306,12 @@ bool functionIsTotal(const ActionsDAG::Node & node)
     /// `joinRuntimeFilter` keeps normalizing both sides to that one type.
     if (name == "__applyFilter")
         return true;
+
+    /// A set lookup casts the probe column into the set's key type per row, so it is total only when
+    /// that type is already the probe column's own. An `IN` set's key types come from the user's own
+    /// expression list, and where they are not known at all that is not a permission.
+    if (name == "in")
+        return probeTypeMatchesSetKey(node);
 
     const bool is_comparison = name == "equals" || name == "notEquals" || name == "less" || name == "greater"
         || name == "lessOrEquals" || name == "greaterOrEquals";
