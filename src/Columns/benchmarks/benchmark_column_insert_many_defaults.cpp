@@ -15,7 +15,7 @@ static void BM_insertManyDefaults(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t length = state.range(0);
-    size_t allocated_bytes = 0;
+    size_t retained_allocated_bytes = 0;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -27,13 +27,14 @@ static void BM_insertManyDefaults(benchmark::State & state)
         benchmark::DoNotOptimize(column->size());
 
         state.PauseTiming();
-        allocated_bytes = column->allocatedBytes();
+        retained_allocated_bytes = column->allocatedBytes();
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
-    state.counters["allocated_bytes"] = static_cast<double>(allocated_bytes);
+    // allocatedBytes() reports retained column capacity, not peak process RSS.
+    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
 }
 
 template <const std::string & str_type>
@@ -41,7 +42,7 @@ static void BM_insertManyDefaultsOneByOne(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t length = state.range(0);
-    size_t allocated_bytes = 0;
+    size_t retained_allocated_bytes = 0;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -54,13 +55,14 @@ static void BM_insertManyDefaultsOneByOne(benchmark::State & state)
         benchmark::DoNotOptimize(column->size());
 
         state.PauseTiming();
-        allocated_bytes = column->allocatedBytes();
+        retained_allocated_bytes = column->allocatedBytes();
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
-    state.counters["allocated_bytes"] = static_cast<double>(allocated_bytes);
+    // allocatedBytes() reports retained column capacity, not peak process RSS.
+    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
 }
 
 static const String type_map_uint64 = "Map(UInt64, UInt64)";
