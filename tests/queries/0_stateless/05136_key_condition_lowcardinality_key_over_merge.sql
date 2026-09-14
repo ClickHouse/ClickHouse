@@ -7,7 +7,7 @@
 -- The exception itself is fixed by https://github.com/ClickHouse/ClickHouse/pull/111050, which
 -- normalizes the chain's input type inside applyMonotonicFunctionsChainToRange; every statement
 -- below passes on master. This test pins that behaviour for the four ways the chain is reached -
--- the dense cached-column path, the sparse constant-coordinate path, the explicit-field path in
+-- the cached-column path, the sparse constant-coordinate path, the explicit-field path in
 -- both LowCardinality directions, and two-link chains whose intermediate result type re-introduces
 -- LowCardinality - because a mismatch on any of them is silent until it throws.
 
@@ -174,12 +174,20 @@ CREATE TABLE t_05136_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree
 INSERT INTO t_05136_lc4 SELECT number % 60000, toString(number) FROM numbers(100000);
 CREATE TABLE t_05136_merge4 (k UInt16, v String) ENGINE = Merge(currentDatabase(), 't_05136_lc4');
 SELECT count() FROM t_05136_merge4 WHERE CAST(CAST(k, 'LowCardinality(UInt16)'), 'UInt64') > 100;
--- The count above is also what a declined chain would return, so assert this dense cached path really
--- prunes, with the full-scan control on the same table next (must report 0).
+-- The count above is also what a declined chain would return, so assert this cached path really
+-- prunes, once through each primary-key analysis implementation, with the full-scan control on the
+-- same table last (must report 0). The chain reaches `applyFunction` either way, because both
+-- implementations build block-backed `FieldRef`s from the in-memory index.
 SELECT countIf(extract(explain, 'Granules: ([0-9]+)/[0-9]+')::UInt64
                < extract(explain, 'Granules: [0-9]+/([0-9]+)')::UInt64)
     FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05136_merge4
           WHERE CAST(CAST(k, 'LowCardinality(UInt16)'), 'UInt64') > 59000)
+    WHERE extract(explain, 'Granules: ([0-9]+)/[0-9]+') != '';
+SELECT countIf(extract(explain, 'Granules: ([0-9]+)/[0-9]+')::UInt64
+               < extract(explain, 'Granules: [0-9]+/([0-9]+)')::UInt64)
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05136_merge4
+          WHERE CAST(CAST(k, 'LowCardinality(UInt16)'), 'UInt64') > 59000
+          SETTINGS use_lightweight_primary_key_index_analysis = 0)
     WHERE extract(explain, 'Granules: ([0-9]+)/[0-9]+') != '';
 SELECT countIf(extract(explain, 'Granules: ([0-9]+)/[0-9]+')::UInt64
                < extract(explain, 'Granules: [0-9]+/([0-9]+)')::UInt64)
