@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -99,6 +100,24 @@ public:
         , nested_function{nested_function_}
         , prefix_size(result_is_nullable ? nested_function->alignOfData() : 0)
     {
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & argument_type : this->argument_types)
+            normalized_argument_types.emplace_back(argument_type->getNormalizedType());
+
+        const DataTypePtr nested_normalized_state = nested_function->getNormalizedStateType();
+        const auto & nested_aggregate_state = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
+        return std::make_shared<DataTypeAggregateFunction>(
+            this->shared_from_this(), normalized_argument_types, nested_aggregate_state.getParameters());
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        return DataTypeAggregateFunction::strictEquals(getNormalizedStateType(), rhs.getNormalizedStateType());
     }
 
     String getName() const override
@@ -255,6 +274,7 @@ public:
             }
             else
             {
+                nested_function->throwIfCannotProduceFinalizedResult();
                 to_concrete.insertDefault();
             }
         }
