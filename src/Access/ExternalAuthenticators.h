@@ -55,6 +55,16 @@ public:
     bool findLDAPUser(const String & server, const String & user_name,
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
 
+    /// Enumerates the users the named LDAP server returns for `enumeration_params` together with
+    /// their role mappings, under the server's lookup identity (`LDAPSyncClient::enumerate`), for
+    /// the proactive synchronisation of an `ldap` user directory. The server parameters are
+    /// copied under `mutex` and the directory is contacted without it. Throws `BAD_ARGUMENTS` when
+    /// the server is not configured or failed to parse (with the original reason, like
+    /// `checkLDAPCredentials`) and when it has no `lookup_bind_dn`; `LDAP_ERROR` for every
+    /// directory-side failure. Never returns a partial list.
+    std::vector<LDAPSyncClient::UserEntry> enumerateLDAPUsers(const String & server,
+        const LDAPClient::UserEnumerationParams & enumeration_params, const LDAPClient::RoleSearchParamsList & role_search_params) const;
+
     GSSAcceptorContext::Params getKerberosParams() const;
 
 private:

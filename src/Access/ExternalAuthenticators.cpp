@@ -848,6 +848,26 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
     return result;
 }
 
+std::vector<LDAPSyncClient::UserEntry> ExternalAuthenticators::enumerateLDAPUsers(const String & server,
+    const LDAPClient::UserEnumerationParams & enumeration_params, const LDAPClient::RoleSearchParamsList & role_search_params) const
+{
+    std::optional<LDAPClient::Params> params;
+
+    {
+        std::lock_guard lock(mutex);
+        params = getLDAPServerParams(server);
+    }
+
+    /// The enumeration reads the directory on behalf of nobody in particular, so only a service
+    /// account can run it; without one there is no identity to bind as.
+    if (!params->hasLookupIdentity())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP sync requires 'lookup_bind_dn' on server '{}'", server);
+
+    /// `user`/`password` stay empty: the client never binds as a user here.
+    LDAPSyncClient client(params.value());
+    return client.enumerate(enumeration_params, role_search_params);
+}
+
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const
 {
     std::lock_guard lock(mutex);

@@ -49,6 +49,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool LDAPClient::SearchParams::isSelfLookup() const
+{
+    /// Both DN placeholders denote the user's own entry (the synchronisation substitutes the
+    /// enumerated entry's DN for both), so both spellings select the shortcut.
+    const bool base_is_own_entry = (base_dn == Params::DETECTED_USER_DN_PLACEHOLDER) || (base_dn == "{bind_dn}");
+    return base_is_own_entry && scope == Scope::BASE && boost::iequals(search_filter, "(objectClass=*)");
+}
+
 void LDAPClient::SearchParams::updateHash(SipHash & hash) const
 {
     ::updateHash(hash, base_dn);
@@ -291,6 +299,34 @@ namespace
             case LDAPClient::SearchParams::Scope::SUBTREE:   return LDAP_SCOPE_SUBTREE;
             case LDAPClient::SearchParams::Scope::CHILDREN:  return LDAP_SCOPE_CHILDREN;
         }
+    }
+
+    /// Renders a failed search result: the result code and the optional diagnostic message and
+    /// matched DN the directory attached to it.
+    String describeSearchResultError(int rc, const char * error_msg, const char * matched_msg)
+    {
+        String message;
+
+        const char * raw_err_str = ldap_err2string(rc);
+        if (raw_err_str && *raw_err_str != '\0')
+        {
+            message += ": ";
+            message += raw_err_str;
+        }
+
+        if (error_msg && *error_msg != '\0')
+        {
+            message += ", ";
+            message += error_msg;
+        }
+
+        if (matched_msg && *matched_msg != '\0')
+        {
+            message += ", matching DN part: ";
+            message += matched_msg;
+        }
+
+        return message;
     }
 
 }
@@ -848,30 +884,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params,
                 handleError(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, nullptr, 0));
 
                 if (rc != LDAP_SUCCESS)
-                {
-                    String message;
-
-                    const char * raw_err_str = ldap_err2string(rc);
-                    if (raw_err_str && *raw_err_str != '\0')
-                    {
-                        message += ": ";
-                        message += raw_err_str;
-                    }
-
-                    if (error_msg && *error_msg != '\0')
-                    {
-                        message += ", ";
-                        message += error_msg;
-                    }
-
-                    if (matched_msg && *matched_msg != '\0')
-                    {
-                        message += ", matching DN part: ";
-                        message += matched_msg;
-                    }
-
-                    throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", message);
-                }
+                    throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", describeSearchResultError(rc, error_msg, matched_msg));
 
                 break;
             }
@@ -879,6 +892,282 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params,
             case -1:
                 throw Exception(ErrorCodes::LDAP_ERROR, "Failed to process LDAP search message");
         }
+    }
+
+    return result;
+}
+
+std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams & search_params, const std::vector<String> & attributes, UInt32 page_size, size_t max_entries)
+{
+    /// libldap rejects any other page size with a bare `LDAP_PARAM_ERROR`; say what was wrong.
+    if (page_size == 0 || page_size > static_cast<UInt32>(LDAP_MAXINT))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP page size must be between 1 and {}, got {}", LDAP_MAXINT, page_size);
+
+    /// Neither depends on the connection; the placeholders are fixed for the whole enumeration.
+    const int scope = toLDAPScope(search_params.scope);
+    const auto [final_base_dn, final_search_filter] = resolveSearchTemplates(search_params);
+
+    /// The strings behind `attrs` are owned by `attributes`, which outlives every page.
+    std::vector<char *> attrs;
+    attrs.reserve(attributes.size() + 1);
+    for (const auto & attribute : attributes)
+        attrs.push_back(const_cast<char *>(attribute.c_str()));
+    attrs.push_back(nullptr);
+
+    std::vector<Entry> result;
+
+    /// The opaque position the directory hands back with every page; empty after the last one.
+    String cookie;
+    bool more_pages = true;
+    size_t pages_received = 0;
+
+    while (more_pages)
+    {
+        /// One page per lock scope, so that logins on other connections proceed between pages.
+        std::lock_guard lock(ldap_global_mutex);
+
+        if (!handle)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted without an open connection");
+
+        assertBoundForSearch();
+
+        const String & bound_dn = (bound_as == BindMode::Service) ? params.lookup_bind_dn : placeholders.bind_dn;
+
+        /// A directory that stops the search at its own limit has returned an incomplete set; a
+        /// synchronisation applying it would remove every user beyond the cut. Name the account the
+        /// limit applies to, because that is where an operator has to raise it.
+        auto throw_if_limit_exceeded = [&](int rc)
+        {
+            if (rc != LDAP_SIZELIMIT_EXCEEDED && rc != LDAP_ADMINLIMIT_EXCEEDED)
+                return;
+
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP search under '{}' on server '{}' as '{}' was cut off by the directory's {} after {} entries ({}); "
+                "raise the limit for this identity on the directory (OpenLDAP: `olcLimits ... size.prtotal`) or narrow the search filter",
+                final_base_dn, params.name, bound_dn,
+                rc == LDAP_SIZELIMIT_EXCEEDED ? "size limit" : "administrative limit",
+                result.size(), ldap_err2string(rc));
+        };
+
+        ::berval cookie_value{};
+        cookie_value.bv_val = const_cast<char *>(cookie.data());
+        cookie_value.bv_len = cookie.size();
+
+        LDAPControl * page_control = nullptr;
+
+        SCOPE_EXIT({
+            if (page_control)
+            {
+                ldap_control_free(page_control);
+                page_control = nullptr;
+            }
+        });
+
+        /// Critical: a directory that cannot page must reject the request (`unavailableCriticalExtension`)
+        /// rather than answer with a single, possibly truncated, page.
+        handleError(ldap_create_page_control(handle, static_cast<ber_int_t>(page_size), cookie.empty() ? nullptr : &cookie_value, /* iscritical = */ 1, &page_control));
+
+        LDAPControl * server_controls[] = { page_control, nullptr };
+
+        ::timeval timeout = { params.search_timeout.count(), 0 };
+        LDAPMessage * msgs = nullptr;
+
+        SCOPE_EXIT({
+            if (msgs)
+            {
+                ldap_msgfree(msgs);
+                msgs = nullptr;
+            }
+        });
+
+        /// No client-requested size limit: the page size bounds every response and `max_entries` bounds the total.
+        const int search_rc = ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs.data(), 0, server_controls, nullptr, &timeout, LDAP_NO_LIMIT, &msgs);
+        throw_if_limit_exceeded(search_rc);
+        if (search_rc == LDAP_UNAVAILABLE_CRITICAL_EXTENSION)
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP server '{}' does not support the paged results control (RFC 2696) that the user enumeration requires: {}",
+                params.name, ldap_err2string(search_rc));
+        handleError(search_rc);
+
+        more_pages = false;
+
+        for (
+             auto * msg = ldap_first_message(handle, msgs);
+             msg != nullptr;
+             msg = ldap_next_message(handle, msg)
+        )
+        {
+            switch (ldap_msgtype(msg)) // NOLINT(bugprone-switch-missing-default-case)
+            {
+                case LDAP_RES_SEARCH_ENTRY:
+                {
+                    if (max_entries != 0 && result.size() >= max_entries)
+                        throw Exception(ErrorCodes::LDAP_ERROR,
+                            "LDAP search under '{}' on server '{}' returned more than {} entries; refusing to continue",
+                            final_base_dn, params.name, max_entries);
+
+                    Entry entry;
+
+                    {
+                        BerElement * ber = nullptr;
+
+                        SCOPE_EXIT({
+                            if (ber)
+                            {
+                                ber_free(ber, 0);
+                                ber = nullptr;
+                            }
+                        });
+
+                        ::berval bv{};
+
+                        handleError(ldap_get_dn_ber(handle, msg, &ber, &bv));
+
+                        if (bv.bv_val && bv.bv_len > 0)
+                            entry.dn.assign(bv.bv_val, bv.bv_len);
+                    }
+
+                    BerElement * ber = nullptr;
+
+                    SCOPE_EXIT({
+                        if (ber)
+                        {
+                            ber_free(ber, 0);
+                            ber = nullptr;
+                        }
+                    });
+
+                    for (
+                         auto * attr = ldap_first_attribute(handle, msg, &ber);
+                         attr != nullptr;
+                         attr = ldap_next_attribute(handle, msg, ber)
+                    )
+                    {
+                        SCOPE_EXIT({
+                            ldap_memfree(attr);
+                            attr = nullptr;
+                        });
+
+                        auto ** vals = ldap_get_values_len(handle, msg, attr);
+                        if (!vals)
+                            continue;
+
+                        SCOPE_EXIT({
+                            ldap_value_free_len(vals);
+                            vals = nullptr;
+                        });
+
+                        std::set<String> values;
+                        for (size_t i = 0; vals[i]; ++i)
+                        {
+                            if (vals[i]->bv_val && vals[i]->bv_len > 0)
+                                values.emplace(vals[i]->bv_val, vals[i]->bv_len);
+                        }
+
+                        if (!values.empty())
+                            entry.attributes[toLowerCopyASCII(attr)].insert(values.begin(), values.end());
+                    }
+
+                    result.push_back(std::move(entry));
+                    break;
+                }
+
+                case LDAP_RES_SEARCH_REFERENCE:
+                {
+                    char ** referrals = nullptr;
+                    handleError(ldap_parse_reference(handle, msg, &referrals, nullptr, 0));
+
+                    if (referrals)
+                    {
+                        SCOPE_EXIT({
+                            ber_memvfree(reinterpret_cast<void **>(referrals));
+                            referrals = nullptr;
+                        });
+
+                        for (size_t i = 0; referrals[i]; ++i)
+                        {
+                            if (params.follow_referrals)
+                                LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference: {} (library referral chasing enabled)",
+                                referrals[i]);
+                            else
+                                LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference but not following it: {}",
+                                referrals[i]);
+                        }
+                    }
+
+                    break;
+                }
+
+                case LDAP_RES_SEARCH_RESULT:
+                {
+                    int rc = LDAP_SUCCESS;
+                    char * matched_msg = nullptr;
+                    char * error_msg = nullptr;
+                    LDAPControl ** response_controls = nullptr;
+
+                    SCOPE_EXIT({
+                        if (matched_msg)
+                        {
+                            ldap_memfree(matched_msg);
+                            matched_msg = nullptr;
+                        }
+                        if (error_msg)
+                        {
+                            ldap_memfree(error_msg);
+                            error_msg = nullptr;
+                        }
+                        if (response_controls)
+                        {
+                            ldap_controls_free(response_controls);
+                            response_controls = nullptr;
+                        }
+                    });
+
+                    handleError(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, &response_controls, 0));
+
+                    throw_if_limit_exceeded(rc);
+                    if (rc != LDAP_SUCCESS)
+                        throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", describeSearchResultError(rc, error_msg, matched_msg));
+
+                    /// The directory echoes the control with the cookie of the next page, empty after the
+                    /// last one. A directory that honoured the control always includes it (RFC 2696), and one
+                    /// that could not has rejected the critical request above, so no control means the
+                    /// whole result fitted into this response.
+                    LDAPControl * page_response = response_controls ? ldap_control_find(LDAP_CONTROL_PAGEDRESULTS, response_controls, nullptr) : nullptr;
+                    if (page_response)
+                    {
+                        ber_int_t estimated_total = 0;
+                        ::berval next_cookie{};
+
+                        SCOPE_EXIT({
+                            if (next_cookie.bv_val)
+                            {
+                                ber_memfree(next_cookie.bv_val);
+                                next_cookie.bv_val = nullptr;
+                            }
+                        });
+
+                        handleError(ldap_parse_pageresponse_control(handle, page_response, &estimated_total, &next_cookie));
+
+                        if (next_cookie.bv_val && next_cookie.bv_len > 0)
+                            cookie.assign(next_cookie.bv_val, next_cookie.bv_len);
+                        else
+                            cookie.clear();
+
+                        more_pages = !cookie.empty();
+                    }
+
+                    break;
+                }
+
+                case -1:
+                    throw Exception(ErrorCodes::LDAP_ERROR, "Failed to process LDAP search message");
+            }
+        }
+
+        ++pages_received;
+        LOG_TRACE(getLogger("LDAPClient"), "Received page {} of the LDAP search under '{}' on server '{}': {} entries so far{}",
+            pages_received, final_base_dn, params.name, result.size(), more_pages ? "" : ", no more pages");
     }
 
     return result;
@@ -1006,6 +1295,115 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
     return true;
 }
 
+std::vector<LDAPSyncClient::UserEntry> LDAPSyncClient::enumerate(const UserEnumerationParams & enumeration_params, const RoleSearchParamsList & role_search_params)
+{
+    if (!params.hasLookupIdentity())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LDAP user enumeration on server '{}' requires 'lookup_bind_dn' and 'lookup_password'", params.name);
+
+    /// The DN is not an attribute and cannot serve as a ClickHouse user name anyway.
+    if (enumeration_params.attribute.empty() || boost::iequals(enumeration_params.attribute, "dn"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LDAP user enumeration on server '{}' requires 'attribute' to name the attribute that holds the user name, e.g. 'sAMAccountName' or 'uid'",
+            params.name);
+
+    /// Nothing could substitute a per-user placeholder before the users are known.
+    for (const auto * placeholder : {"{user_name}", "{bind_dn}", "{user_dn}"})
+    {
+        if (enumeration_params.base_dn.contains(placeholder) || enumeration_params.search_filter.contains(placeholder))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "LDAP user enumeration on server '{}' cannot use '{}' in 'base_dn' or 'search_filter'", params.name, placeholder);
+    }
+
+    /// Fetch the user name and, in the same request, whatever the self-lookup mappings read. A
+    /// self-lookup with an empty `attribute` would mean "every attribute" to `search`, which the
+    /// shortcut does not reproduce, so such a mapping is searched like any other.
+    std::vector<String> attributes{enumeration_params.attribute};
+    std::vector<bool> is_self_lookup;
+    is_self_lookup.reserve(role_search_params.size());
+    for (const auto & mapping : role_search_params)
+    {
+        const bool self_lookup = mapping.isSelfLookup() && !mapping.attribute.empty();
+        is_self_lookup.push_back(self_lookup);
+
+        if (!self_lookup || boost::iequals(mapping.attribute, "dn"))
+            continue;
+
+        const bool already_requested = std::any_of(attributes.begin(), attributes.end(),
+            [&](const String & attribute) { return boost::iequals(attribute, mapping.attribute); });
+        if (!already_requested)
+            attributes.push_back(mapping.attribute);
+    }
+
+    SCOPE_EXIT({ closeConnection(); });
+
+    connect();
+    bind(BindMode::Service);
+
+    const auto entries = searchEntries(enumeration_params, attributes, enumeration_params.page_size, enumeration_params.max_entries);
+
+    const auto name_attribute = toLowerCopyASCII(enumeration_params.attribute);
+    auto log = getLogger("LDAPSyncClient");
+
+    std::vector<UserEntry> users;
+    users.reserve(entries.size());
+
+    for (const auto & entry : entries)
+    {
+        if (entry.dn.empty())
+        {
+            LOG_WARNING(log, "Skipping an LDAP entry without a DN returned by the user enumeration on server '{}'", params.name);
+            continue;
+        }
+
+        const auto name_it = entry.attributes.find(name_attribute);
+        const size_t name_count = (name_it == entry.attributes.end()) ? 0 : name_it->second.size();
+        if (name_count != 1)
+        {
+            LOG_WARNING(log, "Skipping LDAP entry '{}' on server '{}': expected exactly one value of '{}', found {}",
+                entry.dn, params.name, enumeration_params.attribute, name_count);
+            continue;
+        }
+
+        UserEntry user;
+        user.name = *name_it->second.begin();
+        user.dn = entry.dn;
+        user.external_roles.reserve(role_search_params.size());
+
+        /// The role searches see this entry as "the user", exactly as a login of that user would.
+        placeholders.user_name = user.name;
+        placeholders.bind_dn = user.dn;
+        placeholders.user_dn = user.dn;
+
+        for (size_t i = 0; i < role_search_params.size(); ++i)
+        {
+            const auto & mapping = role_search_params[i];
+
+            if (!is_self_lookup[i])
+            {
+                user.external_roles.emplace_back(search(mapping));
+                continue;
+            }
+
+            if (boost::iequals(mapping.attribute, "dn"))
+            {
+                user.external_roles.emplace_back(SearchResults{user.dn});
+                continue;
+            }
+
+            const auto it = entry.attributes.find(toLowerCopyASCII(mapping.attribute));
+            user.external_roles.emplace_back(it == entry.attributes.end() ? SearchResults{} : it->second);
+        }
+
+        users.push_back(std::move(user));
+    }
+
+    LOG_DEBUG(log, "Enumerated {} users out of {} entries under '{}' on server '{}'",
+        users.size(), entries.size(), enumeration_params.base_dn, params.name);
+
+    return users;
+}
+
 #else // USE_LDAP
 
 void LDAPClient::handleError(const int, String)
@@ -1063,6 +1461,16 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList *, SearchResu
 }
 
 bool LDAPSimpleAuthClient::find(const RoleSearchParamsList *, SearchResultsList *)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams &, const std::vector<String> &, UInt32, size_t)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::vector<LDAPSyncClient::UserEntry> LDAPSyncClient::enumerate(const UserEnumerationParams &, const RoleSearchParamsList &)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }

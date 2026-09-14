@@ -40,6 +40,12 @@ public:
         String search_filter;
         String attribute = "cn";
 
+        /// True when the search reads an attribute of the user's own entry: `base_dn` is exactly
+        /// `{user_dn}` (or `{bind_dn}`), the scope is `base` and the filter is `(objectClass=*)`,
+        /// e.g. an Active Directory `memberOf` lookup. `LDAPSyncClient::enumerate` answers such a
+        /// search from the attributes of the enumerated entry instead of issuing one search per user.
+        bool isSelfLookup() const;
+
         void updateHash(SipHash & hash) const;
     };
 
@@ -77,6 +83,28 @@ public:
 
     using SearchResults = std::set<String>;
     using SearchResultsList = std::vector<SearchResults>;
+
+    /// One directory entry as returned by `searchEntries`: its DN and the values of the requested
+    /// attributes. Attribute names are ASCII-lower-cased (`memberOf` and `memberof` are the same
+    /// key); attribute options such as `;range=...` are kept as part of the name. Attributes the
+    /// entry has no value for are absent. Empty values are dropped.
+    struct Entry
+    {
+        String dn;
+        std::map<String, std::set<String>> attributes;
+    };
+
+    /// Parameters of a user enumeration (the `<sync>` search of an `ldap` user directory): a plain
+    /// search whose `attribute` yields the ClickHouse user name, plus the RFC 2696 page size and a
+    /// client-side cap on the number of entries. Parsed by `parseLDAPSearchParams` plus the extra keys.
+    struct UserEnumerationParams
+        : public SearchParams
+    {
+        /// Entries requested per page (`pagedResultsControl`). Active Directory caps a page at 1000.
+        UInt32 page_size = 500;
+        /// The enumeration fails with `LDAP_ERROR` as soon as the directory returns more entries; 0 = unlimited.
+        size_t max_entries = 0;
+    };
 
     struct Params
     {
@@ -267,6 +295,19 @@ protected:
     /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`.
     MAYBE_NORETURN SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
 
+    /// Runs a paged search (RFC 2696 `pagedResultsControl`, `page_size` entries per page, marked
+    /// critical so a directory that cannot page rejects the request instead of silently truncating
+    /// it) on the open connection under the identity `assertBoundForSearch` demands, and returns
+    /// every matching entry with its DN and the values of `attributes` (an empty list requests all
+    /// user attributes; `dn` is not an attribute and is never in the map). No client-side size
+    /// limit is requested, so `params.search_limit` does not apply. `ldap_global_mutex` is held for
+    /// one page at a time, so other LDAP clients get to run between pages.
+    /// Throws `LDAP_ERROR` naming the bound identity when the directory answers with
+    /// `sizeLimitExceeded` or `adminLimitExceeded` (the lookup account needs a higher server-side
+    /// limit), and as soon as more than `max_entries` entries were received when `max_entries` > 0.
+    /// `search_params.attribute` is ignored: the attributes to fetch are `attributes`.
+    MAYBE_NORETURN std::vector<Entry> searchEntries(const SearchParams & search_params, const std::vector<String> & attributes, UInt32 page_size, size_t max_entries);
+
     const Params params;
 #if USE_LDAP
     LDAP * handle = nullptr;
@@ -298,6 +339,39 @@ public:
     /// Returns false (without throwing) if the user does not exist, if the service-bind
     /// credentials are not configured, or if `user_dn_detection` is not configured.
     bool find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
+};
+
+/// Enumerates the users of a directory under the lookup identity, for the proactive
+/// synchronisation of an `ldap` user directory. Never binds as a user.
+class LDAPSyncClient
+    : private LDAPClient
+{
+public:
+    using LDAPClient::LDAPClient;
+
+    struct UserEntry
+    {
+        /// The single value of `UserEnumerationParams::attribute`, i.e. the ClickHouse user name.
+        String name;
+        String dn;
+        /// One `SearchResults` per element of the `RoleSearchParamsList` passed to `enumerate`, in
+        /// the same order, exactly as `LDAPSimpleAuthClient::authenticate` would return them for
+        /// this user (raw values; the mapping to role names is `LDAPAccessStorage::mapExternalRolesNoLock`).
+        SearchResultsList external_roles;
+    };
+
+    /// Opens one connection, binds as `params.lookup_bind_dn` and runs the paged enumeration, then
+    /// resolves the role mappings of every entry on the same connection: a self-lookup mapping
+    /// (`SearchParams::isSelfLookup`) is read from the entry's own attributes, which were fetched
+    /// along with the user name, every other mapping is one `search` per user with
+    /// `Placeholders{user_name = name, bind_dn = user_dn = dn}`. Entries with zero or several values
+    /// of `enumeration_params.attribute`, or without a DN, are skipped with a warning. The result is
+    /// in directory order and not deduplicated; the caller decides what a duplicate name means.
+    /// Throws `BAD_ARGUMENTS` without a lookup identity, when `attribute` is empty or `dn`, or when
+    /// `base_dn`/`search_filter` contain a per-user placeholder (nothing could substitute it);
+    /// `LDAP_ERROR` for every directory-side failure (see `searchEntries`). Never returns partial
+    /// results: an error in the middle of the enumeration propagates.
+    std::vector<UserEntry> enumerate(const UserEnumerationParams & enumeration_params, const RoleSearchParamsList & role_search_params);
 };
 
 }
