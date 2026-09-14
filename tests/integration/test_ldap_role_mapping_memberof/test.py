@@ -19,7 +19,9 @@ Group DNs of interest returned by the search on `instance` (see `configs/ldap_wi
   - `cn=clickhouse-grp\\, x,...`           unescaped RDN value matches the plain entry -> `grp, x`
   - `cn=legacy-role_4,...`                mapped by the legacy `role_mapping` only    -> `role_4`
 
-`instance_invalid` restarts with invalid configurations to check the startup validation.
+`instance_invalid` restarts with invalid configurations to check the startup validation:
+every `groups` entry that could never grant a role (empty, unparsable DN, DN without the
+`rdn_attribute` RDN, duplicate, or not carrying the configured `prefix`) is rejected at startup.
 """
 
 import json
@@ -83,16 +85,19 @@ def ldap_add(ldif):
     )
 
 
-def ldap_delete(dn):
-    ldap_run(
-        "ldapdelete -H ldap://{host}:{port} -D {admin_bind_dn} -x -w {admin_password} {dn}".format(
-            host=cluster.ldap_host,
-            port=cluster.ldap_port,
-            admin_bind_dn=shlex.quote(LDAP_ADMIN_BIND_DN),
-            admin_password=shlex.quote(LDAP_ADMIN_PASSWORD),
-            dn=shlex.quote(dn),
-        )
+def ldap_delete(dn, ignore_missing=False):
+    command = "ldapdelete -H ldap://{host}:{port} -D {admin_bind_dn} -x -w {admin_password} {dn}".format(
+        host=cluster.ldap_host,
+        port=cluster.ldap_port,
+        admin_bind_dn=shlex.quote(LDAP_ADMIN_BIND_DN),
+        admin_password=shlex.quote(LDAP_ADMIN_PASSWORD),
+        dn=shlex.quote(dn),
     )
+    if ignore_missing:
+        # `ldapdelete` exits with 32 (`No such object`) when the entry is already gone;
+        # any other failure still fails the test.
+        command += " || [ $? -eq 32 ]"
+    ldap_run(command)
 
 
 def add_organizational_unit(ou_dn, ou_name):
@@ -180,16 +185,9 @@ def test_groups_allow_list(roles):
         ldap_delete(f"cn=clickhouse-role_1,{GROUPS_CONTAINER}")
         assert current_roles(instance, "johndoe", "qwertz") == TSV([["role_2"]])
     finally:
+        # `clickhouse-role_1` is already gone when the test passed.
         for group_cn in ["clickhouse-role_1", "clickhouse-ROLE_2", "clickhouse-role_3"]:
-            ldap_run(
-                "ldapdelete -H ldap://{host}:{port} -D {admin_bind_dn} -x -w {admin_password} {dn} || true".format(
-                    host=cluster.ldap_host,
-                    port=cluster.ldap_port,
-                    admin_bind_dn=shlex.quote(LDAP_ADMIN_BIND_DN),
-                    admin_password=shlex.quote(LDAP_ADMIN_PASSWORD),
-                    dn=shlex.quote(f"cn={group_cn},{GROUPS_CONTAINER}"),
-                )
-            )
+            ldap_delete(f"cn={group_cn},{GROUPS_CONTAINER}", ignore_missing=True)
 
 
 def test_dn_form_group_pins_the_container(roles):
@@ -282,13 +280,38 @@ def test_startup_fails_on_rdn_attribute_without_groups_or_prefix():
     )
 
 
+def test_startup_fails_on_empty_rdn_attribute():
+    assert_startup_fails_with(
+        "ldap_empty_rdn_attribute.xml", "Empty 'rdn_attribute' entry"
+    )
+
+
 def test_startup_fails_on_dn_group_without_rdn_attribute():
     assert_startup_fails_with(
         "ldap_dn_group_without_rdn_attribute.xml",
-        "is a DN, which requires 'rdn_attribute' to be set",
+        "treated as a DN, which requires 'rdn_attribute' to be set",
     )
+
+
+def test_startup_fails_on_invalid_dn_group():
+    # `cn=clickhouse-role_1,,dc=example,dc=org` contains `=` and is therefore parsed as a DN, which fails.
+    assert_startup_fails_with("ldap_invalid_dn_group.xml", "is not a valid DN")
+
+
+def test_startup_fails_on_dn_group_without_rdn():
+    # `ou=groups,dc=example,dc=org` is a valid DN, but nothing in it could become the role name.
+    assert_startup_fails_with("ldap_dn_group_without_rdn.xml", "has no 'cn' RDN")
 
 
 def test_startup_fails_on_duplicate_group():
     # The two entries differ in letter case and whitespace only and normalize to the same DN.
     assert_startup_fails_with("ldap_duplicate_group.xml", "Duplicate group")
+
+
+def test_startup_fails_on_group_without_prefix():
+    # `prefix` is compared case-sensitively with the configured spelling, so `CLICKHOUSE-ROLE_2`
+    # with `prefix` `clickhouse-` could never grant a role and is rejected instead of silently ignored.
+    assert_startup_fails_with(
+        "ldap_group_without_prefix.xml",
+        "does not start with the configured prefix 'clickhouse-'",
+    )
