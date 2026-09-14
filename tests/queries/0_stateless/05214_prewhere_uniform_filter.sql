@@ -39,8 +39,8 @@ SELECT count(), sum(payload) FROM prewhere_uniform_filter PREWHERE nullable_filt
 
 DROP TABLE prewhere_uniform_filter;
 
--- Keep the non-nullable columns sparse in the part, then restrict each query to
--- the first granule so the sparse filter is uniform true, uniform false, or mixed.
+-- Keep the columns sparse in the part, then restrict each query to the first
+-- granule so the sparse filter is uniform true, uniform false, or mixed.
 DROP TABLE IF EXISTS prewhere_uniform_filter_sparse;
 
 CREATE TABLE prewhere_uniform_filter_sparse

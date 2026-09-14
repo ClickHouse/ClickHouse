@@ -4,9 +4,9 @@
 6	33
 9	45
 6	33
-nullable_sparse_false	Default
-nullable_sparse_mixed	Default
-nullable_sparse_true	Default
+nullable_sparse_false	Sparse
+nullable_sparse_mixed	Sparse
+nullable_sparse_true	Sparse
 sparse_false	Sparse
 sparse_mixed	Sparse
 sparse_true	Sparse
