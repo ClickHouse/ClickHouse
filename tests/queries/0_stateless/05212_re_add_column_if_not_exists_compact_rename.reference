@@ -1,0 +1,10 @@
+same-statement part type	Compact
+compact drop and re-add after rename	1	7
+all_1_1_0_2	1	
+compact rename and clear	1	0
+all_1_1_0_2	1	
+pending part type	Compact
+compact drop and re-add after pending rename	1	7
+all_1_1_0_4	1	
+compact clear after pending rename	1	0
+all_1_1_0_4	1	
