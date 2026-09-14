@@ -104,6 +104,22 @@ static std::optional<ExternalResultDescription::ValueType> getNativeFloatValueTy
     return std::nullopt;
 }
 
+/// Whether `ExternalResultDescription` (shared with the other external database sources) has a value type
+/// for this type, i.e. whether the native read path can decode it at all. The list mirrors the cases of
+/// `ExternalResultDescription::init`; every other type (`Dynamic`, `Variant`, `Tuple`, `Map`, `IPv4`,
+/// `IPv6`, `JSON`, ...) has no native accessor and is read through the text path instead. The geometric
+/// types are deliberately left out: `ExternalResultDescription` describes them for the sake of `MySQL`'s
+/// WKB decoding, while `insertValue` has no case for them and reads their text anyway.
+static bool isDescribedByExternalResultDescription(const DataTypePtr & type_not_nullable)
+{
+    WhichDataType which(type_not_nullable);
+    return which.isNativeInt() || which.isNativeUInt() || which.isInt256()
+        || which.isFloat() || which.isString() || which.isFixedString()
+        || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isTime() || which.isTime64()
+        || which.isUUID() || which.isEnum() || which.isDecimal() || which.isArray();
+}
+
 SQLiteStatementReader::SQLiteStatementReader(
     const Block & sample_block_,
     const FormatSettings & format_settings_,
@@ -128,8 +144,16 @@ SQLiteStatementReader::SQLiteStatementReader(
             /// serialization deserializes the rendered text straight into the `LowCardinality` column, and a
             /// numeric value stored as INTEGER or REAL renders as its decimal text, so this reads every
             /// storage class the sink produces.
-            WhichDataType which(removeLowCardinalityAndNullable(column.type));
-            if (column.type->lowCardinality() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+            ///
+            /// The same holds for every type `ExternalResultDescription` cannot describe at all (`Dynamic`,
+            /// `Variant`, `Tuple`, `Map`, `IPv4`, `IPv6`, `JSON`, ...): the sink writes such a value as its
+            /// ClickHouse text serialization (`bindSQLiteValue` binds everything without a native SQLite
+            /// counterpart as text), so the text path reads it back, whereas `ExternalResultDescription::init`
+            /// would throw `UNKNOWN_TYPE` on the first read of a table that was created without complaint.
+            const auto type_not_nullable = removeLowCardinalityAndNullable(column.type);
+            WhichDataType which(type_not_nullable);
+            if (column.type->lowCardinality() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256()
+                || !isDescribedByExternalResultDescription(type_not_nullable))
             {
                 sample_block.insert(column.cloneEmpty());
                 columns_info.push_back(createColumnReadInfoForText(column));
