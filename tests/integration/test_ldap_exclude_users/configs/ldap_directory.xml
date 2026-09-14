@@ -1,0 +1,41 @@
+<clickhouse>
+    <!-- Strip the top-level `users_config` so that the only access storages are the ones
+         declared in `user_directories` below, in exactly that order. Otherwise the
+         framework's default `<users_config>users.xml</users_config>` would insert a
+         `users_xml` storage BEFORE the LDAP directory, and the exclusion gate would never
+         be reached for names that also exist locally. -->
+    <users_config remove="remove"/>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+        </openldap>
+    </ldap_servers>
+    <!-- Worst-case order: the LDAP directory is consulted FIRST. Without `exclude_users`
+         every name the LDAP server can authenticate would be served from here, and the
+         local definitions in the storages that follow would never be reached. -->
+    <user_directories replace="replace">
+        <ldap>
+            <server>openldap</server>
+            <exclude_users>
+                <user>janedoe</user>
+                <user>app_user1</user>
+            </exclude_users>
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>
