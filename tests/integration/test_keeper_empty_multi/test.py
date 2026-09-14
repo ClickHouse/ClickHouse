@@ -33,6 +33,23 @@ def started_cluster():
         cluster.shutdown()
 
 
+def recv_exactly(sock, n):
+    """TCP is a byte stream, so a single `recv` may return fewer bytes than requested."""
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError(f"Connection closed after {len(buf)}/{n} bytes")
+        buf += chunk
+    return buf
+
+
+def recv_frame(sock):
+    """Read one length-prefixed ZooKeeper frame."""
+    length = int_struct.unpack(recv_exactly(sock, 4))[0]
+    return recv_exactly(sock, length)
+
+
 def open_keeper_session(session_timeout=10000):
     client = keeper_utils.get_keeper_socket(cluster, node.name)
     try:
@@ -43,8 +60,8 @@ def open_keeper_session(session_timeout=10000):
         request.extend(b"\x00")
         client.sendall(int_struct.pack(45) + request)
 
-        response = client.recv(1000)
-        _, _, session_id = int_int_long_struct.unpack_from(response, 4)
+        response = recv_frame(client)
+        _, _, session_id = int_int_long_struct.unpack_from(response, 0)
         assert session_id != 0
         return client
     except Exception:
@@ -69,8 +86,7 @@ def test_empty_multi_request(started_cluster):
         client.sendall(int_struct.pack(len(body)) + bytes(body))
 
         # An empty successful multi response: the header, then only the terminator record.
-        length = int_struct.unpack(client.recv(4))[0]
-        response = client.recv(length)
+        response = recv_frame(client)
         xid, zxid, error = int_long_int_struct.unpack_from(response, 0)
         assert xid == XID, xid
         assert zxid > 0, zxid
