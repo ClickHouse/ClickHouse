@@ -62,6 +62,16 @@
                 <value>65536</value>
             </values>
         </substitution>
+
+        <substitution>
+            <name>small_width_length</name>
+            <values>
+                <value>48</value>
+                <value>49</value>
+                <value>64</value>
+                <value>65</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <create_query>
@@ -78,6 +88,22 @@
             case_id UInt8,
             array_length UInt32,
             a Array(UInt8)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_u16
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(UInt16)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_u32
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(UInt32)
         ) ENGINE = Memory
     </create_query>
     <create_query>
@@ -152,6 +178,45 @@
                     toUInt8(x % 100)),
                 range({narrow_length}))
         FROM numbers(greatest(1, intDiv(12000, {narrow_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u16
+        SELECT
+            case_id,
+            {small_width_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toUInt16(65535),
+                    case_id = 2 AND x = intDiv({small_width_length}, 2), toUInt16(65535),
+                    case_id = 3 AND x = {small_width_length} - 1, toUInt16(65535),
+                    case_id = 5 AND x = 0, toUInt16(0),
+                    case_id = 6 AND x = intDiv({small_width_length}, 2), toUInt16(0),
+                    case_id = 7 AND x = {small_width_length} - 1, toUInt16(0),
+                    case_id &gt; 4, toUInt16(x + 1),
+                    toUInt16(x)),
+                range({small_width_length}))
+        FROM numbers(greatest(1, intDiv(12000, {small_width_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u32
+        SELECT
+            case_id,
+            {small_width_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toUInt32(4294967295),
+                    case_id = 2 AND x = intDiv({small_width_length}, 2), toUInt32(4294967295),
+                    case_id = 3 AND x = {small_width_length} - 1, toUInt32(4294967295),
+                    case_id = 5 AND x = 0, toUInt32(0),
+                    case_id = 6 AND x = intDiv({small_width_length}, 2), toUInt32(0),
+                    case_id = 7 AND x = {small_width_length} - 1, toUInt32(0),
+                    case_id &gt; 4, toUInt32(x + 1),
+                    toUInt32(x)),
+                range({small_width_length}))
+        FROM numbers(greatest(1, intDiv(12000, {small_width_length})))
         ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
     </fill_query>
 
@@ -314,6 +379,31 @@
         FORMAT Null
     </query>
 
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_u16
+        WHERE array_length = {small_width_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_u16
+        WHERE array_length = {small_width_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_u32
+        WHERE array_length = {small_width_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_u32
+        WHERE array_length = {small_width_length}
+        FORMAT Null
+    </query>
+
     <!-- Signed 64-bit path and a lambda workload. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
@@ -426,6 +516,8 @@
 
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u64</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u8</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u32</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_i64</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
