@@ -101,7 +101,8 @@ MetadataStoragePtr MetadataStorageFactory::create(
     const std::string & config_prefix,
     const ClusterConfigurationPtr & cluster,
     const ObjectStorageRouterPtr & object_storages,
-    const std::string & compatibility_type_hint) const
+    const std::string & compatibility_type_hint,
+    bool run_local_paths_check) const
 {
     const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
     const auto it = registry.find(type);
@@ -112,7 +113,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
                         "MetadataStorageFactory: unknown metadata storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, cluster, object_storages);
+    return it->second(name, config, config_prefix, cluster, object_storages, run_local_paths_check);
 }
 
 static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
@@ -122,7 +123,8 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
@@ -150,7 +152,8 @@ static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         auto component_guard = Coordination::setCurrentComponent("registerMetadataStorageFromKeeper");
         LOG_INFO(getLogger("registerDiskS3"), "Using DiskS3 with metadata keeper");
@@ -176,7 +179,8 @@ static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
@@ -195,7 +199,8 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
@@ -213,7 +218,8 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
@@ -230,7 +236,8 @@ static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & facto
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 

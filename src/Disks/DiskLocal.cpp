@@ -802,7 +802,8 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & map,
-        bool, bool) -> DiskPtr
+        bool /* attach */,
+        bool /* custom_disk */) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes = 0;
