@@ -46,12 +46,9 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
     return subquery_context;
 }
 
-/// The branches of a recursive element's body: the branches of a `UNION`, or the operands of an
-/// `INTERSECT` / `EXCEPT`, either reached through any number of single-branch wrappers. This is
-/// the same rule `QueryTreeBuilder` and `AddDefaultDatabaseVisitor::isRecursiveElement` apply, so
-/// a body that they take for a recursive element is taken for one here too. Null when the body
-/// is a single `SELECT`, which is an ordinary CTE within a `WITH RECURSIVE` list.
-ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
+}
+
+ASTs * ApplyWithSubqueryVisitor::getRecursiveBodyBranches(const ASTPtr & subquery)
 {
     if (!subquery || subquery->children.empty())
         return nullptr;
@@ -69,8 +66,6 @@ ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
     if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
         return &intersect_except->children;
     return nullptr;
-}
-
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
