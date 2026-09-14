@@ -16,6 +16,8 @@ const std::array<size_t, 31> boundary_sizes = {
 const std::array<size_t, 11> avx512_sizes = {
     16384, 16385, 16447, 16448, 16449, 32767, 32768, 32769, 65535, 65536, 65537};
 const std::array<size_t, 6> alignment_offsets = {1, 7, 15, 31, 32, 63};
+const std::array<size_t, 16> exhaustive_high_bit_sizes = {
+    0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129};
 
 std::vector<UInt8> makeASCIIData(size_t size)
 {
@@ -77,7 +79,8 @@ TEST(StringUtils, IsAllASCIIHandlesAVX512TailAndAlignmentBoundaries)
 
             EXPECT_TRUE(isAllASCII(data, size)) << "size: " << size << ", offset: " << offset;
 
-            const std::array<size_t, 3> positions = {0, size / 2, size - 1};
+            const std::array<size_t, 11> positions = {
+                0, 1, 31, 32, 63, 64, 65, size / 2, size - 65, size - 64, size - 1};
             for (const size_t position : positions)
             {
                 for (const UInt8 byte : non_ascii_bytes)
@@ -93,11 +96,11 @@ TEST(StringUtils, IsAllASCIIHandlesAVX512TailAndAlignmentBoundaries)
     }
 }
 
-TEST(StringUtils, IsAllASCIIRejectsHighBitBytesAtEveryPosition)
+TEST(StringUtils, IsAllASCIIRejectsHighBitBytesAtEverySmallInputPosition)
 {
     const std::array<UInt8, 6> non_ascii_bytes = {0x80, 0x81, 0xC2, 0xE2, 0xF0, 0xFF};
 
-    for (const size_t size : boundary_sizes)
+    for (const size_t size : exhaustive_high_bit_sizes)
     {
         auto data = makeASCIIData(size);
         for (size_t position = 0; position < size; ++position)
