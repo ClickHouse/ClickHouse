@@ -65,6 +65,15 @@ SELECT countIf(s = (SELECT sum(v) FROM t) - v) = count()
 FROM (SELECT v, sum(v) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS s FROM t)
 SETTINGS max_block_size = 1000;
 
+SELECT 'two windows that differ only by the exclusion are two windows';
+-- Without the exclusion in the name they share a projection name, and the second answers with the
+-- result of the first. The columns are deliberately left unaliased, which is when that happens.
+SELECT
+    sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),
+    sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW),
+    sum(v) OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)
+FROM t_05176 ORDER BY ALL;
+
 SELECT 'the clause survives formatting';
 SELECT formatQuery('SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t');
 SELECT formatQuery('SELECT sum(v) OVER w FROM t WINDOW w AS (ORDER BY v RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)');

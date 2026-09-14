@@ -44,6 +44,12 @@ percent_rank and cume_dist require the default frame, and an exclusion is not a 
 2	1	1	1	1
 it holds across block boundaries
 1
+two windows that differ only by the exclusion are two windows
+150	100	100
+150	110	110
+150	120	120
+150	130	130
+150	140	140
 the clause survives formatting
 SELECT sum(v) OVER (ORDER BY v ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)\nFROM t
 SELECT sum(v) OVER w\nFROM t\nWINDOW w AS (ORDER BY v ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)
