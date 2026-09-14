@@ -1164,6 +1164,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
         auto start_time = currentTime();
         auto [when, waiting_for_dependencies, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
         next_refresh_time = when;
+        start_znode.last_attempt_out_of_schedule = out_of_schedule;
         if (out_of_schedule)
         {
             chassert(start_znode.attempt_number > 0);
@@ -1298,7 +1299,6 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
-    znode.last_attempt_out_of_schedule = execution.out_of_schedule;
     if (new_table_uuid.has_value())
     {
         znode.last_attempt_succeeded = true;
