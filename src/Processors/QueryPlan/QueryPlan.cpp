@@ -15,7 +15,6 @@
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
