@@ -56,7 +56,7 @@ void GatherReceiveStep::serialize(Serialization & ctx) const
     writeVarUInt(num_buckets, ctx.out);
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization & ctx)
@@ -73,7 +73,7 @@ std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization &
     if (has_maintain_sort_description)
     {
         maintain_sort_description.emplace();
-        deserializeSortDescription(*maintain_sort_description, ctx.in);
+        deserializeSortDescription(*maintain_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
     }
 
     return std::make_unique<GatherReceiveStep>(ctx.output_header, exchange_id, num_buckets, std::move(maintain_sort_description));
