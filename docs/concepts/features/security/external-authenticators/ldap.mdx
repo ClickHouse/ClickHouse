@@ -110,6 +110,19 @@ When `user_dn_detection` is used together with `lookup_bind_dn`, the search must
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note that special characters must be escaped properly in XML. |
 | `attribute` | `dn` | Attribute whose value becomes the user DN. Must stay `dn` when `bind_dn` is `{user_dn}`, because that value is the DN the user's password is verified against. |
 
+### Transport security and timeouts {#ldap-server-tls-and-timeouts}
+
+Recommended production settings:
+
+- `enable_tls` set to `yes` (LDAPS), `tls_require_cert` set to `demand`, and `tls_ca_cert_file` pointing at the CA that issued the LDAP server certificate. The certificate must contain the value of `host` as a DNS or IP subject alternative name. `never` disables certificate verification and leaves the connection open to interception; use it only for testing.
+- `tls_minimum_protocol_version` left at `tls1.2`, or raised to `tls1.3` once every LDAP server supports it.
+- `tls_maximum_protocol_version` left unset. Set it only to pin a version for a server whose newer protocol implementation misbehaves, for example `tls1.2`. A maximum lower than the minimum is rejected when the server definition is parsed.
+- `network_timeout` lowered to a few seconds where the LDAP server may become unreachable. Every authentication attempt against a server that silently drops packets holds its ClickHouse connection for the whole timeout, so a long timeout combined with clients that reconnect aggressively can exhaust `max_connections` and lock out users of other user directories as well.
+
+If you are migrating from another LDAP client configuration: `TLSv1_2` / `TLSv1.2` is `tls1.2` and `TLSv1_3` / `TLSv1.3` is `tls1.3`; `useSsl` or `useLdapSsl` is `enable_tls` set to `yes`; StartTLS is `enable_tls` set to `starttls`; the Active Directory Global Catalog listens on `3269` (LDAPS) and `3268` (LDAP), which go into `port`.
+
+A TLS failure (an untrusted or mismatching server certificate, or no protocol version acceptable to both sides) is reported in the server log as `LDAP_ERROR` with the message `Can't contact LDAP server` followed by the diagnostic message of the LDAP library; the client only sees a generic authentication failure. A server definition with an invalid value is reported in the server log at startup and on `SYSTEM RELOAD CONFIG`, and cannot be used for authentication until it is fixed.
+
 ## Search and bind with a service account {#ldap-search-and-bind}
 
 By default ClickHouse verifies a password with a single LDAP "simple bind" as the DN built from the `bind_dn` template, and every LDAP search (`user_dn_detection`, `role_mapping`) runs on that same connection, that is with the user's own permissions. Many directories, in particular Active Directory, do not let ordinary users search for groups or read their own `memberOf`, and the login is frequently not part of any DN (`sAMAccountName`, `userPrincipalName`, `uid` spread over several organizational units). For those, configure a service account with `lookup_bind_dn` and `lookup_password`.
@@ -167,19 +180,6 @@ How failures are reported:
 :::note
 While a login is within `verification_cooldown`, the user is accepted without contacting the LDAP server and the roles mapped at the last successful login are reused, so group membership changes take effect only after the cooldown. Keep it short when group membership changes often.
 :::
-
-### Transport security and timeouts {#ldap-server-tls-and-timeouts}
-
-Recommended production settings:
-
-- `enable_tls` set to `yes` (LDAPS), `tls_require_cert` set to `demand`, and `tls_ca_cert_file` pointing at the CA that issued the LDAP server certificate. The certificate must contain the value of `host` as a DNS or IP subject alternative name. `never` disables certificate verification and leaves the connection open to interception; use it only for testing.
-- `tls_minimum_protocol_version` left at `tls1.2`, or raised to `tls1.3` once every LDAP server supports it.
-- `tls_maximum_protocol_version` left unset. Set it only to pin a version for a server whose newer protocol implementation misbehaves, for example `tls1.2`. A maximum lower than the minimum is rejected when the server definition is parsed.
-- `network_timeout` lowered to a few seconds where the LDAP server may become unreachable. Every authentication attempt against a server that silently drops packets holds its ClickHouse connection for the whole timeout, so a long timeout combined with clients that reconnect aggressively can exhaust `max_connections` and lock out users of other user directories as well.
-
-If you are migrating from another LDAP client configuration: `TLSv1_2` / `TLSv1.2` is `tls1.2` and `TLSv1_3` / `TLSv1.3` is `tls1.3`; `useSsl` or `useLdapSsl` is `enable_tls` set to `yes`; StartTLS is `enable_tls` set to `starttls`; the Active Directory Global Catalog listens on `3269` (LDAPS) and `3268` (LDAP), which go into `port`.
-
-A TLS failure (an untrusted or mismatching server certificate, or no protocol version acceptable to both sides) is reported in the server log as `LDAP_ERROR` with the message `Can't contact LDAP server` followed by the diagnostic message of the LDAP library; the client only sees a generic authentication failure. A server definition with an invalid value is reported in the server log at startup and on `SYSTEM RELOAD CONFIG`, and cannot be used for authentication until it is fixed.
 
 ## LDAP external authenticator {#ldap-external-authenticator}
 
