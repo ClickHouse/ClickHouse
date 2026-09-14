@@ -68,7 +68,7 @@ inline std::string_view getURLHostRFC(const char * data, size_t size)
     {
         pos += 2;
     }
-    else
+    else if (isAlphaASCII(*pos))
     {
         Pos scheme_end = data + std::min(size, 16UL);
         for (++pos; pos < scheme_end; ++pos)
