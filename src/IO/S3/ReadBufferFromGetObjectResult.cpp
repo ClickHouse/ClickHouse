@@ -4,6 +4,7 @@
 
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <Common/HistogramMetrics.h>
+#include <Poco/Net/HTTPFixedLengthStream.h>
 
 namespace HistogramMetrics
 {
@@ -34,6 +35,23 @@ bool ReadBufferFromGetObjectResult::nextImpl()
     if (res)
         bytes_read += working_buffer.size();
     return res;
+}
+
+size_t ReadBufferFromGetObjectResult::tryDrainBufferedRemainder(size_t max_bytes)
+{
+    if (!result || isCanceled())
+        return 0;
+
+    /// The HTTP stream owns the actual response bounds and counts bytes pulled from the session,
+    /// independently of the consumer cursor, requested range, or externally supplied file size.
+    /// Chunked responses are skipped: consuming their framing might require another socket read.
+    auto * body = dynamic_cast<Poco::Net::HTTPFixedLengthStreamBuf *>(result->GetBody().rdbuf());
+    if (!body)
+        return 0;
+
+    size_t drained = body->tryDrainBufferedRemainder(max_bytes);
+    bytes_read += drained;
+    return drained;
 }
 
 void ReadBufferFromGetObjectResult::releaseResult()

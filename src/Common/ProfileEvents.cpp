@@ -971,6 +971,7 @@ The server successfully detected this situation and will download merged part fr
     M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading", ValueType::Bytes) \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)", ValueType::Number) \
+    M(ReadBufferFromS3DrainedBeforeRelease, "Number of S3 response bodies completed from already buffered HTTP data before releasing the reader, allowing the connection to be reused.", ValueType::Number) \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.", ValueType::Number) \
     M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \

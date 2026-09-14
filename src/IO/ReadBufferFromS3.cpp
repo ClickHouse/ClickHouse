@@ -21,6 +21,7 @@
 #include <base/sleep.h>
 
 #include <cstdint>
+#include <exception>
 #include <utility>
 
 
@@ -31,6 +32,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
+    extern const Event ReadBufferFromS3DrainedBeforeRelease;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
 }
@@ -122,6 +124,35 @@ ReadBufferFromS3::ReadBufferFromS3(
     , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
+}
+
+ReadBufferFromS3::~ReadBufferFromS3()
+{
+    drainBufferedRemainderBeforeRelease();
+}
+
+void ReadBufferFromS3::drainBufferedRemainderBeforeRelease() noexcept
+{
+    try
+    {
+        if (!impl || isCanceled() || std::uncaught_exceptions()
+            || (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled()))
+            return;
+
+        /// A partially consumed compact-part response otherwise resets the pooled connection even
+        /// when its remaining bytes have already arrived. Never wait for additional bytes during
+        /// cleanup, including in the I/O scheduler or a bandwidth throttler.
+        if (size_t drained = impl->tryDrainBufferedRemainder(read_settings.remote_fs_settings.min_bytes_for_seek))
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, drained);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3DrainedBeforeRelease);
+        }
+    }
+    catch (...)
+    {
+        /// Cleanup must preserve the original outcome; an incomplete response will be reset by the pool.
+        tryLogCurrentException(log, "while discarding a buffered S3 response remainder", LogsLevel::debug);
+    }
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -451,6 +482,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         {
             if (!atEndOfRequestedRangeGuess())
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            drainBufferedRemainderBeforeRelease();
             impl.reset();
         }
     }
@@ -496,6 +528,7 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             offset = getPosition();
             resetWorkingBuffer();
+            drainBufferedRemainderBeforeRelease();
             impl.reset();
         }
         read_until_position = position;
@@ -515,6 +548,7 @@ void ReadBufferFromS3::setReadUntilEnd()
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             offset = getPosition();
             resetWorkingBuffer();
+            drainBufferedRemainderBeforeRelease();
             impl.reset();
         }
     }
