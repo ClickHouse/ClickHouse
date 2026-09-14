@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import json
 import logging
 import os
 import re
+import shlex
 import time
 import uuid
 from helpers.cluster import ClickHouseCluster
@@ -10,7 +12,11 @@ import pytest
 
 from helpers.test_tools import TSV
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
 UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
+
+MOCK_DATABRICKS_UC_PORT = 8111
 
 
 def start_unity_catalog(node):
@@ -1031,3 +1037,183 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
         .strip()
     )
     assert row == "1\thello varchar\thello char"
+
+
+def _databricks_column(name, spark_type, type_text, type_name, position):
+    """ColumnInfo entry as returned by the Databricks Tables API:
+    type_json carries the JSON-serialized Spark StructField."""
+    return {
+        "name": name,
+        "type_text": type_text,
+        "type_name": type_name,
+        "type_json": json.dumps(
+            {"name": name, "type": spark_type, "nullable": True, "metadata": {}}
+        ),
+        "nullable": True,
+        "position": position,
+    }
+
+
+def test_streaming_table_and_materialized_view(started_cluster):
+    """
+    Databricks-managed streaming tables (securable_kind TABLE_STREAMING_LIVE_TABLE)
+    and materialized views (TABLE_MATERIALIZED_VIEW) expose their Delta data through
+    properties.spark.internal.*.backing_table_path instead of storage_location.
+
+    Open source Unity Catalog cannot create such tables, so this test runs a mock of
+    the Databricks Unity Catalog REST API that returns exactly that metadata shape,
+    while the backing Delta tables are real tables written by Spark. It verifies the
+    whole read path end to end: table listing, SHOW CREATE TABLE and SELECT of the
+    actual Delta data through the backing_table_path fallback.
+
+    vended_credentials is disabled because the backing tables live on local disk
+    (file://), for which Unity Catalog vends no credentials; the credential-vending
+    path for these table kinds (temporary-table-credentials called with the catalog
+    object's table_id, plus the refresh callback) is covered by unit tests in
+    src/Databases/DataLake/tests/gtest_unity_catalog_streaming_tables.cpp.
+    """
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+
+    schema_name = f"streaming_schema_{test_uuid}"
+    st_backing = f"streaming_backing_{test_uuid}"
+    mv_backing = f"mv_backing_{test_uuid}"
+    db_name = f"db_streaming_{test_uuid}"
+
+    st_backing_path = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{st_backing}"
+    mv_backing_path = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{mv_backing}"
+
+    # Real Delta data for the backing tables, written by Spark. Every statement
+    # is idempotent, so a fresh-JVM retry after a hang converges to the same state.
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE IF NOT EXISTS {schema_name}.{st_backing} (id INT, value STRING) USING DELTA LOCATION '{st_backing_path}'",
+            f"INSERT OVERWRITE {schema_name}.{st_backing} VALUES (1, 'stream-1'), (2, 'stream-2')",
+            f"CREATE TABLE IF NOT EXISTS {schema_name}.{mv_backing} (id INT, total DOUBLE) USING DELTA LOCATION '{mv_backing_path}'",
+            f"INSERT OVERWRITE {schema_name}.{mv_backing} VALUES (1, 10.5), (2, 20.25)",
+        ],
+        retry_on_timeout=True,
+    )
+
+    # Mock Databricks Unity Catalog advertising a streaming table and a
+    # materialized view whose backing paths point at the real Delta tables.
+    mock_config = {
+        "schema": schema_name,
+        "tables": [
+            {
+                "name": "streaming_table",
+                "metadata": {
+                    "name": "streaming_table",
+                    "catalog_name": "unity",
+                    "schema_name": schema_name,
+                    "table_type": "EXTERNAL",
+                    "data_source_format": "DELTA",
+                    "securable_kind": "TABLE_STREAMING_LIVE_TABLE",
+                    "table_id": str(uuid.uuid4()),
+                    "columns": [
+                        _databricks_column("id", "integer", "int", "INT", 0),
+                        _databricks_column("value", "string", "string", "STRING", 1),
+                    ],
+                    "properties": {
+                        "spark.internal.streaming_table.backing_table_path": f"file://{st_backing_path}"
+                    },
+                },
+            },
+            {
+                "name": "mv_table",
+                "metadata": {
+                    "name": "mv_table",
+                    "catalog_name": "unity",
+                    "schema_name": schema_name,
+                    "table_type": "EXTERNAL",
+                    "data_source_format": "DELTA",
+                    "securable_kind": "TABLE_MATERIALIZED_VIEW",
+                    "table_id": str(uuid.uuid4()),
+                    "columns": [
+                        _databricks_column("id", "integer", "int", "INT", 0),
+                        _databricks_column("total", "double", "double", "DOUBLE", 1),
+                    ],
+                    "properties": {
+                        "spark.internal.pipelines.backing_table_path": f"file://{mv_backing_path}"
+                    },
+                },
+            },
+        ],
+    }
+
+    node1.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "mock_databricks_unity_catalog.py"),
+        "/mock_databricks_unity_catalog.py",
+    )
+    config_path = f"/tmp/mock_databricks_uc_{test_uuid}.json"
+    mock_log = f"/tmp/mock_databricks_uc_{test_uuid}.log"
+    node1.exec_in_container(
+        ["bash", "-c", f"echo {shlex.quote(json.dumps(mock_config))} > {config_path}"]
+    )
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"nohup python3 /mock_databricks_unity_catalog.py {config_path} {MOCK_DATABRICKS_UC_PORT} > {mock_log} 2>&1 &",
+        ]
+    )
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"for i in $(seq 1 30); do (echo > /dev/tcp/localhost/{MOCK_DATABRICKS_UC_PORT}) 2>/dev/null && exit 0; sleep 1; done; "
+            f"echo 'mock Databricks Unity Catalog did not start' >&2; cat {mock_log} >&2; exit 1",
+        ]
+    )
+
+    try:
+        node1.query(
+            f"""
+DROP DATABASE IF EXISTS {db_name};
+CREATE DATABASE {db_name}
+ENGINE DataLakeCatalog('http://localhost:{MOCK_DATABRICKS_UC_PORT}/api/2.1/unity-catalog')
+SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
+            """,
+            settings={"allow_database_unity_catalog": "1"},
+        )
+
+        tables = sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name}",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+        assert tables == [
+            f"{schema_name}.mv_table",
+            f"{schema_name}.streaming_table",
+        ]
+
+        assert "DeltaLake" in node1.query(
+            f"SHOW CREATE TABLE {db_name}.`{schema_name}.streaming_table`"
+        )
+        assert "DeltaLake" in node1.query(
+            f"SHOW CREATE TABLE {db_name}.`{schema_name}.mv_table`"
+        )
+
+        for use_delta_kernel in ["0", "1"]:
+            streaming_data = node1.query(
+                f"SELECT id, value FROM {db_name}.`{schema_name}.streaming_table` ORDER BY id",
+                settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+            ).strip()
+            assert streaming_data == "1\tstream-1\n2\tstream-2"
+
+            mv_data = node1.query(
+                f"SELECT id, total FROM {db_name}.`{schema_name}.mv_table` ORDER BY id",
+                settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+            ).strip()
+            assert mv_data == "1\t10.5\n2\t20.25"
+    finally:
+        node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+        node1.exec_in_container(
+            ["bash", "-c", "pkill -9 -f '[m]ock_databricks_unity_catalog' || true"],
+            nothrow=True,
+        )
