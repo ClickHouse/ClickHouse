@@ -40,6 +40,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -1635,7 +1636,30 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
     /// See `SettingOrigin::NamedCollection`.
-    return attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
+    auto settings = attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
+
+    /// What the table works with. The constructor expands macros in these and, when the table defines no
+    /// authentication of its own, takes it from the `nats` server config section.
+    reportEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
+    reportEffectiveValue(settings, "nats_format", format_name);
+    reportEffectiveValue(settings, "nats_schema", schema_name);
+    reportEffectiveValue(settings, "nats_url", configuration.url);
+    reportEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
+    reportEffectiveValue(settings, "nats_credentials", configuration.credentials);
+    reportEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
+    reportEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
+    reportEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
+
+    const auto report_authentication = [&](std::string_view name, const String & stated, const String & effective)
+    {
+        reportEffectiveValue(
+            settings, name, effective, stated.empty() && !effective.empty() ? std::optional(SettingOrigin::Config) : std::nullopt);
+    };
+    report_authentication("nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    report_authentication("nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    report_authentication("nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    report_authentication("nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    return settings;
 }
 
 }

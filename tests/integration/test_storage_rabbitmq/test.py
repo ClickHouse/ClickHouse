@@ -3806,3 +3806,29 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
         )
         instance.restart_clickhouse()
+
+
+def test_rabbitmq_table_settings_report_effective_values(rabbitmq_cluster, db, unique):
+    """`system.table_settings` reports the values the table works with: macros from the server config expanded,
+    and the username and password taken from the `rabbitmq` server config section when the table gives none."""
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_effective (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:{cluster.rabbitmq_port}',
+                     rabbitmq_exchange_name = '{unique}_{{rabbitmq_exchange_name}}',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+
+    rows = instance.query(
+        f"SELECT name, value, is_masked, source FROM system.table_settings "
+        f"WHERE database = '{db}' AND table = 'rabbitmq_effective' "
+        f"AND name IN ('rabbitmq_exchange_name', 'rabbitmq_username', 'rabbitmq_password') ORDER BY name"
+    )
+    assert TSV(rows) == TSV(
+        f"rabbitmq_exchange_name\t{unique}_macro\t0\tdefinition\n"
+        "rabbitmq_password\t[HIDDEN]\t1\tconfig\n"
+        "rabbitmq_username\troot\t0\tconfig\n"
+    )
+

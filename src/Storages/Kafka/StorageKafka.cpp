@@ -43,6 +43,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace CurrentMetrics
 {
@@ -248,8 +249,20 @@ SettingDescriptions StorageKafka::getTableSettings(ContextPtr query_context) con
                     setting.origin = SettingOrigin::NamedCollection;
     }
 
-    /// Last, because the `SETTINGS` clause is applied last and so wins over the collection.
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    /// The `SETTINGS` clause is applied last and so wins over the collection.
+    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+
+    /// What the table works with: the constructor expands macros in these, and generates a client id when none is
+    /// given - a value nothing but the engine set.
+    reportEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(topics, ","));
+    reportEffectiveValue(settings, "kafka_broker_list", brokers);
+    reportEffectiveValue(settings, "kafka_group_name", group);
+    reportEffectiveValue(settings, "kafka_format", format_name);
+    reportEffectiveValue(settings, "kafka_schema", schema_name);
+    reportEffectiveValue(
+        settings, "kafka_client_id", client_id,
+        (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
+    return settings;
 }
 
 StorageKafka::~StorageKafka()

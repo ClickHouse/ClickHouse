@@ -28,10 +28,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE knc_tbl (a UInt64) ENGINE = Kafka(${NC})"
 
 echo "-- what the collection supplied, and the three rows it did not"
 # The `other` rows are the finding rather than noise: `StorageKafka`'s constructor pins those format
-# settings itself, so they come from neither the collection nor the table's definition.
+# settings itself, so they come from neither the collection nor the table's definition. The client id it
+# generates is `other` too, but carries the host name, so it is left out here; `05213` covers it.
 $CLICKHOUSE_CLIENT -q "
 SELECT name, value, source FROM system.table_settings
-WHERE database = currentDatabase() AND table = 'knc_tbl' AND source != 'default'
+WHERE database = currentDatabase() AND table = 'knc_tbl' AND source != 'default' AND name != 'kafka_client_id'
 ORDER BY name"
 
 echo "-- a table's own SETTINGS clause wins over the collection"

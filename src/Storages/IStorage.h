@@ -279,6 +279,12 @@ public:
     SettingDescriptions attributeSettingsStatedInDefinition(
         SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
+    /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
+    /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
+    /// loading its settings - by macro expansion, a generated default or a server config fallback.
+    static void reportEffectiveValue(
+        SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin = {});
+
     /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
     /// what its settings are, and the base implementation would report only what the definition
     /// states - which looks like a complete answer and is not, since the effective values can come

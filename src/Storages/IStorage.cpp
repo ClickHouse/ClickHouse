@@ -321,6 +321,19 @@ SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
     return settings;
 }
 
+void IStorage::reportEffectiveValue(
+    SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin)
+{
+    const auto it = std::find_if(settings.begin(), settings.end(), [&](const SettingDescription & setting) { return setting.name == name; });
+    if (it == settings.end())
+        return;
+
+    it->value = value;
+    it->masked_value = value != it->default_value ? maskEngineSettingValue(it->name, Field(value), value) : String{};
+    if (origin)
+        it->origin = *origin;
+}
+
 SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
 {
     /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
