@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 static IMergingAlgorithm::Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false)
@@ -47,7 +46,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     bool cleanup_,
     bool enable_vertical_final_,
     bool read_in_reverse_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_), filter_column_name_)
     , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_), read_in_reverse(read_in_reverse_)
 {
     if (!is_deleted_column.empty())
@@ -55,15 +54,6 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
 
     if (!version_column.empty())
         version_column_number = header_->getPositionByName(version_column);
-
-    if (filter_column_name_)
-    {
-        filter_column_position = header_->getPositionByName(*filter_column_name_);
-        const auto & filter_type = header_->getByPosition(filter_column_position).type;
-        if (!WhichDataType(filter_type).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
-    }
 
     /// With a version or an is_deleted column every row of a run must be examined, and row
     /// sources for a vertical merge must be recorded per row. Without them the only effect of
@@ -99,8 +89,7 @@ bool ReplacingSortedAlgorithm::isSelectedRowSkipped() const
         && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num])
         return true;
 
-    return hasFilter()
-        && !assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[filter_column_position]).getData()[selected_row.row_num];
+    return isRowFiltered(selected_row);
 }
 
 /// The gather stage replays one row source per input row, so a skipped key group is still written

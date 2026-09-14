@@ -1359,9 +1359,22 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
-    if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary
-        && global_ctx.merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
+    /// The filter column is read on the rows the merge emits, matching `TTLTransform` only where an
+    /// output row is one of the input rows. `Summing` and friends synthesize the output row from a
+    /// whole key group, so the filter would apply to the constituents, not to the aggregate.
+    switch (global_ctx.merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            break;
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::Graphite:
+            return false;
+    }
 
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
         return false;
@@ -2891,7 +2904,8 @@ public:
             case MergeTreeData::MergingParams::Collapsing:
                 merged_transform = std::make_shared<CollapsingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column, false,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    blocks_are_granules_size);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
@@ -2924,7 +2938,8 @@ public:
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 merged_transform = std::make_shared<VersionedCollapsingTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    blocks_are_granules_size);
                 break;
         }
 
