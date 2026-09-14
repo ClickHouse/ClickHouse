@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
@@ -8,7 +7,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -19,10 +17,7 @@
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
 
-#include <charconv>
-
 #include <cmath>
-#include <limits>
 
 
 namespace DB
@@ -121,21 +116,7 @@ namespace
                     /// Conversion of infinite values to integer is undefined.
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
                 }
-                /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
-                /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types like `UInt64`:
-                /// `Float64(numeric_limits<UInt64>::max())` rounds UP to `2^64`, so a `Float64` value equal to
-                /// that rounded-up boundary slips through the check and produces undefined behavior in the
-                /// subsequent `static_cast<T>(x)`. See issue #103817.
-                ///
-                /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
-                /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
-                if constexpr (std::is_same_v<T, bool>)
-                {
-                    if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-                }
-                else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
-                         || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
+                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
                 }
@@ -150,14 +131,12 @@ namespace
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
-        if (str.empty() || str == "{}")
+        if (str.empty())
             return {};
 
-        /// The type and its serialization do not depend on the value, and every query parses the settings
-        /// it was sent, so building them per call showed up in profiles.
-        static const DataTypeMap type_map(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-        static const auto serialization = type_map.getDefaultSerialization();
-
+        auto type_string = std::make_shared<DataTypeString>();
+        DataTypeMap type_map(type_string, type_string);
+        auto serialization = type_map.getDefaultSerialization();
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -210,21 +189,7 @@ SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(const Field & f)
 template <typename T>
 String SettingFieldNumber<T>::toString() const
 {
-    /// A query that sets an old `compatibility` value changes hundreds of settings, and every one of them
-    /// is formatted whenever the changed settings are dumped (`system.settings`, `system.query_log`).
-    /// std::to_chars writes into the stack and the result fits the small-string buffer, so integers cost
-    /// no allocation at all, while ::DB::toString allocates a WriteBufferFromOwnString per call.
-    if constexpr (std::is_integral_v<T>)
-    {
-        char buffer[32];
-        /// std::to_chars has no bool overload; a setting of that type prints as 1 / 0.
-        const auto number = static_cast<std::conditional_t<std::is_same_v<T, bool>, UInt8, T>>(value);
-        const auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
-        chassert(result.ec == std::errc());
-        return String(buffer, result.ptr);
-    }
-    else
-        return ::DB::toString(value);
+    return ::DB::toString(value);
 }
 
 template <typename T>
@@ -252,15 +217,15 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
 {
     if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
     {
-        UInt64 x = 0;
+        UInt64 x;
         readVarUInt(x, in);
         *this = static_cast<T>(x);
     }
     else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
     {
-        Int64 x = 0;
+        Int64 x;
         readVarInt(x, in);
-        *this = static_cast<T>(x);
+        *this = static_cast<T>(value);
     }
     else
     {
@@ -290,9 +255,6 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        /// Accept both the clean `auto(N)` form and the legacy `'auto(N)'` form (quotes included in the
-        /// value). The latter is what older replicas send over the wire; keeping it parseable is what lets
-        /// `toString` emit the clean form without breaking mixed-version clusters. Do not remove it.
         if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
@@ -319,13 +281,8 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// The surrounding quotes are an unfortunate historical artifact: for a long time this returned the
-        /// string `'auto(N)'` (quotes included in the value itself), which leaks into `system.settings` and
-        /// looks like garbage. We emit the clean `auto(N)` form now. This is safe across versions because
-        /// `stringToMaxThreads` accepts both `auto(...)` and the legacy `'auto(...)'` form, so a server
-        /// receiving settings from an older replica still parses them, and every released version can parse
-        /// the unquoted form we send (see issue #68748 and the history below).
-        return "auto(" + ::DB::toString(value) + ")";
+        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
+        return "'auto(" + ::DB::toString(value) + ")'";
     return ::DB::toString(value);
 }
 
@@ -353,19 +310,19 @@ UInt64 SettingFieldMaxThreads::getAuto()
 
 namespace
 {
-    Int64 float64AsSecondsToTimespan(Float64 d)
+    Poco::Timespan::TimeDiff float64AsSecondsToTimespan(Float64 d)
     {
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
+        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
 #pragma clang diagnostic pop
 
-        return static_cast<Int64>(d * 1000000);
+        return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
     }
 
 }
@@ -398,7 +355,7 @@ SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMillis
 template <>
 String SettingFieldSeconds::toString() const
 {
-    return ::DB::toString(static_cast<Float64>(microseconds) / microseconds_per_unit);
+    return ::DB::toString(static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit);
 }
 
 template <>
@@ -410,7 +367,7 @@ String SettingFieldMilliseconds::toString() const
 template <>
 SettingFieldSeconds::operator Field() const
 {
-    return static_cast<Float64>(microseconds) / microseconds_per_unit;
+    return static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit;
 }
 
 template <>
@@ -423,27 +380,13 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{float64AsSecondsToTimespan(n)};
+    *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(n * microseconds_per_unit)};
 }
 
 template <>
 void SettingFieldMilliseconds::parseFromString(const String & str)
 {
     *this = stringToNumber<UInt64>(str);
-}
-
-template <SettingFieldTimespanUnit unit_>
-Int64 SettingFieldTimespan<unit_>::microsecondsFromUnits(UInt64 units)
-{
-    constexpr std::string_view unit_name = unit == SettingFieldTimespanUnit::Millisecond ? "milliseconds" : "seconds";
-    if (units > static_cast<UInt64>(std::numeric_limits<Int64>::max() / static_cast<Int64>(microseconds_per_unit)))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot convert {} to microseconds: the setting's value in {} is too big: {}",
-            unit_name,
-            unit_name,
-            units);
-    return static_cast<Int64>(units * microseconds_per_unit);
 }
 
 template <SettingFieldTimespanUnit unit_>
@@ -488,26 +431,14 @@ SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
 {
-    /// `http_response_headers` is changed and empty on a default server, so this is the common case when
-    /// the changed settings of every query are dumped.
-    if (value.empty())
-        return "{}";
+    auto type_string = std::make_shared<DataTypeString>();
+    DataTypeMap type_map(type_string, type_string);
+    auto serialization = type_map.getDefaultSerialization();
+    auto column = type_map.createColumn();
+    column->insert(value);
 
-    /// The same text as SerializationMap over a Map(String, String), written directly: going through a
-    /// DataTypeMap, its serialization and a temporary column cost more than the formatting itself.
     WriteBufferFromOwnString out;
-    writeChar('{', out);
-    for (const auto & element : value)
-    {
-        if (&element != &value.front())
-            writeChar(',', out);
-
-        const auto & pair = element.safeGet<Tuple>();
-        writeQuotedString(pair.at(0).safeGet<String>(), out);
-        writeChar(':', out);
-        writeQuotedString(pair.at(1).safeGet<String>(), out);
-    }
-    writeChar('}', out);
+    serialization->serializeTextEscaped(*column, 0, out, {});
     return out.str();
 }
 
@@ -619,11 +550,8 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
 
 void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
 {
-    if (tz_str.empty())
-        return;
-
     cctz::time_zone validated_tz;
-    if (!DateLUTImpl::isSupportedTimeZoneName(tz_str) || !cctz::load_time_zone(tz_str, &validated_tz))
+    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 
@@ -680,12 +608,6 @@ SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field
 void SettingFieldNonZeroUInt64::parseFromString(const String & str)
 {
     SettingFieldUInt64::parseFromString(str);
-    checkValueNonZero();
-}
-
-void SettingFieldNonZeroUInt64::readBinary(ReadBuffer & in)
-{
-    SettingFieldUInt64::readBinary(in);
     checkValueNonZero();
 }
 

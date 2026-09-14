@@ -14,7 +14,8 @@ PartitionPruner::PartitionPruner(
     , partition_condition(
           filter_dag,
           context,
-          partition_key,
+          partition_key.column_names,
+          partition_key.expression,
           true /* single_point */,
           skip_analysis)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
@@ -50,8 +51,8 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 
         if (!is_valid)
         {
-            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned",
-                part.partition.serializeToString(part.getMetadataSnapshot()));
+            auto partition_str = part.partition.serializeToString(part.getMetadataSnapshot());
+            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", partition_str);
         }
     }
 

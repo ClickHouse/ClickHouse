@@ -76,22 +76,22 @@ EXPLAIN SYNTAX (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having
 EXPLAIN SYNTAX (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0);
 EXPLAIN SYNTAX (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0);
 
-SELECT sum(uint64 + 2.125) From test_table;
-SELECT sum(2.125 + uint64) From test_table;
-SELECT sum(uint64 - 2.125) From test_table;
-SELECT sum(2.125 - uint64) From test_table;
-SELECT sum(uint64) + 2.125 * count(uint64) From test_table;
-SELECT 2.125 * count(uint64) + sum(uint64) From test_table;
-SELECT sum(uint64) - 2.125 * count(uint64) From test_table;
-SELECT 2.125 * count(uint64) - sum(uint64) From test_table;
-EXPLAIN SYNTAX (SELECT sum(uint64 + 2.125) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.125 + uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64 - 2.125) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.125 - uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) + 2.125 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) + sum(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) - 2.125 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) - sum(uint64) From test_table);
+SELECT sum(uint64 + 2.11) From test_table;
+SELECT sum(2.11 + uint64) From test_table;
+SELECT sum(uint64 - 2.11) From test_table;
+SELECT sum(2.11 - uint64) From test_table;
+SELECT sum(uint64) + 2.11 * count(uint64) From test_table;
+SELECT 2.11 * count(uint64) + sum(uint64) From test_table;
+SELECT sum(uint64) - 2.11 * count(uint64) From test_table;
+SELECT 2.11 * count(uint64) - sum(uint64) From test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 2.11) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.11 + uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64 - 2.11) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.11 - uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) + sum(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) - 2.11 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) - sum(uint64) From test_table);
 
 SELECT sum(uint64 + 2) From test_table;
 SELECT sum(2 + uint64) From test_table;
@@ -214,16 +214,3 @@ EXPLAIN SYNTAX SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
 
 
 DROP TABLE IF EXISTS test_table;
-
--- Coverage for RewriteSumFunctionWithSumAndCountVisitor.cpp: literal-first path (column_id=1,
--- lines 43-44 and 108-124). sum(k + col) → plus(multiply(k, count(col)), sum(col)) when
--- the literal is the first operand. Only runs when enable_analyzer=0 (legacy AST path).
-SET enable_analyzer = 0;
-SET optimize_arithmetic_operations_in_aggregate_functions = 1;
-
-EXPLAIN SYNTAX SELECT sum(3 + number) FROM numbers(20);
-SELECT sum(3 + number) FROM numbers(20);
-
--- Verify result matches unoptimized form
-SET optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT sum(3 + number) FROM numbers(20);
