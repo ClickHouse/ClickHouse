@@ -17,7 +17,7 @@
         },
         "fr/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud database release changelog",
+          "group": "Journal des modifications des versions de la base de données Cloud",
           "pages": [
             "fr/resources/changelogs/cloud/release-notes-index",
             {
@@ -78,5 +78,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "Changelogs"
+  "item": "Journaux des modifications"
 }

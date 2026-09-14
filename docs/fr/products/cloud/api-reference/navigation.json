@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Organisation",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Organisation",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,7 +19,7 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "Facturation",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "fr/products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +27,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "Gestion des utilisateurs",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +40,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Gestion des rôles",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -116,19 +116,19 @@
         ]
       },
       {
-        "group": "Query API endpoints",
+        "group": "Points de terminaison de l’API de requêtes",
         "pages": [
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+          "fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+          "fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+          "fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+          "fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+          "fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
         ]
       }
     ]
   },
   {
-    "group": "API keys",
+    "group": "Clés d’API",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
