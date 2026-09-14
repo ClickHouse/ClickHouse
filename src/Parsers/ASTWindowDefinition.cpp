@@ -425,7 +425,9 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'frame_end_preceding' must be false for a non-Offset frame boundary during AST JSON deserialization");
 
-        const auto exclusion = r.getString("frame_exclusion");
+        /// A payload written before the exclusion existed has no such field, and a frame without one
+        /// is a frame that excludes no rows, so the field is optional and defaults to `NoOthers`.
+        const auto exclusion = r.getString("frame_exclusion", "NoOthers");
         if (exclusion == "NoOthers")
             frame_exclusion = WindowFrame::Exclusion::NoOthers;
         else if (exclusion == "CurrentRow")

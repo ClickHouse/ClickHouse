@@ -48,4 +48,8 @@ the clause survives formatting
 SELECT sum(v) OVER (ORDER BY v ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)\nFROM t
 SELECT sum(v) OVER w\nFROM t\nWINDOW w AS (ORDER BY v ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)
 SELECT sum(v) OVER (ORDER BY v ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)\nFROM t
+the clause survives an AST JSON round trip, and an older payload without it still reads
+1
+1
+1
 a function that walks the frame itself rejects the exclusion instead of ignoring it

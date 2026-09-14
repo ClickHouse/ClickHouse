@@ -57,15 +57,31 @@ SELECT v,
 FROM (SELECT toUInt8(number % 3) AS v FROM numbers(4)) ORDER BY v, pr;
 
 SELECT 'it holds across block boundaries';
-WITH t AS (SELECT number AS i, toInt64(number % 101) AS v FROM numbers(300000))
+-- `max_block_size` is pinned rather than left to the randomization of the test runner, so that the
+-- partition is spread over many blocks whatever the runner picks, and so that the row count can stay
+-- small: the exclusion rebuilds the aggregate state per row, which is quadratic over one partition.
+WITH t AS (SELECT number AS i, toInt64(number % 101) AS v FROM numbers(20000))
 SELECT countIf(s = (SELECT sum(v) FROM t) - v) = count()
-FROM (SELECT v, sum(v) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS s FROM t);
+FROM (SELECT v, sum(v) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS s FROM t)
+SETTINGS max_block_size = 1000;
 
 SELECT 'the clause survives formatting';
 SELECT formatQuery('SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t');
 SELECT formatQuery('SELECT sum(v) OVER w FROM t WINDOW w AS (ORDER BY v RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)');
 -- NO OTHERS is the default, so it is not printed back
 SELECT formatQuery('SELECT sum(v) OVER (ORDER BY v ROWS UNBOUNDED PRECEDING EXCLUDE NO OTHERS) FROM t');
+
+SELECT 'the clause survives an AST JSON round trip, and an older payload without it still reads';
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t')) LIKE '%EXCLUDE GROUP%';
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT sum(v) OVER w FROM t WINDOW w AS (ORDER BY v RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)')) LIKE '%EXCLUDE TIES%';
+-- A frame written before the exclusion existed carries no `frame_exclusion`, which reads as `NO OTHERS`.
+-- The payload is compared with the one it was cut from, so that a cut that matched nothing fails here
+-- rather than passing for the wrong reason.
+WITH parseQueryToJSON('SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t') AS json,
+     replaceOne(json, ',"frame_exclusion":"NoOthers"', '') AS older
+SELECT older != json AND formatQueryFromJSON(older) NOT LIKE '%EXCLUDE%';
+-- An exclusion on a window that takes the default frame is not a frame the formatter could print back.
+SELECT formatQueryFromJSON(replaceOne(parseQueryToJSON('SELECT sum(v) OVER (ORDER BY v) FROM t'), '"type":"WindowDefinition",', '"type":"WindowDefinition","frame_exclusion":"Ties",')); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'a function that walks the frame itself rejects the exclusion instead of ignoring it';
 SELECT nth_value(v, 1) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
