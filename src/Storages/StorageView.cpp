@@ -1482,12 +1482,16 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     }
 
     /// An `additional_table_filters` entry keyed by the source table - by the name the view's
-    /// query uses, by its alias, or by the storage a proxy / `Alias` table forwards the read to -
-    /// is applied to the source read exactly like a `WHERE` of the view's query. The entry may
-    /// come from the effective context (a definer profile) or from the `SETTINGS` clause of the
-    /// view's own query; both are matched the way the interpreters match them, so that an entry
-    /// for an unrelated table does not turn a projection-only view into a barrier.
-    const std::vector<StorageID> source_table_ids = {table_id, table->getStorageID()};
+    /// query uses, by its alias, or by the storage id of the table that name resolves to - is
+    /// applied to the source read exactly like a `WHERE` of the view's query. The entry may come
+    /// from the effective context (a definer profile) or from the `SETTINGS` clause of the view's
+    /// own query; both are matched exactly the way the interpreters match them
+    /// (`parseAdditionalFilterConditionForTable`, `parseAdditionalFilterAstIfNeeded`), so that an
+    /// entry for an unrelated table does not turn a projection-only view into a barrier. An entry
+    /// keyed by the target of a proxy or `Alias` table is such an unrelated entry: the interpreters
+    /// match the table expression of the query, which is the `Alias` itself, and `StorageAlias::read`
+    /// and `StorageProxy::read` forward the already parsed filter without matching it again.
+    const std::vector<StorageID> source_table_ids = {table_id, chain_storage_ids.front()};
     const String source_alias = identifier->tryGetAlias();
     const auto additional_table_filters_apply = [&](const Field & additional_table_filters)
     {
