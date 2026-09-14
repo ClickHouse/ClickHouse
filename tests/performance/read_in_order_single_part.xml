@@ -1,0 +1,30 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE read_in_order_single_part (key String, payload UInt64)
+        ENGINE = MergeTree ORDER BY key
+        AS SELECT concat('k/', toString(number % 100000), '/v'), number FROM numbers_mt(50000000)
+    </create_query>
+
+    <fill_query>OPTIMIZE TABLE read_in_order_single_part FINAL</fill_query>
+
+    <!-- Poor PK selectivity: LIKE '%...' cannot use the index, all granules are read.
+         Multiple parallel streams read non-overlapping mark ranges in order. -->
+    <query>SELECT * FROM read_in_order_single_part WHERE key LIKE '%/v' ORDER BY key FORMAT Null</query>
+
+    <!-- Good PK selectivity: LIKE 'prefix%' uses the index, few granules are read.
+         Read-in-order with parallel streams (no PrefetchingConcat for single-part tables). -->
+    <query>SELECT * FROM read_in_order_single_part WHERE key LIKE 'k/1%' ORDER BY key FORMAT Null</query>
+
+    <!-- ORDER BY without WHERE: all granules, tests pure read + concat throughput. -->
+    <query>SELECT * FROM read_in_order_single_part ORDER BY key FORMAT Null</query>
+
+    <!-- Aggregation in order on the same single-part table. -->
+    <query>SELECT key, sum(payload) FROM read_in_order_single_part GROUP BY key ORDER BY key FORMAT Null SETTINGS optimize_aggregation_in_order = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_single_part</drop_query>
+</test>
