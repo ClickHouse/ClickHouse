@@ -55,12 +55,19 @@ namespace
 {
 
 /// The object storages whose generations can be pinned: their endpoints name a generation with an
-/// `ETag`, take it back as a precondition of a read and of a copy, and refuse a create-if-absent
-/// write (`If-None-Match: *`) of a key that a blob is at.
+/// `ETag`, take it back as a precondition of a read, of a copy and of a delete (`If-Match`), and
+/// refuse a create-if-absent write (`If-None-Match: *`) of a key that a blob is at.
 bool pinsGenerations(const IObjectStorage & object_storage)
 {
     const auto type = object_storage.getType();
     return type == ObjectStorageType::Azure || type == ObjectStorageType::S3;
+}
+
+/// The error an operation is refused with when the endpoint of a pinning object storage will not
+/// name the generation of a blob.
+int errorCodeOfAnUnnamedGeneration(const IObjectStorage & object_storage)
+{
+    return object_storage.getType() == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR;
 }
 
 /// Names the generation that is at `remote_path` right now, together with its size, or nothing
@@ -83,7 +90,6 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
 {
     StoredObject object(remote_path);
 
-    const auto type = object_storage.getType();
     if (!pinsGenerations(object_storage))
         return object;
 
@@ -107,7 +113,7 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
     /// the `ObjectStorageQueue` post-processing refuse an unpinnable object.
     if (metadata->etag.empty())
         throw Exception(
-            type == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR,
+            errorCodeOfAnUnnamedGeneration(object_storage),
             "Blob {} was not moved: the endpoint reports no `ETag` for it, so the move cannot be "
             "pinned to the generation of the blob that is being moved",
             remote_path.string());
@@ -204,7 +210,7 @@ bool restoreTheSavedBlobWithoutWritingOver(
 
 std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
 {
-    if (object_storage.getType() != ObjectStorageType::Azure)
+    if (!pinsGenerations(object_storage))
         return StoredObject(remote_path);
 
     return nameTheGenerationThatIsThereNow(object_storage, remote_path);
@@ -677,7 +683,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     }
     else
         throw Exception(
-            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            errorCodeOfAnUnnamedGeneration(*object_storage),
             "Cannot copy '{}' to '{}': the generation of the blob at {} that the copy has just "
             "written cannot be named, so a rollback of this copy cannot delete exactly that "
             "generation. The copy is refused here, before the file is recorded, and the rollback "
@@ -882,7 +888,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         }
         else
             throw Exception(
-                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                errorCodeOfAnUnnamedGeneration(*object_storage),
                 "Cannot move '{}' to '{}': the generation of the blob at {} that the copy has just "
                 "written cannot be named, so a rollback of this move cannot delete exactly that "
                 "generation. The move is refused here, before the source is deleted, and the "

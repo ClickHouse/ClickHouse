@@ -26,10 +26,12 @@ namespace DB
 ///
 /// This is done for Azure and S3, the object storages whose `copyObject` honours the generation of
 /// the source (`If-Match` on the Azure copy and on every `GET` of its fallback,
-/// `x-amz-copy-source-if-match` on the S3 `CopyObject` and `UploadPartCopy`). On Azure the delete
-/// honours it too (`AzureObjectStorage::removeObjectImpl` sends it as `If-Match`); an S3 delete is
-/// by key. For the other object storages the object is returned as it was and not a single extra
-/// request is made. An endpoint that reports no generation for the blob cannot be pinned to one at
+/// `x-amz-copy-source-if-match` on the S3 `CopyObject` and `UploadPartCopy`) and whose delete
+/// honours it too (`AzureObjectStorage::removeObjectImpl` and `S3ObjectStorage::removeObjectImpl`
+/// send it as `If-Match`; S3 evaluates it on general purpose and directory buckets, and an
+/// S3-compatible endpoint that ignores it on a `DELETE` deletes by key, as it did before). For the
+/// other object storages the object is returned as it was and not a single extra request is made.
+/// An endpoint that reports no generation for the blob cannot be pinned to one at
 /// all, and the move is refused with `AZURE_BLOB_STORAGE_ERROR` or `S3_ERROR` rather than made
 /// blind; a blob that the `HEAD` does not find at all is refused with `FILE_DOESNT_EXIST` for the
 /// same reason, because a blob recreated after that `HEAD` is a generation this operation has never
@@ -53,11 +55,11 @@ void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t reco
 /// requests; a copy that reported the generation it created would close that window, and the
 /// `IObjectStorage` copy does not report one.
 ///
-/// Nothing is returned when the blob is on Azure and the generation of it cannot be named at all -
-/// the `HEAD` does not find the blob, or the endpoint answers without an `ETag`. A delete by path
-/// alone is exactly the cross-generation loss the pinning exists to prevent, so the caller has to
-/// fail closed rather than fall back to one. For every other object storage the object is returned
-/// as it was and not a single extra request is made.
+/// Nothing is returned when the blob is on Azure or on S3 and the generation of it cannot be named
+/// at all - the `HEAD` does not find the blob, or the endpoint answers without an `ETag`. A delete
+/// by path alone is exactly the cross-generation loss the pinning exists to prevent, so the caller
+/// has to fail closed rather than fall back to one. For every other object storage the object is
+/// returned as it was and not a single extra request is made.
 std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
 /// Puts the blob that a rollback saved aside at `remote_tmp_path` back at `remote_path`, without

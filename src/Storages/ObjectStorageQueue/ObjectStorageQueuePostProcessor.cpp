@@ -125,20 +125,21 @@ void ObjectStorageQueuePostProcessor::process(
     {
         LOG_TRACE(log, "Removing {} objects", objects.size());
 
-        /// On Azure the delete is pinned to the ingested generation: `removeObjectsIfExist` sends
-        /// the `ETag` of every object as `If-Match`, so an object overwritten after it was read is
-        /// left in place (`FILE_CHANGED_DURING_READ`) rather than deleted without the newer
-        /// generation ever having been ingested. An untagged object would be deleted by path; the
-        /// source never hands one over (it fails such a file instead of reading it).
-        if (type == ObjectStorageType::Azure)
+        /// On Azure and on S3 the delete is pinned to the ingested generation: `removeObjectsIfExist`
+        /// sends the `ETag` of every object as `If-Match` (the `ETag` element of a `DeleteObjects`
+        /// request on S3), so an object overwritten after it was read is left in place
+        /// (`FILE_CHANGED_DURING_READ`) rather than deleted without the newer generation ever
+        /// having been ingested. An untagged object would be deleted by path; the source never
+        /// hands one over (it fails such a file instead of reading it).
+        if (type == ObjectStorageType::Azure || type == ObjectStorageType::S3)
         {
             for (const auto & object : objects)
             {
                 if (object.etag.empty())
                     throw Exception(
-                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                        "Cannot delete Azure blob {}: the generation that was ingested is not known",
-                        object.remote_path);
+                        type == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR,
+                        "Cannot delete {} object {}: the generation that was ingested is not known",
+                        type, object.remote_path);
             }
         }
 
@@ -475,10 +476,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         /// is not copied as if the newer generation had been ingested - the copy fails
                         /// with `S3_OBJECT_CHANGED_DURING_READ`, the object is left in place, and the
                         /// error is rethrown once the batch is done, so that the file is not committed.
-                        /// The delete that follows a successful copy addresses the object by key: S3
-                        /// has no conditional `DeleteObject` on general purpose buckets, so an object
-                        /// replaced between the pinned copy and the delete is the one case this move
-                        /// cannot refuse. Azure closes it with an `If-Match` on the delete.
+                        /// The delete that follows a successful copy is pinned to the same generation:
+                        /// `removeObjectIfExists` sends the `ETag` of `object_from` as `If-Match`, so an
+                        /// object replaced between the pinned copy and the delete is left in place with
+                        /// `FILE_CHANGED_DURING_READ`, which aborts the batch like it does on Azure.
                         ///
                         /// The source never hands over an untagged object for a move (it fails such a
                         /// file instead of reading it), and its read was pinned to this very
