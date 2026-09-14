@@ -12,7 +12,6 @@
 
 #include <IO/ReadSettings.h>
 #include <Common/Exception.h>
-#include <Common/chassert.h>
 
 #include <algorithm>
 
