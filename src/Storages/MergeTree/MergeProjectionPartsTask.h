@@ -25,8 +25,7 @@ public:
         MergeListEntry * merge_entry_,
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
-        ReservationSharedPtr space_reservation_,
-        MergeListElement * parent_merge_list_element_ = nullptr)
+        ReservationSharedPtr space_reservation_)
         : name(std::move(name_))
         , projection(projection_)
         , block_num(block_num_)
@@ -37,7 +36,6 @@ public:
         , time_of_merge(time_of_merge_)
         , new_data_part(new_data_part_)
         , space_reservation(space_reservation_)
-        , parent_merge_list_element(parent_merge_list_element_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
             LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts_.size(), parts_.front()->name, parts_.back()->name);
@@ -46,7 +44,6 @@ public:
 
     void addToChecksums(MergeTreeDataPartChecksums &) override {}
     MutableDataPartsVector extractTemporaryParts() override;
-    String getProjectionName() const override { return name; }
 
     void cancel() noexcept override
     {
@@ -55,9 +52,6 @@ public:
     bool executeStep() override;
 
 private:
-    UInt64 countPartsInAllLevels() const;
-    void updatePartsRemaining(UInt64 in_flight = 0);
-
     String name;
     const ProjectionDescription & projection;
     size_t & block_num;
@@ -70,7 +64,6 @@ private:
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     ReservationSharedPtr space_reservation;
-    MergeListElement * parent_merge_list_element;
 
     LoggerPtr log;
 

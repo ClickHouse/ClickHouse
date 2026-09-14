@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/sort.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -98,7 +97,7 @@ struct NodeBase
 
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, buf);
         if (unlikely(size > max_node_size_deserialize))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
@@ -108,7 +107,7 @@ struct NodeBase
         buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
-        UInt64 ulong_bitset = 0;
+        UInt64 ulong_bitset;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
         readBinary(node->can_be_base, buf);
@@ -168,7 +167,7 @@ struct SequenceNextNodeGeneralData
     {
         if (!sorted)
         {
-            ::stableSort(std::begin(value), std::end(value), Comparator{});
+            std::stable_sort(std::begin(value), std::end(value), Comparator{});
             sorted = true;
         }
     }
@@ -255,7 +254,7 @@ public:
         data(place).value.push_back(node, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (data(rhs).value.empty())
             return;
@@ -275,7 +274,7 @@ public:
         using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
-            ::stableSort(std::begin(a), std::end(a), Comparator{});
+            std::stable_sort(std::begin(a), std::end(a), Comparator{});
         else
         {
             const auto begin = std::begin(a);
@@ -283,10 +282,10 @@ public:
             const auto end = std::end(a);
 
             if (!data(place).sorted)
-                ::stableSort(begin, middle, Comparator{});
+                std::stable_sort(begin, middle, Comparator{});
 
             if (!data(rhs).sorted)
-                ::stableSort(middle, end, Comparator{});
+                std::stable_sort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
         }
@@ -304,7 +303,7 @@ public:
         const auto & data_ref = data(place);
         VectorWithMemoryTracking<Node *> sorted_value(data_ref.value.begin(), data_ref.value.end());
         if (!data_ref.sorted)
-            ::stableSort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
+            std::stable_sort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
 
         writeBinary(true, buf);
 
@@ -336,7 +335,7 @@ public:
     {
         readBinary(data(place).sorted, buf);
 
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, buf);
 
         if (unlikely(size == 0))
@@ -552,11 +551,10 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
 }
 
-void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {.description = R"DOC(Returns the value of the event that directly follows a matched chain of events, according to the specified direction and base point.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {}, properties });
 }
 
 }

@@ -9,9 +9,6 @@
 #include <Common/PODArray_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-
-#include <numeric>
 
 namespace DB
 {
@@ -48,7 +45,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
-        UInt64 pos_tmp = 0;
+        UInt64 pos_tmp;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
@@ -100,7 +97,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             d = max_s;
 
-        UInt64 g = std::gcd(n1, n2);
+        UInt64 g = std::__gcd(n1, n2);
         UInt64 nx_g = n1 / g;
         UInt64 ny_g = n2 / g;
 
@@ -169,11 +166,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val = 0;
-                Float64 old_val = 0;
-                Float64 s = 0;
-                Float64 w = 0;
-                Float64 z = 0;
+                Float64 new_val;
+                Float64 old_val;
+                Float64 s;
+                Float64 w;
+                Float64 z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)
@@ -231,7 +228,7 @@ private:
 
 public:
     explicit AggregateFunctionKolmogorovSmirnov(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<KolmogorovSmirnov, AggregateFunctionKolmogorovSmirnov> ({arguments}, params, createResultType())
+        : IAggregateFunctionDataHelper<KolmogorovSmirnov, AggregateFunctionKolmogorovSmirnov> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
@@ -270,18 +267,6 @@ public:
         return "kolmogorovSmirnovTest";
     }
 
-    /// The parameters (alternative, method) only affect finalization, not the serialized state.
-    /// Normalize to an empty parameter list so a new parameterized state and a legacy parameterless
-    /// state stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
-    {
-        DataTypes normalized_argument_types;
-        normalized_argument_types.reserve(this->argument_types.size());
-        for (const auto & arg : this->argument_types)
-            normalized_argument_types.emplace_back(arg->getNormalizedType());
-        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
-    }
-
     bool allocatesMemoryInArena() const override { return true; }
 
     static DataTypePtr createResultType()
@@ -314,7 +299,7 @@ public:
             data(place).addX(value, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).merge(data(rhs), arena);
     }
@@ -364,7 +349,6 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 }
 
-void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
