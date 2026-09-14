@@ -2971,6 +2971,11 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 target_row.row);
         }
     }
+
+    /// The row at the offset is taken when it lies between the frame bounds, so a row that an
+    /// exclusion takes out of the frame would still be read. This holds for `lag` and `lead` too:
+    /// the full partition is only their default frame, and an explicit frame is theirs to respect.
+    bool readsFrameRows() const override { return true; }
 };
 
 template <bool is_lead>
