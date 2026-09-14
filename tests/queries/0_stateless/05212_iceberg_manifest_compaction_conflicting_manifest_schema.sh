@@ -18,6 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The data is written as `timestamp` (parsed in the session time zone) and read back as `timestamptz`
+# (rendered in UTC), so the session time zone has to be UTC for the values to round-trip unchanged.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --session_timezone UTC"
+
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
