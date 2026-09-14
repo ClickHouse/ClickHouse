@@ -12,6 +12,7 @@ import json
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 
 client = shlex.split(sys.argv[1])
@@ -58,21 +59,28 @@ def arguments(options):
     return result + [f"--{key}={value}" for key, value in options.items()]
 
 
-def control(query):
-    result = subprocess.run(arguments({"send_profile_traces": 0}) + ["--query", query], capture_output=True, text=True, timeout=30)
+def control(query, timeout=30):
+    result = subprocess.run(arguments({"send_profile_traces": 0}) + ["--query", query], capture_output=True, text=True, timeout=timeout)
     assert result.returncode == 0, result.stderr
+    return result.stdout
 
 
-def execute(query, input_data=None, overrides=None):
+def execute(query, input_data=None, overrides=None, backpressure=False):
     options = dict(settings, query_id="native_trace_flush_" + uuid.uuid4().hex)
     options.update(overrides or {})
-    result = subprocess.run(
-        arguments(options) + ["--print-profile-traces", "--query", query],
-        input=input_data,
-        capture_output=True,
-        text=True,
-        timeout=45,
-    )
+    command = arguments(options) + ["--print-profile-traces", "--query", query]
+    if backpressure:
+        with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+            try:
+                wait_for_socket_send(process, options["query_id"])
+                stdout, stderr = process.communicate(timeout=45)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=10)
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    else:
+        result = subprocess.run(command, input=input_data, capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stderr
     samples = [json.loads(line) for line in result.stderr.splitlines() if line.startswith('{"host_name":')]
     timer_samples = [sample for sample in samples if sample["trace_type"] in ("CPU", "Real")]
@@ -91,6 +99,42 @@ def socket_samples(samples, caller):
     ]
 
 
+def wait_for_socket_send(process, query_id):
+    # Holding the client's stdout fills the socket buffers. Observe the query's
+    # actual send stack independently of streaming suppression, and keep it
+    # blocked until the query profiler has run while that stack is visible.
+    query = f"""
+        SELECT
+            (SELECT max(ProfileEvents['QueryProfilerRuns']) FROM system.processes WHERE query_id = '{query_id}') AS profiler_runs,
+            arrayMap(address -> demangle(addressToSymbol(address)), trace) AS symbols
+        FROM system.stack_trace
+        WHERE thread_id IN (SELECT arrayJoin(thread_ids) FROM system.processes WHERE query_id = '{query_id}')
+            AND query_id = '{query_id}'
+        SETTINGS allow_introspection_functions = 1
+        FORMAT JSONEachRow
+    """
+    deadline = time.monotonic() + 20
+    first_runs = None
+    samples = []
+    while (remaining := deadline - time.monotonic()) > 0:
+        assert process.poll() is None, process.stderr.read()
+        samples = [json.loads(line) for line in control(query, timeout=remaining).splitlines()]
+        sending = [
+            sample for sample in socket_samples(samples, "TCPHandler::processOrdinaryQuery")
+            if not any("TCPHandler::sendProfileTraces" in symbol for symbol in sample["symbols"])
+        ]
+        if sending:
+            runs = max(int(sample["profiler_runs"]) for sample in sending)
+            if first_runs is None:
+                first_runs = runs
+            if runs >= first_runs + 10:
+                return
+        else:
+            first_runs = None
+        time.sleep(0.01)
+    raise AssertionError(f"ordinary query did not remain in a socket send while sampled: {samples}")
+
+
 # After the insertion schema is sent, this upload produces no ordinary response
 # payload, logs, or profile events. Concrete socket sends from the upload loop
 # therefore belong to trace delivery; an empty flush entry is not sufficient.
@@ -107,12 +151,16 @@ finally:
 print("native INSERT trace socket sends are excluded from streamed samples")
 
 # A guard over every socket flush would incorrectly hide ordinary query output.
+# A wide result fills the socket buffers with few blocks, so the positive
+# control does not depend on sampling a short, immediately writable send.
+# Defer trace batches until the final drain so the blocked write is query output.
 output, samples = execute(
-    "SELECT number FROM numbers(200000) FORMAT TSV",
-    overrides={"memory_profiler_sample_probability": 0, "max_block_size": 128},
+    "SELECT number, repeat('x', 65536) FROM numbers(512) FORMAT TSV",
+    overrides={"memory_profiler_sample_probability": 0, "max_block_size": 16, "interactive_delay": 30000000},
+    backpressure=True,
 )
-rows = output.splitlines()
-assert len(rows) == 200000 and rows[0] == "0" and rows[-1] == "199999"
+assert output.count("\n") == 512
+assert output.startswith("0\t" + "x" * 65536 + "\n") and output.endswith("511\t" + "x" * 65536 + "\n")
 assert socket_samples(samples, "TCPHandler::processOrdinaryQuery"), "ordinary native result socket sends were excluded from the profile"
 print("ordinary native result socket sends remain visible in streamed samples")
 PY
