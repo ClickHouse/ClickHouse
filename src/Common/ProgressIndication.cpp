@@ -236,24 +236,40 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             max_count = std::max(progress.read_bytes, progress.total_bytes_to_read);
         }
 
-        /// The first segment always covers the bar from its first cell, because `colored_bar`
-        /// treats each stored count as the first cell of its segment. The progress bar appears
-        /// only after some progress has been made, so seeding it with `current_count` would
-        /// drop the already-filled prefix until the stalled state flips for the first time.
-        if (bar_segments.empty())
-            bar_segments.emplace_back(0, stalled);
-        else if (bar_segments.back().second != stalled)
-            bar_segments.emplace_back(current_count, stalled);
-
         /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
         ///  and the query is less than halfway done.
 
+        /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
+        if (elapsed_ns > 500000000 && current_count * 2 < max_count)
+            show_progress_bar = true;
+
+        /// The history is recorded while the bar may still appear or is shown. If it is not shown,
+        /// there is nothing to color, and recording would only let the history grow with the query.
+        /// (In the rare case when the bar appears later, because the total grows, the skipped
+        /// interval takes the color of the segment preceding it.)
+        if (elapsed_ns <= 500000000 || show_progress_bar)
+        {
+            /// The first segment always covers the bar from its first cell, because `colored_bar`
+            /// treats each stored count as the first cell of its segment. The progress bar appears
+            /// only after some progress has been made, so seeding it with `current_count` would
+            /// drop the already-filled prefix until the stalled state flips for the first time.
+            if (bar_segments.empty())
+                bar_segments.emplace_back(0, stalled);
+            else if (bar_segments.back().second != stalled)
+            {
+                if (bar_segments.back().first != current_count)
+                    bar_segments.emplace_back(current_count, stalled);
+                else if (bar_segments.size() > 1)
+                    /// No progress since the last flip: the last segment is empty, and the state
+                    /// flipped back to the one of the segment before it, which simply continues.
+                    bar_segments.pop_back();
+                else
+                    bar_segments.back().second = stalled;
+            }
+        }
+
         if (elapsed_ns > 500000000)
         {
-            /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
-            if (current_count * 2 < max_count)
-                show_progress_bar = true;
-
             if (show_progress_bar)
             {
                 /// We will display profiling info only if there is enough space for it.
@@ -264,25 +280,48 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                 if (width_of_progress_bar <= 1 + 2 * static_cast<int64_t>(profiling_msg.size()))
                     profiling_msg.clear();
 
+                /// Each cell is colored by the state at the time that progress was made.
+                auto cell_of = [&](UInt64 count)
+                {
+                    double width = UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(std::max<int64_t>(width_of_progress_bar, 0)));
+                    return static_cast<size_t>(width);
+                };
+
+                /// The state can flip on every progress update, but the bar has only the resolution
+                /// of the terminal: segments that begin in the same cell as the previous one cannot be
+                /// told apart when rendered. Collapse them (the cell keeps the count where it began
+                /// and takes the later state) and merge neighbours of the same state, so the retained
+                /// history and the work per repaint stay bounded by the width of the bar, not by the
+                /// duration of the query. The total may still grow and shift older transitions into
+                /// one cell: the next repaint collapses them the same way.
+                size_t kept = 0;
+                for (const auto & segment : bar_segments)
+                {
+                    auto to_keep = segment;
+                    if (kept > 0 && cell_of(bar_segments[kept - 1].first) == cell_of(to_keep.first))
+                    {
+                        to_keep.first = bar_segments[kept - 1].first;
+                        --kept;
+                    }
+                    if (kept > 0 && bar_segments[kept - 1].second == to_keep.second)
+                        continue;
+                    bar_segments[kept++] = to_keep;
+                }
+                bar_segments.resize(kept);
+
                 if (width_of_progress_bar > 0)
                 {
                     double bar_width = UnicodeBar::getWidth(static_cast<double>(current_count), 0, static_cast<double>(max_count), static_cast<double>(width_of_progress_bar));
                     std::string bar = UnicodeBar::render(bar_width);
                     size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
 
-                    /// Each cell is colored by the state at the time that progress was made.
-                    auto cell_of = [&](UInt64 count)
-                    {
-                        double width = UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(width_of_progress_bar));
-                        return std::min(bar_width_in_terminal, static_cast<size_t>(width));
-                    };
                     auto colored_bar = [&](size_t from_cell)
                     {
                         WriteBufferFromOwnString out;
                         for (size_t i = 0; i < bar_segments.size(); ++i)
                         {
-                            size_t begin = std::max(from_cell, cell_of(bar_segments[i].first));
-                            size_t end = i + 1 < bar_segments.size() ? cell_of(bar_segments[i + 1].first) : bar_width_in_terminal;
+                            size_t begin = std::max(from_cell, std::min(bar_width_in_terminal, cell_of(bar_segments[i].first)));
+                            size_t end = i + 1 < bar_segments.size() ? std::min(bar_width_in_terminal, cell_of(bar_segments[i + 1].first)) : bar_width_in_terminal;
                             if (begin < end)
                                 out << (bar_segments[i].second ? "\033[0;33m" : "\033[0;32m")
                                     << bar.substr(begin * UNICODE_BAR_CHAR_SIZE, (end - begin) * UNICODE_BAR_CHAR_SIZE) << "\033[0m";
