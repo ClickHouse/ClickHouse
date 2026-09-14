@@ -50,7 +50,7 @@ public:
     size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
     PathState getPathState(
-        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out = nullptr) const override;
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const override;
 
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,

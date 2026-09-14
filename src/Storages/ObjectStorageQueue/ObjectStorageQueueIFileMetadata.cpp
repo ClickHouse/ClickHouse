@@ -421,7 +421,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
         UInt64 keeper_retries = 0;
-        auto path_state = getPathState(failure_message, &keeper_retries);
+        auto path_state = getPathState(failure_message, &keeper_retries, nullptr);
 
         if (path_state == PathState::Failed)
         {
@@ -528,7 +528,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
         UInt64 keeper_retries = 0;
-        auto path_state = getPathState(failure_message, &keeper_retries);
+        auto path_state = getPathState(failure_message, &keeper_retries, nullptr);
 
         if (path_state == PathState::Failed)
         {

@@ -144,7 +144,7 @@ public:
     /// regardless of a later-raised `loading_retries`) and false when it came from a live
     /// `.retriable` marker (still eligible for the live retry-limit comparison).
     virtual PathState getPathState(
-        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out = nullptr) const = 0;
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const = 0;
 
     /// Cheap check for a fresh file (state == None): only probes the live
     /// `.retriable` marker (a single Keeper read), which nothing in the

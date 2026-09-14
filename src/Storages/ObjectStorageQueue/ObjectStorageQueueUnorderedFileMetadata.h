@@ -31,7 +31,7 @@ public:
         LoggerPtr log_);
 
     PathState getPathState(
-        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out = nullptr) const override;
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
