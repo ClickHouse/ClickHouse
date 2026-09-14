@@ -30,7 +30,7 @@ SELECT * FROM (SELECT arrayExists(x -> x IN (SELECT 2), [2]));
 -- row is returned.
 SELECT number FROM numbers(1) WHERE arrayExists(x -> x NOT IN (SELECT 2), [1, 3]);
 
--- `GLOBAL IN` builds its set by another route and must be gated the same way, so the row is returned.
+-- A distinct spelling of the same operator must pass the same readiness gate, so the row is returned.
 SELECT number FROM numbers(1) WHERE arrayExists(x -> x GLOBAL IN (SELECT 1), [1, 2]);
 
 -- `HAVING` consumes the same constant above the aggregation, so the group must survive.
