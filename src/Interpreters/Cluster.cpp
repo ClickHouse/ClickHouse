@@ -474,18 +474,28 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     /// different shard numbering on the initiator and on a shard while a configuration change rolls out.
     /// The identity is therefore built from what a shard number denotes here rather than from the name:
     /// the shard's `<name>` when the shards are named (it says which shard this is however many replicas
-    /// currently serve it), otherwise the shard's replicas in configuration order.
+    /// currently serve it), otherwise the shard's replica set. A shard number denotes the shard and not the
+    /// order of the `<replica>` elements inside it, so the replicas are sorted before they are joined: two
+    /// copies of the configuration that list the same replicas in another order describe the same numbering.
     Strings shard_keys;
     shard_keys.reserve(config_keys.size());
     auto shard_key_from_addresses = [](const Addresses & shard_addresses)
     {
-        String key;
+        Strings parts;
+        parts.reserve(shard_addresses.size());
         for (const auto & address : shard_addresses)
+        {
+            /// `toString` escapes the host name, so neither separator can occur inside a part.
+            parts.push_back(address.toString());
+        }
+        ::sort(parts.begin(), parts.end());
+
+        String key;
+        for (const auto & part : parts)
         {
             if (!key.empty())
                 key += ',';
-            /// `toString` escapes the host name, so neither separator can occur inside a part.
-            key += address.toString();
+            key += part;
         }
         return key;
     };

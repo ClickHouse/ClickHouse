@@ -526,6 +526,25 @@ TEST(ParallelReplicasShardScope, ConfigClusterUnnamedShardsAreIdentifiedByReplic
     EXPECT_EQ(getShardScopeCompat(context, *more_replicas).kind, SCOPE_FOREIGN);
 }
 
+/// A shard number denotes the shard, not the order of the `<replica>` elements inside it. Two copies of the
+/// configuration that list the same replicas of a shard in another order still agree on the numbering, so
+/// the scope holds and parallel replicas keep engaging; reordering the shards themselves stays declined.
+TEST(ParallelReplicasShardScope, ConfigClusterUnnamedShardReplicaOrderIsNotAnIdentity)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+
+    auto initiator = makeConfigCluster(settings, "unnamed", {{"127.0.0.1", "127.0.0.2"}, {"127.0.0.3", "127.0.0.4"}});
+    auto replicas_reordered = makeConfigCluster(settings, "unnamed", {{"127.0.0.2", "127.0.0.1"}, {"127.0.0.4", "127.0.0.3"}});
+    auto shards_reordered = makeConfigCluster(settings, "unnamed", {{"127.0.0.4", "127.0.0.3"}, {"127.0.0.2", "127.0.0.1"}});
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*initiator)));
+    const auto scope = getShardScopeCompat(context, *replicas_reordered);
+    EXPECT_EQ(scope.kind, SCOPE_SCOPED);
+    EXPECT_EQ(scope.shard_num, 2u);
+    EXPECT_EQ(getShardScopeIdentityCompat(*replicas_reordered), getShardScopeIdentityCompat(*initiator));
+    EXPECT_EQ(getShardScopeCompat(context, *shards_reordered).kind, SCOPE_FOREIGN);
+}
+
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
 /// identity must carry over: `optimize_skip_unused_shards` reads through such a cluster.
 TEST(ParallelReplicasShardScope, ShardSubsetKeepsIdentity)
