@@ -561,6 +561,7 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 
     NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
     if (sourceHasColumn(ctx.column_source, column.name)
+        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
         return false;
 
