@@ -273,26 +273,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
 /// The plan steps captured the query tree node contexts by pointer at build time, so the
 /// distributed-to-local fallback must flip the setting in place on those same objects
 /// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
-static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
-{
-    std::vector<IQueryTreeNode *> stack;
-    stack.push_back(query_tree.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-
-        if (auto * query_node = node->as<QueryNode>())
-            query_node->getMutableContext()->setSetting("make_distributed_plan", false);
-        else if (auto * union_node = node->as<UnionNode>())
-            union_node->getMutableContext()->setSetting("make_distributed_plan", false);
-
-        for (const auto & child : node->getChildren())
-            if (child)
-                stack.push_back(child.get());
-    }
-}
-
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -461,6 +441,40 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+/// The pre-registration write-back of a fallback decision: walks this interpreter's query tree and
+/// clears `make_distributed_plan` on every QueryNode / UnionNode context. Kept for experiments, see
+/// `applyDistributedPlanFallbackIfNeeded`.
+static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
+{
+    std::vector<IQueryTreeNode *> stack;
+    stack.push_back(query_tree.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        ContextMutablePtr node_context;
+        if (auto * query_node = node->as<QueryNode>())
+            node_context = query_node->getMutableContext();
+        else if (auto * union_node = node->as<UnionNode>())
+            node_context = union_node->getMutableContext();
+
+        if (node_context)
+        {
+            LOG_TRACE(
+                getLogger("InterpreterSelectQueryAnalyzer"),
+                "DEBUGGING>>>> tree walk writes make_distributed_plan = 0 into query-tree node context {} (was {})",
+                fmt::ptr(node_context.get()),
+                node_context->getSettingsRef()[Setting::make_distributed_plan].value);
+            node_context->setSetting("make_distributed_plan", false);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+}
+
 void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
 {
     if (!context->getSettingsRef()[Setting::make_distributed_plan])
@@ -469,13 +483,15 @@ void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
+    /// The interpreter context is a different object from the root query node's; later settings
+    /// snapshots are built from it, so it follows the decision too. The query-tree node contexts
+    /// were registered by the planners that built the plan (`extendQueryContextAndStoragesLifetime`).
+    query_plan.addDistributedPlanDecisionContext(context);
+
     QueryPlanOptimizationSettings probe_settings(context);
     if (!query_plan.applyDistributedPlanFallbackToLocal(probe_settings))
         return;
 
-    /// The decision must land on the context objects, not only on settings snapshots: consumers
-    /// such as `FutureSetFromSubquery::buildSetInplace` read `make_distributed_plan` live from
-    /// the contexts the plan steps captured at build time.
     context->setSetting("make_distributed_plan", false);
     disableDistributedPlanInQueryTreeContexts(query_tree);
 }
