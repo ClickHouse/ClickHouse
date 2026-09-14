@@ -31,6 +31,16 @@ If true, subquery for IN will be executed on every follower replica.
 
 Allow usage of materialized views with parallel replicas
 
+## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."}]}]}/>
+
+Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
+
 ## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge/>
@@ -47,7 +57,7 @@ Allow parallel replicas to execute the outer query of a simple view over `MergeT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Separate connection timeout for parallel replicas queries"}]}]}/>
 
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query executio
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 
 ## parallel_replicas_count {#parallel_replicas_count}
 
@@ -68,6 +78,8 @@ Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+The expression is checked against the column-level `SELECT` grants of the user. For a view with `SQL SECURITY DEFINER` or `NONE` it is applied to the columns of the view; the body of the view is read without it.
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -127,7 +139,7 @@ If true, ClickHouse will use parallel replicas algorithm also for non-replicated
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}]}/>
 
-Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_pla
+Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

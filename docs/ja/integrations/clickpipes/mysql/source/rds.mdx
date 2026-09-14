@@ -11,8 +11,9 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
-このガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon RDS MySQL から ClickHouse Cloud にデータをレプリケートできるように設定する方法を説明します。MySQL CDC に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
+このガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon RDS MySQL から ClickHouse Cloud にデータをレプリケートできるように設定する方法を説明します。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
 
 <div id="enable-binlog-retention-rds">
   ## バイナリログの保持を有効にする
@@ -140,13 +141,7 @@ GTID ベースのレプリケーションは、Amazon RDS for MySQL バージョ
   ### IAM 認証を使用する (任意)
 </div>
 
-パスワードの代わりに、AWS IAM のロールベースのアクセス制御を使用して ClickPipes ユーザーを認証できます。次のようにユーザーを作成し、その後、上記と同じスキーマおよびレプリケーションの権限を付与します。
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-ClickPipes がこの方法で認証を行えるようにするために必要な IAM ロールとポリシーの設定手順については、[AWS IAM DB認証 (RDS/Aurora)](/ja/integrations/clickpipes/postgres/auth) を参照してください。
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## ネットワークアクセスを設定する
@@ -156,7 +151,7 @@ ClickPipes がこの方法で認証を行えるようにするために必要な
   ### IPベースのアクセス制御
 </div>
 
-Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を、RDS のセキュリティグループの **Inbound rules** に追加します。
+Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、RDS のセキュリティグループの **Inbound rules** に追加します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS MySQL でセキュリティグループを見つける場所" size="lg" border />
 

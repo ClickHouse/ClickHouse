@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -10,6 +11,7 @@
 
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -41,6 +43,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -48,7 +53,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -95,6 +99,7 @@ namespace ErrorCodes
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -140,9 +145,9 @@ ORDER BY expr
 [SETTINGS name=value, ...]
 [COMMENT 'comment']
 
-See details in documentation: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
+See details in documentation: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-If you use the Replicated version of engines, see https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication/.
+If you use the Replicated version of engines, see https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replication.
 )";
 
 static ColumnsDescription getColumnsDescriptionFromZookeeper(const TableZnodeInfo & zookeeper_info, ContextMutablePtr context)
@@ -238,7 +243,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const String & engine_name,
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    bool validate_substitutions)
 {
     chassert(isReplicated(engine_name));
 
@@ -253,7 +259,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -365,8 +371,11 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
 
     try
     {
+        /// This only reads back the path of an already-created table, so it must never reject it:
+        /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
         auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context);
+            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
+            /*validate_substitutions=*/ false);
         return res.full_path;
     }
     catch (Exception & e)
@@ -572,8 +581,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
+        /// Every other route re-derives a table that already exists and must keep loading. Such a
+        /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
+        const bool validate_substitutions = (args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+            && !args.is_restore_from_backup
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext());
+            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
+            validate_substitutions);
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -670,6 +687,46 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
+
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input even though it
+    /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
+    /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
+    /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+
+    /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
+    /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
+    const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
+
+    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
+    /// they are told apart by the client info instead (the same marker `AlterCommands` and
+    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
+    /// so a new replica of a table predating this check still starts.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    {
+        for (const auto & column : columns)
+        {
+            if (!columns.hasPhysical(column.name) && column.statistics.hasExplicitStatistics())
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+        }
+    }
 
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
@@ -792,6 +849,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             "UNIQUE KEY column `{}` must be a physical (stored) column; "
                             "ALIAS and EPHEMERAL columns are not allowed",
                             name);
+                    /// A subcolumn (`c.null`, `c.size0`, `c.1`, ...) is absent from the stored block
+                    /// yet resolvable by `getKeyFromAST`, and lives in an index `has` does not search.
+                    /// `!has(name)` comes before `hasSubcolumn`: a stored column may be named after
+                    /// another column's subcolumn, and a flattened `Nested` member is itself a stored
+                    /// column. Gated on fresh definitions so an already-created table stays
+                    /// attachable, hence droppable.
+                    if (is_fresh_definition && !metadata.columns.has(name)
+                        && metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` is a subcolumn; UNIQUE KEY must name whole "
+                            "stored columns",
+                            name);
+                    /// A virtual column's subcolumn (`_partition_value.1`) is in neither index above:
+                    /// the virtual lookup is exact-name, and the subcolumn index holds only subcolumns
+                    /// of `metadata.columns`. `getKeyFromAST` sees virtuals, so it does resolve one.
+                    /// Every dot position is tried: the subcolumn can itself have one.
+                    if (is_fresh_definition && !metadata.columns.has(name))
+                    {
+                        for (const auto & [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name))
+                        {
+                            auto virtual_parent = metadata.virtuals.tryGet(
+                                String(parent), VirtualsKind::All, VirtualsMaterializationPlace::All);
+                            if (virtual_parent && virtual_parent->type->tryGetSubcolumnType(subcolumn))
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "UNIQUE KEY columns must be real stored columns; "
+                                    "virtual columns such as `{}` are not allowed",
+                                    parent);
+                        }
+                    }
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -847,14 +933,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
@@ -884,28 +962,42 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
-        /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
-        if (args.storage_def->settings)
+        /// What this query changes from the settings the server has in effect, which already include the
+        /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
+        /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
+        if (is_fresh_definition)
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(
+                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
+        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
+        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
+        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
         {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+            storage_settings->sanityCheck(
+                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
         }
 
+        /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
+        if (args.storage_def->settings)
+            metadata.settings_changes = args.storage_def->settings->ptr();
+
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
-        /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
-        /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
+        /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
+        /// could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// `allow_experimental_codecs`. For stored definitions values written in the stored `SETTINGS`
-        /// clause were already gated when they were introduced and are exempt, so existing tables
+        /// the codec gate (`validateCodecString` handles the per-family `enable_<family>_codec` settings).
+        /// For stored definitions, values written in the stored
+        /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
-        /// introduce an experimental codec into existing tables via a config default plus a restart, without
-        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// introduce a gated codec into existing tables via a config default plus a restart, without
+        /// anyone enabling that codec (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
         /// documented to skip all sanity checks and is left alone.
-        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
+        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
             const auto is_stored_in_definition = [&](std::string_view name)
             {
@@ -922,34 +1014,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (codec.empty())
                     return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
             validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
-        }
-
-        /// UNIQUE KEY tables must reside on local-only storage policies.
-        /// CREATE only; ATTACH must still load existing tables.
-        if (metadata.hasUniqueKey() && args.mode <= LoadingStrictnessLevel::CREATE)
-        {
-            StoragePolicyPtr resolved_storage_policy = (*storage_settings)[MergeTreeSetting::disk].changed
-                ? context->getStoragePolicyFromDisk((*storage_settings)[MergeTreeSetting::disk])
-                : context->getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
-
-            for (const auto & disk : resolved_storage_policy->getDisks())
-            {
-                const auto & desc = disk->getDataSourceDescription();
-                if (desc.type != DataSourceType::Local)
-                {
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "UNIQUE KEY on non-local disks is not yet supported "
-                        "(disk `{}` has source type `{}`). "
-                        "UNIQUE KEY tables must currently reside on a local-only storage policy.",
-                        disk->getName(), desc.toString());
-                }
-            }
         }
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
@@ -1012,7 +1082,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1093,7 +1164,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The old syntax states `index_granularity` as an engine argument instead of a setting
+            if (is_fresh_definition)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
@@ -1217,13 +1289,13 @@ Main features of `MergeTree`-family table engines.
 
 - Tables can be partitioned using an arbitrary partition expression. Partition pruning ensures partitions are omitted from reading when the query allows it.
 
-- Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/engines/table-engines/mergetree-family/replication.md).
+- Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/reference/engines/table-engines/mergetree-family/replication).
 
 - `MergeTree` table engines support various statistics kinds and sampling methods to help query optimization.
 
-:::note
-Despite a similar name, the [Merge](/engines/table-engines/special/merge) engine is different from `*MergeTree` engines.
-:::
+<Note>
+Despite a similar name, the [Merge](/reference/engines/table-engines/special/merge) engine is different from `*MergeTree` engines.
+</Note>
 
 ## Creating tables {#table_engine-mergetree-creating-a-table}
 
@@ -1250,7 +1322,7 @@ ORDER BY expr
 [SETTINGS name = value, ...]
 ```
 
-For a detailed description of the parameters, see the [CREATE TABLE](/sql-reference/statements/create/table.md) statement
+For a detailed description of the parameters, see the [CREATE TABLE](/reference/statements/create/table) statement
 
 ### Query clauses {#mergetree-query-clauses}
 
@@ -1272,9 +1344,9 @@ Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled
 
 #### PARTITION BY {#partition-by}
 
-`PARTITION BY` — The [partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 #### PRIMARY KEY {#primary-key}
 
@@ -1314,7 +1386,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/sql-reference/statements/select/sample) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/reference/statements/select/sample) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 The `index_granularity` setting can be omitted because 8192 is the default value.
 
@@ -1322,9 +1394,9 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -1337,9 +1409,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
-- `date-column` — The name of a column of the [Date](/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+- `date-column` — The name of a column of the [Date](/reference/data-types/date) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — An expression for sampling.
-- `(primary, key)` — Primary key. Type: [Tuple()](/sql-reference/data-types/tuple.md)
+- `(primary, key)` — Primary key. Type: [Tuple()](/reference/data-types/tuple)
 - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
@@ -1394,7 +1466,7 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/reference/settings/merge-tree-settings/allow#allow_nullable_key) setting. The [NULLS_LAST](/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/reference/settings/merge-tree-settings/allow#allow_nullable_key) setting. The [NULLS_LAST](/reference/statements/select/order-by#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting a primary key {#selecting-a-primary-key}
 
@@ -1411,7 +1483,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](/reference/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/reference/engines/table-engines/mergetree-family/summingmergetree) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
@@ -1425,12 +1497,12 @@ To select data in the initial order, use [single-threaded](/reference/settings/s
 
 It is possible to specify a primary key (an expression with values that are written in the index file for each mark) that is different from the sorting key (an expression for sorting the rows in data parts). In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
 
-This feature is helpful when using the [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) and
-[AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
+This feature is helpful when using the [SummingMergeTree](/reference/engines/table-engines/mergetree-family/summingmergetree) and
+[AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER](/sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
+[ALTER](/reference/statements/alter/skipping-index) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
 ### Use of indexes and partitions in queries {#use-of-indexes-and-partitions-in-queries}
 
@@ -1591,7 +1663,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 
 The `MergeTree` table engine supports the following types of skip indexes.
 For more information on how skip indexes can be used for performance optimization
-see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexes).
+see ["Understanding ClickHouse data skipping indexes"](/concepts/features/performance/skip-indexes/skipping-indexes).
 
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
@@ -1643,21 +1715,21 @@ The following data types are supported:
 - `UUID`
 - `Map`
 
-:::note Map data type: specifying index creation with keys or values
-For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
-:::
+<Note title="Map data type: specifying index creation with keys or values">
+For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [`mapValues`](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions.
+</Note>
 
-:::note JSON data type: indexing JSON paths
-For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
-:::
+<Note title="JSON data type: indexing JSON paths">
+For the [`JSON`](/reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/reference/data-types/newjson#data-skipping-indexes-for-json) for details.
+</Note>
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 
-:::note
+<Note>
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
-:::
+See page ["Full-text search with text indexes"](/reference/engines/table-engines/mergetree-family/textindexes) for details.
+</Note>
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
@@ -1673,11 +1745,11 @@ ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_se
 |`random_seed` |Seed for the bloom filter hash functions.|
 
 This index only works with the following data types:
-- [`String`](/sql-reference/data-types/string.md)
-- [`FixedString`](/sql-reference/data-types/fixedstring.md)
-- [`Map`](/sql-reference/data-types/map.md)
+- [`String`](/reference/data-types/string)
+- [`FixedString`](/reference/data-types/fixedstring)
+- [`Map`](/reference/data-types/map)
 
-To estimate the parameters of `ngrambf_v1`, you can use the following [User Defined Functions (UDFs)](/sql-reference/statements/create/function.md).
+To estimate the parameters of `ngrambf_v1`, you can use the following [User Defined Functions (UDFs)](/reference/statements/create/function).
 
 ```sql title="UDFs for ngrambf_v1"
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
@@ -1725,11 +1797,11 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 
 #### Token bloom filter {#token-bloom-filter}
 
-:::note
+<Note>
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
-:::
+See page ["Full-text search with text indexes"](/reference/engines/table-engines/mergetree-family/textindexes) for details.
+</Note>
 
 ```text title="Syntax"
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
@@ -1737,7 +1809,7 @@ tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 
 #### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
-The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
+The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/reference/functions/regular-functions/string-functions#sparseGrams) instead of ngrams.
 
 ```text title="Syntax"
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
@@ -1745,11 +1817,11 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/engines/table-engines/mergetree-family/textindexes) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/reference/engines/table-engines/mergetree-family/textindexes) for details.
 
 #### Vector similarity {#vector-similarity}
 
-Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
+Supports approximate nearest neighbor search, see [here](/reference/engines/table-engines/mergetree-family/annindexes) for details.
 
 ### Functions support {#functions-support}
 
@@ -1759,44 +1831,44 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 | Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
-| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
-| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
-| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
+| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
+| [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
+| [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
+| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
+| [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
+| [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
+| [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
+| [greaterOrEquals (`>=`)](/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
+| [empty](/reference/functions/regular-functions/array-functions#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
+| [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
+| [has](/reference/functions/regular-functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
+| [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
+| [hasTokenOrNull](/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
+| [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
+| [mapContains (mapContainsKey)](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
-:::note
+<Note>
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
@@ -1813,19 +1885,19 @@ For example:
   - `NOT s = 1`
   - `s != 1`
   - `NOT startsWith(s, 'test')`
-:::
+</Note>
 
 )DOCS_MD")
         // The MergeTree documentation is concatenated at runtime from several string literals because a single
         // string literal would exceed the 65536-byte length that C++ compilers are required to support.
         + R"DOCS_MD(## Projections {#projections}
-Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+Projections are like [materialized views](/reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
-:::note
+<Note>
 When you are implementing projections you should also consider the [force_optimize_projection](/reference/settings/session-settings/force-optimize#force_optimize_projection) setting.
-:::
+</Note>
 
-Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
+Projections are not supported in the `SELECT` statements with the [FINAL](/reference/statements/select/from#final-modifier) modifier.
 
 ### Projection query {#projection-query}
 A projection query is what defines a projection. It implicitly selects data from the parent table.
@@ -1835,7 +1907,7 @@ A projection query is what defines a projection. It implicitly selects data from
 SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
-Projections can be modified or dropped with the [ALTER](/sql-reference/statements/alter/projection.md) statement.
+Projections can be modified or dropped with the [ALTER](/reference/statements/alter/projection) statement.
 
 ### Projection indexes {#projection-index}
 
@@ -1893,13 +1965,13 @@ Determines the lifetime of values.
 
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
-Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
+Expressions must evaluate to [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime) or [DateTime64](/reference/data-types/datetime64) data type.
 
-:::tip[Avoid non-deterministic functions in TTL expressions]
+<Tip title="Avoid non-deterministic functions in TTL expressions">
 TTL is evaluated during background merges, and not at insert time.
 Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
 ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
-:::
+</Tip>
 
 **Syntax**
 
@@ -1910,7 +1982,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/sql-reference/operators#operators-for-working-with-dates-and-times) operators, for example:
+To define `interval`, use [time interval](/reference/operators#operators-for-working-with-dates-and-times) operators, for example:
 
 ```sql
 TTL date_time + INTERVAL 1 MONTH
@@ -2060,7 +2132,7 @@ Data with an expired `TTL` is removed when ClickHouse merges data parts.
 
 When ClickHouse detects that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
-If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/sql-reference/statements/optimize.md) query before `SELECT`.
+If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/reference/statements/optimize) query before `SELECT`.
 
 **See Also**
 
@@ -2070,13 +2142,13 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/integrations/gcs#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
-- [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
-- [`web` for read-only from web](/operations/storing-data#web-storage)
-- [`cache` for local caching](/operations/storing-data#using-local-cache)
-- [`s3_plain` for backups to S3](/operations/backup/disk)
-- [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
+- [`gcs` for GCS](/integrations/connectors/data-sources/gcs#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
+- [`hdfs` for HDFS](/reference/engines/table-engines/integrations/hdfs)
+- [`web` for read-only from web](/concepts/features/configuration/server-config/storing-data#web-storage)
+- [`cache` for local caching](/concepts/features/configuration/server-config/storing-data#using-local-cache)
+- [`s3_plain` for backups to S3](/concepts/features/backup-restore/local-disk)
+- [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/concepts/features/configuration/server-config/storing-data#s3-plain-rewritable-storage)
 
 ## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
 
@@ -2086,7 +2158,7 @@ In addition to local block devices, ClickHouse supports these storage types:
 
 This applies to all disk types, including S3 and other object storage disks. For example, you can spread data across multiple S3 buckets within a single volume, or create tiered policies that move data from local disks to S3. See [Using S3 disks with multiple volumes](#s3-multiple-volumes) for details.
 
-Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/sql-reference/statements/alter/partition) queries.
+Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/reference/statements/alter/partition) queries.
 
 ### Terms {#terms}
 
@@ -2095,17 +2167,17 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
-The names given to the described entities can be found in the system tables, [system.storage_policies](/operations/system-tables/storage_policies) and [system.disks](/operations/system-tables/disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
+The names given to the described entities can be found in the system tables, [system.storage_policies](/reference/system-tables/storage_policies) and [system.disks](/reference/system-tables/disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in a file in the `config.d` directory.
 
-:::tip
+<Tip>
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
 for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](/operations/storing-data#dynamic-configuration) for more details.
-:::
+See [dynamic storage](/concepts/features/configuration/server-config/storing-data#dynamic-configuration) for more details.
+</Tip>
 
 Configuration structure:
 
@@ -2261,9 +2333,9 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/sql-reference/statements/alter#mutations).
+- During background merges and [mutations](/reference/statements/alter#mutations).
 - When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
+- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/reference/statements/alter/partition#freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -2273,9 +2345,9 @@ In all these cases except for mutations and partition freezing, a part is stored
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones.
 
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
-Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/operations/system-tables/part_log) (field `type = MOVE_PART`) and [system.parts](/operations/system-tables/parts.md) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/reference/system-tables/part_log) (field `type = MOVE_PART`) and [system.parts](/reference/system-tables/parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
-User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/sql-reference/statements/alter/partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/reference/statements/alter/partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
 Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
 
@@ -2286,7 +2358,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 
 ## Using external storage for data storage {#table_engine-mergetree-s3}
 
-[MergeTree](/engines/table-engines/mergetree-family/mergetree.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly. See [configuring external storage options](/operations/storing-data.md/#configuring-external-storage) for more details.
+[MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly. See [configuring external storage options](/concepts/features/configuration/server-config/storing-data#configuring-external-storage) for more details.
 
 Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
@@ -2313,8 +2385,8 @@ Configuration markup:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -2330,7 +2402,7 @@ Configuration markup:
 </storage_configuration>
 ```
 
-Also see [configuring external storage options](/operations/storing-data.md/#configuring-external-storage).
+Also see [configuring external storage options](/concepts/features/configuration/server-config/storing-data#configuring-external-storage).
 
 ### Using S3 disks with multiple volumes {#s3-multiple-volumes}
 
@@ -2399,15 +2471,15 @@ You can also combine local and S3 volumes in a tiered policy, for example moving
 </storage_configuration>
 ```
 
-:::note
+<Note>
 When using `use_environment_credentials` for S3 authentication, the environment credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) are shared across all S3 disks. It is not possible to use different environment credentials for different disks. If you need different credentials for each S3 disk, use explicit `access_key_id` and `secret_access_key` settings per disk instead.
-:::
+</Note>
 
-It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
+It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-:::note cache configuration
-ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
-:::
+<Note title="cache configuration">
+ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/concepts/features/configuration/server-config/storing-data#using-local-cache) if you are using one of those versions.
+</Note>
 
 ## Virtual columns {#virtual-columns}
 
@@ -2438,6 +2510,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Statistics require a physically stored column. An `ALIAS` or `EPHEMERAL` column is not written to any part, so declaring statistics on one is rejected.
 
 We can also manipulate statistics with `ALTER` statements:
 
@@ -2496,31 +2570,31 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `minmax` (deprecated)
 
-    :::note
+    <Note>
     `minmax` statistics are deprecated. Use `basic` statistics instead, which is a superset of `minmax`.
-    :::
+    </Note>
 
 - `tdigest`
 
-    :::warning
+    <Warning>
     Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
-    :::
+    </Warning>
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
 - `uniq`
 
-    [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/sql-reference/aggregate-functions/reference/uniq).
+    [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/reference/functions/aggregate-functions/uniq).
 
 - `uniq_v2`
 
-    Similar to `uniq` but internally uses [`uniqCombined`](/sql-reference/aggregate-functions/reference/uniqcombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
+    Similar to `uniq` but internally uses [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
 
 - `countmin`
 
-    :::warning
+    <Warning>
     Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
-    :::
+    </Warning>
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
@@ -2577,7 +2651,7 @@ ENGINE = MergeTree
 ORDER BY id
 ```
 
-Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/sql-reference/statements/alter/column.md), for example:
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/reference/statements/alter/column), for example:
 
 - Remove `SETTINGS` from column declaration:
 
@@ -2613,17 +2687,17 @@ Rows without a pair of opposite valued `Sign` are kept.
 
 For more details, see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
-:::note
+<Note>
 This engine may significantly reduce the volume of storage,
 increasing the efficiency of `SELECT` queries as a consequence.
-:::
+</Note>
 
 ## Parameters {#parameters}
 
 All parameters of this table engine, with the exception of the `Sign` parameter,
-have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-family/mergetree).
+have the same meaning as in [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint).
 
 ## Creating a table {#creating-a-table}
 
@@ -2645,10 +2719,10 @@ ENGINE = CollapsingMergeTree(Sign)
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 The method below is not recommended for use in new projects.
 We advise, if possible, to update old projects to use the new method.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -2660,7 +2734,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, Sign)
 ```
 
-`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. [Int8](/sql-reference/data-types/int-uint).
+`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. [Int8](/reference/data-types/int-uint).
 
 </details>
 
@@ -2716,10 +2790,10 @@ row that we inserted can be deleted as shown below, collapsing the invalid (old)
 
 `CollapsingMergeTree` carries out precisely this _collapsing_ behavior while merging of the data parts takes place.
 
-:::note
+<Note>
 The reason for why two rows are needed for each change
 is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collapsing-algorithm) paragraph.
-:::
+</Note>
 
 **The peculiarities of such an approach**
 
@@ -2729,7 +2803,7 @@ is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collap
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
-When ClickHouse merges data [parts](/concepts/glossary#parts),
+When ClickHouse merges data [parts](/concepts/core-concepts/glossary#parts),
 each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to no more than two rows,
 the "state" row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`.
 In other words, in ClickHouse entries collapse.
@@ -2765,12 +2839,12 @@ The aggregate `uniq` could be calculated if an object has at least one non-colla
 The aggregates `min` and `max` could not be calculated
 because `CollapsingMergeTree` does not save the history of the collapsed states.
 
-:::note
+<Note>
 If you need to extract data without aggregation
 (for example, to check whether rows whose newest values match certain conditions are present),
 you can use the [`FINAL`](/reference/statements/select/from#final-modifier) modifier for the `FROM` clause. It will merge the data before returning the result.
 For CollapsingMergeTree, only the latest state row for each key is returned.
-:::
+</Note>
 
 ## Examples {#examples}
 
@@ -2812,9 +2886,9 @@ INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 
 
 We use two `INSERT` queries to create two different data parts.
 
-:::note
+<Note>
 If we insert the data with a single query, ClickHouse creates only one data part and will not perform any merge ever.
-:::
+</Note>
 
 We can select the data using:
 
@@ -2839,8 +2913,8 @@ However, collapsing **did not occur** because there was no merge of the data par
 and ClickHouse merges data parts in the background at an unknown moment which we cannot predict.
 
 We therefore need an aggregation
-which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum)
-aggregate function and the [`HAVING`](/sql-reference/statements/select/having) clause:
+which we perform with the [`sum`](/reference/functions/aggregate-functions/sum)
+aggregate function and the [`HAVING`](/reference/statements/select/having) clause:
 
 ```sql
 SELECT
@@ -2869,9 +2943,9 @@ SELECT * FROM UAct FINAL
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
-:::note
+<Note>
 This way of selecting the data is less efficient and is not recommended for use with large amounts of scanned data (millions of rows).
-:::
+</Note>
 
 ### Example of another approach {#example-of-another-approach}
 
@@ -2965,15 +3039,15 @@ SELECT * FROM UAct
 
     factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine differs from [MergeTree](/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
+The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, do not count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
 Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it does not guarantee the absence of duplicates.
 
-:::note
-A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/guides/replacing-merge-tree).
-:::
+<Note>
+A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/concepts/features/operations/update/replacing-merge-tree).
+</Note>
 
 ## Creating a table {#creating-a-table}
 
@@ -2993,9 +3067,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [statement description](/reference/statements/create/table).
 
-:::note
+<Note>
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
-:::
+</Note>
 
 ## ReplacingMergeTree parameters {#replacingmergetree-parameters}
 
@@ -3057,7 +3131,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 Column data type — `UInt8`.
 
-:::note
+<Note>
 `is_deleted` can only be enabled when `ver` is used.
 
 No matter the operation on the data, the version should be increased. If two inserted rows have the same version number, the last inserted row is kept.
@@ -3071,7 +3145,7 @@ To permanently drop such delete rows, enable the table setting `allow_experiment
 all into a single part and remove any delete rows.
 
 2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
-:::
+</Note>
 
 Example:
 ```sql
@@ -3114,9 +3188,9 @@ When creating a `ReplacingMergeTree` table the same [clauses](/reference/engines
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -3179,22 +3253,22 @@ FINAL
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/guides/replacing-merge-tree).
+For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/concepts/features/operations/update/replacing-merge-tree).
 )DOCS_MD",
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedReplacingMergeTree"}});
 
     factory.registerStorage("CoalescingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-:::note Available from version 25.6
+<Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
-:::
+</Note>
 
-This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row that contains the latest non-NULL values for each column.
+This engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row that contains the latest non-NULL values for each column.
 
 This enables column-level upserts, meaning you can update only specific columns rather than entire rows.
 
-`CoalescingMergeTree` is intended for use with Nullable types in non-key columns. If the columns are not Nullable, the behavior is the same as with [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree).
+`CoalescingMergeTree` is intended for use with Nullable types in non-key columns. If the columns are not Nullable, the behavior is the same as with [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree).
 
 ## Creating a table {#creating-a-table}
 
@@ -3227,9 +3301,9 @@ When creating a `CoalescingMergeTree` table the same [clauses](/reference/engine
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -3300,15 +3374,14 @@ SELECT * FROM test_table FINAL ORDER BY key;
 
 Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time, ensuring you get the correct, coalesced "latest" value for each column. This is the safest and most accurate method when querying from a CoalescingMergeTree table.
 
-:::note
+<Note>
 
 An approach with `GROUP BY` may return incorrect results if the underlying parts have not been fully merged.
 
 ```sql
 SELECT key, last_value(value_int), last_value(value_string), last_value(value_date)  FROM test_table GROUP BY key; -- Not recommended.
 ```
-
-:::
+</Note>
 
 ## Tuple element aggregation {#tuple-element-aggregation}
 
@@ -3319,9 +3392,9 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from coalescing.
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are coalesced.
 
-:::note
+<Note>
 This setting is immutable and must be specified at table creation time.
-:::
+</Note>
 
 ```sql
 CREATE TABLE coalescing_tuples
@@ -3355,7 +3428,7 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
 
     factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -3397,9 +3470,9 @@ When creating an `AggregatingMergeTree` table, the same [clauses](/reference/eng
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -3442,7 +3515,7 @@ CREATE TABLE test.visits
 
 Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users.
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/reference/data-types/aggregatefunction) type:
 
 ```sql
 CREATE TABLE test.agg_visits (
@@ -3512,7 +3585,7 @@ Run the `SELECT` query again, which will return the following output:
 
 In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
 to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY`
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation)
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/reference/functions/regular-functions/other-functions#initializeAggregation)
 function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY`
 is no longer required in this case:
 
@@ -3526,11 +3599,11 @@ AS SELECT
 FROM test.visits;
 ```
 
-:::note
+<Note>
 When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
 Each source row produces one row in the materialized view, and the actual aggregation happens later when the
 `AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
-:::
+</Note>
 
 ## Tuple element aggregation {#tuple-element-aggregation}
 
@@ -3538,9 +3611,9 @@ When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns a
 
 Sub-columns that belong to a `Tuple` in the sorting key are excluded from aggregation. Non-aggregate sub-columns are treated as ordinary columns (their first value is kept).
 
-:::note
+<Note>
 This setting is immutable and must be specified at table creation time.
-:::
+</Note>
 
 ```sql
 CREATE TABLE agg_tuples
@@ -3581,7 +3654,7 @@ SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY 
 
     factory.registerStorage("SummingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -3619,9 +3692,9 @@ When creating a `SummingMergeTree` table the same [clauses](/reference/engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -3675,7 +3748,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
-ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](/sql-reference/aggregate-functions/reference/sum) and `GROUP BY` clause should be used in a query as described in the example above.
+ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](/reference/functions/aggregate-functions/sum) and `GROUP BY` clause should be used in a query as described in the example above.
 
 ### Common rules for summation {#common-rules-for-summation}
 
@@ -3773,9 +3846,9 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
 - If all numeric sub-columns of a row are zero after summation, the row is deleted.
 
-:::note
+<Note>
 This setting is immutable and must be specified at table creation time.
-:::
+</Note>
 
 ```sql
 CREATE TABLE summing_tuples
@@ -3838,7 +3911,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
@@ -3864,9 +3937,9 @@ When creating a `GraphiteMergeTree` table, the same [clauses](/reference/engines
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -3938,13 +4011,13 @@ default
     ...
 ```
 
-:::important
+<Warning>
 Patterns must be strictly ordered:
 
 1. Patterns without `function` or `retention`.
 1. Patterns with both `function` and `retention`.
 1. Pattern `default`.
-:::
+</Warning>
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
@@ -4072,9 +4145,9 @@ Valid values:
 </graphite_rollup>
 ```
 
-:::note
+<Note>
 Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](/reference/statements/optimize). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
-:::
+</Note>
 )DOCS_MD",
         .syntax = "ENGINE = GraphiteMergeTree(config_section) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedGraphiteMergeTree"}});
@@ -4088,7 +4161,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](/reference/engines/table-engines/mergetree-family/collapsingmergetree) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](/reference/engines/table-engines/mergetree-family/collapsingmergetree) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a table {#creating-a-table}
 
@@ -4115,8 +4188,8 @@ VersionedCollapsingMergeTree(sign, version)
 
 | Parameter | Description                                                                            | Type                                                                                                                                                                                                                                                                                    |
 |-----------|----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
-| `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
+| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/reference/data-types/int-uint)                                                                                                                                                                                                                                    |
+| `version` | Name of the column with the version of the object state.                               | [`Int*`](/reference/data-types/int-uint), [`UInt*`](/reference/data-types/int-uint), [`Date`](/reference/data-types/date), [`Date32`](/reference/data-types/date32), [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) |
 
 ### Query clauses {#query-clauses}
 
@@ -4126,9 +4199,9 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](/refere
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -4317,7 +4390,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-:::note
+<Note>
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 
 ```sql
@@ -4332,7 +4405,7 @@ with:
 ```sql
 ENGINE = ReplicatedMergeTree
 ```
-:::
+</Note>
 
 Replication is only supported for tables in the MergeTree family
 
@@ -4349,7 +4422,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/sql-reference/statements/alter).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/reference/statements/alter).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -4361,9 +4434,9 @@ ClickHouse uses [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/in
 
 To use replication, set parameters in the [zookeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) server configuration section.
 
-:::note
+<Note>
 Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
-:::
+</Note>
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
 
@@ -4448,14 +4521,13 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 ## Creating replicated tables {#creating-replicated-tables}
 
-:::note
+<Note>
 In ClickHouse Cloud, replication is handled automatically.
 
-Create tables using [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/cloud/reference/shared-merge-tree) for replication and data distribution.
+Create tables using [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/products/cloud/features/infrastructure/shared-merge-tree) for replication and data distribution.
 
 Avoid using `ReplicatedMergeTree` or specifying replication parameters, as replication is managed by the platform.
-
-:::
+</Note>
 
 ### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
@@ -4602,7 +4674,7 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
-[ATTACH TABLE ... AS REPLICATED](/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
+[ATTACH TABLE ... AS REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
 `MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
@@ -4630,7 +4702,7 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 ## Converting from ReplicatedMergeTree to MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
-Use [ATTACH TABLE ... AS NOT REPLICATED](/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
+Use [ATTACH TABLE ... AS NOT REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
 
 Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table's data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 

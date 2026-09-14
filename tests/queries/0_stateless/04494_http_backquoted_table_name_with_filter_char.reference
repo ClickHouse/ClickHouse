@@ -1,0 +1,6 @@
+-- back-quoted table name containing '=' resolves to the table, not a filter
+111
+-- back-quoted table name containing '>' resolves to the table, not a filter
+222
+-- an unquoted component with a comparison character still applies as a WHERE filter
+3

@@ -212,6 +212,18 @@ The height of the output image in pixels for image output formats such as `PNG`.
 
 Default value: 1024.
 
+## output_format_image_streaming_animation {#output_format_image_streaming_animation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting controlling whether image output formats such as `PNG` write each frame of an animation as soon as the next value of `t` is seen, instead of buffering all the frames in memory."}]}]}/>
+
+For image output formats such as `PNG`, write each frame of an animation as soon as the next value of the `t` column is seen, instead of buffering all the frames in memory until the end of the query.
+
+Only one frame is kept in memory, and the frames reach the output while the query is still running. In exchange, the values of `t` must be non-decreasing, otherwise the query throws an exception, and the number of frames is not known when the header of the animation has to be written, so the declared frame count is an upper bound rather than the exact value. Browsers play such a file, but decoders that trust the declared count report an error after the last real frame.
+
+Default value: `false`.
+
 ## output_format_image_terminal_mode {#output_format_image_terminal_mode}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."}]}]}/>
@@ -226,6 +238,32 @@ Possible values:
 - `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
 
 Default value: `` (empty).
+
+## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."}]}]}/>
+
+The denominator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+See [`output_format_image_time_multiplier_seconds`](/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+Default value: 60.
+
+## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."}]}]}/>
+
+The numerator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+The presence of a `t` column makes the format produce an animation, in which `t` is the relative time offset
+of the frame. One unit of `t` corresponds to `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` seconds.
+With the default values (`1` and `60`), one unit of `t` is 1/60 of a second.
+
+Default value: 1.
 
 ## output_format_image_width {#output_format_image_width}
 
@@ -724,6 +762,14 @@ Target row group size in bytes, before compression.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse allows arbitrary binary data in the String data type, which is typically UTF-8. Parquet\/ORC\/Arrow Strings only support UTF-8. That's why you can choose which Arrow's data type to use for the ClickHouse String data type - String or Binary. While Binary would be more correct and compatible, using String by default will correspond to user expectations in most cases."}]}]}/>
 
 Use Parquet String type instead of Binary for String columns.
+
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standard Parquet `DECIMAL` values. The previous value keeps the legacy little-endian `FIXED_LEN_BYTE_ARRAY` representation."}]}]}/>
+
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
 
 ## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 

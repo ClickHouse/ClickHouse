@@ -312,6 +312,70 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /** Hand the buffered rows over before any database goes away.
+      *
+      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
+      * shut down one at a time in name order: a destination in an earlier-sorting database is already
+      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
+      * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
+      * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
+      * graceful shutdown.
+      *
+      * So drain every table of every database here, repeating while a pass still moves something -
+      * one pass per link of the longest chain. The number of tables bounds the number of passes; a
+      * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
+      */
+    {
+        size_t total_tables = 0;
+        std::vector<StoragePtr> buffered_tables;
+        for (const auto & database : current_databases)
+        {
+            /// Only user databases: enumerating a predefined one can materialize a lazily created
+            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+            if (isPredefinedDatabase(database.first))
+                continue;
+
+            try
+            {
+                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                {
+                    ++total_tables;
+                    buffered_tables.push_back(it->table());
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
+            }
+        }
+
+        for (size_t pass = 0; pass <= total_tables; ++pass)
+        {
+            size_t flushed = 0;
+            for (const auto & table : buffered_tables)
+            {
+                if (!table)
+                    continue;
+
+                try
+                {
+                    flushed += table->flushBufferedRowsBeforeShutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                }
+            }
+
+            if (flushed == 0)
+                break;
+
+            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+        }
+    }
+
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
@@ -1466,7 +1530,13 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
-    auto db_disk = getDatabase(table_id.database_name)->getDisk();
+    auto database = getDatabase(table_id.database_name);
+    auto db_disk = database->getDisk();
+
+    /// The table limit is checked below; wait for the database to finish loading first, otherwise
+    /// its table list is incomplete and the check would undercount. Do it before taking
+    /// `tables_marked_dropped_mutex`, because startup can drop tables.
+    database->waitDatabaseStarted();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1499,6 +1569,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// Check the limit before moving the metadata file: a table that cannot be attached must
+        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
+        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+            database_on_disk->checkTablesLimit();
+
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
@@ -1946,7 +2021,8 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     }
 
     /// For DROP DATABASE we should ignore dependent tables from the same database.
-    /// TODO unload tables in reverse topological order and remove this code
+    /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
+    /// and referential dependencies, so a dependent is always dropped before the tables it depends on.
     std::vector<StorageID> from_other_databases;
     for (const auto & dependent : dependents)
         if (dependent.database_name != removing_table.database_name)

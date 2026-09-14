@@ -79,52 +79,28 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
-[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
+Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
-    auto & other = assert_cast<const Self &>(rhs);
-    const T * pa = &data[n];
-    const T * pb = &other.data[m];
+    const auto & other = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = other.data.data();
+    const T a = lhs_data[n];
+    const T b = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
 
+    /// The scale dispatch is hoisted out of the run search; same-scale probes are native comparisons.
     if (scale == other.scale)
-    {
-        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
+        return compareTrackAtImpl(
+            a > b ? 1 : (a < b ? -1 : 0),
+            n, m, data.size(), other.data.size(), linear_probe,
+            [&](size_t row) { return lhs_data[row] < b; },
+            [&](size_t row) { return rhs_data[row] < a; });
 
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && (*pa) < (*pb); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && (*pb) < (*pa); ++pb)
-                ++res;
-        }
-        return res;
-    }
-    else
-    {
-        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
-
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
-                ++res;
-        }
-        return res;
-    }
+    return compareTrackAtImpl(
+        decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0),
+        n, m, data.size(), other.data.size(), linear_probe,
+        [&](size_t row) { return decimalLess<T>(lhs_data[row], b, scale, other.scale); },
+        [&](size_t row) { return decimalLess<T>(rhs_data[row], a, other.scale, scale); });
 }
 
 template <is_decimal T>
@@ -153,12 +129,6 @@ void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
     T dec{};
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -692,6 +662,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <is_decimal T>

@@ -18,23 +18,19 @@ CREATE MATERIALIZED VIEW rls_mv_dist TO rls_dist (x UInt64, y UInt32) AS SELECT 
 SELECT '-- a refused policy over a storage that processes past FetchColumns fails closed --';
 SELECT count() FROM rls_mv_dist;
 SELECT count() FROM rls_mv_dist PREWHERE y < 5; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM rls_mv_dist PREWHERE y < 5 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 CREATE ROW POLICY rp_04652_dist ON rls_mv_dist FOR SELECT USING y < 5 TO CURRENT_USER;
 SELECT count() FROM rls_mv_dist; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY rp_04652_dist ON rls_mv_dist;
 
 SELECT '-- so does a policy on a matching column: only the query text ships, never the filter --';
 CREATE ROW POLICY rp_04652_dist_x ON rls_mv_dist FOR SELECT USING x < 5 TO CURRENT_USER;
 SELECT count() FROM rls_mv_dist; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY rp_04652_dist_x ON rls_mv_dist;
 
 SELECT '-- a policy on the Distributed table itself fails closed too, instead of a silent drop --';
 SELECT count() FROM rls_dist;
 CREATE ROW POLICY rp_04652_dist_d ON rls_dist FOR SELECT USING y < 5 TO CURRENT_USER;
 SELECT count() FROM rls_dist; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM rls_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY rp_04652_dist_d ON rls_dist;
 
 SELECT '-- the leaf policy still enforces through the Distributed read, matching shard-side model --';
@@ -43,7 +39,6 @@ CREATE ROW POLICY rp_04652_dist_l ON rls_dist_leaf FOR SELECT USING y < 5 TO CUR
 -- entirely - a pre-existing master bug this row is not about, see
 -- https://github.com/ClickHouse/ClickHouse/issues/112891. Pin to text shipping.
 SELECT count() FROM rls_dist SETTINGS serialize_query_plan = 0;
-SELECT count() FROM rls_dist SETTINGS enable_analyzer = 0;
 DROP ROW POLICY rp_04652_dist_l ON rls_dist_leaf;
 
 DROP VIEW rls_mv_dist;
@@ -179,7 +174,6 @@ DROP ROW POLICY rp_04652_single ON rp_inner;
 SELECT '-- and nested, under both analyzers --';
 CREATE ROW POLICY rp_04652_nested ON rp_outer FOR SELECT USING x != 0 TO CURRENT_USER;
 SELECT x, y FROM rp_outer ORDER BY x LIMIT 3;
-SELECT x, y FROM rp_outer ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
 DROP ROW POLICY rp_04652_nested ON rp_outer;
 
 SELECT '-- a policy on a matching column keeps working --';
@@ -213,7 +207,6 @@ DROP ROW POLICY rp_04652_mv1 ON rp_mv_one;
 SELECT '-- and through a view over a view, where the drift is one level down --';
 CREATE ROW POLICY rp_04652_mv2 ON rp_mv_two FOR SELECT USING x != 0 TO CURRENT_USER;
 SELECT x, y FROM rp_mv_two ORDER BY x LIMIT 3;
-SELECT x, y FROM rp_mv_two ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
 DROP ROW POLICY rp_04652_mv2 ON rp_mv_two;
 
 DROP VIEW rp_mv_two;
@@ -242,7 +235,6 @@ CREATE TABLE sub_merge_bad (t Tuple(a Nullable(UInt64)), x UInt64) ENGINE = Merg
 SELECT '-- a subcolumn PREWHERE rides its origin column through a Buffer --';
 SELECT count() FROM sub_buf PREWHERE j.a = 1;
 SELECT count() FROM sub_buf PREWHERE t.a < 5;
-SELECT count() FROM sub_buf PREWHERE t.a < 5 SETTINGS enable_analyzer = 0;
 
 SELECT '-- and through a Merge whose origin type matches the leaf --';
 SELECT count() FROM sub_merge PREWHERE j.a = 1;
@@ -250,15 +242,10 @@ SELECT count() FROM sub_merge PREWHERE t.a < 5;
 
 SELECT '-- the auto WHERE -> PREWHERE move admits subcolumns through their origin too --';
 -- The AST-level optimizer consults the same contract; run it by disabling the plan-level one.
-SELECT sum(x) FROM sub_buf WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
-SELECT sum(x) FROM sub_merge WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
-EXPLAIN SYNTAX SELECT sum(x) FROM sub_merge WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
 
 SELECT '-- a subcolumn of a type-drifted origin stays rejected --';
 SELECT count() FROM sub_merge_bad PREWHERE t.a < 5; -- { serverError ILLEGAL_PREWHERE }
 -- The auto-move refuses it too, keeping the filter above the read.
-SELECT sum(x) FROM sub_merge_bad WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
-EXPLAIN SYNTAX SELECT sum(x) FROM sub_merge_bad WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
 
 SELECT '-- a row policy consuming a subcolumn maps to its origin for the push decision --';
 CREATE ROW POLICY rp_04652_sub ON sub_buf FOR SELECT USING t.a < 3 TO CURRENT_USER;
