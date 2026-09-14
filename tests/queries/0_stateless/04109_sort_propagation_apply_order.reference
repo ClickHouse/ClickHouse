@@ -1,8 +1,7 @@
 -- { echo }
 
--- `allow_parallel_distinct` is off so that the final DISTINCT keeps the single stream: this checks
--- that the per-stream sortedness of the union reaches DISTINCT, and repartitioning by hash for the
--- parallel deduplication would reorder the result and hide it.
+-- A `UNION ALL` of sorted inputs has stream order only. Serial final `DISTINCT` must deduplicate
+-- across those streams without treating their concatenation as globally sorted.
 SELECT DISTINCT g
 FROM
 (

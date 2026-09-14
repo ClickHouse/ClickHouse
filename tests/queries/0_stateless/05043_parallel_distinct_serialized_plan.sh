@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: shard
 
-# An unordered serialized DISTINCT can partition its input on the follower even when the initiator
-# applies an OFFSET. The offset does not require an order that the input never established.
+# An unordered serialized `DISTINCT` can partition its input on the follower even when the initiator
+# applies an `OFFSET`. The offset does not require an order that the input never established.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

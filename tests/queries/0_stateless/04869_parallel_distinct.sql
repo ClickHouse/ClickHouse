@@ -1,5 +1,5 @@
--- The final DISTINCT deduplicates its input streams in parallel by repartitioning them by the hash of
--- the DISTINCT columns, instead of merging everything into a single stream and deduplicating there.
+-- Final `DISTINCT` partitions input streams by the hash of its key columns and deduplicates each
+-- partition independently.
 
 SET max_threads = 4;
 
@@ -19,7 +19,7 @@ SELECT '-- the limits on the size of the DISTINCT set stay global';
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 1000 FROM numbers_mt(10000000) SETTINGS max_rows_in_distinct = 1000000);
 SELECT count() FROM (SELECT DISTINCT number % 1000 FROM numbers_mt(10000000) SETTINGS max_rows_in_distinct = 100); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
--- 1000 distinct values scattered over 4 streams: a per-stream limit of 500 would let this pass, a global one does not.
+-- A global limit of 500 rejects 1000 distinct values even when each hash partition fits the limit.
 SELECT count() FROM (SELECT DISTINCT number % 1000 FROM numbers_mt(10000000) SETTINGS max_rows_in_distinct = 500); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT DISTINCT number % 1000 FROM numbers_mt(10000000) SETTINGS max_bytes_in_distinct = 1); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
