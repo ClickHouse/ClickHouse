@@ -1287,7 +1287,7 @@ bool IcebergStorageSink::initializeMetadata()
     /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
     std::optional<String> refresh_cursor;
     if (auto streaming_cursor = context->getStreamingCursor())
-        refresh_cursor = refreshCursorToStorage(serializeCursorTree(streaming_cursor->tree));
+        refresh_cursor = refreshCursorToStorage(streaming_cursor->tree);
 
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,

@@ -487,7 +487,7 @@ CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_conte
     auto stored = metadata->getRefreshCursor(query_context);
     if (!stored || stored->empty())
         return nullptr;
-    return deserializeCursorTree(refreshCursorFromStorage(*stored));
+    return refreshCursorFromStorage(*stored);
 }
 
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)

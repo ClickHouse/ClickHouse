@@ -4,41 +4,27 @@
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-
-#include <base/hex.h>
+#include <Common/Base64.h>
 
 namespace DB
 {
 
-String serializeCursorTree(const CursorTreeNodePtr & cursor)
+String refreshCursorToStorage(const CursorTreeNodePtr & cursor)
 {
     if (!cursor)
         return {};
     WriteBufferFromOwnString buf;
     writeFieldBinary(Field(cursorTreeToMap(cursor)), buf);
-    return buf.str();
+    return base64Encode(buf.str());
 }
 
-CursorTreeNodePtr deserializeCursorTree(const String & serialized)
+CursorTreeNodePtr refreshCursorFromStorage(const String & stored)
 {
-    if (serialized.empty())
+    if (stored.empty())
         return nullptr;
-    ReadBufferFromString buf(serialized);
+    String decoded = base64Decode(stored);
+    ReadBufferFromString buf(decoded);
     return buildCursorTree(readFieldBinary(buf).safeGet<Map>());
-}
-
-String refreshCursorToStorage(const String & serialized_cursor)
-{
-    return hexString(serialized_cursor.data(), serialized_cursor.size());
-}
-
-String refreshCursorFromStorage(const String & stored)
-{
-    String out;
-    out.reserve(stored.size() / 2);
-    for (size_t i = 0; i + 1 < stored.size(); i += 2)
-        out.push_back(static_cast<char>(unhex2(stored.data() + i)));
-    return out;
 }
 
 }

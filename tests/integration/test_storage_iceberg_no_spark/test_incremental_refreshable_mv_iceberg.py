@@ -51,7 +51,7 @@ def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg
 
     # The cursor must be committed inside the snapshot summary (not Keeper). Read it back from the table.
     cursor = instance.query(
-        f"SELECT summary['clickhouse.refresh_cursor'] FROM system.iceberg_history "
+        f"SELECT summary['clickhouse.refresh-cursor'] FROM system.iceberg_history "
         f"WHERE database = 'default' AND table = '{tgt}' ORDER BY made_current_at DESC LIMIT 1"
     ).strip()
     assert cursor != "", "refresh cursor was not embedded in the Iceberg snapshot summary"
