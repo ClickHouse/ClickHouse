@@ -134,6 +134,10 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    /// Writes the JSON representation. `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h),
+    /// it affects the names of the target kinds.
+    void writeJSON(WriteBuffer & out, std::optional<UInt64> time_series_version) const;
+
     /// Formats information only about a specific target table.
     /// `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h), it affects the keywords.
     void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {}) const;

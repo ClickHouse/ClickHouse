@@ -463,6 +463,11 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
 
 void ASTViewTargets::writeJSON(WriteBuffer & out) const
 {
+    writeJSON(out, /* time_series_version = */ {});
+}
+
+void ASTViewTargets::writeJSON(WriteBuffer & out, std::optional<UInt64> time_series_version) const
+{
     JSONObjectWriter w(out, "ViewTargets");
     if (!targets.empty())
     {
@@ -475,7 +480,12 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
             const auto & target = targets[i];
             out << '{';
             out << "\"kind\":";
-            writeJSONString(toString(target.kind), out, w.getFormatSettings());
+            /// The "metric families" target keeps its old name "Metrics" in the older versions (see readJSON).
+            String kind_name = toString(target.kind);
+            if ((target.kind == ViewTarget::MetricFamilies) && time_series_version
+                && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
+                kind_name = "Metrics";
+            writeJSONString(kind_name, out, w.getFormatSettings());
             if (!target.table_id.empty())
             {
                 /// Serialize the `StorageID` parts separately instead of `getFullTableName()`: the

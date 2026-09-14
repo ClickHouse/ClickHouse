@@ -40,6 +40,9 @@ $CLIENT -q "DROP TABLE ts_new"
 
 echo '--- the old kind name in the AST JSON is understood ---'
 $CLIENT -q "SELECT formatQueryFromJSON(replaceAll(parseQueryToJSON('CREATE TABLE t ENGINE = TimeSeries METRIC FAMILIES db.m'), '\"MetricFamilies\"', '\"Metrics\"'))"
+echo 'the AST JSON of a table of an older version uses the old kind name:'
+$CLIENT -q "SELECT parseQueryToJSON('CREATE TABLE t ENGINE = TimeSeries SETTINGS version = 3 METRIC FAMILIES db.m') LIKE '%\"kind\":\"Metrics\"%'"
+$CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t ENGINE = TimeSeries SETTINGS version = 3 METRIC FAMILIES db.m'))"
 
 echo '--- a table of version 3 keeps the .inner_id.metrics inner table and the METRICS keyword ---'
 $CLIENT -q "CREATE TABLE ts_v3 ENGINE = TimeSeries SETTINGS version = 3 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree"

@@ -563,7 +563,16 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("storage", storage);
     w.writeChild("as_table_function", as_table_function);
     w.writeChild("select", select);
-    w.writeChild("targets", targets);
+
+    if (targets)
+    {
+        std::optional<UInt64> time_series_version;
+        if (is_time_series_table)
+            time_series_version = getTimeSeriesSettingVersion(*this);
+        w.writeKey("targets");
+        targets->writeJSON(out, time_series_version);
+    }
+
     w.writeChild("comment", comment);
     w.writeChild("sql_security", sql_security);
     w.writeChild("table_overrides", table_overrides);
