@@ -137,8 +137,6 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
-
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(
@@ -192,7 +190,7 @@ public:
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 

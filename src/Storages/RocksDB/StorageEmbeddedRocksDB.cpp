@@ -1078,9 +1078,9 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
     return estimated_bytes;
 }
 
-void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard)
+void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
 {
-    IStorage::alter(params, query_context, holder, ddl_guard);
+    IStorage::alter(params, query_context, holder);
     auto new_metadata = getInMemoryMetadataPtr(query_context, false);
     if (new_metadata->settings_changes)
     {
@@ -1249,10 +1249,10 @@ To enable direct joins:
 SET join_algorithm = 'direct, hash'
 ```
 
-<Tip>
+:::tip
 When the `join_algorithm` is set to `direct, hash`, direct joins will be used
 when possible, and hash otherwise.
-</Tip>
+:::
 
 #### Example {#example}
 

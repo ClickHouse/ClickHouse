@@ -80,7 +80,6 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
     ColumnSizeByName getColumnSizes() const override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
@@ -119,10 +118,6 @@ private:
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
-
-    /// Whether this table holds nothing on disk: no recorded bytes, and no rows according to the
-    /// engine's row signal. Must be called under the rwlock, after loadMarks().
-    bool hasNothingToBackUp() const;
 
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
