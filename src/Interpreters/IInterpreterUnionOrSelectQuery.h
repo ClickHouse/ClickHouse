@@ -60,6 +60,9 @@ protected:
     /// Add filter from additional_post_filter setting.
     void addAdditionalPostFilter(QueryPlan & plan) const;
 
+public:
+    /// A pure function of the settings and the stage, so it is also what a node executing a plan it did
+    /// not build derives its limits from - see the deserialized-plan branch of `executeQuery`.
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };
 }
