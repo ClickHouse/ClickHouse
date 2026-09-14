@@ -39,8 +39,10 @@ TEST(QueryFuzzer, DoesNotThrowOnParameterizedTableName)
                 ASSERT_NE(e.code(), ErrorCodes::UNKNOWN_TABLE)
                     << "seed=" << seed << " step=" << step << ": " << e.message();
             }
-            catch (...) // Ok: a non-DB failure says nothing about the name-resolution path
+            catch (...)
             {
+                /// Ok: any other failure says nothing about the name resolution covered here.
+                continue;
             }
         }
     }
