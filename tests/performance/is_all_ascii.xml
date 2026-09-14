@@ -7,12 +7,14 @@
          prevents constant folding, and each row contributes one terminating byte. -->
     <query>SELECT substringUTF8(concat(repeat('a', 14), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 22), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 46), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 509), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 511), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 62), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 126), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 254), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 382), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <!-- The 511/512/513 and 16383/16385 queries use one row per block; the matching 16384 query uses 16 rows. -->
     <query>SELECT substringUTF8(concat(repeat('a', 16381), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
