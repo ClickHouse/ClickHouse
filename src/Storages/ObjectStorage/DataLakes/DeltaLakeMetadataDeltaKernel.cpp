@@ -818,14 +818,18 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for DeltaLake CREATE TABLE");
 
-        /// Reject columns with virtual-column names before the first commit for the same reason.
-        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-        for (const auto & column : *columns)
-            if (reserved_virtual_columns.contains(column.name))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
-                    column.name);
+        /// Only on a fresh CREATE (these columns become the Delta schema): reject a name that shadows a virtual
+        /// column. At attach the table already exists and works -- a real column of that name just hides the virtual.
+        if (!delta_log_exists)
+        {
+            const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+            for (const auto & column : *columns)
+                if (reserved_virtual_columns.contains(column.name))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
+                        column.name);
+        }
 
         /// A catalog-backed table is rebuilt from the registered Delta schema, which cannot carry a DEFAULT expression; reject rather than silently drop it. Plain tables keep it in their own metadata.
         if (register_with_catalog && columns->hasDefaults())
