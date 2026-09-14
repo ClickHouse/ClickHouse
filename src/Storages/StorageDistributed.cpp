@@ -1219,7 +1219,11 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
     plan = std::move(interpreter).extractQueryPlan();
 
-    plan.optimize(QueryPlanOptimizationSettings(context));
+    /// An analysis-only plan that is never executed: it only yields the filter, so it is optimized as a
+    /// local plan whatever `make_distributed_plan` says (no distributed-plan decision is taken on it).
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.make_distributed_plan = false;
+    plan.optimize(optimization_settings);
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());

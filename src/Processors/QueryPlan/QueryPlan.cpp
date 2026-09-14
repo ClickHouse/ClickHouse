@@ -29,6 +29,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <ranges>
+#include <fmt/ranges.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -884,7 +886,17 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    for (const auto & context : resources.distributed_plan_decision_contexts)
+        context->setSetting("make_distributed_plan", false);
     return true;
+}
+
+void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
+{
+    for (const auto & context : kept_aside_plan.resources.interpreter_context)
+        addInterpreterContext(context);
+    for (const auto & context : kept_aside_plan.resources.distributed_plan_decision_contexts)
+        addDistributedPlanDecisionContext(context);
 }
 
 

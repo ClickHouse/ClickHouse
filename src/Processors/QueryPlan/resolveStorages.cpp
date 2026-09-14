@@ -288,6 +288,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
         reading_plan.addInterpreterContext(mutable_context);
+        /// The reading step keeps this copy and consults `make_distributed_plan` in it when it builds its
+        /// IN sets, so a fallback of the plan has to be able to turn the setting off here as well.
+        reading_plan.addDistributedPlanDecisionContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
