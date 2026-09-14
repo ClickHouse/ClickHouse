@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -63,6 +66,18 @@ struct Step
     {
         auto type = std::make_shared<DataTypeUInt64>();
         return Block({ColumnWithTypeAndName(type->createColumn(), type, column_name)});
+    }
+
+    /// `ON NULL`: a single constant of type `Nullable(Nothing)` that is not a binary predicate, the shape
+    /// `JoinStepLogical::buildPhysicalJoinImpl` turns into an always-false `ConstantJoin`.
+    Step & onNull()
+    {
+        join_operator.expression.clear();
+        DataTypePtr type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        ColumnConstPtr constant = type->createColumnConstWithDefaultValue(1);
+        join_operator.expression.emplace_back(
+            &expression_actions.getActionsDAG()->addColumn(std::move(constant), type, "NULL"), expression_actions);
+        return *this;
     }
 
     JoinExpressionActions expression_actions;
@@ -341,6 +356,10 @@ TEST(JoinSpillTriggerPlanSetting, StepsGraceHashCannotRun)
     EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, cross.join_operator));
     const Step on_constant(JoinKind::Inner, JoinStrictness::All, {});
     EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, on_constant.join_operator));
+    Step on_null(JoinKind::Left, JoinStrictness::All, {});
+    on_null.onNull();
+    EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, on_null.join_operator));
+    EXPECT_NO_THROW(serializeAt(grace_hash_first, pre_setting_version, on_null.join_operator));
 
     /// The size limits do not diverge for these steps either: the old peer cannot switch them to `GraceHashJoin`,
     /// so its plain hash join (or `ConstantJoin`) checks them as hard caps, like this side. A plain equi-join with
@@ -349,5 +368,13 @@ TEST(JoinSpillTriggerPlanSetting, StepsGraceHashCannotRun)
     EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, asof.join_operator));
     EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, cross.join_operator));
     EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, on_constant.join_operator));
+    EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, on_null.join_operator));
+    EXPECT_NO_THROW(serializeAt(makeJoinSettings({{"max_bytes_in_join", 1000u}}), pre_setting_version, on_null.join_operator));
     EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version), Exception);
+
+    /// An ASOF join is never a join on a constant, even with such a clause; it keeps walking the list like any
+    /// other step, and `grace_hash` does not run it.
+    Step asof_on_null(JoinKind::Left, JoinStrictness::Asof, {});
+    asof_on_null.onNull();
+    EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, asof_on_null.join_operator));
 }

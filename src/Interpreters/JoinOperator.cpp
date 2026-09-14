@@ -278,6 +278,22 @@ static bool alwaysProducesJoin(JoinAlgorithm algorithm)
         || algorithm == JoinAlgorithm::AUTO;
 }
 
+/// Whether the `ON` clause is a constant that `JoinStepLogical::buildPhysicalJoinImpl` turns into a `ConstantJoin`:
+/// an always-true one (`ON 1`), left as an empty clause by the analyzer, or an always-false one (`ON NULL`), kept as
+/// a single predicate of type `Nothing` / `Nullable(Nothing)` that is not a binary condition. Both shapes are
+/// resolved the same way on both sides of a serialized plan; an ASOF join is excluded like there, it cannot be a
+/// join on a constant and is rejected later.
+static bool isJoinOnConstant(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return false;
+    if (join_operator.expression.empty())
+        return true;
+    return join_operator.expression.size() == 1
+        && join_operator.expression[0].getType()->onlyNull()
+        && std::get<0>(join_operator.expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
+}
+
 /// Whether every predicate of the `ON` clause is an equality between one expression of the left side and one of
 /// the right side. For such a step the merge algorithms decide on the kind and strictness alone: they decline a
 /// mixed (cross-side non-equi) condition, a one-sided filter and a disjunction, and none of those is left once the
@@ -344,7 +360,7 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     /// are hard caps for both of them on both sides.
     if (isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind))
         return false;
-    if (join_operator.expression.empty() && join_operator.strictness != JoinStrictness::Asof)
+    if (isJoinOnConstant(join_operator))
         return false;
 
     /// Hard caps here, a spill trigger there - but only where the old peer spills at all. Its plain `HashJoin` /
