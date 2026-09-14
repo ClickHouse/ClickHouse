@@ -315,7 +315,7 @@ Function which checks if the part of the first argument is covered by the part o
         {"nested_part", "Name of expected nested part.", {"String"}},
         {"covering_part", "Name of expected covering part.", {"String"}},
         {"is_detached",
-         "If true, parse both names as detached parts. This is needed for names which are also valid regular part names.",
+         "If true, parse both names as detached parts. Both arguments must use the same naming convention.",
          {"const Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_coverage = {"Returns `1` if it covers, `0` otherwise.", {"UInt8"}};

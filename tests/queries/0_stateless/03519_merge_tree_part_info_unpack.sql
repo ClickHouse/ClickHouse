@@ -31,6 +31,9 @@ SELECT mergeTreePartInfo('broken-on-start_1_2_3_0_tryfoo', true); -- { serverErr
 WITH mergeTreePartInfo('broken_1_2_3_4') AS info
 SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
 
+WITH mergeTreePartInfo('broken_1_2_3_4', false) AS info
+SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
+
 CREATE TABLE mt(key UInt64, value String)
 ENGINE = MergeTree
 ORDER BY key;
