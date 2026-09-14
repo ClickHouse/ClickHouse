@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Common/ClickHouseVersion.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+
+#include <string_view>
 
 
 namespace DB
@@ -21,6 +24,14 @@ enum class PrometheusQueryEvaluationMode
 };
 
 
+/// The packed aggregate was introduced in 26.9 and is not available on older servers.
+inline bool useQuantilePrometheusHistogramArray(std::string_view compatibility)
+{
+    static const ClickHouseVersion minimum_version{"26.9"};
+    return compatibility.empty() || ClickHouseVersion(compatibility) >= minimum_version;
+}
+
+
 struct PrometheusQueryEvaluationSettings
 {
     using TimestampType = DateTime64;
@@ -34,6 +45,9 @@ struct PrometheusQueryEvaluationSettings
     DataTypePtr scalar_data_type;
 
     PrometheusQueryEvaluationMode mode = PrometheusQueryEvaluationMode::QUERY;
+
+    /// Keep the old SQL lowering for compatibility with servers before 26.9.
+    bool use_quantile_prometheus_histogram_array = true;
 
     /// Specifies that a prometheus query should be evaluated at the current time.
     bool use_current_time = false;

@@ -59,6 +59,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsString compatibility;
 }
 
 namespace TimeSeriesSetting
@@ -197,6 +198,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     QueryFinishCallback query_finish_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
+    evaluation_settings.use_quantile_prometheus_histogram_array
+        = useQuantilePrometheusHistogramArray(getContext()->getSettingsRef()[Setting::compatibility]);
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
