@@ -1311,6 +1311,23 @@ def test_table_engine():
     node.query("DROP TABLE bq_writable")
 
 
+def test_table_function_create_nullable_tuple_setting():
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_tf_nullable_tuple")
+    create_query = f"CREATE TABLE bq_tf_nullable_tuple AS {bq('writable')}"
+
+    error = node.query_and_get_error(
+        create_query, settings={"enable_nullable_tuple_type": 0}
+    )
+    assert "ILLEGAL_COLUMN" in error
+    assert "enable_nullable_tuple_type" in error
+
+    node.query(create_query)
+    create = node.query("SHOW CREATE TABLE bq_tf_nullable_tuple")
+    assert "`meta` Nullable(Tuple(a Nullable(Int64)))" in create, create
+    node.query("DROP TABLE bq_tf_nullable_tuple")
+
+
 def test_secret_masking_in_query_log():
     query_id = "bigquery-masking-test"
     node.query(
