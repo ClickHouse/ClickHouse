@@ -181,28 +181,35 @@ ProcessList::EntryPtr ProcessList::insert(
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        if (!is_unlimited_query && max_size && non_internal_processes >= max_size)
+        /// A query blocked on an asynchronously loading table is not executing, so it does not hold a
+        /// slot in the limits below.
+        UInt64 waiting_queries = waiting_queries_amount.load();
+        if (!is_unlimited_query && max_size && non_internal_processes >= max_size + waiting_queries)
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                    [&]{ return non_internal_processes < max_size; }))
+                    [&]{ waiting_queries = waiting_queries_amount.load(); return non_internal_processes < max_size + waiting_queries; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous queries. Maximum: {}",
-                                max_size);
+                                "Too many simultaneous queries. Maximum: {}{}",
+                                max_size, waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
         }
 
         if (!is_unlimited_query)
         {
             QueryAmount amount = getQueryKindAmount(query_kind);
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
+            UInt64 waiting_inserts = waiting_insert_queries_amount.load();
+            UInt64 waiting_selects = waiting_select_queries_amount.load();
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount + waiting_inserts)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
-                                max_insert_queries_amount, amount);
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
+                                "Too many simultaneous insert queries. Maximum: {}, current: {}{}",
+                                max_insert_queries_amount, amount,
+                                waiting_inserts == 0 ? "" : fmt::format(", waiting: {}", waiting_inserts));
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount + waiting_selects)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous select queries. Maximum: {}, current: {}",
-                                max_select_queries_amount, amount);
+                                "Too many simultaneous select queries. Maximum: {}, current: {}{}",
+                                max_select_queries_amount, amount,
+                                waiting_selects == 0 ? "" : fmt::format(", waiting: {}", waiting_selects));
         }
 
         {
@@ -225,14 +232,16 @@ ProcessList::EntryPtr ProcessList::insert(
              * once is already processing 50+ concurrent queries (including analysts or any other users).
              */
 
+            waiting_queries = waiting_queries_amount.load();
             if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
-                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
+                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users] + waiting_queries)
                 throw Exception(
                     ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                     "Too many simultaneous queries for all users. "
-                    "Current: {}, maximum: {}",
+                    "Current: {}, maximum: {}{}",
                     non_internal_processes,
-                    settings[Setting::max_concurrent_queries_for_all_users].toString());
+                    settings[Setting::max_concurrent_queries_for_all_users].toString(),
+                    waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
         }
 
         /** Why we use current user?
@@ -250,15 +259,17 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (user_process_list != user_to_queries.end())
             {
+                UInt64 user_waiting_queries = user_process_list->second.waiting_queries_amount.load();
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
+                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user] + user_waiting_queries)
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for user {}. "
-                        "Current: {}, maximum: {}",
+                        "Current: {}, maximum: {}{}",
                         client_info.current_user,
                         user_process_list->second.non_internal_queries,
-                        settings[Setting::max_concurrent_queries_for_user].toString());
+                        settings[Setting::max_concurrent_queries_for_user].toString(),
+                        user_waiting_queries == 0 ? "" : fmt::format(", waiting: {}", user_waiting_queries));
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 

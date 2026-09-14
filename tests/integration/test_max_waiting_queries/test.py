@@ -85,6 +85,10 @@ def unpin_and_join(handles):
 
 
 def cleanup(handles):
+    # Put the settings back before draining anything. A query that resumes under a limit the test
+    # lowered can block for its whole client timeout, and this runs from `finally`, where that would
+    # be reported as a session timeout instead of the assertion that actually failed.
+    node.query("SYSTEM RELOAD CONFIG", ignore_error=True)
     node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}", ignore_error=True)
     for handle in handles:
         try:
@@ -92,7 +96,6 @@ def cleanup(handles):
         except Exception:
             pass
     pause_failpoint(False)
-    node.query("SYSTEM RELOAD CONFIG", ignore_error=True)
     node.query("DROP DATABASE IF EXISTS re SYNC", ignore_error=True)
 
 
@@ -144,5 +147,51 @@ def test_waiting_queries_limit(started_cluster):
         set_config(
             "<max_waiting_queries>0</max_waiting_queries>",
             "<max_waiting_queries>2</max_waiting_queries>",
+        )
+        cleanup(handles)
+
+
+def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
+    handles = []
+    try:
+        pin_startup_of_replicated_database("/test/max_waiting_queries/discount")
+        assert server_setting("max_concurrent_queries") == "0"
+
+        handles.append(
+            node.get_query_request(
+                "CREATE TABLE re.w (a Int) ENGINE = MergeTree ORDER BY a"
+            )
+        )
+        wait_for(waiters_on_startup_job, "1", "the query to block on the startup job")
+
+        # Lower max_concurrent_queries to exactly the number of queries in the process list. Both the
+        # reload and every query after it run while that one query is waiting; the reload itself is
+        # admitted because the limit it installs is not in effect yet when it starts.
+        set_config(
+            "<max_concurrent_queries>0</max_concurrent_queries>",
+            "<max_concurrent_queries>1</max_concurrent_queries>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # max_waiting_queries documents that waiting queries are not counted against the
+        # max_concurrent_* limits. Without that, the waiter holds the only slot and this is refused
+        # with "Too many simultaneous queries. Maximum: 1".
+        assert node.query("SELECT 1", settings={"queue_max_wait_ms": 0}).strip() == "1"
+        # Proves the reload took effect, so the query above was not admitted vacuously.
+        assert server_setting("max_concurrent_queries") == "1"
+
+        # Lift the limit before releasing the waiter: the Replicated DDL worker runs the statement
+        # again as a nested query, so the resumed CREATE TABLE needs a second process list slot.
+        set_config(
+            "<max_concurrent_queries>1</max_concurrent_queries>",
+            "<max_concurrent_queries>0</max_concurrent_queries>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        unpin_and_join(handles)
+    finally:
+        set_config(
+            "<max_concurrent_queries>1</max_concurrent_queries>",
+            "<max_concurrent_queries>0</max_concurrent_queries>",
         )
         cleanup(handles)
