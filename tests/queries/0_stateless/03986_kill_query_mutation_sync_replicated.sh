@@ -60,14 +60,14 @@ wait_for_query_to_start "$query_id"
 in_progress=0
 for _ in $(seq 1 600); do
     in_progress=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.mutations
+        SELECT count() > 0 FROM system.mutations
         WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation'
           AND is_done = 0 AND notEmpty(parts_in_progress_names)
         SETTINGS use_query_cache = 0")
-    [[ "$in_progress" != "0" ]] && break
+    [[ "$in_progress" == "1" ]] && break
     sleep 0.1
 done
-if [[ "$in_progress" == "0" ]]; then
+if [[ "$in_progress" != "1" ]]; then
     echo "Mutation never entered an in-flight state (parts_in_progress_names stayed empty)" >&2
     exit 1
 fi
