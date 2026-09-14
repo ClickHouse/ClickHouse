@@ -280,6 +280,45 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
         node.query("SYSTEM RELOAD CONFIG")
 
         unpin_and_join(handles)
+        wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
+
+        # Same two limits, same value, but now with nothing waiting: the query the discount admitted
+        # above must be refused. That is the negative control for those probes (it passes only if the
+        # guards actually run) and the post-drain oracle for the counters (one that was not
+        # decremented would discount this query too and admit it). The absent ", waiting:" suffix
+        # pins the counter at exactly zero.
+        wait_for(
+            lambda: node.query(
+                "SELECT count() FROM system.processes WHERE query NOT LIKE '%system.processes%'"
+            ).strip(),
+            "0",
+            "the process list to drain",
+        )
+        occupancy = node.get_query_request(
+            "SELECT sleepEachRow(1) FROM numbers(120) SETTINGS "
+            "function_sleep_max_microseconds_per_block = 0, max_block_size = 1",
+            query_id="occupancy",
+        )
+        try:
+            wait_for(
+                lambda: node.query(
+                    "SELECT count() FROM system.processes WHERE query_id = 'occupancy'"
+                ).strip(),
+                "1",
+                "the occupancy query to enter the process list",
+            )
+            for limit, whose in [
+                ("max_concurrent_queries_for_user", "for user default"),
+                ("max_concurrent_queries_for_all_users", "for all users"),
+            ]:
+                error = node.query_and_get_error("SELECT 1", settings={limit: 1})
+                assert (
+                    f"Too many simultaneous queries {whose}. Current: 1, maximum: 1" in error
+                ), error
+                assert ", waiting:" not in error, error
+        finally:
+            node.query("KILL QUERY WHERE query_id = 'occupancy' SYNC", ignore_error=True)
+            occupancy.get_answer_and_error()
     finally:
         set_config(
             "<max_concurrent_queries>1</max_concurrent_queries>",
