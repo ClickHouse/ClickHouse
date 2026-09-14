@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1107100",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1108675",
       "email": "support@clickhouse.com"
     }
   },
@@ -19948,24 +19948,24 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 20 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 3
           },
           "minReplicas": {
             "description": "Minimum number of replicas for horizontal autoscaling. Present only when the service uses horizontal autoscaling.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 1
           },
           "maxReplicas": {
             "description": "Maximum number of replicas for horizontal autoscaling. Present only when the service uses horizontal autoscaling.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 5
           },
           "autoscalingMode": {
@@ -21547,7 +21547,8 @@
             "enum": [
               "JSONEachRow",
               "Avro",
-              "AvroConfluent"
+              "AvroConfluent",
+              "Protobuf"
             ]
           },
           "streamName": {
@@ -21610,7 +21611,8 @@
             "enum": [
               "JSONEachRow",
               "Avro",
-              "AvroConfluent"
+              "AvroConfluent",
+              "Protobuf"
             ]
           },
           "streamName": {
@@ -21672,6 +21674,14 @@
                 "type": "null"
               }
             ]
+          },
+          "protobufSchema": {
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format and not supported with other formats.",
+            "type": "string",
+            "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
+            "maxLength": 1048576,
+            "minLength": 1,
+            "writeOnly": true
           }
         }
       },
@@ -24270,8 +24280,8 @@
               "integer",
               "null"
             ],
-            "minimum": 10485760,
-            "maximum": 53687091200,
+            "minimum": 524288000,
+            "maximum": 10737418240,
             "example": 10737418240
           },
           "object_storage_max_file_count": {
@@ -24683,8 +24693,8 @@
               "integer",
               "null"
             ],
-            "minimum": 10485760,
-            "maximum": 53687091200,
+            "minimum": 524288000,
+            "maximum": 10737418240,
             "example": 10737418240
           },
           "object_storage_max_file_count": {
@@ -32217,6 +32227,30 @@
           }
         }
       },
+      "ServiceClickhouseSettingValue": {
+        "description": "Setting value in its native JSON type. Use the settings schema endpoint for per-setting constraints.",
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ],
+        "example": "26.2"
+      },
+      "ServiceClickhouseSettingsMap": {
+        "type": "object",
+        "description": "Nonempty object mapping configurable setting names to their values. Use DELETE to reset a setting.",
+        "minProperties": 1,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ServiceClickhouseSettingValue"
+        },
+        "example": {
+          "compatibility": "26.2",
+          "max_query_size": 262144
+        }
+      },
       "ServiceClickhouseSetting": {
         "properties": {
           "name": {
@@ -32225,9 +32259,7 @@
             "example": "compatibility"
           },
           "value": {
-            "description": "Current value of the setting. Returned as a string for all setting types.",
-            "type": "string",
-            "example": "24.8"
+            "$ref": "#/components/schemas/ServiceClickhouseSettingValue"
           }
         }
       },
@@ -32259,9 +32291,7 @@
       "ServiceClickhouseSettingsPatchResponse": {
         "properties": {
           "settings": {
-            "description": "JSON object of setting names to their applied values. Example: {\"compatibility\": \"24.8\"}",
-            "type": "string",
-            "example": "{\"compatibility\": \"24.8\"}"
+            "$ref": "#/components/schemas/ServiceClickhouseSettingsMap"
           },
           "warnings": {
             "type": "array",
@@ -33937,21 +33967,21 @@
             "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\" or omitted). Mutually exclusive with minReplicas/maxReplicas.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 3
           },
           "minReplicas": {
             "description": "Minimum number of replicas. A minReplicas/maxReplicas band scales the replica count in horizontal autoscaling (autoscalingMode \"horizontal\"). Must be provided together with maxReplicas. Mutually exclusive with numReplicas. Requires horizontal autoscaling to be enabled for the organization, unless autoscalingMode is omitted or \"vertical\" and minReplicas equals maxReplicas (an equal band is then an accepted vertical fixed count and needs no horizontal entitlement).",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 1
           },
           "maxReplicas": {
             "description": "Maximum number of replicas. A minReplicas/maxReplicas band scales the replica count in horizontal autoscaling (autoscalingMode \"horizontal\"). Must be provided together with minReplicas. Mutually exclusive with numReplicas. Requires horizontal autoscaling to be enabled for the organization, unless autoscalingMode is omitted or \"vertical\" and minReplicas equals maxReplicas (an equal band is then an accepted vertical fixed count and needs no horizontal entitlement).",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 5
           },
           "idleScaling": {
@@ -34122,10 +34152,10 @@
             "deprecated": true
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 20 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
+            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 3
           },
           "idleScaling": {
@@ -34274,24 +34304,24 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 20 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 3
           },
           "minReplicas": {
             "description": "Minimum number of replicas for horizontal autoscaling. Present only when the service uses horizontal autoscaling.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 1
           },
           "maxReplicas": {
             "description": "Maximum number of replicas for horizontal autoscaling. Present only when the service uses horizontal autoscaling.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 5
           },
           "autoscalingMode": {
@@ -34461,21 +34491,21 @@
             "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\"). Mutually exclusive with minReplicas/maxReplicas. When switching to vertical (autoscalingMode \"vertical\") with numReplicas and no memory, the service's stored baseline per-replica memory is kept as the new vertical range. Please contact support to enable adjustment of numReplicas.",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 3
           },
           "minReplicas": {
             "description": "Minimum number of replicas. A minReplicas/maxReplicas band scales the replica count in horizontal autoscaling (autoscalingMode \"horizontal\"). Must be provided together with maxReplicas. Mutually exclusive with numReplicas. Requires horizontal autoscaling to be enabled for the service, unless autoscalingMode is omitted or \"vertical\" and minReplicas equals maxReplicas (an equal band is then an accepted vertical fixed count and needs no horizontal entitlement).",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 1
           },
           "maxReplicas": {
             "description": "Maximum number of replicas. A minReplicas/maxReplicas band scales the replica count in horizontal autoscaling (autoscalingMode \"horizontal\"). Must be provided together with minReplicas. Mutually exclusive with numReplicas. Requires horizontal autoscaling to be enabled for the service, unless autoscalingMode is omitted or \"vertical\" and minReplicas equals maxReplicas (an equal band is then an accepted vertical fixed count and needs no horizontal entitlement).",
             "type": "integer",
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 50,
             "example": 5
           },
           "idleScaling": {
@@ -34523,9 +34553,7 @@
       "ServiceClickhouseSettingsPatchRequest": {
         "properties": {
           "settings": {
-            "description": "JSON object of setting names to values. Example: {\"compatibility\": \"24.8\"}",
-            "type": "string",
-            "example": "{\"compatibility\": \"24.8\"}"
+            "$ref": "#/components/schemas/ServiceClickhouseSettingsMap"
           }
         },
         "required": [
@@ -35855,7 +35883,8 @@
       "basicAuth": {
         "type": "http",
         "scheme": "basic",
-        "description": "Use key ID and key secret obtained in ClickHouse Cloud console: https://clickhouse.com/docs/cloud/manage/openapi"
+        "description": "Use key ID and key secret obtained in ClickHouse Cloud console: https://clickhouse.com/docs/cloud/manage/openapi",
+        "x-permission-scopes": "The scope list of a `security` requirement holds ClickHouse Cloud API key permission ids (for example `control-plane:organization:view`), not OAuth scopes. OpenAPI has no field for API key permissions, so this is the closest available place. A key must hold every permission listed on an operation to call it; an operation with no scopes needs none beyond a valid key. Every operation declares at most one requirement object, always for this scheme, so the list is only ever conjunctive — alternative sets of permissions are never expressed."
       }
     }
   },
