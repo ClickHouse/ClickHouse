@@ -601,6 +601,13 @@ bool SpillingHashJoin::supportParallelJoin() const
     return concurrent_join != nullptr || (partitioned_join && partitioned_join->supportParallelJoin());
 }
 
+bool SpillingHashJoin::emitsSizedOutputBlocks() const
+{
+    /// Only the in-memory join that survived the build can promise sized blocks; after a switch the grace
+    /// join emits one bucket's share of each probe block, which does need the squashing.
+    return state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN && chosen_join && chosen_join->emitsSizedOutputBlocks();
+}
+
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     return supports_parallel_non_joined_blocks_processing;

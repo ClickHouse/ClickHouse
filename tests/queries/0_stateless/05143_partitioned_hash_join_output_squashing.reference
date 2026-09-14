@@ -1,0 +1,15 @@
+-- hash: no squashing after the join
+1	50
+-- partitioned_hash, bare join: the blocks pass through
+1	50
+1	50
+1	50
+1	50
+-- partitioned_hash inside the spilling wrapper, build kept in memory: still pass through
+1	50
+1	50
+-- switched to grace during the build: the bucket output is squashed again (one stream, so one block)
+1	50
+-- the squashing stays in the pipeline for the run-time decision
+1
+1

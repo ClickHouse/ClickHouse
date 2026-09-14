@@ -182,6 +182,11 @@ public:
     /// processing depends on the algorithm used.
     virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
+    /// Whether the joined blocks already respect `max_joined_block_size_*`, so the squashing that follows a
+    /// widened join (`supportParallelJoin`) would only copy them. Queried at probe time, after a wrapper that
+    /// may switch algorithms during the build has settled; the answer must not change after `onBuildPhaseFinish`.
+    virtual bool emitsSizedOutputBlocks() const { return false; }
+
     /// Get non-joined blocks for a specific stream partition
     /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
     /// Default: stream 0 returns everything, others return nothing

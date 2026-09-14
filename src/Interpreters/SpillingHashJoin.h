@@ -127,6 +127,7 @@ public:
     StepAnalysisReport getAnalysisReport() const override;
 
     bool supportParallelJoin() const override;
+    bool emitsSizedOutputBlocks() const override;
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 

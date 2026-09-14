@@ -124,6 +124,8 @@ public:
     /// concurrently. The delegated path inserts into one `HashJoin`, which is not thread-safe, and
     /// a build estimated small keeps the narrow pipeline on purpose.
     bool supportParallelJoin() const override { return !delegate_mode && !single_fill_thread; }
+    /// Probe blocks are joined whole, never scattered across slots, and the result caps its own blocks.
+    bool emitsSizedOutputBlocks() const override { return true; }
 
     /// One fill thread inserting as it goes: the rows live in the stored blocks and the table, never
     /// in fill lanes, so a spill switch drains the stored blocks.

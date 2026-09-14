@@ -219,7 +219,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            { return tag_tail(std::make_shared<JoinOutputSquashingTransform>(header, min_block_size_rows, min_block_size_bytes, join)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
