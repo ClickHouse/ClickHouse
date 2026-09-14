@@ -38,9 +38,10 @@ TIMESTAMP_PATTERN = re.compile(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+")
 # "Writing blob for path" or "were removed from S3" cannot silently empty the report.
 LIFECYCLE_LOGGERS = ("DiskObjectStorageTransaction", "deleteFileFromS3")
 
-# The S3 key alphabet, so a key flanked by anything else (or by a line edge) is a whole key
-# and not the head of a longer one. The "," "[" "]" and space the messages use are absent.
-KEY_CHARACTERS = r"A-Za-z0-9._/=+:@!*'()-"
+# The characters the emit sites put on either side of a key: "key <K>," / "[<K1>, <K2>]" /
+# "path <K> was removed" / "for blob <K>"<EOL>. A closed set, unlike the key alphabet, so a
+# key character nobody foresaw cannot read as a boundary.
+KEY_SEPARATORS = " ,[]"
 
 LOG_FILE_PATTERN = "clickhouse-server*.log"
 
@@ -90,17 +91,20 @@ def _in_time_order(lines, total):
 class _KeyLifecycle:
     """One key's retained lines, kept as they arrive so the caps bound memory too.
 
-    A line belongs to the key when the key occurs in it delimited on both sides, which is
-    what keeps a key out of the group of a key that merely contains it. A line that names
-    the key with no delimiter is kept separately and reported only when there is no
-    delimited line at all: a reworded message must not empty the group silently.
+    A line belongs to the key when a separator (or a line edge) flanks the key on both
+    sides, which is what keeps a key out of the group of a key that merely contains it. A
+    line that names the key with no separator is kept separately and reported only when
+    there is no separated line at all: a reworded message must not empty the group silently.
     """
 
     __slots__ = ("key", "pattern", "lines", "total", "loose", "loose_total")
 
     def __init__(self, key):
         self.key = key
-        self.pattern = re.compile(f"(?<![{KEY_CHARACTERS}]){re.escape(key)}(?![{KEY_CHARACTERS}])")
+        # A negated complement, so a line edge satisfies the lookaround as a separator does.
+        self.pattern = re.compile(
+            f"(?<![^{re.escape(KEY_SEPARATORS)}]){re.escape(key)}(?![^{re.escape(KEY_SEPARATORS)}])"
+        )
         self.lines = []
         self.total = 0
         self.loose = []
@@ -113,8 +117,9 @@ class _KeyLifecycle:
             self.total += 1
             if len(self.lines) < MAX_LINES_PER_KEY:
                 self.lines.append(line)
-            # The fallback is unreachable once a delimited line exists.
+            # The fallback is unreachable once a separated line exists.
             self.loose.clear()
+            self.loose_total = 0
         elif not self.total:
             self.loose_total += 1
             if len(self.loose) < MAX_LINES_PER_KEY:
@@ -157,9 +162,9 @@ def collect_lifecycle_lines(keys, logs):
         returncode = grep.wait()
         grep_errors.seek(0)
         errors_text = grep_errors.read()
-    # grep exits 1 for "no match" and above 1 when a log could not be read, which would
-    # otherwise be indistinguishable from a key having no lifecycle.
-    if returncode > 1:
+    # grep exits 0 for a match and 1 for none; anything else - 2 for an unreadable log, a
+    # NEGATIVE value when a signal killed it - must not read as "this key has no lifecycle".
+    if returncode not in (0, 1):
         raise RuntimeError(
             f"grep exited {returncode} over {len(logs)} log file(s): {errors_text.strip()}"
         )

@@ -10,6 +10,8 @@ nothing to show must say so rather than print nothing.
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.s3_key_lifecycle import MAX_EXPANDED_KEYS, report_for
@@ -153,6 +155,53 @@ def test_a_key_nested_in_a_longer_key_is_not_attributed_to_it(tmp_path):
     assert len(body) == 1, body
     assert f"Object with path {part} was removed" in body[0], body
     assert "data.bin" not in "\n".join(body), body
+
+
+def test_a_key_diverging_on_an_escaped_character_is_not_reported_as_its_own(tmp_path):
+    # Sibling paths `x` and `x.y` become the keys `x` and `x%2Ey`: an object key is the caller
+    # path put through `escapeForFileName`, which emits `%XX` for every byte outside
+    # [A-Za-z0-9_]. `%` is a key character no alphabet enumerates, so the boundary has to come
+    # from the separators the messages use, and the longer key's lines have to arrive under the
+    # substring note rather than as this key's own lifecycle.
+    part = "test/hbh/store/abc/x"
+    longer = f"{part}%2Ey/data.bin"
+    (tmp_path / "clickhouse-server.final.log").write_text(
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q-0}} <Test> DiskObjectStorageTransaction: "
+        f"Writing blob for path all_1_1_0/data.bin, key {longer}, size 1\n"
+        f"2026.09.14 12:00:02.000000 [ 1002 ] {{}} <Debug> deleteFileFromS3: "
+        f"Objects with paths [{longer}] were removed from S3\n",
+        encoding="utf-8",
+    )
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(_MATCH.replace(_KEY, part) + "\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), part)
+
+    # The note is the whole difference between honest and misleading here: the two lines on
+    # their own read as this key's upload and delete.
+    assert len(body) == 3, body
+    assert body[0].startswith("matched as a substring only"), body
+    assert any("Writing blob for path" in line for line in body[1:]), body
+    assert any("were removed from S3" in line for line in body[1:]), body
+
+
+def test_a_signal_killed_scan_raises_instead_of_reporting_no_lifecycle(tmp_path, monkeypatch):
+    # The scan runs at the end of a stress job over the largest log set CI produces, where an
+    # OOM kill and the runner's TERM are the ordinary deaths. A signal leaves `Popen.wait()` a
+    # negative status and the output empty, which is exactly what a key with no lifecycle looks
+    # like, so it has to raise: the caller turns a raise into its "collection FAILED" marker.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_grep = fake_bin / "grep"
+    # The key list is drained first, so the death is the signal and not a broken pipe.
+    fake_grep.write_text("#!/bin/sh\ncat > /dev/null\nkill -TERM $$\n", encoding="utf-8")
+    fake_grep.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+
+    matches = _logs(tmp_path)
+
+    with pytest.raises(RuntimeError, match=r"grep exited -\d+"):
+        report_for(matches, tmp_path)
 
 
 def test_matches_with_no_extractable_key_say_so_instead_of_printing_nothing(tmp_path):
