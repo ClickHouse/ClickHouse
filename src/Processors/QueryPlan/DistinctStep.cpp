@@ -11,7 +11,7 @@
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -237,11 +237,10 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct && external_threshold
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty())
     {
-        const auto shared_tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
-        if (!shared_tmp_data)
+        if (!build_settings.temp_data_on_disk)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
 
-        auto tmp_data_on_disk = shared_tmp_data->childScope(
+        auto tmp_data_on_disk = build_settings.temp_data_on_disk->childScope(
             {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
              .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
              .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
