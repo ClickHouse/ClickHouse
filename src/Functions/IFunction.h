@@ -424,6 +424,10 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+    /// Determinism of the form taking `number_of_arguments` arguments: a variadic resolver can dispatch
+    /// to overloads that differ (`year()` reads the wall clock, `year(<date>)` does not). Callers that
+    /// hold only an unresolved AST must ask this rather than `isDeterministic()`.
+    virtual bool isDeterministicForArity(size_t /*number_of_arguments*/) const { return isDeterministic(); }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }

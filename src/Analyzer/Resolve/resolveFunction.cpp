@@ -211,7 +211,8 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
             if (function->getFunctionName() != "count" || !inside_safe_count_scalar_subquery)
                 return true;
         }
-        else if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+        else if (!resolver->isDeterministicForArity(function->getArguments().getNodes().size())
+                 || !resolver->isDeterministicInScopeOfQuery())
             return true;
     }
 
@@ -3070,7 +3071,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
-        if (function && !function->isDeterministic() && !function->isStateful()
+        if (function && !function->isDeterministicForArity(argument_columns.size()) && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
@@ -3412,7 +3413,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     result_type->getName(),
                     column->getName());
 
-            const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
+            const bool is_deterministic
+                = all_arguments_are_deterministic && function->isDeterministicForArity(argument_columns.size());
 
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);

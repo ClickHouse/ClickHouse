@@ -35,3 +35,22 @@ SELECT
     (SELECT rows FROM (EXPLAIN ESTIMATE SELECT count() FROM 03480_year_tbl WHERE year(d) = 2005))
   < (SELECT count() FROM 03480_year_tbl) AS pruned;
 DROP TABLE 03480_year_tbl;
+
+SELECT '-- year(<date>) is cacheable like toYear(<date>), year() is not';
+DROP TABLE IF EXISTS 03480_year_qc;
+CREATE TABLE 03480_year_qc (d Date) ENGINE = MergeTree ORDER BY d;
+INSERT INTO 03480_year_qc VALUES ('2020-05-05'), ('2020-06-06');
+SELECT count() FROM 03480_year_qc WHERE toYear(d) = 2020 SETTINGS use_query_cache = 1;
+SELECT count() FROM 03480_year_qc WHERE YEAR(d) = 2020 SETTINGS use_query_cache = 1;
+SELECT year() SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+DROP TABLE 03480_year_qc;
+
+SELECT '-- a pending mutation on year(<date>) does not break a read with apply_mutations_on_fly';
+DROP TABLE IF EXISTS 03480_year_mut;
+CREATE TABLE 03480_year_mut (d Date, v UInt32) ENGINE = MergeTree ORDER BY d;
+INSERT INTO 03480_year_mut VALUES ('2020-05-05', 1), ('2021-06-06', 2);
+SYSTEM STOP MERGES 03480_year_mut;
+ALTER TABLE 03480_year_mut UPDATE v = v + 1 WHERE YEAR(d) = 2020 SETTINGS mutations_sync = 0;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = '03480_year_mut' AND NOT is_done AND NOT is_killed;
+SELECT sum(v) FROM 03480_year_mut SETTINGS apply_mutations_on_fly = 1;
+DROP TABLE 03480_year_mut;

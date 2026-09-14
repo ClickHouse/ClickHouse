@@ -161,7 +161,8 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr co
         auto resolver = FunctionFactory::instance().tryGet(func->name, context);
         if (resolver)
         {
-            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+            const size_t number_of_arguments = func->arguments ? func->arguments->children.size() : 0;
+            if (!resolver->isDeterministicForArity(number_of_arguments) || !resolver->isDeterministicInScopeOfQuery())
                 return true;
         }
         else

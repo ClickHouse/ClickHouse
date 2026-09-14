@@ -81,7 +81,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return to_year->getArgumentsThatAreAlwaysConstant(); }
+    /// `system.functions` has one row per name and cannot express arity, so the arity-blind answer stays
+    /// the conservative one: the zero-argument form reads the wall clock.
     bool isDeterministic() const override { return false; }
+    bool isDeterministicForArity(size_t number_of_arguments) const override { return number_of_arguments != 0; }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {

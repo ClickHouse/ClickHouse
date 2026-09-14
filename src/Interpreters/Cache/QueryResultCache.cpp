@@ -99,7 +99,8 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
-                if (!func->isDeterministic())
+                const size_t number_of_arguments = function->arguments ? function->arguments->children.size() : 0;
+                if (!func->isDeterministicForArity(number_of_arguments))
                     data.has_non_deterministic_functions = true;
                 return;
             }

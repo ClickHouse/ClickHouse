@@ -9920,7 +9920,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             if (!FunctionFactory::instance().has(function->name))
                 return true;
 
-            if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+            const auto resolver = FunctionFactory::instance().get(function->name, query_context);
+            const size_t number_of_arguments = function->arguments ? function->arguments->children.size() : 0;
+            if (!resolver->isDeterministicForArity(number_of_arguments))
                 return true;
         }
 

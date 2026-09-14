@@ -173,12 +173,13 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr co
     {
         /// Use FunctionFactory metadata instead of a hardcoded blacklist.
         /// This automatically covers all current and future non-deterministic functions.
-        /// IFunctionOverloadResolver provides isDeterministic() and isDeterministicInScopeOfQuery()
+        /// IFunctionOverloadResolver provides isDeterministicForArity() and isDeterministicInScopeOfQuery()
         /// without needing to resolve argument types.
         auto resolver = FunctionFactory::instance().tryGet(func->name, context);
         if (resolver)
         {
-            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+            const size_t number_of_arguments = func->arguments ? func->arguments->children.size() : 0;
+            if (!resolver->isDeterministicForArity(number_of_arguments) || !resolver->isDeterministicInScopeOfQuery())
                 return true;
         }
         else

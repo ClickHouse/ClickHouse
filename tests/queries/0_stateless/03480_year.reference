@@ -15,3 +15,9 @@ year	0
 -- year(<key>) keeps toYear index/monotonicity analysis (same granule pruning)
 1
 1	1
+-- year(<date>) is cacheable like toYear(<date>), year() is not
+2
+2
+-- a pending mutation on year(<date>) does not break a read with apply_mutations_on_fly
+1
+4

@@ -262,7 +262,7 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 /// additional_table_filters. On the normal StorageView path these are coordinator-side filters;
 /// the pushdown evaluates them on each shard, so a non-deterministic / server-local function in
 /// them (hostName, serverUUID, rand, now, ...) would change results once the optimization fires.
-/// A function is unsafe when its builder reports isDeterministic() == false (no constant-folding
+/// A function is unsafe when its builder reports isDeterministicForArity() == false (no constant-folding
 /// has happened at the AST stage, so server-local constants are still ASTFunction nodes here).
 bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & context)
 {
@@ -274,7 +274,8 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
         if (!function->name.empty() && function->name != "lambda")
         {
             auto builder = FunctionFactory::instance().tryGet(function->name, context);
-            if (!builder || !builder->isDeterministic())
+            const size_t number_of_arguments = function->arguments ? function->arguments->children.size() : 0;
+            if (!builder || !builder->isDeterministicForArity(number_of_arguments))
                 return true;
         }
     }

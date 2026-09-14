@@ -423,10 +423,11 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             && func->arguments && func->arguments->children.size() >= 2)
             return true;
 
+        const size_t number_of_arguments = func->arguments ? func->arguments->children.size() : 0;
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
         {
             if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
+                if (!resolver->isDeterministicForArity(number_of_arguments))
                     return true;
             if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
                 /// SQL UDF determinism is not introspectable — treat as non-deterministic.
