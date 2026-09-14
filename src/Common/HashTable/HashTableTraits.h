@@ -19,8 +19,16 @@ struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
 {
 };
 
-template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
-struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+template <
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator,
+    template <typename...> typename ImplTable,
+    size_t bits_for_bucket>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket>>
+    : std::true_type
 {
 };
 
@@ -29,8 +37,8 @@ struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
 {
 };
 
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Ts...>> : std::true_type
+template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, size_t bits_for_bucket>
+struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, bits_for_bucket>> : std::true_type
 {
 };
 
@@ -39,10 +47,9 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
-{
-};
+/// There is deliberately no specialization for a bare `TwoLevelHashTable`. The one that used to be here
+/// could never match, because a type pack cannot bind the bucket-count parameter, so the nullable two-level
+/// aggregation variants built on it never took a size hint. Matching it would change that.
 
 template <template <typename> typename Method, typename Base>
 struct HasConstructorOfNumberOfElements<Method<Base>> : HasConstructorOfNumberOfElements<Base>
