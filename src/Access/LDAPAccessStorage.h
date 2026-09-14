@@ -54,17 +54,6 @@ private: // IAccessStorage implementations.
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
-    /// Lookup structures pre-built from the `groups` allow-list of one `role_mapping` section.
-    struct GroupAllowList
-    {
-        /// ASCII-lower-cased plain group name -> the name as configured.
-        std::map<String, String> plain_groups;
-        /// Normalized group DN (`LDAPClient::normalizeDN`) -> the `rdn_attribute` value as spelled in the configured DN.
-        std::map<String, String> dn_groups;
-    };
-
-    static GroupAllowList buildGroupAllowList(const LDAPClient::RoleSearchParams & role_mapping);
-
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
@@ -76,7 +65,6 @@ private: // IAccessStorage implementations.
     AccessControl & access_control;
     String ldap_server_name;
     LDAPClient::RoleSearchParamsList role_search_params;
-    std::vector<GroupAllowList> group_allow_lists;              // parallel to role_search_params
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times
     mutable std::map<String, LDAPClient::SearchResultsList> users_external_roles; // user name -> LDAPClient::SearchResultsList (most recently retrieved and processed)
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)

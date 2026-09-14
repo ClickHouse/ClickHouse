@@ -13,7 +13,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <optional>
-#include <set>
 #include <utility>
 
 namespace DB
@@ -344,10 +343,6 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
         Poco::Util::AbstractConfiguration::Keys group_keys;
         config.keys(prefix + ".groups", group_keys);
 
-        /// Normalized forms seen so far: ASCII-lower-cased plain names and `normalizeDN` results of DNs.
-        /// The two kinds cannot collide because only the latter contain `=`.
-        std::set<String> normalized_groups;
-
         for (const auto & key : group_keys)
         {
             if (key != "group" && !key.starts_with("group["))
@@ -357,30 +352,56 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
             if (group.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'group' entry in '{}.groups' section", prefix);
 
-            String normalized_group;
+            /// The role name candidate `prefix` is stripped from: the plain name itself, or the `rdn_attribute`
+            /// value of a DN-form entry. The lookup maps are filled here, where the normalized forms are computed;
+            /// duplicates surface as failed insertions (the two maps cannot collide because only DNs contain `=`).
+            String candidate;
+            bool inserted = false;
             if (LDAPClient::RoleSearchParams::isGroupDN(group))
             {
                 if (params.rdn_attribute.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Group '{}' in '{}.groups' section is a DN, which requires 'rdn_attribute' to be set", group, prefix);
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "which requires 'rdn_attribute' to be set", group, prefix);
 
                 const auto normalized_dn = LDAPClient::normalizeDN(group);
                 if (!normalized_dn)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group '{}' in '{}.groups' section is not a valid DN", group, prefix);
-
-                if (!LDAPClient::extractRDNValue(group, params.rdn_attribute))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Group DN '{}' in '{}.groups' section has no '{}' RDN", group, prefix, params.rdn_attribute);
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "but it is not a valid DN", group, prefix);
 
-                normalized_group = *normalized_dn;
+                const auto rdn_value = LDAPClient::extractRDNValue(group, params.rdn_attribute);
+                if (!rdn_value)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section contains '=' and is therefore treated as a DN, "
+                                    "but it has no '{}' RDN", group, prefix, params.rdn_attribute);
+
+                candidate = *rdn_value;
+                inserted = params.dn_groups.emplace(*normalized_dn, candidate).second;
             }
             else
             {
-                normalized_group = toLowerCopyASCII(group);
+                candidate = group;
+                inserted = params.plain_groups.emplace(toLowerCopyASCII(group), group).second;
             }
 
-            if (!normalized_groups.emplace(std::move(normalized_group)).second)
+            if (!inserted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate group '{}' in '{}.groups' section", group, prefix);
+
+            /// The role name is the candidate with `prefix` removed (see `LDAPAccessStorage::mapExternalRolesNoLock`),
+            /// so an entry that does not start with the prefix, or has nothing left after it, can never grant a role.
+            /// Such an entry is a dead configuration; reject it instead of silently ignoring it at every login.
+            if (!(candidate.size() > params.prefix.size() && candidate.starts_with(params.prefix)))
+            {
+                if (params.prefix.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Group '{}' in '{}.groups' section has an empty '{}' RDN value and can never be mapped to a role",
+                                    group, prefix, params.rdn_attribute);
+
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Group '{}' in '{}.groups' section does not start with the configured prefix '{}' or is equal to it, "
+                                "so it can never be mapped to a role", group, prefix, params.prefix);
+            }
 
             params.groups.push_back(group);
         }

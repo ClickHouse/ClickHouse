@@ -12,6 +12,7 @@
 #endif
 
 #include <chrono>
+#include <map>
 #include <optional>
 #include <set>
 #include <vector>
@@ -57,8 +58,15 @@ public:
         /// extraction; the role name is then derived from the `rdn_attribute` value of the configured DN.
         /// Any other entry is a plain group name compared ASCII-case-insensitively against the value after
         /// extraction; the configured spelling wins. When the list is non-empty, values matching no entry
-        /// are ignored. `prefix` is stripped afterwards in both cases.
+        /// are ignored. `prefix` is stripped afterwards in both cases, so every entry must start with it.
+        /// Kept as configured for `updateHash` and `system.user_directories`; the lookups use the maps below.
         std::vector<String> groups;
+
+        /// Lookup maps derived from `groups` by `parseLDAPRoleSearchParams`, the only producer of this struct.
+        /// ASCII-lower-cased plain group name -> the name as configured.
+        std::map<String, String> plain_groups;
+        /// Normalized group DN (`LDAPClient::normalizeDN`) -> the `rdn_attribute` value as spelled in the configured DN.
+        std::map<String, String> dn_groups;
 
         static bool isGroupDN(const String & group) { return group.find('=') != String::npos; }
 
