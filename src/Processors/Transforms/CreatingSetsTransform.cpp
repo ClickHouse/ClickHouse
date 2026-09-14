@@ -241,8 +241,6 @@ void CreatingSetsTransform::consume(Chunk chunk)
     {
         if (!set_and_key->set->insertFromBlock(block.getColumnsWithTypeAndName()))
             done_with_set = true;
-
-        FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_after_first_chunk);
     }
 
     if (!done_with_table)
@@ -257,6 +255,8 @@ void CreatingSetsTransform::consume(Chunk chunk)
                 ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
             done_with_table = true;
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_after_first_chunk);
 
     if (done_with_set && done_with_table)
         finishConsume();
