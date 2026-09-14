@@ -148,7 +148,7 @@ protected:
 
     /// Guards this query's transition between waiting for load jobs and not waiting: the first
     /// blocked thread registers the query in the waiting counters, the last one to wake up
-    /// unregisters it. Taken only by a thread that is about to block in `AsyncLoader::wait`.
+    /// unregisters it. Taken only when a thread enters or leaves a wait, never during query admission.
     std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
     UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
