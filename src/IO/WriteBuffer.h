@@ -150,6 +150,11 @@ private:
         return exception_level < std::uncaught_exceptions();
     }
 
+    /// Out of line, like `ReadBuffer::throwReadAfterEOF`: building the exception inside `write` would
+    /// give it stack locals, and a stack canary with them, on every byte written.
+    [[noreturn]] static void throwWriteToFinalizedBuffer();
+    [[noreturn]] static void throwWriteToCanceledBuffer(int code);
+
     int exception_level = std::uncaught_exceptions();
 
     /// Number of flushes for debugging/assertions

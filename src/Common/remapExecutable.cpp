@@ -9,6 +9,7 @@
 
 #include <emmintrin.h>
 
+#include <base/defines.h>
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -47,8 +48,6 @@ namespace
   * refer to the canary instead. `-fstack-protector-strong` does not instrument either of them today
   * (neither has locals), but the attribute pins that down rather than leaving it to the heuristic.
   */
-#define NO_STACK_PROTECTOR __attribute__((no_stack_protector))
-
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
 NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) int64_t our_syscall(...)
 {

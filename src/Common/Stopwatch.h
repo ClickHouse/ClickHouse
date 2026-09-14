@@ -24,7 +24,12 @@ static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC_RAW;
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 #endif
 
-inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
+/// `clock_gettime` needs the address of a `timespec`, and that is enough for `-fstack-protector-strong`
+/// to instrument the function. There is no way to drop the buffer, and a canary guards nothing here: the
+/// kernel writes a fixed 16 bytes into a slot the caller owns. This is on the path of every `Stopwatch`
+/// and every profile event, so opt out explicitly. `clock_gettime_ns_adjusted` needs the same, because
+/// inlining an uninstrumented callee still leaves the caller instrumented.
+NO_STACK_PROTECTOR inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 {
     struct timespec ts{};
     if (0 != clock_gettime(clock_type, &ts))
@@ -35,7 +40,7 @@ inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 /// Takes previously returned value and returns it again if time stepped back for some reason.
 ///
 /// You should use this if OS does not support CLOCK_MONOTONIC_RAW
-inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
+NO_STACK_PROTECTOR inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 {
 #ifdef CLOCK_MONOTONIC_RAW
     if (likely(clock_type == CLOCK_MONOTONIC_RAW))
