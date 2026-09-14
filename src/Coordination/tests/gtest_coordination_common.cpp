@@ -74,7 +74,7 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t /*zxid*/, cons
     auto & request_for_session = batch.requests.emplace_back();
     request_for_session.session_id = session_id;
     request_for_session.request = request;
-    auto buffers = DB::KeeperStateMachine::serializeRequestBatch(batch, /*use_batched_format=*/false);
+    auto buffers = DB::KeeperStateMachine::serializeRequestBatch(batch, /*use_batched_format=*/ thread_local_rng() % 2 == 0);
     return nuraft::cs_new<nuraft::log_entry>(term, buffers.at(0));
 }
 
