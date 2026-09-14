@@ -37,6 +37,8 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/copyS3File.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -72,6 +74,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 }
@@ -2156,6 +2159,93 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
 }
+
+/// The `plain_rewritable` metadata operations name the generation of a source blob before they copy
+/// it (`pinToTheGenerationThatIsThereNow`) and refuse one whose size is not the one the metadata of
+/// the file records (`refuseAGenerationOfAnotherSize`). This is exercised here on an `S3ObjectStorage`
+/// over the mock endpoint, which keeps a generation per key and evaluates
+/// `x-amz-copy-source-if-match` on the copies (the Azure counterpart lives in `gtest_azure_read_buffer.cpp`).
+class S3PlainRewritablePinningTest : public CopyS3FileRoutingTest
+{
+protected:
+    std::shared_ptr<S3ObjectStorage> objectStorageOverTheSameStore()
+    {
+        /// A client of its own over the very same in-memory store, so the objects put through `client`
+        /// (and the generations `generationAt` reports) are the ones the object storage sees.
+        std::unique_ptr<S3::Client> storage_client = std::make_unique<MockS3::Client>(client->store);
+        S3::URI uri;
+        uri.bucket = bucket;
+        return std::make_shared<S3ObjectStorage>(
+            std::move(storage_client), std::make_unique<S3Settings>(), std::move(uri), S3Capabilities{},
+            ObjectStorageKeyGeneratorPtr{}, /* disk_name */ "s3_plain_rewritable");
+    }
+};
+
+/// One `HEAD` names the generation that is at the key together with its size, and a generation of the
+/// recorded size passes the check.
+TEST_F(S3PlainRewritablePinningTest, NamesTheGenerationAndItsSize)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+
+    EXPECT_EQ(source.remote_path, "src");
+    EXPECT_EQ(source.etag, generationAt("src"));
+    EXPECT_EQ(source.bytes_size, 100u);
+    EXPECT_NO_THROW(refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"));
+}
+
+/// The blob was written over out of band with one of another size after the file was recorded: the
+/// generation that is at the key is not the file the metadata describes, and it is refused before
+/// anything is copied.
+TEST_F(S3PlainRewritablePinningTest, AGenerationOfAnotherSizeIsRefused)
+{
+    putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).PutObject("src", String(200, 'x'));
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+    EXPECT_EQ(source.bytes_size, 200u);
+
+    const auto error_code = errorCodeOf([&] { refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::FILE_CHANGED_DURING_READ);
+}
+
+/// The blob is written over between the `HEAD` that named it and the copy: the copy carries the named
+/// generation as `x-amz-copy-source-if-match`, the endpoint refuses it, and nothing is copied - the
+/// target is neither recorded with the old size nor left holding the new generation.
+TEST_F(S3PlainRewritablePinningTest, ACopyOfAReplacedGenerationIsRefused)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+    ASSERT_NO_THROW(refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"));
+
+    client->store->GetBucketStore(bucket).PutObject("src", String(200, 'x'));
+    ASSERT_NE(generationAt("src"), source.etag);
+
+    const auto error_code = errorCodeOf(
+        [&] { object_storage->copyObject(source, StoredObject("dst"), ReadSettings{}, WriteSettings{}); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// An endpoint that reports no `ETag` for the blob cannot pin anything, and the move is refused rather
+/// than made blind.
+TEST_F(S3PlainRewritablePinningTest, AnObjectWithoutAnETagCannotBePinned)
+{
+    putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).object_etags.erase("src");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const auto error_code = errorCodeOf([&] { pinToTheGenerationThatIsThereNow(*object_storage, "src"); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_ERROR);
+}
+
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
     setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());

@@ -746,21 +746,37 @@ void BackupWriterS3::copyFileFromDisk(
             /// (and one without it does not pollute the cache), and on a disk with generated object keys
             /// the read is pinned by the key itself - such a disk never writes an object in place, a file
             /// rewritten on it is a new object under a new key, so the object under `src_key` can only
-            /// stay as it was measured above or be gone. Only a `plain` or `plain_rewritable` disk names
-            /// its objects by path and rewrites them in place, and its read through the disk would be
-            /// unpinned; that one reads the object itself, with the generation named above as `If-Match`
-            /// on every `GET`. The object holds exactly the bytes the disk read would deliver: an
-            /// encrypted file is copied in its encrypted form, which is the object as it is stored.
+            /// stay as it was measured above or be gone. The disk read, though, resolves the objects of
+            /// `src_path` from the metadata of the disk when the buffer is built, not when `src_key` was
+            /// taken above, and a file rewritten in between names another key by then: the buffer would
+            /// read an object that was never measured nor named. So the metadata is consulted once more
+            /// after the buffer is built. While it still names `src_key`, the buffer holds that object (a
+            /// rewrite after this point cannot reach a buffer already built); a file that names another
+            /// key was rewritten, and its backup is refused the same way a replaced object is.
+            /// Only a `plain` or `plain_rewritable` disk names its objects by path and rewrites them in
+            /// place, and its read through the disk would be unpinned; that one reads the object itself,
+            /// with the generation named above as `If-Match` on every `GET`. The object holds exactly the
+            /// bytes the disk read would deliver: an encrypted file is copied in its encrypted form, which
+            /// is the object as it is stored.
             auto create_read_buffer = [&, this]() -> std::unique_ptr<SeekableReadBuffer>
             {
                 if (!src_disk->isPlain())
                 {
                     LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 
-                    if (copy_encrypted)
-                        return src_disk->readEncryptedFile(src_path, read_settings);
+                    std::unique_ptr<SeekableReadBuffer> buffer = copy_encrypted
+                        ? src_disk->readEncryptedFile(src_path, read_settings)
+                        : src_disk->readFile(src_path, read_settings);
 
-                    return src_disk->readFile(src_path, read_settings);
+                    const Strings blob_path_now = src_disk->getBlobPath(src_path);
+                    if (blob_path_now.size() != 2 || blob_path_now[0] != src_key || blob_path_now[1] != src_bucket)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "File {} on disk {} was rewritten after its object {}/{} was measured: it is not stored as that "
+                            "object any more, so the object measured is not the file being backed up",
+                            src_path, src_disk->getName(), src_bucket, src_key);
+
+                    return buffer;
                 }
 
                 LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through a read of the object{}",

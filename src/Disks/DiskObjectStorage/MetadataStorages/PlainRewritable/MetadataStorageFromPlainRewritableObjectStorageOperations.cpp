@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int S3_ERROR;
     extern const int FILE_CHANGED_DURING_READ;
 };
 
@@ -54,7 +55,8 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
 {
     StoredObject object(remote_path);
 
-    if (object_storage.getType() != ObjectStorageType::Azure)
+    const auto type = object_storage.getType();
+    if (type != ObjectStorageType::Azure && type != ObjectStorageType::S3)
         return object;
 
     auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
@@ -74,10 +76,10 @@ StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, c
     /// The endpoint reports no generation for the blob, so nothing here can be pinned: the copy
     /// would take whatever is there when it runs and the delete would remove whatever is there when
     /// it runs. Refuse the move instead of losing a rewritten file, the same way `copyObject` and
-    /// the `ObjectStorageQueue` post-processing refuse an unpinnable Azure object.
+    /// the `ObjectStorageQueue` post-processing refuse an unpinnable object.
     if (metadata->etag.empty())
         throw Exception(
-            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            type == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR,
             "Blob {} was not moved: the endpoint reports no `ETag` for it, so the move cannot be "
             "pinned to the generation of the blob that is being moved",
             remote_path.string());

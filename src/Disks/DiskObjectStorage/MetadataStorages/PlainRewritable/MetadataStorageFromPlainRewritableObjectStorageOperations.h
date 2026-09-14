@@ -24,13 +24,16 @@ namespace DB
 /// `HEAD` of its own any more), and so is the delete: both transfer and remove exactly the
 /// generation named here, or fail with `FILE_CHANGED_DURING_READ` and leave the file in place.
 ///
-/// This is done for Azure only, the object storage whose delete honours the generation
-/// (`AzureObjectStorage::removeObjectImpl` sends it as `If-Match`); for the others the object is
-/// returned as it was and not a single extra request is made. An Azure endpoint that reports no
-/// generation for the blob cannot be pinned to one at all, and the move is refused with
-/// `AZURE_BLOB_STORAGE_ERROR` rather than made blind; a blob that the `HEAD` does not find at all
-/// is refused with `FILE_DOESNT_EXIST` for the same reason, because a blob recreated after that
-/// `HEAD` is a generation this operation has never named.
+/// This is done for Azure and S3, the object storages whose `copyObject` honours the generation of
+/// the source (`If-Match` on the Azure copy and on every `GET` of its fallback,
+/// `x-amz-copy-source-if-match` on the S3 `CopyObject` and `UploadPartCopy`). On Azure the delete
+/// honours it too (`AzureObjectStorage::removeObjectImpl` sends it as `If-Match`); an S3 delete is
+/// by key. For the other object storages the object is returned as it was and not a single extra
+/// request is made. An endpoint that reports no generation for the blob cannot be pinned to one at
+/// all, and the move is refused with `AZURE_BLOB_STORAGE_ERROR` or `S3_ERROR` rather than made
+/// blind; a blob that the `HEAD` does not find at all is refused with `FILE_DOESNT_EXIST` for the
+/// same reason, because a blob recreated after that `HEAD` is a generation this operation has never
+/// named.
 StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
 /// A generation named by `pinToTheGenerationThatIsThereNow` carries its size, and the metadata of a
