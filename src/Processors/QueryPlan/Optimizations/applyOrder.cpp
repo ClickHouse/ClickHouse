@@ -83,9 +83,6 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             return *properties;
         }
 
-        if (optimization_settings.parallel_distinct && !distinct_step->isPreliminary())
-            distinct_step->enableParallelDistinct();
-
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)
             return *properties;
