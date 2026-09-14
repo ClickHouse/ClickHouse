@@ -192,7 +192,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     /// Mostly waiting instead of working: yellow instead of green.
     bool stalled = waited > cpu_usage;
-    const char * bar_overlay_color = stalled ? "\033[30;43m" : "\033[30;42m";
 
     if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
     {
@@ -350,9 +349,26 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
                         if (render_profiling_msg_at_left)
                         {
-                            /// Render profiling_msg at left on top of the progress bar.
+                            /// Render profiling_msg at left on top of the progress bar. The annotation
+                            /// covers the first cells of the bar, so its background follows the same
+                            /// history as the cells it hides, instead of the current state only: a
+                            /// prefix that was throttled stays yellow under the text, too.
+                            auto colored_overlay = [&]()
+                            {
+                                WriteBufferFromOwnString out;
+                                size_t overlay_cells = profiling_msg.size();
+                                for (size_t i = 0; i < bar_segments.size(); ++i)
+                                {
+                                    size_t begin = std::min(overlay_cells, cell_of(bar_segments[i].first));
+                                    size_t end = i + 1 < bar_segments.size() ? std::min(overlay_cells, cell_of(bar_segments[i + 1].first)) : overlay_cells;
+                                    if (begin < end)
+                                        out << (bar_segments[i].second ? "\033[30;43m" : "\033[30;42m")
+                                            << profiling_msg.substr(begin, end - begin) << "\033[0m";
+                                }
+                                return out.str();
+                            };
 
-                            message << bar_overlay_color << profiling_msg << "\033[0m"
+                            message << colored_overlay()
                                 << colored_bar(profiling_msg.size())
                                 << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
                         }
