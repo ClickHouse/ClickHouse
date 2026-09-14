@@ -22,6 +22,12 @@ ${CLICKHOUSE_CLIENT} --query "GRANT TABLE ENGINE ON Memory TO ${target}"
 
 CLIENT_AS_CALLER="${CLICKHOUSE_CLIENT} --user ${caller} --password password"
 
+# The test database may be reused across runs, so only the objects of this test are counted, and they
+# are dropped both before and after the run.
+tables="'t_execute_as', 't_nested_1', 't_nested_2'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_execute_as, ${CLICKHOUSE_DATABASE}.t_nested_1, ${CLICKHOUSE_DATABASE}.t_nested_2"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db"
+
 echo "-- target has no CREATE TABLE privilege"
 ${CLIENT_AS_CALLER} --query "
     EXECUTE AS ${target} CREATE TABLE ${CLICKHOUSE_DATABASE}.t_execute_as (x UInt8) ENGINE = Memory
@@ -41,7 +47,7 @@ ${CLIENT_AS_CALLER} --query "
 " 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "ALLOWED"
 
 echo "-- nothing was created"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN (${tables})"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${CLICKHOUSE_DATABASE}_db'"
 
 echo "-- once the target has the privilege, EXECUTE AS still works"
@@ -49,6 +55,7 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TABLE ON ${CLICKHOUSE_DATABASE}.* TO 
 ${CLIENT_AS_CALLER} --query "
     EXECUTE AS ${target} CREATE TABLE ${CLICKHOUSE_DATABASE}.t_execute_as (x UInt8) ENGINE = Memory
 "
-${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' ORDER BY name"
+${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN (${tables}) ORDER BY name"
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.t_execute_as"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${caller}, ${target}"
