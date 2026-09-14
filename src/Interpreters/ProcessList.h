@@ -148,7 +148,7 @@ protected:
 
     /// Guards this query's transition between waiting for load jobs and not waiting: the first
     /// blocked thread registers the query in the waiting counters, the last one to wake up
-    /// unregisters it. Taken only by a thread that is about to block in `AsyncLoader::wait()`.
+    /// unregisters it. Taken only by a thread that is about to block in `AsyncLoader::wait`.
     std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
     UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
@@ -213,7 +213,7 @@ protected:
     bool is_internal;
 
     /// `isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port`, as computed
-    /// by `insert()`. Such a query is exempt from the concurrency limits.
+    /// by `insert`. Such a query is exempt from the concurrency limits.
     bool is_unlimited = false;
 public:
     QueryStatus(
@@ -617,7 +617,7 @@ public:
 
 /// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs that a user query may have
 /// to wait for. Such a query is registered as waiting in the process list while it is blocked in
-/// `AsyncLoader::wait()`; past `max_waiting_queries` the increment throws, which cancels the wait.
+/// `AsyncLoader::wait`; past `max_waiting_queries` the increment throws, which cancels the wait.
 void onLoadJobWaitersIncrement(const LoadJobPtr & job);
 void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 

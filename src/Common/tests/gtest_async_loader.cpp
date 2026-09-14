@@ -748,7 +748,7 @@ TEST(AsyncLoader, RemoveDoesNotNotifyWaiters)
     t.loader.unpause();
 
     // A real `on_waiters_increment` may throw to refuse the wait (that is how `ProcessList` enforces
-    // `max_waiting_queries`), and the cleanup wait in `remove()` runs in the noexcept `~LoadTask()`,
+    // `max_waiting_queries`), and the cleanup wait in `remove` runs in the noexcept `~LoadTask`,
     // where a throw terminates the process. Counting is enough to pin down that it is never called.
     std::atomic<int> increments{0};
     std::atomic<int> decrements{0};
@@ -774,11 +774,11 @@ TEST(AsyncLoader, RemoveDoesNotNotifyWaiters)
     while (!executing())
         std::this_thread::yield();
 
-    // Dropping the last reference reaches `AsyncLoader::remove()` through `~LoadTask()`.
+    // Dropping the last reference reaches `AsyncLoader::remove` through `~LoadTask`.
     std::thread remover([&] { task.reset(); });
 
     // The cleanup wait counts itself in `waiters`, which is the point where a callback would run.
-    // Without this the job could finish before `remove()` sees it, and nothing would wait at all.
+    // Without this the job could finish before `remove` sees it, and nothing would wait at all.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (job->waitersCount() == 0 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::yield();

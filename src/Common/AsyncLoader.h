@@ -132,7 +132,7 @@ private:
     // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
     // It can be used for counting and limits on number of waiters.
     // Note that implementations are called under `LoadJob::mutex` and should be fast.
-    // Note that the cleanup wait in `AsyncLoader::remove()` does not call them, because it runs in the noexcept `~LoadTask()`.
+    // Note that the cleanup wait in `AsyncLoader::remove` does not call them, because it runs in the noexcept `~LoadTask`.
     std::function<void(const LoadJobPtr & self)> on_waiters_increment;
     std::function<void(const LoadJobPtr & self)> on_waiters_decrement;
 
@@ -478,7 +478,7 @@ private:
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
     // `run_waiter_callbacks` must be false for a wait that cannot be refused: `on_waiters_increment`
-    // may throw to cancel the wait, and `remove()` waits from the noexcept `~LoadTask()`.
+    // may throw to cancel the wait, and `remove` waits from the noexcept `~LoadTask`.
     void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
