@@ -31,12 +31,6 @@ t: toDate(d) = '2026-01-03'
 t: toDate32(d) = '2026-01-03'
 []
 0
-t: CAST(d AS Date) = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate=0
-['2026-01-01','2205-06-08']
-3
-t: d::Date != '2026-01-01' SETTINGS delta_lake_enable_engine_predicate=0
-['2026-01-02']
-3
 lower: toDate(d) = '1970-01-01' SETTINGS date_time_overflow_behavior='saturate'
 ['1969-12-31','1970-01-01']
 2
@@ -76,13 +70,85 @@ nullable: CAST(d AS Nullable(Date)) = toNullable(toDate('2026-01-01'))
 nullable: CAST(d AS Nullable(Date)) != '2026-01-01'
 ['2026-01-02']
 2
-nullable: toDate(d) = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate=0
-['2026-01-01','2205-06-08']
-4
 no_stats: toDate(d) = '2026-01-01'
 ['2026-01-01']
 2
 nullable: cast rejects NULL (engine predicate 0)
 1
 nullable: cast rejects NULL (engine predicate 1)
+1
+nullable: 1
+['2026-01-01','2026-01-02','2205-06-08','NULL']
+4
+mixed: toDate(d) = '1970-01-01' SETTINGS date_time_overflow_behavior='ignore'
+['1970-01-01','2149-06-07']
+2
+mixed: toDate(d) != '1970-01-01' SETTINGS date_time_overflow_behavior='ignore'
+['1969-12-31','2026-01-01','2026-01-02','2149-06-06']
+4
+mixed: toDate(d) = '2149-06-06' SETTINGS date_time_overflow_behavior='ignore'
+['1969-12-31','2149-06-06']
+2
+mixed: toDate(d) != '2149-06-06' SETTINGS date_time_overflow_behavior='ignore'
+['1970-01-01','2026-01-01','2026-01-02','2149-06-07']
+4
+mixed: toDate(d) = '1970-01-01' SETTINGS date_time_overflow_behavior='saturate'
+['1969-12-31','1970-01-01']
+2
+mixed: toDate(d) != '1970-01-01' SETTINGS date_time_overflow_behavior='saturate'
+['2026-01-01','2026-01-02','2149-06-06','2149-06-07']
+4
+mixed: toDate(d) = '2149-06-06' SETTINGS date_time_overflow_behavior='saturate'
+['2149-06-06','2149-06-07']
+2
+mixed: toDate(d) != '2149-06-06' SETTINGS date_time_overflow_behavior='saturate'
+['1969-12-31','1970-01-01','2026-01-01','2026-01-02']
+4
+spanning: toDate(d) = '1970-01-02'
+['1970-01-02']
+1
+spanning: NOT (toDate(d) != '1970-01-02')
+['1970-01-02']
+1
+no_min: toDate(d) = '2026-01-01'
+['2026-01-01']
+2
+no_min: toDate(d) != '2026-01-01'
+['2026-01-02']
+2
+no_max: toDate(d) = '2026-01-01'
+['2026-01-01']
+2
+no_max: toDate(d) != '2026-01-01'
+['2026-01-02']
+2
+no_min: toDate32(d) = '2026-01-02'
+['2026-01-02']
+1
+no_max: toDate32(d) = '2026-01-01'
+['2026-01-01']
+1
+lower: CAST(d AS Date) = '2026-01-01' (engine predicate 0, throw)
+1
+lower: CAST(d AS Date) = '2026-01-01' (engine predicate 1, throw)
+1
+lower: toDate(d) != '2026-01-01' (engine predicate 0, throw)
+1
+lower: toDate(d) != '2026-01-01' (engine predicate 1, throw)
+1
+lower: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine predicate 0, throw)
+1
+lower: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine predicate 1, throw)
+1
+upper: CAST(d AS Date) = '2026-01-01' (engine predicate 0, throw)
+1
+upper: CAST(d AS Date) = '2026-01-01' (engine predicate 1, throw)
+1
+upper: toDate(d) != '2026-01-01' (engine predicate 0, throw)
+1
+upper: toDate(d) != '2026-01-01' (engine predicate 1, throw)
+1
+upper: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine predicate 0, throw)
+1
+upper: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine predicate 1, throw)
 1
