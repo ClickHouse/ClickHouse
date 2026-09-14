@@ -1,0 +1,152 @@
+Float64 ASC unoptimized
+-inf
+-inf
+-inf
+-inf
+-5000.5
+-4999.5
+Float64 ASC optimized
+-inf
+-inf
+-inf
+-inf
+-5000.5
+-4999.5
+Float64 ASC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+-inf
+-inf
+Float64 ASC NULLS FIRST optimized
+nan
+nan
+nan
+nan
+-inf
+-inf
+Float64 DESC unoptimized
+inf
+inf
+inf
+inf
+4998.5
+4997.5
+Float64 DESC optimized
+inf
+inf
+inf
+inf
+4998.5
+4997.5
+Float64 DESC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+inf
+inf
+Float64 DESC NULLS FIRST optimized
+nan
+nan
+nan
+nan
+inf
+inf
+Float32 ASC unoptimized
+-inf
+-inf
+-inf
+-inf
+-5000.5
+-4999.5
+Float32 ASC optimized
+-inf
+-inf
+-inf
+-inf
+-5000.5
+-4999.5
+Float32 ASC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+-inf
+-inf
+Float32 ASC NULLS FIRST optimized
+nan
+nan
+nan
+nan
+-inf
+-inf
+Float32 DESC unoptimized
+inf
+inf
+inf
+inf
+4998.5
+4997.5
+Float32 DESC optimized
+inf
+inf
+inf
+inf
+4998.5
+4997.5
+Float32 DESC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+inf
+inf
+Float32 DESC NULLS FIRST optimized
+nan
+nan
+nan
+nan
+inf
+inf
+inf/nan ASC unoptimized
+inf
+inf
+inf
+inf
+inf/nan ASC optimized
+inf
+inf
+inf
+inf
+inf/nan ASC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+inf/nan ASC NULLS FIRST optimized
+nan
+nan
+nan
+nan
+-inf/nan DESC unoptimized
+-inf
+-inf
+-inf
+-inf
+-inf/nan DESC optimized
+-inf
+-inf
+-inf
+-inf
+-inf/nan DESC NULLS FIRST unoptimized
+nan
+nan
+nan
+nan
+-inf/nan DESC NULLS FIRST optimized
+nan
+nan
+nan
+nan
