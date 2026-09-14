@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterTypes.h>
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -18,6 +19,7 @@
 
 #include <array>
 #include <barrier>
+#include <bit>
 #include <initializer_list>
 #include <limits>
 #include <memory>
@@ -159,20 +161,49 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
     EXPECT_EQ(filter.getStats().rows_passed.load(), 3);
 }
 
-TEST(RuntimeFilterLookup, NumericMinMaxRejectsRowsBeforeBloomLookup)
+TEST(RuntimeFilterLookup, NumericMinMaxFiltersMixedBloomBatch)
 {
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_MiB, 0, 3, 1.0, std::nullopt, false),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{
+            RuntimeFilter::Adaptive(type, 1_MiB, 0, 3, 1.0, std::nullopt, false), RuntimeFilter::MinMax(type)});
 
     filter.insert(makeUInt64Column({10, 20}));
     filter.finishInsert();
 
     EXPECT_EQ(filter.getModeForLogs(), "bloom_minmax");
     expectMask(filter.find(makeUInt64ColumnWithType({9, 10, 20, 21}, type)), {0, 1, 1, 0});
+    EXPECT_EQ(filter.getStats().minmax_batches_checked.load(), 1);
+    EXPECT_EQ(filter.getStats().minmax_batches_pruned.load(), 0);
+    EXPECT_EQ(filter.getStats().bloom_rows_avoided_by_minmax.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, NumericMinMaxPrunesBloomBatch)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::AdaptiveWithMinMax{
+            RuntimeFilter::Adaptive(type, 1_MiB, 0, 3, 1.0, std::nullopt, false), RuntimeFilter::MinMax(type)});
+
+    filter.insert(makeUInt64Column({10, 20}));
+    filter.finishInsert();
+
+    auto probe = ColumnUInt64::create();
+    probe->getData().resize_fill(1024, 1);
+    probe->insertValue(10);
+    auto mask = filter.find(ColumnWithTypeAndName(std::move(probe), type, "k"));
+
+    ASSERT_EQ(mask->size(), 1025);
+    for (size_t row = 0; row < 1024; ++row)
+        EXPECT_FALSE(mask->getBool(row));
+    EXPECT_TRUE(mask->getBool(1024));
+    EXPECT_EQ(filter.getStats().minmax_batches_checked.load(), 2);
+    EXPECT_EQ(filter.getStats().minmax_batches_pruned.load(), 1);
+    EXPECT_EQ(filter.getStats().bloom_rows_avoided_by_minmax.load(), 1024);
 }
 
 TEST(RuntimeFilterLookup, NumericMinMaxRemainsAfterMeasuredBloomSaturation)
@@ -181,8 +212,7 @@ TEST(RuntimeFilterLookup, NumericMinMaxRemainsAfterMeasuredBloomSaturation)
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1, 0, 3, 0.0, std::nullopt, false),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{RuntimeFilter::Adaptive(type, 1, 0, 3, 0.0, std::nullopt, false), RuntimeFilter::MinMax(type)});
 
     filter.insert(makeUInt64Column({10, 20}));
     filter.finishInsert();
@@ -199,15 +229,13 @@ TEST(RuntimeFilterLookup, NumericMinMaxMergesAfterPredictedBloomSaturation)
     RuntimeFilter destination(
         /*filters_to_merge_=*/1,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_KiB, 1, 3, 0.05, 2'000'000, true),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{RuntimeFilter::Adaptive(type, 1_KiB, 1, 3, 0.05, 2'000'000, true), RuntimeFilter::MinMax(type)});
     destination.insert(makeUInt64Column({10}));
 
     RuntimeFilter source(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_KiB, 1, 3, 0.05, 2'000'000, true),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{RuntimeFilter::Adaptive(type, 1_KiB, 1, 3, 0.05, 2'000'000, true), RuntimeFilter::MinMax(type)});
     source.insert(makeUInt64Column({20, 30}));
     source.finishInsert();
 
@@ -218,22 +246,11 @@ TEST(RuntimeFilterLookup, NumericMinMaxMergesAfterPredictedBloomSaturation)
     expectMask(destination.find(makeUInt64ColumnWithType({9, 10, 20, 30, 31}, type)), {0, 1, 1, 1, 0});
 }
 
-TEST(RuntimeFilterLookup, NumericMinMaxCanStartWithoutMembershipFilter)
+TEST(RuntimeFilterLookup, NumericMinMaxOnlyFiltersWithoutMembership)
 {
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
-        /*filters_to_merge_=*/0,
-        makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(
-            type,
-            /*bytes_limit_=*/1_KiB,
-            /*exact_values_limit_=*/100,
-            /*bloom_filter_hash_functions_=*/3,
-            /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0,
-            /*distinct_keys_hint_=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false,
-            /*start_with_dropped_key_set_=*/true),
-        /*use_numeric_minmax_filter_=*/true);
+        /*filters_to_merge_=*/0, makeRuntimeFilterConfig(), RuntimeFilter::MinMax(type));
 
     filter.insert(makeUInt64Column({10, 20}));
     filter.finishInsert();
@@ -243,22 +260,41 @@ TEST(RuntimeFilterLookup, NumericMinMaxCanStartWithoutMembershipFilter)
     expectMask(filter.find(makeUInt64ColumnWithType({9, 10, 15, 20, 21}, type)), {0, 1, 1, 1, 0});
 }
 
-TEST(RuntimeFilterLookup, NumericMinMaxPreservesNaNMembership)
+TEST(RuntimeFilterLookup, NumericMinMaxOnlyMerges)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter destination(/*filters_to_merge_=*/1, makeRuntimeFilterConfig(), RuntimeFilter::MinMax(type));
+    destination.insert(makeUInt64Column({10}));
+
+    RuntimeFilter source(/*filters_to_merge_=*/0, makeRuntimeFilterConfig(), RuntimeFilter::MinMax(type));
+    source.insert(makeUInt64Column({20, 30}));
+    source.finishInsert();
+
+    destination.merge(source);
+    destination.finishInsert();
+
+    EXPECT_EQ(destination.getModeForLogs(), "minmax");
+    EXPECT_FALSE(destination.isFullyDisabled());
+    expectMask(destination.find(makeUInt64ColumnWithType({9, 10, 20, 30, 31}, type)), {0, 1, 1, 1, 0});
+}
+
+TEST(RuntimeFilterLookup, NumericMinMaxDelegatesNaNMembershipToBloom)
 {
     tryRegisterFunctions();
     const auto type = std::make_shared<DataTypeFloat64>();
-    const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
+    const Float64 build_nan = std::bit_cast<Float64>(UInt64{0x7ff8000000000001});
+    const Float64 probe_nan = std::bit_cast<Float64>(UInt64{0x7ff8000000000002});
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_MiB, 0, 3, 1.0, std::nullopt, false),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{
+            RuntimeFilter::Adaptive(type, 1_MiB, 0, 3, 1.0, std::nullopt, false), RuntimeFilter::MinMax(type)});
 
-    filter.insert(makeFloat64Column({nan, 10.0}));
+    filter.insert(makeFloat64Column({build_nan, 10.0}));
     filter.finishInsert();
 
     EXPECT_EQ(filter.getModeForLogs(), "bloom_minmax");
-    expectMask(filter.find(makeFloat64ColumnWithType({nan, 9.0, 10.0, 11.0}, type)), {1, 0, 1, 0});
+    expectMask(filter.find(makeFloat64ColumnWithType({build_nan, probe_nan, 9.0, 10.0, 11.0}, type)), {1, 0, 0, 1, 0});
 }
 
 TEST(RuntimeFilterLookup, ExactSingletonPreservesNaNMembership)
@@ -269,8 +305,8 @@ TEST(RuntimeFilterLookup, ExactSingletonPreservesNaNMembership)
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false),
-        /*use_numeric_minmax_filter_=*/true);
+        RuntimeFilter::AdaptiveWithMinMax{
+            RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false), RuntimeFilter::MinMax(type)});
 
     filter.insert(makeFloat64Column({nan}));
     filter.finishInsert();

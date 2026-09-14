@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <limits>
@@ -136,6 +137,13 @@ void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_
         skip_budget.replenish(rows_checked, config.blocks_to_skip_before_reenabling);
 }
 
+void RuntimeFilterEvaluationState::recordMinMaxBatches(size_t batches_checked, size_t batches_pruned, size_t bloom_rows_avoided) const
+{
+    stats.minmax_batches_checked += batches_checked;
+    stats.minmax_batches_pruned += batches_pruned;
+    stats.bloom_rows_avoided_by_minmax += bloom_rows_avoided;
+}
+
 void RuntimeFilterEvaluationState::recordSkippedBlock(size_t rows_skipped) const
 {
     stats.rows_skipped += rows_skipped;
@@ -271,8 +279,8 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
     }
 }
 
-template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+template <typename ShouldPruneBatch, typename ProcessBatch>
+void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ShouldPruneBatch && should_prune_batch, ProcessBatch && process_batch)
 {
     const size_t row_count = column.size();
     if (row_count == 0)
@@ -291,9 +299,12 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         while (start_row < row_count)
         {
             const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
-            const char * batch_data = raw_data.data() + start_row * value_size;
-            hashFixedSizeColumn(batch_data, value_size, batch_size, seed, hash_pairs.data());
-            process_batch(hash_pairs.data(), batch_size, start_row);
+            if (!should_prune_batch(start_row, batch_size))
+            {
+                const char * batch_data = raw_data.data() + start_row * value_size;
+                hashFixedSizeColumn(batch_data, value_size, batch_size, seed, hash_pairs.data());
+                process_batch(hash_pairs.data(), batch_size, start_row);
+            }
             start_row += batch_size;
         }
         return;
@@ -303,14 +314,23 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
     while (start_row < row_count)
     {
         const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
-        for (size_t index = 0; index < batch_size; ++index)
+        if (!should_prune_batch(start_row, batch_size))
         {
-            const auto value = column.getDataAt(start_row + index);
-            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
+            for (size_t index = 0; index < batch_size; ++index)
+            {
+                const auto value = column.getDataAt(start_row + index);
+                hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
+            }
+            process_batch(hash_pairs.data(), batch_size, start_row);
         }
-        process_batch(hash_pairs.data(), batch_size, start_row);
         start_row += batch_size;
     }
+}
+
+template <typename ProcessBatch>
+void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+{
+    forEachColumnHashBatch(column, seed, [](size_t, size_t) { return false; }, std::forward<ProcessBatch>(process_batch));
 }
 
 template <typename... Ts>
@@ -555,10 +575,51 @@ ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values
     return dst;
 }
 
-bool ApproximateSetRuntimeFilter::contains(const IColumn & values, size_t row) const
+template <typename BatchFilter>
+ColumnPtr ApproximateSetRuntimeFilter::find(
+    const ColumnWithTypeAndName & values,
+    std::optional<size_t> & rows_passed,
+    BatchFilter & batch_filter,
+    BatchFilterStats & batch_filter_stats) const
 {
-    const auto value = values.getDataAt(row);
-    return bloom_filter.find(value.data(), value.size());
+    auto dst = ColumnVector<UInt8>::create();
+    auto & dst_data = dst->getData();
+    dst_data.resize_fill(values.column->size(), 0);
+
+    size_t found_count = 0;
+    forEachColumnHashBatch(
+        *values.column,
+        bloom_filter.getSeed(),
+        [&](size_t start_row, size_t rows)
+        {
+            ++batch_filter_stats.batches_checked;
+            for (size_t offset = 0; offset < rows; ++offset)
+            {
+                if (batch_filter(start_row + offset))
+                    return false;
+            }
+
+            ++batch_filter_stats.batches_pruned;
+            batch_filter_stats.bloom_rows_avoided += rows;
+            return true;
+        },
+        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+        {
+            size_t batch_found_count = bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row);
+            for (size_t offset = 0; offset < count; ++offset)
+            {
+                auto & found = dst_data[start_row + offset];
+                if (!batch_filter(start_row + offset))
+                {
+                    batch_found_count -= found;
+                    found = 0;
+                }
+            }
+            found_count += batch_found_count;
+        });
+
+    rows_passed = found_count;
+    return dst;
 }
 
 void ApproximateSetRuntimeFilter::mergeFrom(const ApproximateSetRuntimeFilter & source)
@@ -652,16 +713,7 @@ bool NumericMinMaxRuntimeFilter<T>::mayContain(T value) const
 }
 
 template <typename T>
-bool NumericMinMaxRuntimeFilter<T>::bypassBloom(T value) const
-{
-    if constexpr (std::is_floating_point_v<T>)
-        return std::isnan(value);
-    return false;
-}
-
-template <typename T>
-ColumnPtr NumericMinMaxRuntimeFilter<T>::find(
-    const ColumnWithTypeAndName & values, const ApproximateSetRuntimeFilter * approximate_filter, std::optional<size_t> & rows_passed) const
+ColumnPtr NumericMinMaxRuntimeFilter<T>::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
     auto result = ColumnUInt8::create();
     auto & result_data = result->getData();
@@ -670,16 +722,42 @@ ColumnPtr NumericMinMaxRuntimeFilter<T>::find(
     size_t found_count = 0;
     for (size_t row = 0; row < values.column->size(); ++row)
     {
-        const T value = getNumericColumnValue<T>(*values.column, row);
-        bool found = mayContain(value);
-        if (found && approximate_filter && !bypassBloom(value))
-            found = approximate_filter->contains(*values.column, row);
+        const bool found = mayContain(getNumericColumnValue<T>(*values.column, row));
         result_data[row] = found;
         found_count += found;
     }
 
     rows_passed = found_count;
     return result;
+}
+
+template <typename T>
+auto NumericMinMaxRuntimeFilter<T>::makeBloomBatchFilter(const IColumn & values) const
+{
+    return [this,
+            &values,
+            cached_start_row = std::numeric_limits<size_t>::max(),
+            candidate_rows = std::array<std::byte, (HASH_BATCH_SIZE + 7) / 8>{}](size_t row) mutable
+    {
+        chassert(row < values.size());
+
+        const size_t start_row = row / HASH_BATCH_SIZE * HASH_BATCH_SIZE;
+        if (start_row != cached_start_row)
+        {
+            candidate_rows.fill(std::byte{0});
+            const size_t rows = std::min(HASH_BATCH_SIZE, values.size() - start_row);
+            for (size_t offset = 0; offset < rows; ++offset)
+            {
+                if (mayContain(getNumericColumnValue<T>(values, start_row + offset)))
+                    candidate_rows[offset / 8] |= std::byte{static_cast<UInt8>(1U << static_cast<UInt8>(offset % 8))};
+            }
+            cached_start_row = start_row;
+        }
+
+        const size_t offset = row - start_row;
+        const auto bit = std::byte{static_cast<UInt8>(1U << static_cast<UInt8>(offset % 8))};
+        return (candidate_rows[offset / 8] & bit) != std::byte{0};
+    };
 }
 
 template <typename T>
@@ -701,18 +779,60 @@ bool supportsNumericMinMaxRuntimeFilter(const DataTypePtr & data_type)
     return which.isNativeUInt() || which.isNativeInt() || which.isFloat32() || which.isFloat64();
 }
 
-RuntimeFilter::NumericMinMaxFilter RuntimeFilter::makeNumericMinMaxFilter(const DataTypePtr & data_type)
+NumericMinMaxRuntimeFilterVariant::Filter NumericMinMaxRuntimeFilterVariant::makeFilter(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
     if (which.isNativeUInt())
-        return NumericMinMaxFilter(std::in_place_type<NumericMinMaxRuntimeFilter<UInt64>>);
+        return Filter(std::in_place_type<NumericMinMaxRuntimeFilter<UInt64>>);
     if (which.isNativeInt())
-        return NumericMinMaxFilter(std::in_place_type<NumericMinMaxRuntimeFilter<Int64>>);
+        return Filter(std::in_place_type<NumericMinMaxRuntimeFilter<Int64>>);
     if (which.isFloat32())
-        return NumericMinMaxFilter(std::in_place_type<NumericMinMaxRuntimeFilter<Float32>>);
+        return Filter(std::in_place_type<NumericMinMaxRuntimeFilter<Float32>>);
     if (which.isFloat64())
-        return NumericMinMaxFilter(std::in_place_type<NumericMinMaxRuntimeFilter<Float64>>);
+        return Filter(std::in_place_type<NumericMinMaxRuntimeFilter<Float64>>);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type for NumericMinMaxRuntimeFilter: {}", data_type->getName());
+}
+
+NumericMinMaxRuntimeFilterVariant::NumericMinMaxRuntimeFilterVariant(const DataTypePtr & data_type)
+    : filter_column_target_type(data_type)
+    , filter(makeFilter(data_type))
+{
+}
+
+void NumericMinMaxRuntimeFilterVariant::insert(ColumnPtr values)
+{
+    insert(*values);
+}
+
+void NumericMinMaxRuntimeFilterVariant::insert(const IColumn & values)
+{
+    std::visit([&](auto & minmax_filter) { minmax_filter.insert(values); }, filter);
+}
+
+void NumericMinMaxRuntimeFilterVariant::mergeFrom(const NumericMinMaxRuntimeFilterVariant & source)
+{
+    std::visit(
+        [](auto & destination_filter, const auto & source_filter)
+        {
+            using DestinationFilter = std::decay_t<decltype(destination_filter)>;
+            using SourceFilter = std::decay_t<decltype(source_filter)>;
+            if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
+                destination_filter.mergeFrom(source_filter);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge numeric minmax runtime filters with different types");
+        },
+        filter,
+        source.filter);
+}
+
+ColumnPtr NumericMinMaxRuntimeFilterVariant::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
+{
+    return std::visit([&](const auto & minmax_filter) { return minmax_filter.find(values, rows_passed); }, filter);
+}
+
+String NumericMinMaxRuntimeFilterVariant::describe() const
+{
+    return std::visit([](const auto & minmax_filter) { return minmax_filter.describe(); }, filter);
 }
 
 bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
@@ -727,17 +847,13 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     std::optional<UInt64> distinct_keys_hint_,
-    bool distinct_keys_hint_matches_filter_key_,
-    bool start_with_dropped_key_set_)
+    bool distinct_keys_hint_matches_filter_key_)
     : filter_column_target_type(filter_column_target_type_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
-    , filter(
-          start_with_dropped_key_set_
-              ? Filter(std::in_place_type<KeySetDropped>)
-              : Filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_))
+    , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_)
 {
 }
 
@@ -777,6 +893,13 @@ void AdaptiveSetRuntimeFilter::finishInsert()
         dropKeySet(filter);
 }
 
+void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evaluation_state)
+{
+    finishInsert();
+    if (std::holds_alternative<KeySetDropped>(filter))
+        evaluation_state.markKeySetDropped();
+}
+
 static size_t countPassedStats(ColumnPtr values)
 {
     if (const auto * column_bool = typeid_cast<const ColumnUInt8 *>(values.get()))
@@ -808,18 +931,16 @@ ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
         filter);
 }
 
-AdaptiveSetRuntimeFilter::Mode AdaptiveSetRuntimeFilter::getMode() const
+template <typename BatchFilter>
+ColumnPtr AdaptiveSetRuntimeFilter::find(
+    const ColumnWithTypeAndName & values,
+    std::optional<size_t> & rows_passed,
+    BatchFilter & batch_filter,
+    ApproximateSetRuntimeFilter::BatchFilterStats & batch_filter_stats) const
 {
-    if (std::holds_alternative<ExactFilter>(filter))
-        return Mode::Exact;
-    if (std::holds_alternative<ApproximateSetRuntimeFilter>(filter))
-        return Mode::Approximate;
-    return Mode::Dropped;
-}
-
-const ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::getApproximateFilter() const
-{
-    return std::get_if<ApproximateSetRuntimeFilter>(&filter);
+    if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
+        return approximate_filter->find(values, rows_passed, batch_filter, batch_filter_stats);
+    return find(values, rows_passed);
 }
 
 ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
@@ -905,7 +1026,7 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 }
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
-    : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
+    : filter_column_target_type(std::visit([](const auto & filter) { return RuntimeFilter::getTargetType(filter); }, data_.filter))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
@@ -922,19 +1043,16 @@ void RuntimeFilter::insert(ColumnPtr values)
             {
                 data.build_state.assertCanInsert();
                 data.build_rows += values->size();
-                if constexpr (std::is_same_v<FilterType, Adaptive>)
-                {
-                    std::visit(
-                        [&](auto & numeric_minmax_filter)
-                        {
-                            using NumericFilterType = std::decay_t<decltype(numeric_minmax_filter)>;
-                            if constexpr (!std::is_same_v<NumericFilterType, std::monostate>)
-                                numeric_minmax_filter.insert(*values);
-                        },
-                        data.numeric_minmax_filter);
-                }
                 data.index_analysis.insert(*values);
-                filter.insert(std::move(values));
+                if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
+                {
+                    filter.minmax_filter.insert(*values);
+                    filter.adaptive_set_filter.insert(std::move(values));
+                }
+                else
+                {
+                    filter.insert(std::move(values));
+                }
             }
         },
         data.filter);
@@ -950,12 +1068,8 @@ void RuntimeFilter::finishInsert()
         [&](auto & filter) TSA_REQUIRES(mutex)
         {
             using FilterType = std::decay_t<decltype(filter)>;
-            if constexpr (std::is_same_v<FilterType, Adaptive>)
-            {
-                filter.finishInsert();
-                if (filter.getMode() == Adaptive::Mode::Dropped && !hasNumericMinMaxFilter(data.numeric_minmax_filter))
-                    evaluation_state.markKeySetDropped();
-            }
+            if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
+                filter.adaptive_set_filter.finishInsert();
             else
                 filter.finishInsert(evaluation_state);
         },
@@ -974,28 +1088,41 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 
     std::optional<size_t> rows_passed;
     auto result = std::visit(
-        [&](const auto & filter) TSA_REQUIRES_SHARED(mutex) -> ColumnPtr
+        [&](const auto & filter) -> ColumnPtr
         {
             using FilterType = std::decay_t<decltype(filter)>;
-            if constexpr (std::is_same_v<FilterType, Adaptive>)
+            if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
             {
-                if (filter.getMode() == Adaptive::Mode::Exact || !hasNumericMinMaxFilter(data.numeric_minmax_filter))
-                    return filter.find(values, rows_passed);
-
-                const auto * approximate_filter = filter.getApproximateFilter();
                 return std::visit(
-                    [&](const auto & numeric_minmax_filter) -> ColumnPtr
-                    {
-                        using NumericFilterType = std::decay_t<decltype(numeric_minmax_filter)>;
-                        if constexpr (std::is_same_v<NumericFilterType, std::monostate>)
-                            return filter.find(values, rows_passed);
-                        else
-                            return numeric_minmax_filter.find(values, approximate_filter, rows_passed);
+                    Overloaded{
+                        [&](const Adaptive::ExactFilter &) -> ColumnPtr
+                        { return filter.adaptive_set_filter.find(values, rows_passed); },
+                        [&](const ApproximateSetRuntimeFilter &) -> ColumnPtr
+                        {
+                            return std::visit(
+                                [&](const auto & minmax_filter) -> ColumnPtr
+                                {
+                                    auto batch_filter = minmax_filter.makeBloomBatchFilter(*values.column);
+                                    ApproximateSetRuntimeFilter::BatchFilterStats batch_filter_stats;
+                                    auto adaptive_result
+                                        = filter.adaptive_set_filter.find(values, rows_passed, batch_filter, batch_filter_stats);
+                                    evaluation_state.recordMinMaxBatches(
+                                        batch_filter_stats.batches_checked,
+                                        batch_filter_stats.batches_pruned,
+                                        batch_filter_stats.bloom_rows_avoided);
+                                    return adaptive_result;
+                                },
+                                filter.minmax_filter.filter);
+                        },
+                        [&](const Adaptive::KeySetDropped &) -> ColumnPtr
+                        { return filter.minmax_filter.find(values, rows_passed); },
                     },
-                    data.numeric_minmax_filter);
+                    filter.adaptive_set_filter.filter);
             }
             else
+            {
                 return filter.find(values, rows_passed);
+            }
         },
         data.filter);
     evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
@@ -1021,8 +1148,6 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
 
     if (data.filter.index() != source.data.filter.index())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-    if (hasNumericMinMaxFilter(data.numeric_minmax_filter) != hasNumericMinMaxFilter(source.data.numeric_minmax_filter))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different numeric minmax modes");
 
     data.build_state.assertCanMerge();
     std::visit(
@@ -1032,7 +1157,15 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
             using SourceFilter = std::decay_t<decltype(source_filter)>;
             if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
             {
-                destination_filter.mergeFrom(source_filter);
+                if constexpr (std::is_same_v<DestinationFilter, AdaptiveWithMinMax>)
+                {
+                    destination_filter.adaptive_set_filter.mergeFrom(source_filter.adaptive_set_filter);
+                    destination_filter.minmax_filter.mergeFrom(source_filter.minmax_filter);
+                }
+                else
+                {
+                    destination_filter.mergeFrom(source_filter);
+                }
             }
             else
             {
@@ -1041,26 +1174,6 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
         },
         data.filter,
         source.data.filter);
-    if (hasNumericMinMaxFilter(data.numeric_minmax_filter))
-    {
-        std::visit(
-            [](auto & destination_filter, const auto & source_filter)
-            {
-                using DestinationFilter = std::decay_t<decltype(destination_filter)>;
-                using SourceFilter = std::decay_t<decltype(source_filter)>;
-                if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
-                {
-                    if constexpr (!std::is_same_v<DestinationFilter, std::monostate>)
-                        destination_filter.mergeFrom(source_filter);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge numeric minmax runtime filters with different types");
-                }
-            },
-            data.numeric_minmax_filter,
-            source.data.numeric_minmax_filter);
-    }
     data.build_rows += source.data.build_rows;
     data.index_analysis.mergeFrom(source.data.index_analysis);
     data.build_state.finishMerge();
@@ -1078,7 +1191,16 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
     SharedLockGuard lock(mutex);
     if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
         return nullptr;
-    return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
+    return std::visit(
+        [](const auto & filter)
+        {
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
+                return filter.adaptive_set_filter.getRecordedKeyValues();
+            else
+                return filter.getRecordedKeyValues();
+        },
+        data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
@@ -1108,16 +1230,28 @@ String RuntimeFilter::getModeForLogs() const
                 return "exact_not_contains";
             else if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
                 return "shared_fixed_hash";
+            else if constexpr (std::is_same_v<FilterType, MinMax>)
+                return "minmax";
+            else if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
+            {
+                return std::visit(
+                    Overloaded{
+                        [](const Adaptive::ExactFilter &) -> String { return "exact"; },
+                        [](const ApproximateSetRuntimeFilter &) -> String { return "bloom_minmax"; },
+                        [](const Adaptive::KeySetDropped &) -> String { return "minmax"; },
+                    },
+                    filter.adaptive_set_filter.filter);
+            }
             else
             {
-                switch (filter.getMode())
-                {
-                    case Adaptive::Mode::Exact: return "exact";
-                    case Adaptive::Mode::Approximate: return hasNumericMinMaxFilter(data.numeric_minmax_filter) ? "bloom_minmax" : "bloom";
-                    case Adaptive::Mode::Dropped: return hasNumericMinMaxFilter(data.numeric_minmax_filter) ? "minmax" : "disabled";
-                }
+                return std::visit(
+                    Overloaded{
+                        [](const Adaptive::ExactFilter &) -> String { return "exact"; },
+                        [](const ApproximateSetRuntimeFilter &) -> String { return "bloom"; },
+                        [](const Adaptive::KeySetDropped &) -> String { return "disabled"; },
+                    },
+                    filter.filter);
             }
-            UNREACHABLE();
         },
         data.filter);
 }
@@ -1125,19 +1259,20 @@ String RuntimeFilter::getModeForLogs() const
 String RuntimeFilter::getExtraInfoForLogs() const
 {
     SharedLockGuard lock(mutex);
-    const auto * adaptive_filter = std::get_if<Adaptive>(&data.filter);
-    if (!adaptive_filter || adaptive_filter->getMode() == Adaptive::Mode::Exact)
-        return {};
     return std::visit(
-        [](const auto & numeric_minmax_filter) -> String
+        [](const auto & filter) -> String
         {
-            using NumericFilterType = std::decay_t<decltype(numeric_minmax_filter)>;
-            if constexpr (std::is_same_v<NumericFilterType, std::monostate>)
-                return {};
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (std::is_same_v<FilterType, MinMax>)
+                return filter.describe();
+            else if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
+                return std::holds_alternative<Adaptive::ExactFilter>(filter.adaptive_set_filter.filter)
+                    ? String{}
+                    : filter.minmax_filter.describe();
             else
-                return numeric_minmax_filter.describe();
+                return {};
         },
-        data.numeric_minmax_filter);
+        data.filter);
 }
 
 template class ExactSetRuntimeFilter<false>;
@@ -1195,7 +1330,8 @@ public:
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
                 "Stats for '{}': mode {}, target_type {}, build_rows {}, rows skipped {}, rows checked {}, rows passed {}, blocks skipped "
-                "{}, blocks processed {}, fully_disabled {}, details: {}",
+                "{}, blocks processed {}, minmax batches checked {}, minmax batches pruned {}, bloom rows avoided by minmax {}, "
+                "fully_disabled {}, details: {}",
                 name,
                 filter->getModeForLogs(),
                 filter->getFilterColumnTargetType()->getName(),
@@ -1205,6 +1341,9 @@ public:
                 stats.rows_passed.load(),
                 stats.blocks_skipped.load(),
                 stats.blocks_processed.load(),
+                stats.minmax_batches_checked.load(),
+                stats.minmax_batches_pruned.load(),
+                stats.bloom_rows_avoided_by_minmax.load(),
                 filter->isFullyDisabled(),
                 extra_info.empty() ? "-" : extra_info);
         }

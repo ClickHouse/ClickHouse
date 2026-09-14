@@ -49,42 +49,71 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         pass_ratio_threshold_for_disabling_,
         blocks_to_skip_before_reenabling_};
 
-    if (minmax_filter_mode_ != RuntimeFilterMinMaxMode::Disabled
-        && (!allow_to_use_not_exact_filter_ || !AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type)
-            || !supportsNumericMinMaxRuntimeFilter(filter_column_target_type)))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot use numeric minmax runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
-            filter_column_target_type->getName(),
-            allow_to_use_not_exact_filter_);
+    const bool adaptive_filter_supported = AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type);
+    const bool minmax_filter_supported = supportsNumericMinMaxRuntimeFilter(filter_column_target_type);
+    switch (minmax_filter_mode_)
+    {
+        case RuntimeFilterMinMaxMode::Disabled: break;
+        case RuntimeFilterMinMaxMode::Combined:
+            if (!allow_to_use_not_exact_filter_ || !adaptive_filter_supported || !minmax_filter_supported)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot use combined numeric minmax runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
+                    filter_column_target_type->getName(),
+                    allow_to_use_not_exact_filter_);
+            break;
+        case RuntimeFilterMinMaxMode::Only:
+            if (!allow_to_use_not_exact_filter_ || !minmax_filter_supported)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot use numeric minmax-only runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
+                    filter_column_target_type->getName(),
+                    allow_to_use_not_exact_filter_);
+            break;
+    }
 
     if (allow_to_use_not_exact_filter_)
     {
-        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        switch (minmax_filter_mode_)
         {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config,
-                RuntimeFilter::Adaptive(
-                    filter_column_target_type,
-                    bloom_filter_bytes_,
-                    exact_values_limit_,
-                    bloom_filter_hash_functions_,
-                    max_ratio_of_set_bits_in_bloom_filter_,
-                    distinct_keys_hint_,
-                    distinct_keys_hint_matches_filter_key_,
-                    minmax_filter_mode_ == RuntimeFilterMinMaxMode::Only),
-                minmax_filter_mode_ != RuntimeFilterMinMaxMode::Disabled);
-        }
-        else
-        {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config,
-                RuntimeFilter::ExactContains(
-                    filter_column_target_type,
-                    bloom_filter_bytes_,
-                    exact_values_limit_));
+            case RuntimeFilterMinMaxMode::Only:
+                built_filter = std::make_unique<RuntimeFilter>(
+                    filters_to_merge_, runtime_filter_config, RuntimeFilter::MinMax(filter_column_target_type));
+                break;
+            case RuntimeFilterMinMaxMode::Combined:
+                built_filter = std::make_unique<RuntimeFilter>(
+                    filters_to_merge_,
+                    runtime_filter_config,
+                    RuntimeFilter::AdaptiveWithMinMax{
+                        RuntimeFilter::Adaptive(
+                            filter_column_target_type,
+                            bloom_filter_bytes_,
+                            exact_values_limit_,
+                            bloom_filter_hash_functions_,
+                            max_ratio_of_set_bits_in_bloom_filter_,
+                            distinct_keys_hint_,
+                            distinct_keys_hint_matches_filter_key_),
+                        RuntimeFilter::MinMax(filter_column_target_type)});
+                break;
+            case RuntimeFilterMinMaxMode::Disabled:
+                if (adaptive_filter_supported)
+                    built_filter = std::make_unique<RuntimeFilter>(
+                        filters_to_merge_,
+                        runtime_filter_config,
+                        RuntimeFilter::Adaptive(
+                            filter_column_target_type,
+                            bloom_filter_bytes_,
+                            exact_values_limit_,
+                            bloom_filter_hash_functions_,
+                            max_ratio_of_set_bits_in_bloom_filter_,
+                            distinct_keys_hint_,
+                            distinct_keys_hint_matches_filter_key_));
+                else
+                    built_filter = std::make_unique<RuntimeFilter>(
+                        filters_to_merge_,
+                        runtime_filter_config,
+                        RuntimeFilter::ExactContains(filter_column_target_type, bloom_filter_bytes_, exact_values_limit_));
+                break;
         }
     }
     else
