@@ -117,7 +117,12 @@ protected:
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
 
     /// Weak references: tracking must never extend the lifetime of a detached storage.
-    std::unordered_map<String, std::weak_ptr<IStorage>> detached_tables_by_name TSA_GUARDED_BY(mutex);
+    /// A name may have several live detached instances at once: a plain `ATTACH TABLE` of an `Ordinary` table
+    /// (no UUID) does not wait for the previous instance, so `DETACH` -> `ATTACH` -> `DETACH` leaves two of them.
+    /// Every instance is kept until it expires, so that none of them is forgotten while its parts are alive.
+    std::unordered_multimap<String, std::weak_ptr<IStorage>> detached_tables_by_name TSA_GUARDED_BY(mutex);
+    /// Forgets the storages that are gone or were renamed away.
+    void forgetExpiredDetachedTablesByName() TSA_REQUIRES(mutex);
     /// Forgets the storages that are gone or were renamed away, then tells whether `table_name` is still in use.
     bool isDetachedTableByNameInUse(const String & table_name) TSA_REQUIRES(mutex);
 

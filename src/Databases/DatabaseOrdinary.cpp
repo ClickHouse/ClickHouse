@@ -794,11 +794,14 @@ StoragePtr DatabaseOrdinary::detachTable(ContextPtr /* context_ */, const String
     ensurePopulated();
     std::lock_guard lock(mutex);
     auto table = detachTableUnlocked(table_name);
-    detached_tables_by_name.insert_or_assign(table_name, table);
+    /// Never overwrite: a previous detached instance of this name may still be alive (see the member comment).
+    /// Expired entries are dropped here as well, so the container does not grow with tables nobody re-attaches.
+    forgetExpiredDetachedTablesByName();
+    detached_tables_by_name.emplace(table_name, table);
     return table;
 }
 
-bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name)
+void DatabaseOrdinary::forgetExpiredDetachedTablesByName()
 {
     for (auto it = detached_tables_by_name.begin(); it != detached_tables_by_name.end();)
     {
@@ -810,6 +813,11 @@ bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name)
         else
             ++it;
     }
+}
+
+bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name)
+{
+    forgetExpiredDetachedTablesByName();
     return detached_tables_by_name.contains(table_name);
 }
 

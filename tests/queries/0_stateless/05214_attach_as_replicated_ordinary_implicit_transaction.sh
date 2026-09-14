@@ -33,6 +33,10 @@ ${CLICKHOUSE_CLIENT} -n -q "
     SELECT count() FROM system.parts
     WHERE database = '$ORDINARY_DB' AND table = 't_txn_to_ordinary' AND active AND creation_tid.1 != 1;
 
+    -- A plain ATTACH of an Ordinary table does not wait for the previous detached instance, so this leaves
+    -- two detached instances of the same name behind; the conversion must wait for both of them.
+    DETACH TABLE $ORDINARY_DB.t_txn_to_ordinary;
+    ATTACH TABLE $ORDINARY_DB.t_txn_to_ordinary;
     DETACH TABLE $ORDINARY_DB.t_txn_to_ordinary;
     ATTACH TABLE $ORDINARY_DB.t_txn_to_ordinary AS REPLICATED;
 
