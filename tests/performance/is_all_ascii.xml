@@ -1,0 +1,22 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT substringUTF8(materialize(repeat('a', 7)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 8)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 63)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 64)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+
+    <query>SELECT substringIndexUTF8(materialize(repeat('a', 63) || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringIndexUTF8(materialize(repeat('a', 62) || '\xC3\xA9' || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
+
+    <query>SELECT reverseUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 62) || '\xC3\xA9')) FROM numbers(3000000) FORMAT Null</query>
+
+    <query>SELECT leftPadUTF8(materialize(repeat('a', 63)), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT leftPadUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT rightPadUTF8(materialize(repeat('a', 63)), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT rightPadUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
+</test>

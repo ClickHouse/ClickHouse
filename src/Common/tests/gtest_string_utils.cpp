@@ -2,36 +2,58 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <vector>
 
 
-TEST(StringUtils, IsAllASCII)
+namespace
 {
-    const std::vector<size_t> sizes = {0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 256};
+const std::array<size_t, 25> boundary_sizes = {
+    0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
+    255, 256, 257, 511, 512, 513, 1023, 1024, 1025};
 
-    for (const size_t size : sizes)
+std::vector<UInt8> makeASCIIData(size_t size)
+{
+    std::vector<UInt8> data(size);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = static_cast<UInt8>(i & 0x7F);
+    return data;
+}
+}
+
+TEST(StringUtils, IsAllASCIIAcceptsEmptyInput)
+{
+    EXPECT_TRUE(isAllASCII(nullptr, 0));
+
+    const std::vector<UInt8> empty;
+    EXPECT_TRUE(isAllASCII(empty.data(), empty.size()));
+}
+
+TEST(StringUtils, IsAllASCIIAcceptsAllASCIIBytes)
+{
+    for (const size_t size : boundary_sizes)
     {
-        std::vector<UInt8> data(size, 'a');
-        ASSERT_TRUE(isAllASCII(data.data(), data.size())) << "size: " << size;
+        const auto data = makeASCIIData(size);
+        EXPECT_TRUE(isAllASCII(data.data(), data.size())) << "size: " << size;
+    }
+}
 
-        if (size == 0)
-            continue;
+TEST(StringUtils, IsAllASCIIRejectsHighBitBytesAtEveryPosition)
+{
+    const std::array<UInt8, 6> non_ascii_bytes = {0x80, 0x81, 0xC2, 0xE2, 0xF0, 0xFF};
 
-        data[0] = 0;
-        ASSERT_TRUE(isAllASCII(data.data(), data.size())) << "size: " << size;
-
-        data[size - 1] = 0x7F;
-        ASSERT_TRUE(isAllASCII(data.data(), data.size())) << "size: " << size;
-
-        for (const size_t position : {size_t(0), size / 2, size - 1})
+    for (const size_t size : boundary_sizes)
+    {
+        auto data = makeASCIIData(size);
+        for (size_t position = 0; position < size; ++position)
         {
-            data[position] = 0x80;
-            ASSERT_FALSE(isAllASCII(data.data(), data.size())) << "size: " << size << ", position: " << position;
-
-            data[position] = 0xFF;
-            ASSERT_FALSE(isAllASCII(data.data(), data.size())) << "size: " << size << ", position: " << position;
-
-            data[position] = 'a';
+            for (const UInt8 byte : non_ascii_bytes)
+            {
+                data[position] = byte;
+                EXPECT_FALSE(isAllASCII(data.data(), data.size()))
+                    << "size: " << size << ", position: " << position << ", byte: " << static_cast<unsigned>(byte);
+                data[position] = static_cast<UInt8>(position & 0x7F);
+            }
         }
     }
 }
