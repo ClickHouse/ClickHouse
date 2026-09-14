@@ -584,8 +584,9 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                bool try_sort = trySort(begin, end, pred);
-                if (try_sort)
+                /// `trySort` can reorder equal values even when it returns false.
+                /// Stable radix sorting must preserve the incoming order within equal ranges.
+                if (!sort_is_stable && trySort(begin, end, pred))
                     return;
 
                 PaddedPODArray<ValueWithIndex<T>> pairs(range_size);

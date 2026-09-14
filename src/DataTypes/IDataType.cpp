@@ -12,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -206,9 +207,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                         auto tmp_subpath = subpath;
                         if (tmp_subpath[i].creator)
                         {
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
                             dynamic_subcolumn_info->data.type = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.type);
                             dynamic_subcolumn_info->data.column = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.column);
-                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
                         }
 
                         tmp_subpath[i].data = dynamic_subcolumn_info->data;
@@ -235,6 +239,18 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
 
     return res;
+}
+
+String IDataType::getSubcolumnNameForZeroArrayLevel(std::string_view subcolumn_name, const SubstreamPath & resolved_path)
+{
+    if (!SerializationArray::isArraySizesSubcolumn(resolved_path))
+        return String(subcolumn_name);
+
+    /// `ArraySizes` is terminal, so the number is always in the last component, and the depth of the
+    /// sizes inside the resolved path is the number they get at level 0.
+    auto dot_pos = subcolumn_name.rfind('.');
+    auto prefix = dot_pos == std::string_view::npos ? std::string_view{} : subcolumn_name.substr(0, dot_pos + 1);
+    return String(prefix) + "size" + toString(ISerialization::getArrayLevel(resolved_path));
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getDynamicSubcolumnInfo(
