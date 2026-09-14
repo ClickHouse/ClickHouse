@@ -113,6 +113,93 @@ def test_a_key_absent_from_the_logs_reports_neither_key(tmp_path):
     assert _OTHER not in "\n".join(report), report
 
 
+def test_a_reworded_lifecycle_message_is_still_reported(tmp_path):
+    # The property the report is built on: lines are selected by logger name, so the report
+    # survives a reworded message. Reddens as soon as selection looks at the wording.
+    (tmp_path / "clickhouse-server.stress.log").write_text(
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q-0}} <Test> DiskObjectStorageTransaction: "
+        f"Uploading object for path all_1_1_0/data.bin, key {_KEY}, bytes 4096\n",
+        encoding="utf-8",
+    )
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(f"{_MATCH}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert len(body) == 1, body
+    assert "Uploading object for path all_1_1_0/data.bin" in body[0], body
+
+
+def test_a_key_nested_in_a_longer_key_is_not_attributed_to_it(tmp_path):
+    # A key can occur inside a longer key: the plain families key an object by its path, and
+    # nothing keeps one path from nesting another. Under a bare substring test the shorter
+    # key's group shows the longer key's upload and delete.
+    part = "test/hbh/store/abc/all_1_1_0"
+    below = f"{part}/data.bin"
+    (tmp_path / "clickhouse-server.final.log").write_text(
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q-0}} <Test> DiskObjectStorageTransaction: "
+        f"Writing blob for path all_1_1_0/data.bin, key {below}, size 4096\n"
+        f"2026.09.14 12:00:02.000000 [ 1002 ] {{}} <Debug> deleteFileFromS3: "
+        f"Objects with paths [{below}] were removed from S3\n"
+        f"2026.09.14 12:00:03.000000 [ 1003 ] {{}} <Debug> deleteFileFromS3: "
+        f"Object with path {part} was removed from S3\n",
+        encoding="utf-8",
+    )
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(_MATCH.replace(_KEY, part) + "\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), part)
+
+    assert len(body) == 1, body
+    assert f"Object with path {part} was removed" in body[0], body
+    assert "data.bin" not in "\n".join(body), body
+
+
+def test_matches_with_no_extractable_key_say_so_instead_of_printing_nothing(tmp_path):
+    # A 499 raised outside ReadBufferFromS3 carries no key, so no group can be built. An
+    # empty report would read as "these matches have no lifecycle", which is not the finding.
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(
+        "2026.09.14 12:00:09.100000 [ 1111 ] {q-1} <Error> executeQuery: Code: 499. "
+        "DB::Exception: The specified key does not exist. (S3_ERROR) (in query: SELECT 1)\n",
+        encoding="utf-8",
+    )
+
+    report = report_for(matches, tmp_path)
+
+    assert len(report) == 1, report
+    assert report[0].startswith("--- no S3 key found in the 1 match line(s) above"), report
+
+
+def test_a_key_named_without_a_delimiter_is_reported_as_a_substring_match(tmp_path):
+    # The delimited-occurrence test must not be able to empty a group on its own: a message
+    # that qualifies the key (here with the bucket) still carries the object's lifecycle, so
+    # the line is reported under a note saying how it was matched.
+    (tmp_path / "clickhouse-server.final.log").write_text(
+        f"2026.09.14 12:00:04.000000 [ 1004 ] {{}} <Debug> deleteFileFromS3: "
+        f"Object with path b/{_KEY} was removed from S3\n",
+        encoding="utf-8",
+    )
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(f"{_MATCH}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert len(body) == 2, body
+    assert body[0].startswith("matched as a substring only"), body
+    assert f"Object with path b/{_KEY} was removed" in body[1], body
+
+
+def test_an_empty_match_set_reports_absolutely_nothing(tmp_path):
+    # The caller's PASS verdict is that the file this report is appended to stayed empty, so
+    # every job without a "No such key" error runs this path: one stray line turns CI red.
+    _logs(tmp_path)
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text("", encoding="utf-8")
+
+    assert report_for(matches, tmp_path) == []
+
+
 def test_the_key_cap_never_drops_a_key(tmp_path):
     # The match set is unbounded at the stress-test site, so the cap may leave a key
     # unexpanded but must never let it vanish: the largest incident is the one worth

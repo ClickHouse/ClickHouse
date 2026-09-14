@@ -1211,10 +1211,9 @@ fi
                 "caller id: None:DistribCache",
             )
         )
-        # Each match names the failing read only, so the matched keys' upload and delete
-        # lines are appended: without them a lost key cannot be attributed. The matches go
-        # through a file rather than `tee /dev/stderr | grep -q .`, which loses the tail of
-        # a large report to SIGPIPE - and the appended section is that tail.
+        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
+        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
+        # lifecycle IS that tail.
         no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
             f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
@@ -1225,7 +1224,7 @@ fi
             f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
             f">> {no_such_key_matches}; "
             f"cat {no_such_key_matches} >&2; "
-            f"! [ -s {no_such_key_matches} ]"
+            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(

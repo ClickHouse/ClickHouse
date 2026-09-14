@@ -12,14 +12,18 @@ Usage:
     s3_key_lifecycle.py <matches-file> <log-dir>
 
 The report is written to stdout, so a caller can append it next to the matches it
-explains. Finding nothing is a normal outcome and exits 0. A genuine failure (an
-unreadable log, a grep error) exits non-zero with a traceback, so a caller can mark its
-report incomplete instead of publishing an empty one as clean.
+explains. An empty match set produces nothing, because the caller's PASS verdict is that
+the file this output is appended to stayed empty. A non-empty one always produces at
+least one line: "there is nothing to report" and "the report could not be built" must not
+look alike. A genuine failure (an unreadable log, a grep error) exits non-zero with a
+traceback, so a caller can mark its report incomplete instead of publishing an empty one
+as clean.
 """
 
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Only ReadBufferFromS3 adds "while reading key:", so a match line raised elsewhere
@@ -34,6 +38,10 @@ TIMESTAMP_PATTERN = re.compile(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+")
 # "Writing blob for path" or "were removed from S3" cannot silently empty the report.
 LIFECYCLE_LOGGERS = ("DiskObjectStorageTransaction", "deleteFileFromS3")
 
+# The S3 key alphabet, so a key flanked by anything else (or by a line edge) is a whole key
+# and not the head of a longer one. The "," "[" "]" and space the messages use are absent.
+KEY_CHARACTERS = r"A-Za-z0-9._/=+:@!*'()-"
+
 LOG_FILE_PATTERN = "clickhouse-server*.log"
 
 # Every distinct key always gets a header; only the line expansion is bounded, so no key
@@ -42,17 +50,18 @@ MAX_EXPANDED_KEYS = 200
 MAX_LINES_PER_KEY = 50
 
 NO_LIFECYCLE = (
-    "no lifecycle line found for this key (the upload line is logged at level 'test', "
-    "which only the stress phase enables)"
+    "no lifecycle line found: the upload line is logged at level 'test', which only the stress "
+    "phase enables, and no deleteFileFromS3 line recorded a delete of this object on this server"
 )
 
+SUBSTRING_ONLY = "matched as a substring only (no delimited occurrence found)"
 
-def extract_keys(matches_file):
+
+def extract_keys(matches_text):
     """The keys named by the match lines, de-duplicated, in first-seen order."""
-    text = Path(matches_file).read_text(encoding="utf-8", errors="replace")
     keys = []
     seen = set()
-    for key in KEY_PATTERN.findall(text):
+    for key in KEY_PATTERN.findall(matches_text):
         if key not in seen:
             seen.add(key)
             keys.append(key)
@@ -65,44 +74,103 @@ def find_logs(log_dir):
     return sorted(str(path) for path in Path(log_dir).glob(LOG_FILE_PATTERN))
 
 
-def collect_lifecycle_lines(keys, logs):
-    """Log lines emitted by a lifecycle logger that mention one of `keys`."""
-    # One pass for all keys, and -F so a key is never read as a regular expression.
-    grep = subprocess.run(
-        ["grep", "-a", "-H", "-F", "-f", "-", "--", *logs],
-        input="\n".join(keys),
-        capture_output=True,
-        text=True,
-        errors="replace",
-        check=False,
-    )
-    # grep exits 1 for "no match" and above 1 when a log could not be read, which would
-    # otherwise be indistinguishable from a key having no lifecycle.
-    if grep.returncode > 1:
-        raise RuntimeError(
-            f"grep exited {grep.returncode} over {len(logs)} log file(s): {grep.stderr.strip()}"
-        )
-    return [line for line in grep.stdout.splitlines() if any(logger in line for logger in LIFECYCLE_LOGGERS)]
-
-
 def timestamp(line):
     found = TIMESTAMP_PATTERN.search(line)
     return found.group(0) if found else ""
 
 
-def build_report(keys, lines):
+def _in_time_order(lines, total):
+    ordered = sorted(lines, key=timestamp)
+    if total > len(ordered):
+        omitted = total - len(ordered)
+        ordered.append(f"... {omitted} more lifecycle line(s) omitted (per-key line cap {MAX_LINES_PER_KEY})")
+    return ordered
+
+
+class _KeyLifecycle:
+    """One key's retained lines, kept as they arrive so the caps bound memory too.
+
+    A line belongs to the key when the key occurs in it delimited on both sides, which is
+    what keeps a key out of the group of a key that merely contains it. A line that names
+    the key with no delimiter is kept separately and reported only when there is no
+    delimited line at all: a reworded message must not empty the group silently.
+    """
+
+    __slots__ = ("key", "pattern", "lines", "total", "loose", "loose_total")
+
+    def __init__(self, key):
+        self.key = key
+        self.pattern = re.compile(f"(?<![{KEY_CHARACTERS}]){re.escape(key)}(?![{KEY_CHARACTERS}])")
+        self.lines = []
+        self.total = 0
+        self.loose = []
+        self.loose_total = 0
+
+    def offer(self, line):
+        if self.key not in line:
+            return
+        if self.pattern.search(line):
+            self.total += 1
+            if len(self.lines) < MAX_LINES_PER_KEY:
+                self.lines.append(line)
+            # The fallback is unreachable once a delimited line exists.
+            self.loose.clear()
+        elif not self.total:
+            self.loose_total += 1
+            if len(self.loose) < MAX_LINES_PER_KEY:
+                self.loose.append(line)
+
+    def report(self):
+        if self.total:
+            return _in_time_order(self.lines, self.total)
+        if self.loose_total:
+            return [SUBSTRING_ONLY] + _in_time_order(self.loose, self.loose_total)
+        return [NO_LIFECYCLE]
+
+
+def collect_lifecycle_lines(keys, logs):
+    """Each key's retained lifecycle lines, from one grep pass over `logs`."""
+    groups = {key: _KeyLifecycle(key) for key in keys}
+    with tempfile.TemporaryFile("w+", errors="replace") as grep_errors:
+        # -F so a key is never read as a regular expression, and one pass for all keys.
+        grep = subprocess.Popen(
+            ["grep", "-a", "-H", "-F", "-f", "-", "--", *logs],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=grep_errors,
+            text=True,
+            errors="replace",
+        )
+        # The key list is a few kilobytes at most, so it fits the pipe buffer and can be
+        # written before stdout is read. grep's stderr goes to a file for the same reason
+        # inverted: a pipe nobody drains until the end can fill up and deadlock.
+        grep.stdin.write("\n".join(keys))
+        grep.stdin.close()
+        # Filtered and retained line by line, so the caps bound what is held in memory too.
+        for line in grep.stdout:
+            line = line.rstrip("\n")
+            if not any(logger in line for logger in LIFECYCLE_LOGGERS):
+                continue
+            for group in groups.values():
+                group.offer(line)
+        grep.stdout.close()
+        returncode = grep.wait()
+        grep_errors.seek(0)
+        errors_text = grep_errors.read()
+    # grep exits 1 for "no match" and above 1 when a log could not be read, which would
+    # otherwise be indistinguishable from a key having no lifecycle.
+    if returncode > 1:
+        raise RuntimeError(
+            f"grep exited {returncode} over {len(logs)} log file(s): {errors_text.strip()}"
+        )
+    return groups
+
+
+def build_report(keys, groups):
     report = [f"--- object lifecycle of the keys above, from {LOG_FILE_PATTERN}"]
     for key in keys[:MAX_EXPANDED_KEYS]:
         report.append(f"--- key: {key}")
-        # A batch delete lists its keys as "[k1, k2, ...]", so the join is by substring.
-        matched = sorted((line for line in lines if key in line), key=timestamp)
-        if not matched:
-            report.append(NO_LIFECYCLE)
-            continue
-        report.extend(matched[:MAX_LINES_PER_KEY])
-        if len(matched) > MAX_LINES_PER_KEY:
-            omitted = len(matched) - MAX_LINES_PER_KEY
-            report.append(f"... {omitted} more lifecycle line(s) omitted (per-key line cap {MAX_LINES_PER_KEY})")
+        report.extend(groups[key].report())
     for key in keys[MAX_EXPANDED_KEYS:]:
         report.append(f"--- key: {key}")
         report.append(f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached")
@@ -110,13 +178,20 @@ def build_report(keys, lines):
 
 
 def report_for(matches_file, log_dir):
-    """The report for `matches_file`, or no lines at all when there is nothing to say."""
-    keys = extract_keys(matches_file)
-    if not keys:
+    """The report for `matches_file`, or no lines at all when it holds no match."""
+    matches_text = Path(matches_file).read_text(encoding="utf-8", errors="replace")
+    if not matches_text.strip():
         return []
+    keys = extract_keys(matches_text)
+    if not keys:
+        count = len(matches_text.splitlines())
+        return [
+            f"--- no S3 key found in the {count} match line(s) above "
+            '(only ReadBufferFromS3 adds "while reading key:")'
+        ]
     logs = find_logs(log_dir)
     if not logs:
-        return []
+        return [f"--- no {LOG_FILE_PATTERN} file in {log_dir}, so no lifecycle could be collected"]
     return build_report(keys, collect_lifecycle_lines(keys[:MAX_EXPANDED_KEYS], logs))
 
 
