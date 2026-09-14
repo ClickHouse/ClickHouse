@@ -618,6 +618,22 @@ void ZooKeeper::connect(
                 {
 #if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
+
+                    /// Server Name Indication (SNI): pass the hostname so that TLS servers
+                    /// handling multiple virtual hosts on the same IP present the correct
+                    /// certificate. Mirrors clickhouse-client's Connection::connectToAnyAddress.
+                    /// node.host is "hostname:port" (secure:// prefix already stripped).
+                    {
+                        String sni_host = node.host.substr(0, node.host.rfind(':'));
+                        if (!sni_host.empty() && sni_host.front() == '[' && sni_host.back() == ']')
+                            sni_host = sni_host.substr(1, sni_host.size() - 2);
+                        static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setPeerHostName(sni_host);
+                    }
+
+                    /// Defer the TLS handshake until the first read/write so that handshake
+                    /// errors surface through the normal I/O error path and respect the
+                    /// operation timeout, matching clickhouse-client behaviour.
+                    static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setLazyHandshake(true);
 #else
                     throw Poco::Exception(
                         "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
@@ -628,7 +644,14 @@ void ZooKeeper::connect(
                     socket = Poco::Net::StreamSocket();
                 }
 
-                socket.connect(*node.address, connection_timeout);
+                /// Use a separate timeout for TLS connections when configured: the TLS
+                /// handshake adds overhead not present in plain-TCP connections.
+                /// Mirrors clickhouse-client's secure_connection_timeout.
+                const Poco::Timespan effective_timeout = (node.secure && args.secure_connection_timeout_ms > 0)
+                    ? Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(args.secure_connection_timeout_ms) * 1000)
+                    : connection_timeout;
+
+                socket.connect(*node.address, effective_timeout);
                 socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);

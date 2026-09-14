@@ -1,0 +1,15 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>localhost</host>
+            <port>10181</port>
+            <secure>1</secure>
+        </node>
+    </zookeeper>
+    <openSSL>
+        <client>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>
