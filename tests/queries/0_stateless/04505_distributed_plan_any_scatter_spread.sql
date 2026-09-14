@@ -26,7 +26,6 @@ SET explain_query_plan_default = 'legacy';
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET max_threads = 1;
 SET log_processors_profiles = 1;

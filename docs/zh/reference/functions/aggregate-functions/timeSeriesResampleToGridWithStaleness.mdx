@@ -17,6 +17,8 @@ doc_type: 'reference'
 
 别名：`timeSeriesLastToGrid`。
 
+如果多个样本具有相同的时间戳，则只使用其中一个：值最大的样本。非数字值会输给任何其他值，因此只有当该时间戳处的所有样本均为非数字值时，才会使用非数字值。
+
 <Warning>
   此函数为 Experimental，请通过设置 `allow_experimental_time_series_aggregate_functions=true` 启用。
 </Warning>

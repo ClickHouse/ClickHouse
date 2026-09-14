@@ -623,8 +623,9 @@ static bool writeConsolidatedManifestFile(
     // Collect live data files from the current snapshot only; iterating older snapshots would resurrect deleted files.
     size_t total_data_files = 0;
     // Only data manifests are consolidated; delete-file manifests are carried forward unchanged so deleted rows do not reappear.
-    size_t num_data_manifests = 0;
     std::unordered_set<String> delete_manifest_paths;
+    /// The data manifests of the current snapshot, i.e. exactly the ones a rewrite would replace.
+    std::vector<IcebergPathFromMetadata> data_manifest_paths;
 
     auto current_manifest_list = getManifestList(
         object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
@@ -636,24 +637,8 @@ static bool writeConsolidatedManifestFile(
             delete_manifest_paths.insert(manifest_file.manifest_file_path.serialize());
             continue;
         }
-        ++num_data_manifests;
+        data_manifest_paths.push_back(manifest_file.manifest_file_path);
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
-
-        /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject rather than silently dropping it and making an encrypted table unreadable.
-        {
-            RelativePathWithMetadata key_metadata_object_info(persistent_table_components.path_resolver.resolve(manifest_file.manifest_file_path));
-            auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
-            AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), manifest_file.manifest_file_path, getFormatSettings(context));
-            if (key_metadata_deserializer.hasPath(c_data_file_key_metadata))
-            {
-                for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
-                    if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
-                            "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
-            }
-        }
 
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
@@ -721,15 +706,47 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
+    /// Not a single live data file was collected: every DATA manifest still listed by the current snapshot holds
+    /// only deleted entries (e.g. every row was deleted). There is nothing to consolidate, and a rewrite would ask
+    /// the Avro writer to close a manifest list that was never written to, dereferencing a null stream.
+    /// This is not the "unpartitioned table" case: `partition_key` always carries the source spec-id and schema-id,
+    /// so an unpartitioned table with live files still forms one group and is consolidated as before.
+    if (total_data_files == 0)
+    {
+        LOG_INFO(log, "No live data files in the current snapshot ({} data manifests hold only deleted entries); nothing to do",
+                 data_manifest_paths.size());
+        return true;
+    }
+
     /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
-    if (partitions_map.size() >= num_data_manifests)
+    if (partitions_map.size() >= data_manifest_paths.size())
     {
         LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
-                 num_data_manifests, partitions_map.size());
+                 data_manifest_paths.size(), partitions_map.size());
         return true;
     }
 
     const auto & path_resolver = persistent_table_components.path_resolver;
+
+    /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject
+    /// rather than silently dropping it and making an encrypted table unreadable. This is checked only here,
+    /// past the early returns above: those leave every manifest exactly as it is, so for a table that needs no
+    /// rewrite at all - in particular an emptied one, whose deleted-only manifests are never read again - there
+    /// is no encryption metadata to lose and reporting success must not turn into a hard error.
+    for (const auto & data_manifest_path : data_manifest_paths)
+    {
+        RelativePathWithMetadata key_metadata_object_info(path_resolver.resolve(data_manifest_path));
+        auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
+        AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), data_manifest_path, getFormatSettings(context));
+        if (!key_metadata_deserializer.hasPath(c_data_file_key_metadata))
+            continue;
+        for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
+            if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
+                    "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
+    }
 
     // Create file name generator for new metadata files
     FileNamesGenerator generator(

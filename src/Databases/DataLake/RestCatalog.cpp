@@ -71,7 +71,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
-    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
+    extern const SettingsBool allow_geo_types_in_iceberg;
 }
 
 namespace DB::FailPoints
@@ -1736,7 +1736,7 @@ bool RestCatalog::getTableMetadataImpl(
     if (result.requiresSchema())
     {
         const bool allow_geo_parser
-            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
+            = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
@@ -2176,7 +2176,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         /// version, so the staged files are provably unreachable.
         if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
-            LOG_TRACE(log, "Lost the commit race for {}.{}: {}", namespace_name, table_name, ex.what());
+            LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
 

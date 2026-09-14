@@ -21,7 +21,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
+
+#include <limits>
 
 
 namespace DB
@@ -38,7 +41,6 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool allow_suspicious_codecs;
-extern const SettingsBool allow_experimental_codecs;
 }
 
 
@@ -124,6 +126,22 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
     {
         ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
 
+        /// A codec that depends on the data type resolves differently per substream, and every
+        /// substream is compressed with its own chain, so there is one chain per substream.
+        size_t num_substreams = 0;
+        if (column_type)
+        {
+            ISerialization::StreamCallback count_callback = [&](const auto & substream_path)
+            {
+                if (ISerialization::isSpecialCompressionAllowed(substream_path))
+                    ++num_substreams;
+            };
+            column_type->getDefaultSerialization()->enumerateStreams(count_callback, column_type);
+        }
+        /// A codec resolved without a data type is one chain, and so is a type whose substreams all
+        /// refuse a special codec.
+        VectorWithMemoryTracking<Codecs> codec_chains(num_substreams ? num_substreams : 1);
+
         bool with_compression_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> first_generic_compression_codec_pos;
@@ -167,6 +185,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
+                    size_t substream_index = 0;
                     ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
                         chassert(!substream_path.empty());
@@ -174,6 +193,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         {
                             const auto & last_type = substream_path.back().data.type;
                             result_codec = getImpl(codec_family_name, codec_arguments, last_type.get());
+
+                            /// Enumeration order is the same for every codec of the chain, so the
+                            /// index identifies the substream.
+                            if (substream_index < codec_chains.size())
+                                codec_chains[substream_index].push_back(result_codec);
+                            ++substream_index;
 
                             /// Case for column Tuple, which compressed with codec which depends on data type, like Delta.
                             /// We cannot substitute parameters for such codecs.
@@ -197,34 +222,25 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 if (settings)
                 {
                     const String gate_setting_name = getGateSettingName(codec_family_name);
-                    if (const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name))
+                    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
+                    if (tier && !settings->get(gate_setting_name).safeGet<bool>())
                     {
-                        const bool umbrella_bypass
-                            = *tier == SettingsTierType::EXPERIMENTAL && (*settings)[Setting::allow_experimental_codecs];
-                        if (!settings->get(gate_setting_name).safeGet<bool>() && !umbrella_bypass)
+                        std::string_view reason;
+                        /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
+                        switch (*tier)
                         {
-                            std::string_view reason;
-                            switch (*tier)
-                            {
-                                case SettingsTierType::EXPERIMENTAL:
-                                    reason = "is experimental and not meant to be used in production";
-                                    break;
-                                case SettingsTierType::BETA:
-                                    reason = "is in beta and not yet recommended for production use";
-                                    break;
-                                case SettingsTierType::PRODUCTION:
-                                case SettingsTierType::PRIVATE_PREVIEW:
-                                case SettingsTierType::OBSOLETE:
-                                    reason = "is disabled";
-                                    break;
-                            }
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Codec {} {}. You can enable it with the '{}' setting",
-                                codec_family_name,
-                                reason,
-                                gate_setting_name);
+                            case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
+                            case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
+                            case SettingsTierType::PRODUCTION:
+                            case SettingsTierType::PRIVATE_PREVIEW:
+                            case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
                         }
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Codec {} {}. You can enable it with the '{}' setting",
+                            codec_family_name,
+                            reason,
+                            gate_setting_name);
                     }
                 }
 
@@ -256,6 +272,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
+            /// A codec that was not resolved per substream is the same one for all of them.
+            for (auto & chain : codec_chains)
+                if (chain.size() == i)
+                    chain.push_back(result_codec);
+
             with_compression_codec |= result_codec->isCompression();
             with_none_codec |= result_codec->isNone();
 
@@ -276,6 +297,33 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
 
         if (sanity_check)
         {
+            /// CompressionCodecMultiple stores the number of codecs in a single byte, so a longer chain
+            /// describes a part that cannot be read back. Being a sanity check, this is not enforced on
+            /// the metadata-load path, where an already stored table must stay loadable.
+            if (codecs_descriptions->children.size() > std::numeric_limits<UInt8>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
+                    "so at most {} are supported.",
+                    codecs_descriptions->children.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
+            /// A codec never reserves less than its input, so a reserve below the input means the
+            /// UInt32 compounding wrapped. One byte is the weakest block there is: a chain that
+            /// wraps on it cannot compress a block of any size.
+            for (const auto & chain : codec_chains)
+            {
+                UInt32 reserve_size = 1;
+                for (size_t i = 0; i < chain.size(); ++i)
+                {
+                    const UInt32 next_reserve_size = chain[i]->getCompressedReserveSize(reserve_size);
+                    if (next_reserve_size < reserve_size)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
+                            "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
+                            chain.size(), i + 1, chain[i]->getCodecDesc()->formatForErrorMessage());
+                    reserve_size = next_reserve_size;
+                }
+            }
+
             if (codecs_descriptions->children.size() > 1 && with_none_codec)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "It does not make sense to have codec NONE along with other compression codecs: {}. "

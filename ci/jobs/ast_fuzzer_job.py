@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import os
 import random
 import re
-import sys
 import traceback
 from pathlib import Path
 
@@ -19,6 +19,9 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 # Maximum number of reproduce commands to display inline before writing to file
 MAX_INLINE_REPRODUCE_COMMANDS = 20
+
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 cwd = Utils.cwd()
 WORKSPACE_PATH = Path(cwd) / "ci/tmp/workspace"
@@ -245,6 +248,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
+        f"--memory={Utils.physical_memory() - RUNNER_MEMORY_RESERVE} "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={WORKSPACE_PATH}:/workspace "
         f"--volume={cwd}:/repo "
@@ -594,9 +598,8 @@ def run_fuzz_job(check_name: str):
 
 
 if __name__ == "__main__":
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    args = parser.parse_args()
 
-    run_fuzz_job(check_name)
+    run_fuzz_job(args.check_name)
