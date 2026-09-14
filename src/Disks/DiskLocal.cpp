@@ -5,6 +5,7 @@
 #include <Disks/DiskFactory.h>
 
 #include <Disks/LocalDirectorySyncGuard.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
@@ -65,6 +66,12 @@ namespace
 bool errnoIndicatesReadOnlyDisk(int err)
 {
     return err == EROFS || err == EACCES || err == EPERM || err == ENOSPC || err == EDQUOT;
+}
+
+/// Disks the server builds for its own purposes rather than from a `storage_configuration` entry.
+bool isInternalHelperDiskName(const String & name)
+{
+    return name == "_tmp_default";
 }
 
 UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
@@ -656,6 +663,13 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     , logger(getLogger("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
+    /// Every local root self-checks with its constructor-normalized path (see #18794); this also
+    /// covers the local metadata disks that object storages construct directly. The internal
+    /// helper disks below are named after implementation details an operator cannot map back to a
+    /// config entry, so their roots are probed by whoever owns them instead; the exemption is an
+    /// explicit list because a configured disk may legitimately be named with a leading underscore.
+    if (!isInternalHelperDiskName(name_))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
 }
 
 DiskLocal::DiskLocal(
@@ -675,6 +689,8 @@ DiskLocal::DiskLocal(const String & name_, const String & path_)
     , logger(getLogger("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
+    if (!isInternalHelperDiskName(name_))
+        warnIfAffectedByExt4CorruptionKernelBug(disk_path, fmt::format("the path of disk '{}'", name_));
 }
 
 DataSourceDescription DiskLocal::getDataSourceDescription() const
