@@ -172,6 +172,9 @@ StorageObjectStorage::StorageObjectStorage(
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
+    configuration->check(context);
+
     /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
     /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
     const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
@@ -201,9 +204,6 @@ StorageObjectStorage::StorageObjectStorage(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
-
-    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
-    configuration->check(context);
 
     if (creating_new_storage)
     {

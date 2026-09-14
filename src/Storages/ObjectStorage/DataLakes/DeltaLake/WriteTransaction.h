@@ -52,7 +52,6 @@ private:
     /// tables, as the write schema (the kernel exposes no partitioned write context via FFI).
     const DB::NamesAndTypesList table_schema;
     const LoggerPtr log;
-    std::string write_path;
     std::string path_prefix;
 
     KernelExternEngine engine;
