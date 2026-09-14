@@ -58,7 +58,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT countIf(query LIKE '%same_plain_05154%') > 0, countIf(query LIKE '%same_materialized_05154%')
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish' AND query LIKE 'INSERT INTO%SELECT%'
-  AND query LIKE concat('%', currentDatabase(), '%');
+  AND has(databases, currentDatabase());
 TRUNCATE TABLE dst_local_05154;
 SET prefer_localhost_replica = 1;
 

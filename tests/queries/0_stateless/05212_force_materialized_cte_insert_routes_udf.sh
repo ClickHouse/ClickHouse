@@ -35,7 +35,7 @@ run_case() {
     ${CLICKHOUSE_CLIENT} ${ROUTE} -q "$query" 2>&1 | grep -oF 'DB::Exception' | head -n 1
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} -q "SELECT '$label', groupArray(same) FROM dst"
-    ${CLICKHOUSE_CLIENT} -q "SELECT '$label forwarded', count() > 0 FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish' AND query LIKE 'INSERT INTO%SELECT%' AND query LIKE '%$alias%'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT '$label forwarded', count() > 0 FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish' AND query LIKE 'INSERT INTO%SELECT%' AND query LIKE '%$alias%' AND has(databases, currentDatabase())"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE dst"
 }
 
