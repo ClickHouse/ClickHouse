@@ -321,8 +321,8 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
             # limit from the config while the occupancy query already holds the only slot. The reload
             # is admitted because the limit it installs is not in effect yet when it starts, and
             # `Maximum: 1` proves the check ran against the value it installed. Nothing else runs
-            # after this: the limit is in effect until the occupancy query is killed below, and only
-            # `KILL QUERY` and `system.processes` selects are exempt from it.
+            # after this: the limit is in effect until the occupancy query is killed below, and the
+            # `KILL QUERY` that does it is exempt from it.
             set_config(
                 "<max_concurrent_queries>0</max_concurrent_queries>",
                 "<max_concurrent_queries>1</max_concurrent_queries>",
