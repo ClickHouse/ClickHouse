@@ -23,6 +23,16 @@ The trace context is propagated to downstream services in the following cases:
 
 * [url](/reference/functions/table-functions/url) table function. Trace context information is sent in HTTP headers.
 
+## Spans of distributed plan tasks {#spans-of-distributed-plan-tasks}
+
+With the experimental `make_distributed_plan` setting, a query is split into a plan of stages, and each stage into tasks that are dispatched to stateless workers over HTTP. The dispatch request carries the trace context in the `traceparent` and `tracestate` headers, so the spans on the worker join the initiator's trace:
+
+* `StatelessWorkerClient::sendTask` (kind `CLIENT`) — one span per dispatched task on the initiator, covering the start request only; the task itself runs asynchronously on the worker and is polled for completion. Attributes: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` and `clickhouse.target_host`;
+* `InterserverIOHTTPHandler` (kind `SERVER`) — the worker side of a request that carries a trace context, with `clickhouse.uri` and `http.method`. Requests without a `traceparent` header (for example part fetches between replicas) are not traced;
+* `DistributedPlanTask::execute` (kind `SERVER`) — the execution of one task on the worker, the analogue of the `query` span of a regular query: it carries `db.statement`, `clickhouse.query_id` and `clickhouse.query_status` or the exception the same way, plus the task identity: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (the hash of the serialized plan fragment), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` and the `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` streams the task reads and writes.
+
+The task span outlives the request span that started it. With `distributed_plan_execute_locally = 1` no request is sent: the tasks run on the initiator's threads and their `DistributedPlanTask::execute` spans attach to the initiator's trace directly.
+
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
 
 ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
