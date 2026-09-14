@@ -1118,6 +1118,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     if (source)
                         result_alias = source->tryGetAlias();
 
+                    /// A reference to a CTE reaches here as a subquery that carries its name
+                    /// (`ApplyWithSubqueryVisitor`), and that name qualified the source as well.
+                    if (result_alias.empty() && table_expression.subquery)
+                        result_alias = table_expression.subquery->as<ASTSubquery &>().cte_name;
+
                     if (result_alias.empty() && table_expression.database_and_table_name)
                     {
                         const auto & name_parts = table_expression.database_and_table_name->as<ASTTableIdentifier &>().name_parts;

@@ -48,6 +48,15 @@ mar	30
 mar	300
 1	electronics	200	300	jan	100
 2	clothes	\N	30	jan	10
+-- the name of a CTE qualifies the result too
+jan	10
+jan	100
+mar	30
+mar	300
+1	jan	100
+2	jan	10
+jan
+jan
 -- an alias on the source names the result, and an alias on the clause wins over it
 jan	10
 jan	100

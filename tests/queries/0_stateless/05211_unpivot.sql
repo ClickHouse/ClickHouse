@@ -40,6 +40,14 @@ SELECT '-- the name of an unaliased source still qualifies the result';
 SELECT monthly_sales.month, monthly_sales.sales FROM monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
 SELECT monthly_sales.* FROM monthly_sales UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
 
+SELECT '-- the name of a CTE qualifies the result too';
+WITH cte_05210 AS (SELECT empid, jan, mar FROM monthly_sales)
+SELECT cte_05210.month, cte_05210.sales FROM cte_05210 UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
+WITH cte_05210 AS (SELECT empid, jan FROM monthly_sales)
+SELECT cte_05210.* FROM cte_05210 UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
+WITH cte_05210 AS (SELECT jan FROM monthly_sales)
+SELECT u.month FROM cte_05210 UNPIVOT (sales FOR month IN (jan)) AS u ORDER BY ALL;
+
 SELECT '-- an alias on the source names the result, and an alias on the clause wins over it';
 SELECT s.month, s.sales FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
 SELECT s.empid, s.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
