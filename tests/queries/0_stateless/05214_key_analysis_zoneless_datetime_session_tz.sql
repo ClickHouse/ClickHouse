@@ -96,6 +96,13 @@ SELECT (SELECT count() FROM 05214_day WHERE dt = toDateTime64('2024-01-02 20:00:
 SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';
+SELECT '-- a wrapped text constant: an outer LowCardinality reaches key analysis intact, and a classifier';
+SELECT '-- that peels only Nullable leaves this carrier unfixed while every arm above stays green';
+SELECT (SELECT count() FROM 05214_day WHERE dt = CAST('2024-01-03 05:00:00' AS LowCardinality(String))) AS pruned,
+       (SELECT countIf(dt = CAST('2024-01-03 05:00:00' AS LowCardinality(String))) FROM 05214_day) AS honest
+SETTINGS session_timezone = 'Asia/Tokyo';
+
+SELECT '';
 SELECT '-- negative control: a key whose CAST input is not a DateTime still takes the direct fast path,';
 SELECT '-- which is what makes granule pruning possible for a round trip that cannot be done safely';
 CREATE TABLE 05214_dynamic (d Dynamic, id Int32) ENGINE = MergeTree ORDER BY CAST(d AS String) SETTINGS index_granularity = 1;
