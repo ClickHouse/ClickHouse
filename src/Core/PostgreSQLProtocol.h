@@ -325,7 +325,10 @@ protected:
         catch (...)
         {
             /// Keep the stream aligned before the handler starts discarding messages through `Sync`.
-            payload_in.ignore(payload_size - payload_in.count());
+            /// When the frame itself could not be read (the client closed the connection before sending
+            /// the declared bytes), the buffer is canceled and there is nothing left to align.
+            if (!payload_in.isCanceled())
+                payload_in.ignore(payload_size - payload_in.count());
             throw;
         }
 
