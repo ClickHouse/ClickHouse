@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.scripts.s3_key_lifecycle import MAX_EXPANDED_KEYS, report_for
+from ci.jobs.scripts.s3_key_lifecycle import MAX_EXPANDED_KEYS, MAX_LINES_PER_KEY, report_for
 
 _KEY = "test/hbh/aaaaaaaaaaaaaaaaaaaaaaaaa"
 _OTHER = "test/hbh/bbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -88,6 +88,29 @@ def test_another_keys_lifecycle_is_not_attributed_to_the_match(tmp_path):
     assert _OTHER not in "\n".join(report), report
     # The match line itself is not a lifecycle line: it is selected by logger name.
     assert "executeQuery" not in "\n".join(report), report
+
+
+def test_two_matched_keys_each_get_their_own_lifecycle(tmp_path):
+    # The report is per-key, so the dispatch over every group has to be proven and not just the
+    # single-key path: a collector that stopped after the first key passes every case above.
+    matches = _logs(tmp_path)
+    matches.write_text(
+        f"{_MATCH}\n{_MATCH.replace(_KEY, _OTHER)}\n", encoding="utf-8"
+    )
+
+    report = report_for(matches, tmp_path)
+    first = _group(report, _KEY)
+    second = _group(report, _OTHER)
+
+    assert len(first) == 2, first
+    assert all(_OTHER not in line for line in first), first
+    assert any("all_1_1_0/data.bin" in line for line in first), first
+    assert any("were removed from S3" in line for line in first), first
+
+    assert len(second) == 2, second
+    assert all(_KEY not in line for line in second), second
+    assert any("all_2_2_0/data.bin" in line for line in second), second
+    assert any("was removed from S3" in line for line in second), second
 
 
 def test_a_key_with_no_lifecycle_says_so_instead_of_printing_nothing(tmp_path):
@@ -268,3 +291,27 @@ def test_the_key_cap_never_drops_a_key(tmp_path):
     assert _group(report, keys[MAX_EXPANDED_KEYS]) == [
         f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached"
     ]
+
+
+def test_the_per_key_line_cap_says_how_many_lines_it_omitted(tmp_path):
+    # The per-key cap is the other half of bounding the scan: it may shorten one key's history,
+    # but a shortened history that does not say so reads as a complete one.
+    extra = 12
+    (tmp_path / "clickhouse-server.final.log").write_text(
+        "\n".join(
+            f"2026.09.14 12:00:{i % 60:02d}.000000 [ 1001 ] {{}} <Debug> deleteFileFromS3: "
+            f"Object with path {_KEY} was removed from S3"
+            for i in range(MAX_LINES_PER_KEY + extra)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    matches = tmp_path / "no_such_key_errors.txt"
+    matches.write_text(f"{_MATCH}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert len(body) == MAX_LINES_PER_KEY + 1, len(body)
+    assert body[-1] == (
+        f"... {extra} more lifecycle line(s) omitted (per-key line cap {MAX_LINES_PER_KEY})"
+    ), body[-1]
