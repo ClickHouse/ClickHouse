@@ -137,6 +137,7 @@ private:
 
     void createConsumersConnection();
     void createConsumers();
+    void dropConsumers();
 
     bool subscribeConsumers();
     void unsubscribeConsumers();
