@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          filter: blob:none
       - name: Inspect merge conflicts
         shell: bash
         run: |
@@ -23,7 +24,7 @@ jobs:
           git config user.name 'clickhouse-gh'
           git config user.email 'clickhouse-gh@users.noreply.github.com'
           git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
-          git fetch --no-tags upstream master
+          git fetch --no-tags --filter=blob:none upstream master
           set +e
           git merge --no-commit --no-ff upstream/master
           rc=$?
