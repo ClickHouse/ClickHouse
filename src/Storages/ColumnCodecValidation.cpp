@@ -2,6 +2,10 @@
 
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnCodecAST.h>
@@ -46,6 +50,44 @@ namespace
 {
 
 using StreamsByDeclaration = std::map<CodecPath, std::vector<ApplicableCodecStream>>;
+
+/// Return true if the logical route to a stream enters a Map.
+/// Map serialization exposes keys and values as ordinary Tuple leaves, so the leaf type alone
+/// is not enough to prevent a lossy codec from changing Map keys.
+bool streamRouteEntersMap(DataTypePtr type, const CodecPath & path)
+{
+    size_t path_position = 0;
+    while (type)
+    {
+        if (typeid_cast<const DataTypeMap *>(type.get()))
+            return true;
+
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            type = nullable->getNestedType();
+            continue;
+        }
+
+        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            type = array->getNestedType();
+            continue;
+        }
+
+        const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple || path_position == path.size())
+            return false;
+
+        const auto position = tuple->tryGetPositionByName(path[path_position]);
+        if (!position)
+            return false;
+
+        type = tuple->getElements()[*position];
+        ++path_position;
+    }
+
+    return false;
+}
 
 /// Canonicalize, normalize, and instantiate every effective declaration.
 ColumnCodecDescription validatePolicy(
@@ -102,9 +144,14 @@ ColumnCodecDescription validatePolicy(
                     continue;
                 has_value_stream = true;
                 auto candidate = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
+                auto candidate_codec = factory.get(candidate, stream.leaf_type);
+                if (candidate_codec->isLossyCompression() && streamRouteEntersMap(logical_type, stream.logical_path))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Lossy codec cannot be applied to a Map stream because it can change Map keys");
                 /// The AST is not a complete runtime identity: FPC on Float32 and Float64
                 /// normalizes to FPC(12) for both, but its codec hash also includes the float width.
-                const UInt64 candidate_hash = factory.get(candidate, stream.leaf_type)->getHash();
+                const UInt64 candidate_hash = candidate_codec->getHash();
                 if (!common_normalized)
                 {
                     common_normalized = candidate;
