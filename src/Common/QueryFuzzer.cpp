@@ -4762,8 +4762,12 @@ ASTPtr QueryFuzzer::addJoinClause()
         }
 
         auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-        table->table_join = table_join;
-        table->table_expression = table_exp;
+        /// Every sub-node must also be in `children`: a generic AST walk visits only that vector,
+        /// so a member missing from it hides the joined relation from every visitor.
+        table->children.push_back(table_join);
+        table->table_join = table->children.back();
+        table->children.push_back(table_exp);
+        table->table_expression = table->children.back();
         return table;
     }
     return nullptr;
