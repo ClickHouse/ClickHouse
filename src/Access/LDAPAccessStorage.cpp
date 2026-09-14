@@ -434,6 +434,12 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     std::lock_guard lock(mutex);
+
+    /// `memory_storage` must never hold a name listed in `exclude_users` (see `authenticateImpl`), so the
+    /// answer is known without looking, and both `findImpl` overloads must give it.
+    if (type == AccessEntityType::USER && excluded_user_names.contains(name))
+        return {};
+
     return memory_storage.find(type, name);
 }
 
@@ -442,21 +448,23 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 {
     std::lock_guard lock(mutex);
 
+    /// Names listed in `exclude_users` are never resolved through LDAP, not even by the forced lookup
+    /// that `EXECUTE AS` performs, and `memory_storage` must never hold them (see `authenticateImpl`).
+    /// Decided before touching the memory storage so that this overload can never disagree with the
+    /// plain one above.
+    if (type == AccessEntityType::USER && excluded_user_names.contains(name))
+    {
+        if (force_external_lookup)
+            LOG_DEBUG(getLogger(), "Skipping excluded user {}: the name is listed in exclude_users", name);
+        return {};
+    }
+
     auto id = memory_storage.find(type, name);
 
     /// Only USER lookups go to LDAP; other entity types (roles, profiles, ...) live
     /// elsewhere and are not resolvable through the LDAP directory.
     if (!force_external_lookup || type != AccessEntityType::USER)
         return id;
-
-    /// Names listed in `exclude_users` are never resolved through LDAP, not even by the forced
-    /// lookup that `EXECUTE AS` performs. They are never materialised by `authenticateImpl`
-    /// either, so there is nothing to return from `memory_storage` for them.
-    if (excluded_user_names.contains(name))
-    {
-        LOG_DEBUG(getLogger(), "Skipping excluded user {}: the name is listed in exclude_users", name);
-        return {};
-    }
 
     const bool has_role_mapping = !role_search_params.empty();
 
