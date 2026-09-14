@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -11,16 +11,12 @@ class Context;
 
 /** Implements the system table `symbols` for introspection of symbols in the ClickHouse binary.
   */
-class StorageSystemSymbols final : public StorageWithCommonVirtualColumns
+class StorageSystemSymbols final : public IStorage
 {
 public:
     explicit StorageSystemSymbols(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemSymbols"; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

@@ -44,12 +44,12 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     in >> "source replica: " >> source_replica >> "\n";
 
-    size_t count = 0;
+    size_t count;
     in >> "block numbers count: " >> count >> "\n";
     for (size_t i = 0; i < count; ++i)
     {
         String partition_id;
-        Int64 number = 0;
+        Int64 number;
         in >> partition_id >> "\t" >> number >> "\n";
         block_numbers[partition_id] = number;
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -11,6 +12,12 @@ namespace DB
 
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
+
+NameSet injectRequiredColumns(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool with_subcolumns,
+    Names & columns);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 

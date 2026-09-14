@@ -1,6 +1,5 @@
 #include <Access/IAccessStorage.h>
 #include <Access/Authentication.h>
-#include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
@@ -12,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
-#include <base/scope_guard.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -49,14 +47,6 @@ namespace
     {
         return "ID(" + toString(id) + ")";
     }
-
-    /// Tracks how deep we are inside `IAccessStorage::remove`. Concrete storages (e.g.
-    /// `DiskAccessStorage`) call `remove` on their internal in-memory cache, and
-    /// `MultipleAccessStorage::removeImpl` delegates to a sub-storage's `remove`. We
-    /// only want to cascade dependency cleanup once — at the outermost user-facing call —
-    /// otherwise an inner cascade can update the in-memory state without writing it to
-    /// disk, and the outer cascade then sees no work to do.
-    thread_local size_t remove_depth = 0;
 }
 
 
@@ -142,7 +132,7 @@ std::optional<String> IAccessStorage::readName(const UUID & id, bool throw_if_no
 }
 
 
-Strings IAccessStorage::readNames(const UUIDs & ids, bool throw_if_not_exists) const
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids, bool throw_if_not_exists) const
 {
     Strings res;
     res.reserve(ids.size());
@@ -161,7 +151,7 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 }
 
 
-Strings IAccessStorage::tryReadNames(const UUIDs & ids) const
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
 {
     return readNames(ids, /* throw_if_not_exists = */ false);
 }
@@ -232,7 +222,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists, bool throw_if_exists)
 {
-    chassert(ids.empty() || (multiple_entities.size() == ids.size()));
+    assert(ids.empty() || (multiple_entities.size() == ids.size()));
 
     if (multiple_entities.empty())
         return {};
@@ -325,12 +315,7 @@ bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bo
 
 bool IAccessStorage::remove(const UUID & id, bool throw_if_not_exists)
 {
-    ++remove_depth;
-    SCOPE_EXIT(--remove_depth);
-    bool removed = removeImpl(id, throw_if_not_exists);
-    if (removed && remove_depth == 1)
-        removeReferencesToRemovedIDs({id});
-    return removed;
+    return removeImpl(id, throw_if_not_exists);
 }
 
 
@@ -341,18 +326,13 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     if (ids.size() == 1)
         return remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
 
-    ++remove_depth;
-    SCOPE_EXIT(--remove_depth);
-
     Strings removed_names;
-    std::vector<UUID> removed_ids;
     try
     {
+        std::vector<UUID> removed_ids;
         std::vector<UUID> readonly_ids;
 
-        /// First we call removeImpl() for non-readonly entities. We bypass remove() here
-        /// to defer the dependency cleanup until after every entity has been removed —
-        /// otherwise we'd run the cascade once per id and waste work.
+        /// First we call remove() for non-readonly entities.
         for (const auto & id : ids)
         {
             if (isReadOnly(id))
@@ -360,7 +340,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             else
             {
                 auto name = tryReadName(id);
-                if (removeImpl(id, throw_if_not_exists))
+                if (remove(id, throw_if_not_exists))
                 {
                     removed_ids.push_back(id);
                     if (name)
@@ -369,30 +349,24 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             }
         }
 
-        /// For readonly entities we're still going to call removeImpl() because
+        /// For readonly entities we're still going to call remove() because
         /// isReadOnly(id) could change and even if it's not then a storage-specific
         /// implementation of removeImpl() will probably generate a better error message.
         for (const auto & id : readonly_ids)
         {
             auto name = tryReadName(id);
-            if (removeImpl(id, throw_if_not_exists))
+            if (remove(id, throw_if_not_exists))
             {
                 removed_ids.push_back(id);
                 if (name)
                     removed_names.push_back(std::move(name).value());
             }
         }
+
+        return removed_ids;
     }
     catch (Exception & e)
     {
-        /// Even on failure, clean up references for the entities we did remove so the
-        /// access state on disk does not retain dangling UUIDs.
-        if (!removed_ids.empty() && remove_depth == 1)
-        {
-            std::unordered_set<UUID> removed_set(removed_ids.begin(), removed_ids.end());
-            removeReferencesToRemovedIDs(removed_set);
-        }
-
         /// Try to add more information to the error message.
         if (!removed_names.empty())
         {
@@ -406,82 +380,6 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
         }
         throw;
-    }
-
-    if (!removed_ids.empty() && remove_depth == 1)
-    {
-        std::unordered_set<UUID> removed_set(removed_ids.begin(), removed_ids.end());
-        removeReferencesToRemovedIDs(removed_set);
-    }
-    return removed_ids;
-}
-
-
-void IAccessStorage::removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids)
-{
-    if (removed_ids.empty())
-        return;
-
-    auto update_func = [&removed_ids](const AccessEntityPtr & old, const UUID &) -> AccessEntityPtr
-    {
-        auto new_entity = old->clone();
-        new_entity->removeDependencies(removed_ids);
-        return new_entity;
-    };
-
-    /// Any access entity type can reference any other (e.g. a user references roles, a
-    /// settings profile references roles/users, a row policy references roles/users, etc.),
-    /// so we walk every type. Iteration is O(N) where N is the total number of access
-    /// entities — typically small.
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        std::vector<UUID> dependent_ids;
-        try
-        {
-            dependent_ids = findAllImpl(type);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger(), "while listing access entities for dependency cleanup");
-            continue;
-        }
-
-        for (const auto & dependent_id : dependent_ids)
-        {
-            /// An entity can never depend on itself in the relevant sense, and we just
-            /// removed entities in `removed_ids` — there is nothing to update for them.
-            if (removed_ids.contains(dependent_id))
-                continue;
-
-            try
-            {
-                auto entity = readImpl(dependent_id, /* throw_if_not_exists= */ false);
-                if (!entity)
-                    continue;
-                if (!entity->hasDependencies(removed_ids))
-                    continue;
-
-                /// `update()` will dispatch to the same storage that owns the entity,
-                /// so for `MultipleAccessStorage` this naturally crosses sub-storages.
-                /// `throw_if_not_exists=false` covers concurrent removals.
-                update(dependent_id, update_func, /* throw_if_not_exists= */ false);
-            }
-            catch (Exception & e)
-            {
-                /// A read-only sub-storage (e.g. `users.xml`) cannot be updated. That is
-                /// expected — its content is reloaded from the config so any references
-                /// will be reconciled on the next reload. Don't fail the whole cascade.
-                if (e.code() == ErrorCodes::ACCESS_STORAGE_READONLY)
-                    continue;
-                tryLogCurrentException(getLogger(),
-                    "while removing references to dropped access entities from " + outputID(dependent_id));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger(),
-                    "while removing references to dropped access entities from " + outputID(dependent_id));
-            }
-        }
     }
 }
 
@@ -631,30 +529,13 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
-/// `check_valid_until = false` answers "does this credential match this method?" without the expiry gate.
-/// The fail-close ambiguity scan below needs that: an already-expired matching method must still shorten
-/// the combined `VALID UNTIL` of the session instead of silently disappearing from the combination.
 Authentication::CredentialsCheckResult areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings,
-    bool check_valid_until = true);
-
-/// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
-/// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
-/// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
-/// `VALID UNTIL` of an allowed login, contradicting the "skip this authentication type entirely" contract.
-static bool authenticationTypeIsAllowed(AuthenticationType type, bool allow_no_password, bool allow_plaintext_password)
-{
-    if (type == AuthenticationType::NO_PASSWORD)
-        return allow_no_password;
-    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
-        return allow_plaintext_password;
-    return true;
-}
+    SettingsChanges & settings);
 
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
@@ -676,11 +557,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             bool skipped_not_allowed_authentication_methods = false;
 
             bool need_second_factor = false;
-            const AuthenticationData * matched_authentication_method = nullptr;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
-                if (!authenticationTypeIsAllowed(auth_type, allow_no_password, allow_plaintext_password))
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
                 {
                     skipped_not_allowed_authentication_methods = true;
                     continue;
@@ -689,109 +570,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
-                    matched_authentication_method = &auth_method;
-                    break;
+                    auth_result.authentication_data = auth_method;
+                    return auth_result;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
                     need_second_factor = true;
-            }
-
-            if (matched_authentication_method)
-            {
-                /// `AlwaysAllowCredentials` are used only after an internal caller has authenticated the user, for
-                /// example with an interserver secret. They do not identify any particular authentication method, so
-                /// applying one method's `GRANTS` or `VALID UNTIL` here would incorrectly make those method-specific
-                /// limits affect the internal connection. Preserve the matched method's type for session logging.
-                if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
-                {
-                    auth_result.authentication_data = *matched_authentication_method;
-                    auth_result.authentication_data.setGrants({});
-                    auth_result.authentication_data.setValidUntil(0);
-                    return auth_result;
-                }
-
-                auth_result.authentication_data = *matched_authentication_method;
-
-                /// Fail-close against ambiguous credentials. Authentication returns the first matching method, but the
-                /// same effective credential can be accepted by more than one method (for example `IDENTIFIED BY 'p', BY 'p'`
-                /// stores two `sha256_password` methods with different random salts). If a broader or earlier method could
-                /// shadow a later token-style method, a limited credential would silently regain the full rights (or lifetime)
-                /// of the other method. To prevent that, the session is limited to the intersection of the `GRANTS` of all
-                /// matching methods and expires at the earliest of their `VALID UNTIL`. The scan matches credentials
-                /// while ignoring expiry: an already-expired method that accepts the credential must still shorten the
-                /// combined `VALID UNTIL` (rejecting the login below), otherwise the expiry of a token method would
-                /// silently hand the shared credential the rights and lifetime of the broader method.
-                ///
-                /// Methods that neither restrict the grants nor set an expiry cannot narrow anything and are skipped without
-                /// an extra credential check. Methods verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`) are
-                /// also skipped, so authentication never performs an extra external probe here: a probe with the same credential
-                /// could fail against a different server and, for example, trip an account lockout there. This skip cannot lose
-                /// a `GRANTS` narrowing, because a `GRANTS` clause on an externally verified method is rejected at creation
-                /// (see `AuthenticationData::fromAST`); it can only lose a `VALID UNTIL` of such a method, matching the
-                /// pre-existing first-match behavior of per-method `VALID UNTIL`.
-                std::optional<AccessRights> combined_grants;
-                if (!matched_authentication_method->getGrants().structurallyEmpty())
-                    combined_grants.emplace(matched_authentication_method->getGrants());
-                bool another_method_restricts_grants = false;
-                time_t combined_valid_until = matched_authentication_method->getValidUntil();
-
-                for (const auto & other_method : user->authentication_methods)
-                {
-                    if (&other_method == matched_authentication_method)
-                        continue;
-
-                    /// A method disabled by `allow_no_password` / `allow_plaintext_password` must be ignored here too,
-                    /// exactly as in the primary loop above; otherwise it could narrow or expire an otherwise allowed login.
-                    if (!authenticationTypeIsAllowed(other_method.getType(), allow_no_password, allow_plaintext_password))
-                        continue;
-
-                    const bool restricts_grants = !other_method.getGrants().structurallyEmpty();
-                    const time_t other_valid_until = other_method.getValidUntil();
-                    if (!restricts_grants && other_valid_until == 0)
-                        continue;
-                    if (!authenticationTypeIsVerifiedLocally(other_method.getType()))
-                        continue;
-
-                    SettingsChanges discarded_settings;
-                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings, /* check_valid_until = */ false)
-                        != Authentication::CredentialsCheckResult::Success)
-                        continue;
-
-                    if (restricts_grants)
-                    {
-                        another_method_restricts_grants = true;
-                        AccessRights other_grants{other_method.getGrants()};
-                        if (combined_grants)
-                            combined_grants->makeIntersection(other_grants);
-                        else
-                            combined_grants.emplace(std::move(other_grants));
-                    }
-
-                    if (other_valid_until != 0 && (combined_valid_until == 0 || other_valid_until < combined_valid_until))
-                        combined_valid_until = other_valid_until;
-                }
-
-                /// The earliest `VALID UNTIL` among the matching methods wins even when it has already passed:
-                /// the shared credential is expired as a whole, exactly as if the single matched method had expired.
-                if (combined_valid_until != 0)
-                {
-                    const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                    if (now > combined_valid_until)
-                        throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
-                }
-
-                if (another_method_restricts_grants)
-                {
-                    AccessRightsElements limited = combined_grants->getElements();
-                    if (limited.structurallyEmpty())
-                        limited.emplace_back(); /// Empty intersection means deny all (`USAGE ON *.*`), not "no limit".
-                    auth_result.authentication_data.setGrants(std::move(limited));
-                }
-
-                if (combined_valid_until != matched_authentication_method->getValidUntil())
-                    auth_result.authentication_data.setValidUntil(combined_valid_until);
-
-                return auth_result;
             }
 
             if (skipped_not_allowed_authentication_methods)
@@ -818,8 +601,7 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings,
-    bool check_valid_until)
+    SettingsChanges & settings)
 {
     if (!credentials.isReady())
         return Authentication::CredentialsCheckResult::Fail;
@@ -827,16 +609,13 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     if (credentials.getUserName() != user_name)
         return Authentication::CredentialsCheckResult::Fail;
 
-    if (check_valid_until)
+    auto valid_until = authentication_method.getValidUntil();
+    if (valid_until)
     {
-        auto valid_until = authentication_method.getValidUntil();
-        if (valid_until)
-        {
-            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-            if (now > valid_until)
-                return Authentication::CredentialsCheckResult::Fail;
-        }
+        if (now > valid_until)
+            return Authentication::CredentialsCheckResult::Fail;
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);

@@ -9,7 +9,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
-#include <Core/ConstantValue.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
@@ -65,13 +64,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// NOTE: this helper is a temporary compatibility shim for the legacy `Field`-returning API. It
-/// re-adds a `Field` materialization (which the ongoing removal of `Field` aims to avoid) purely to
-/// preserve behavior: without it a literal round-trips through the size-1 column and `operator[]`
-/// canonicalizes tags (`Bool`->`UInt64`), so e.g. `values('x String', true)` returns `'1'` instead of
-/// `'true'`. It is used at both literal sites in the impl below (the original `node`, and an AST that
-/// `TreeRewriter` folds into a literal). Delete this together with the `Field`-returning
-/// `evaluateConstantExpression` once its callers move to the column API (`evaluateConstantExpressionAsColumn`).
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
@@ -79,38 +71,14 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     /// Example: Array [1, 2.3] will have 2 fields with types UInt64 and Float64
     /// when result type is Array(Float64).
     /// So, we need to convert this field to the result type.
-    return {convertFieldToType(literal->value, *type), type};
+    Field res = convertFieldToType(literal->value, *type);
+    return {res, type};
 }
 
-static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
+std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
-    auto [field, type] = getFieldAndDataTypeFromLiteral(literal);
-    return {ConstantValue::wrapToColumnConst(type->createColumnConst(1, field)), type};
-}
-
-/// `literal_out` (the compatibility shim documented on `getFieldAndDataTypeFromLiteral`): a literal
-/// result can arise either directly (`node` is an `ASTLiteral`) or after `TreeRewriter::analyze` folds
-/// a non-literal into one. When `literal_out` is
-/// non-null (the `Field`-returning API is calling), such a literal is handed back through it as a
-/// tag-preserving `Field` and NO column is built (the function returns `std::nullopt`); when it is
-/// null (the column API is calling), the size-1 column is built as usual. This keeps the legacy
-/// `Field` API tag-faithful without building a column only to discard it.
-static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExpressionAsColumnImpl(
-    const ASTPtr & node, const ContextPtr & context, bool no_throw,
-    std::optional<EvaluateConstantExpressionResult> * literal_out = nullptr)
-{
-    auto from_literal = [&](ASTLiteral * literal) -> std::optional<EvaluateConstantExpressionColumnResult>
-    {
-        if (literal_out)
-        {
-            *literal_out = getFieldAndDataTypeFromLiteral(literal);
-            return std::nullopt;
-        }
-        return getColumnAndDataTypeFromLiteral(literal);
-    };
-
     if (ASTLiteral * literal = node->as<ASTLiteral>())
-        return from_literal(literal);
+        return getFieldAndDataTypeFromLiteral(literal);
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
 
@@ -135,24 +103,19 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
     DataTypePtr result_type;
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        /// In the analyzer code path `result_name` is only used for diagnostic messages below,
-        /// not to match the output column (unlike the non-analyzer path). Avoid calling
-        /// `getColumnName`, because it throws a logical error for arguments that are not
-        /// column expressions (e.g. `*` or an empty expression list coming from a table
-        /// function argument), while a regular exception is later produced by `buildQueryTree`.
-        result_name = ast->formatForLogging();
+        result_name = ast->getColumnName();
 
         auto execution_context = Context::createCopy(context);
         auto expression = buildQueryTree(ast, execution_context);
 
         ColumnsDescription fake_column_descriptions(source_columns);
         auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-        auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
@@ -177,6 +140,12 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -197,7 +166,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
         /// AST potentially could be transformed to literal during TreeRewriter analyze.
         /// For example if we have SQL user defined function that return literal AS subquery.
         if (ASTLiteral * literal = ast->as<ASTLiteral>())
-            return from_literal(literal);
+            return getFieldAndDataTypeFromLiteral(literal);
 
         auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
 
@@ -217,12 +186,6 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
 
-    /// All constant (literal) columns in block are added with size 1.
-    /// But if there was no columns in block before executing a function, the result has size 0.
-    /// Change the size to 1.
-    if (result_column->empty() && isColumnConst(*result_column))
-        result_column = result_column->cloneResized(1);
-
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Empty result column after evaluation "
@@ -234,58 +197,17 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column is not const): {}", result_name);
 
-    /// Keep the value as a size-1 const column: this preserves the exact SQL type (no `Field`
-    /// `NearestFieldType` collapse) and lets callers read it without materializing a `Field`.
-    return ConstantValue{ConstantValue::wrapToColumnConst(result_column), result_type};
-}
-
-/// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
-/// entry points below (for callers not yet migrated to the column API) for NON-literal nodes only;
-/// literal nodes take the tag-preserving fast path (see `getFieldAndDataTypeFromLiteral`). Reading the value back
-/// with `operator[]` canonicalizes nested tags (`Bool`->`UInt64`), matching the historical behavior
-/// of the non-literal path, which also returned `(*result_column)[0]`. Read via the column's
-/// `operator[]` directly (not `ConstantValue::getField`, which uses `IColumn::get`) so this bridge stays
-/// byte-for-byte compatible with that historical path.
-static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)
-{
-    if (!column_result)
-        return {};
-    return std::make_pair((*column_result->getColumn())[0], column_result->getType());
-}
-
-std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)
-{
-    return evaluateConstantExpressionAsColumnImpl(node, context, true);
-}
-
-EvaluateConstantExpressionColumnResult evaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)
-{
-    auto res = evaluateConstantExpressionAsColumnImpl(node, context, false);
-    if (!res)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
-    return *res;
+    return std::make_pair((*result_column)[0], result_type);
 }
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
-    /// Bridge B1: a (possibly rewrite-folded) literal comes back through `literal_result` as a
-    /// tag-preserving `Field`; otherwise materialize the column result.
-    std::optional<EvaluateConstantExpressionResult> literal_result;
-    auto column_result = evaluateConstantExpressionAsColumnImpl(node, context, true, &literal_result);
-    if (literal_result)
-        return literal_result;
-    return materializeToField(std::move(column_result));
+    return evaluateConstantExpressionImpl(node, context, true);
 }
 
 EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
-    /// Bridge B1: a (possibly rewrite-folded) literal comes back through `literal_result` as a
-    /// tag-preserving `Field`; otherwise materialize the column result.
-    std::optional<EvaluateConstantExpressionResult> literal_result;
-    auto column_result = evaluateConstantExpressionAsColumnImpl(node, context, false, &literal_result);
-    if (literal_result)
-        return std::move(*literal_result);
-    auto res = materializeToField(std::move(column_result));
+    auto res = evaluateConstantExpressionImpl(node, context, false);
     if (!res)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
     return *res;
@@ -623,11 +545,7 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
-                /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
-                /// because the conjunction map is consumed by evaluatePartialResult with
-                /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
-                /// rely on the column's row count.
-                ColumnPtr column = ColumnConst::create(col->getDataColumnPtr(), 1);
+                ColumnPtr column = col->getPtr();
                 if (!value->result_type->equals(*node->result_type))
                 {
                     auto inner = tryCastColumn(col->getDataColumnPtr(), value->result_type, node->result_type);
@@ -656,7 +574,10 @@ namespace
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return {};
 
-        const auto & col = value->column->getDataColumnPtr();
+        auto col = value->column;
+        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
+            col = col_const->getDataColumnPtr();
+
         const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
         if (!col_set || !col_set->getData())
             return {};
@@ -712,7 +633,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();
@@ -812,7 +733,7 @@ namespace
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (node->result_type->canBeUsedInBooleanContext())
+            if (isColumnConst(*node->column) && node->result_type->canBeUsedInBooleanContext())
             {
                 if (!node->column->getBool(0))
                     return DisjunctionList{};
@@ -844,7 +765,7 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     if (!predicate)
         return {};
 
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
     auto matches = matchTrees(expr, *filter_dag.dag, false);
 
     auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
