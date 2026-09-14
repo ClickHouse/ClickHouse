@@ -1,0 +1,92 @@
+-- Tests that a text index `preprocessor`/`postprocessor` expression is authorized against the user who
+-- submits the DDL. The expression used to be resolved under the global full-access context, so a
+-- grant-checked function placed there ran with neither the grant nor `allow_introspection_functions`,
+-- and its output was then readable back through the index.
+--
+-- `allow_introspection_functions` and the per-function grant are enforced side by side in
+-- `ContextAccess::checkAccessImplHelper`, past the `full_access` short-circuit that used to be taken,
+-- so the setting exercises the same gate without needing a second user.
+
+DROP TABLE IF EXISTS tab;
+
+SELECT '1. The boundary: a direct call is denied.';
+
+SELECT demangle('_ZNK2DB7Context9getAccessEv'); -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '2. The same function in a preprocessor is denied too.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '3. And in a postprocessor.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '4. A privileged call nested below a String-typed top level is denied.';
+
+-- The result type gate only constrains the top of the expression, so it bounds nothing on its own.
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(val, demangle(val)))
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '5. ALTER ... ADD INDEX is denied on the same grounds.';
+
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)); -- { serverError FUNCTION_NOT_ALLOWED }
+
+DROP TABLE tab;
+
+SELECT '6. An unprivileged expression is unaffected.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'Hello World');
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
+
+DROP TABLE tab;
+
+SELECT '7. With the privilege the same expression is accepted: this is authorization, not a blocklist.';
+
+SET allow_introspection_functions = 1;
+
+-- `demangle` returns its argument unchanged when it is not a mangled name, so the tokens are the words.
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello world');
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
+
+SELECT '8. Losing the privilege also stops reads that re-resolve the expression over column data.';
+
+SET allow_introspection_functions = 0;
+
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']); -- { serverError FUNCTION_NOT_ALLOWED }
+
+DROP TABLE tab;
