@@ -24,9 +24,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-/// Matches the `largestTriangleThreeBuckets` contract (its `MAX_ARRAY_SIZE`), so no state readable today is rejected.
-static constexpr size_t MAX_STATISTICS_STATE_SIZE = 1ULL << 30;
-
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = VectorWithMemoryTracking<Float64>;
 
@@ -125,7 +122,7 @@ struct StatisticalSample
         size_t bytes = 0;
         if (common::mulOverflow(count, sizeof(Element), bytes))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
+                "Too large array size ({}) in aggregate function state", count);
 
         sample.clear();
         while (sample.size() < count)
@@ -145,9 +142,6 @@ struct StatisticalSample
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
-        if (size_x > MAX_STATISTICS_STATE_SIZE || size_y > MAX_STATISTICS_STATE_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
         readSample(x, size_x, buf, arena);
         readSample(y, size_y, buf, arena);
     }

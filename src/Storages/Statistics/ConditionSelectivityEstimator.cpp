@@ -20,7 +20,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/ParseError.h>
 
 
@@ -243,19 +242,6 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     return false;
 }
 
-bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
-{
-    if (parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & part : parts)
-    {
-        if (parts_names[idx++] != part.data_part->name)
-            return true;
-    }
-    return false;
-}
-
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -269,11 +255,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     Field const_value;
     DataTypePtr const_type;
     String column_name;
-    /// Set when the right-hand side of IN / NOT IN is a prepared set whose ranges we can share.
-    /// The ranges themselves are pulled only at the point of use: the checks below can still reject
-    /// the atom (e.g. the left side is an expression rather than a column), and deriving them for an
-    /// atom we then discard is exactly the work this reuse is meant to avoid.
-    SetPtr set_for_ranges;
     DataTypePtr column_type;
 
     if (node.isFunction())
@@ -375,10 +356,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return false;
                 }
 
-                /// Take the set's shared range view instead of copying every element into a `Tuple`
-                /// only to turn it back into ranges below: for a large set that dominates planning,
-                /// and each consumer of the same set derives an identical result.
-                set_for_ranges = prepared_set;
+                Tuple tuple(columns[0]->size());
+                for (size_t i = 0; i < columns[0]->size(); ++i)
+                    tuple[i] = (*columns[0])[i];
+
+                const_value = std::move(tuple);
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -518,22 +500,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 }
             }
 
-            /// Every check that could reject this atom has passed, so the ranges will actually be used.
-            if (set_for_ranges)
-            {
-                auto set_ranges = set_for_ranges->getPlainRanges();
-                if (!set_ranges)
-                    return false;
-
-                chassert(is_in_operator);
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                if (func_name == "in")
-                    out.column_ranges.emplace(column_name, *set_ranges);
-                else
-                    out.column_not_ranges.emplace(column_name, *set_ranges);
-                return true;
-            }
-
             /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
             if (is_in_operator && const_value.getType() != Field::Types::Tuple)
                 const_value = Tuple{const_value};
@@ -591,11 +557,8 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
+        else
             column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
     }
 }
 
