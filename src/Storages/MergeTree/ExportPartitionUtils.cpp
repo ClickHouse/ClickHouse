@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_DATA_PART;
+    extern const int UNKNOWN_TABLE;
     extern const int CORRUPTED_DATA;
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
@@ -165,6 +166,13 @@ namespace ExportPartitionUtils
         return non_retryable_codes.contains(code);
     }
 
+    bool isNonRetryablePlainExportError(int code)
+    {
+        return isNonRetryableExportError(code)
+            || code == ErrorCodes::UNKNOWN_TABLE
+            || code == ErrorCodes::NO_SUCH_DATA_PART;
+    }
+
     size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds)
     {
         const size_t initial = std::min(initial_backoff_seconds, max_backoff_seconds);
@@ -205,7 +213,7 @@ namespace ExportPartitionUtils
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
                 "Cannot find any of the exported parts for partition_id '{}' to derive Iceberg partition "
                 "values. They may have been merged and cleaned up before this commit, or are not present "
-                "on this replica. The commit will be retried.",
+                "on this replica.",
                 partition_id);
 
         const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);

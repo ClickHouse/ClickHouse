@@ -216,7 +216,6 @@ struct MergeTreePartitionExportTask
     {
         Poco::JSON::Parser parser;
         auto json = parser.parse(json_string).extract<Poco::JSON::Object::Ptr>();
-        chassert(json);
 
         MergeTreePartitionExportTask task;
         task.transaction_id = json->getValue<String>("transaction_id");

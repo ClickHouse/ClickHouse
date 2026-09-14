@@ -221,14 +221,6 @@ namespace
             && descriptor.create_time + static_cast<time_t>(descriptor.task_timeout_seconds) < now;
     }
 
-    /// `UNKNOWN_TABLE` is retryable on the replicated path (another replica, or a later recreate,
-    /// might restore the destination). For a local export there is no such helper: a missing
-    /// destination at dispatch or commit cannot succeed by retrying.
-    bool isNonRetryablePlainExportError(int code)
-    {
-        return ExportPartitionUtils::isNonRetryableExportError(code)
-            || code == ErrorCodes::UNKNOWN_TABLE;
-    }
 }
 
 bool MergeTreePartitionExportScheduler::tryPersistTimeoutKill(const String & composite_key, TaskEntry & entry, time_t now)
@@ -501,7 +493,7 @@ void MergeTreePartitionExportScheduler::handlePartCompletion(
             updated.last_exception.time = time(nullptr);
             updated.last_exception.count += 1;
 
-            if (result.exception && isNonRetryablePlainExportError(result.exception->code()))
+            if (result.exception && ExportPartitionUtils::isNonRetryablePlainExportError(result.exception->code()))
                 updated.status = MergeTreePartitionExportTask::Status::FAILED;
         }
 
@@ -673,7 +665,7 @@ void MergeTreePartitionExportScheduler::tryCommit(const String & transaction_id)
             updated.last_exception.time = time(nullptr);
             updated.last_exception.count += 1;
 
-            if (failure && isNonRetryablePlainExportError(failure->code()))
+            if (failure && ExportPartitionUtils::isNonRetryablePlainExportError(failure->code()))
                 updated.status = MergeTreePartitionExportTask::Status::FAILED;
             /// Otherwise leave PENDING: run() will retry the commit on the next tick.
         }

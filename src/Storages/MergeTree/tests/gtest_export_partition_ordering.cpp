@@ -17,6 +17,14 @@ namespace Setting
     extern const SettingsBool export_merge_tree_part_ignore_extra_source_columns;
 }
 
+namespace ErrorCodes
+{
+    extern const int NO_SUCH_DATA_PART;
+    extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+}
+
 namespace
 {
     ExportReplicatedMergeTreePartitionManifest makeValidManifest()
@@ -219,6 +227,21 @@ TEST_F(ExportPartitionManifestBackCompatTest, IgnoreExtraSourceColumnsAppliedToW
             worker_context->getSettingsRef()[Setting::export_merge_tree_part_ignore_extra_source_columns].value,
             value) << "value=" << value;
     }
+}
+
+TEST(ExportPartitionRetryClassification, MissingPartIsFatalOnlyOnPlainPath)
+{
+    EXPECT_FALSE(ExportPartitionUtils::isNonRetryableExportError(ErrorCodes::NO_SUCH_DATA_PART));
+    EXPECT_TRUE(ExportPartitionUtils::isNonRetryablePlainExportError(ErrorCodes::NO_SUCH_DATA_PART));
+
+    EXPECT_FALSE(ExportPartitionUtils::isNonRetryableExportError(ErrorCodes::UNKNOWN_TABLE));
+    EXPECT_TRUE(ExportPartitionUtils::isNonRetryablePlainExportError(ErrorCodes::UNKNOWN_TABLE));
+
+    EXPECT_TRUE(ExportPartitionUtils::isNonRetryableExportError(ErrorCodes::BAD_ARGUMENTS));
+    EXPECT_TRUE(ExportPartitionUtils::isNonRetryablePlainExportError(ErrorCodes::BAD_ARGUMENTS));
+
+    EXPECT_FALSE(ExportPartitionUtils::isNonRetryableExportError(ErrorCodes::NETWORK_ERROR));
+    EXPECT_FALSE(ExportPartitionUtils::isNonRetryablePlainExportError(ErrorCodes::NETWORK_ERROR));
 }
 
 }

@@ -29,6 +29,8 @@ namespace ExportPartitionUtils
 {
     bool isNonRetryableExportError(int code);
 
+    bool isNonRetryablePlainExportError(int code);
+
     size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds);
 
     struct ExportedPaths
