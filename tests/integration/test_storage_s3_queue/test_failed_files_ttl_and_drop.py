@@ -3442,15 +3442,21 @@ def test_system_drop_failed_files_azure_queue(started_cluster):
 def test_wait_for_path_reads_loading_retries_live(started_cluster):
     """`waitForPathToBeProcessed()` must react to `ALTER TABLE ... MODIFY SETTING s3queue_loading_retries`
     made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a
-    retry-limit value captured when the wait started.
+    retry-limit value captured when the wait started - AND it must distinguish an already-terminal
+    `/failed/<hash>` node from a live `.retriable` marker while doing so.
 
-    The file is failed with `s3queue_loading_retries=0`, so it becomes terminal on its very first
-    failure and the background streaming loop never touches it again - no ongoing retry race to
-    control for. The pause failpoint then parks the wait right before its terminality check. While
-    parked, the limit is *raised* to 5, which is at or above zero retries, so the file should no
-    longer read as terminal once the check re-reads it - the wait should keep waiting rather than
-    raise immediately. If the check still used the value captured when the wait started (0), it
-    would raise ABORTED right away instead.
+    The file is failed with `s3queue_loading_retries=0`, so `prepareFailedRequestsImpl` creates a
+    terminal `/failed/<hash>` node directly (no `.retriable` marker at all - see the `retriable =
+    max_loading_retries != 0` condition), and the background streaming loop never touches it again -
+    no ongoing retry race to control for.
+
+    The pause failpoint then parks the wait right before its terminality check. While parked, the
+    limit is *raised* to 5. A terminal `/failed/<hash>` node is permanent and must never be treated
+    as retryable again, no matter how high `s3queue_loading_retries` is later raised - so the wait
+    must still raise ABORTED immediately once unparked, exactly as it would have before the ALTER.
+    If the terminality check incorrectly re-applied the live retry-limit comparison to this terminal
+    node (instead of only to a live `.retriable` marker), it would wrongly keep waiting past query
+    timeout instead of raising ABORTED right away.
     """
     node = started_cluster.instances["instance"]
     table_name = f"test_wait_live_retries_{uuid.uuid4().hex[:8]}"
@@ -3492,7 +3498,18 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
         time.sleep(1)
     assert failed_ready, (
         "expected the file to reach a terminal Failed state (loading_retries=0 means "
-        "terminal on the first failure)"
+        "terminal on the first failure, with no .retriable marker created at all)"
+    )
+
+    # Sanity: confirm this is genuinely the terminal-node path, not a live .retriable marker -
+    # otherwise this test would silently stop exercising the terminal case it's meant to cover.
+    retriable_count = node.query(
+        f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}' "
+        f"AND name LIKE '%.retriable'"
+    ).strip()
+    assert retriable_count == "0", (
+        "expected no live .retriable marker with loading_retries=0 - the file should have "
+        "gone straight to a terminal /failed/<hash> node"
     )
 
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
@@ -3515,26 +3532,22 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
         "SYSTEM WAIT FAILPOINT object_storage_queue_pause_before_wait_retry_check PAUSE"
     )
 
+    # Raise the limit while parked - well past the file's zero recorded retries. This must NOT
+    # resurrect the terminal node as retryable.
     node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=5")
     node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
 
-    # With the limit raised past the file's single recorded retry, the wait must not raise
-    # immediately - it should keep waiting. Give it a few seconds to prove it does *not*
-    # return, then tear the table down to unblock the thread (which then sees
-    # QUERY_WAS_CANCELLED rather than ABORTED - either way, it must not be an ABORTED
-    # "failed to be processed" error).
-    flush_thread.join(timeout=5)
-    assert flush_thread.is_alive(), (
-        "SYSTEM FLUSH returned immediately after the retry limit was raised mid-wait - "
-        "the terminality check is still reading a stale limit instead of the live one"
+    flush_thread.join(timeout=30)
+    assert not flush_thread.is_alive(), (
+        "SYSTEM FLUSH did not return after the terminality check was unparked - a terminal "
+        "/failed/<hash> node must raise ABORTED immediately regardless of a later-raised "
+        "s3queue_loading_retries, not keep waiting"
+    )
+    assert len(flush_errors) == 1, f"expected exactly one error, got: {flush_errors}"
+    assert "failed to be processed" in str(flush_errors[0]), (
+        f"expected an ABORTED 'failed to be processed' error for the terminal node, "
+        f"got: {flush_errors[0]}"
     )
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
-
-    flush_thread.join(timeout=30)
-    assert not flush_thread.is_alive(), "flush thread did not exit after the table was dropped"
-    assert len(flush_errors) == 1, f"expected exactly one error after drop, got: {flush_errors}"
-    assert "failed to be processed" not in str(flush_errors[0]), (
-        f"expected a cancellation error from the drop, not an ABORTED failure: {flush_errors[0]}"
-    )
