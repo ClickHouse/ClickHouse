@@ -80,6 +80,10 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     PAUSEABLE_ONCE(s3_read_before_get_object) \
+    PAUSEABLE_ONCE(azure_read_before_download) \
+    PAUSEABLE_ONCE(azure_read_before_read) \
+    PAUSEABLE_ONCE(hdfs_read_before_pread) \
+    PAUSEABLE_ONCE(hdfs_read_before_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \

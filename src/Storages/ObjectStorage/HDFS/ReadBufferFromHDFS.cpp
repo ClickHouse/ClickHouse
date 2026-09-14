@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
@@ -17,6 +18,12 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char hdfs_read_before_pread[];
+extern const char hdfs_read_before_read[];
+}
 
 namespace ErrorCodes
 {
@@ -118,6 +125,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             return false;
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_read);
+        read_settings.read_cancellation.checkIfNotCancelled();
+
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
         int bytes_read = wrapErr<tSize>(hdfsRead, fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         rlock.unlock(std::max(0, bytes_read));
@@ -173,6 +183,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             const int64_t remaining = size - total_read;
             const int64_t current_read_size = std::min(remaining, max_single_pread);
+
+            FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_pread);
+            read_settings.read_cancellation.checkIfNotCancelled();
 
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, current_read_size);
             const int32_t bytes_read = wrapErr<tSize>(
