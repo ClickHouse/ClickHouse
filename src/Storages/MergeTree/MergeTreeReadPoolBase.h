@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -96,13 +97,24 @@ protected:
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
 
-    /// Charge the columns cache write estimate of one part - the uncompressed size of the columns
+    /// Stage the columns cache write estimate of one part - the uncompressed size of the columns
     /// its readers can write to the cache (result, prewhere, mutation and patch-part columns),
-    /// scaled to the selected mark ranges - against the query-wide budget, and disable cache
-    /// writes for the query once the budget is exceeded. Called per part after the read task
-    /// info is built, before any task is handed out.
-    void chargeColumnsCacheWriteEstimate(
-        const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const;
+    /// scaled to the selected mark ranges. Called per part after the read task info is built.
+    /// The estimate is only accumulated here; `commitColumnsCacheWriteEstimate` charges the
+    /// pool's total against the query-wide budget.
+    void stageColumnsCacheWriteEstimate(
+        const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings);
+
+    /// Charge the staged estimate of this pool against the query-wide budget and disable cache
+    /// writes for the query once the budget is exceeded. Runs once, from `createTask`, so that
+    /// it happens before any task is handed out but after the caller has installed the read
+    /// ranges refiner (see `setReadRangesRefiner`): a pool that has one cannot be gated on the
+    /// estimate at all, because the refiner decides how many of the selected marks are really
+    /// read only when a task is cut.
+    void commitColumnsCacheWriteEstimate() const;
+
+    /// The body of the above, run exactly once under `columns_cache_estimate_committed`.
+    void chargeStagedColumnsCacheWriteEstimate() const;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
@@ -134,6 +146,16 @@ protected:
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
+
+    /// Uncompressed bytes the selected mark ranges of this pool are estimated to read into the
+    /// columns cache, and the budget they are compared against. Filled by
+    /// `stageColumnsCacheWriteEstimate`, consumed once by `commitColumnsCacheWriteEstimate`.
+    size_t staged_columns_cache_estimate_bytes = 0;
+    size_t columns_cache_estimate_budget = 0;
+    /// `call_once` rather than a flag: a second thread that reaches `createTask` first must
+    /// wait for the gate to be decided, otherwise its task could be handed out - and its rows
+    /// written to the cache - while the first thread is still charging the estimate.
+    mutable std::once_flag columns_cache_estimate_committed;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     RangesInPatchParts ranges_in_patch_parts;

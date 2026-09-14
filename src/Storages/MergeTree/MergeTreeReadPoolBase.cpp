@@ -525,8 +525,8 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     return read_task_info;
 }
 
-void MergeTreeReadPoolBase::chargeColumnsCacheWriteEstimate(
-    const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const
+void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
+    const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings)
 {
     if (!reader_settings.enable_columns_cache_writes || !owned_columns_cache)
         return;
@@ -618,22 +618,55 @@ void MergeTreeReadPoolBase::chargeColumnsCacheWriteEstimate(
     if (estimate_budget == 0)
         estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
 
-    /// The whole selected range of the part is charged before anything is read. Charging the
-    /// marks task by task, as the tasks were handed out, let a query that is far over the
+    /// The whole selected range of the part is accounted for before anything is read. Charging
+    /// the marks task by task, as the tasks were handed out, let a query that is far over the
     /// budget write the first tasks' worth of data anyway; with data many times the size of
     /// the cache, that was enough to evict everything useful and to pay for copying data that
-    /// could not stay in the cache. Marks that a read ranges refiner drops later are charged
-    /// too, which errs on the side of not caching - the safe side.
+    /// could not stay in the cache.
     const auto part_estimated_bytes = static_cast<size_t>(bytes_per_mark * static_cast<double>(selected_marks));
     if (part_estimated_bytes == 0)
         return;
 
+    /// Only accumulate here. The pool's total is charged against the query-wide budget by
+    /// `commitColumnsCacheWriteEstimate`, which runs once the caller has had its chance to
+    /// install a read ranges refiner.
+    staged_columns_cache_estimate_bytes += part_estimated_bytes;
+    columns_cache_estimate_budget = estimate_budget;
+}
+
+void MergeTreeReadPoolBase::commitColumnsCacheWriteEstimate() const
+{
+    std::call_once(columns_cache_estimate_committed, [this] { chargeStagedColumnsCacheWriteEstimate(); });
+}
+
+void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
+{
+    if (staged_columns_cache_estimate_bytes == 0)
+        return;
+
+    /// A read ranges refiner drops marks of the selected ranges right before a task is cut from
+    /// them, and it can drop almost all of them - that is what it is for. Those marks are never
+    /// read, so for a pool that has a refiner the staged estimate is only an upper bound, and
+    /// gating on it would stop a selective query from caching the ranges that do survive. What
+    /// the query really writes stays bounded by `columns_cache_max_bytes_to_write_to_cache`,
+    /// which defaults to the same half of the cache the estimate budget does, so the estimate
+    /// gate stands down for such a pool instead of over-charging it.
+    if (ranges_refiner)
+        return;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget)
+        return;
+
     /// Accumulate into the query-wide total and compare against the budget, so the gate
     /// enforces a true per-query budget across all pools. Readers observe the flag through
-    /// `MergeTreeReaderSettings::columns_cache_writes_disabled`.
+    /// `MergeTreeReaderSettings::columns_cache_writes_disabled`, which they consult at write
+    /// time, so a pool that commits after another pool's task was handed out still suppresses
+    /// that pool's writes.
     const size_t query_total
-        = budget->estimated_bytes.fetch_add(part_estimated_bytes, std::memory_order_relaxed) + part_estimated_bytes;
-    if (query_total > estimate_budget)
+        = budget->estimated_bytes.fetch_add(staged_columns_cache_estimate_bytes, std::memory_order_relaxed)
+        + staged_columns_cache_estimate_bytes;
+    if (query_total > columns_cache_estimate_budget)
         budget->writes_disabled.store(true, std::memory_order_relaxed);
 }
 
@@ -648,7 +681,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
         MergeTreeReadTaskInfo read_task_info = buildReadTaskInfo(part_with_ranges, settings);
-        chargeColumnsCacheWriteEstimate(part_with_ranges, read_task_info, settings);
+        stageColumnsCacheWriteEstimate(part_with_ranges, read_task_info, settings);
         if (!read_task_info.patch_parts.empty())
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
@@ -692,6 +725,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     std::vector<MarkRanges> patches_ranges,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
+    /// Every task of every pool is built here, so this is the one place that is guaranteed to
+    /// run before the first task exists and after `setReadRangesRefiner`.
+    commitColumnsCacheWriteEstimate();
+
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
