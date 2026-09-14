@@ -39,3 +39,7 @@ SELECT count() FROM numbers(1) GROUP BY number HAVING arrayExists(x -> x IN (SEL
 -- The `map*` family does not forward the dry-run flag into the lambda, so this spelling aborted with
 -- `Not-ready Set` rather than returning a wrong value. The filter is true, so the row is returned.
 SELECT number FROM numbers(1) WHERE mapExists((k, v) -> k IN (SELECT 1), map(1, 2));
+
+-- Nesting reaches the gate too: whether the set stays in the outer capture list or the inner lambda is
+-- hoisted out of it, what the outer lambda captures is not a foldable constant, so the row is returned.
+SELECT number FROM numbers(1) WHERE arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [1]), [1]);
