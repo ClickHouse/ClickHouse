@@ -157,7 +157,8 @@ private:
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
-    std::mutex mutex;
+    /// Timed so that `flushAllData` can wait for a drain in slices and stay cancellable meanwhile.
+    std::timed_mutex mutex;
     LoggerPtr log;
     ActionBlocker & monitor_blocker;
 

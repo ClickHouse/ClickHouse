@@ -8,6 +8,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
@@ -190,11 +191,13 @@ void DistributedAsyncInsertBatch::serialize()
 
 bool DistributedAsyncInsertBatch::recoverBatch()
 {
-    /// Fill the files
+    /// Fill the files. Batch limits are rows and bytes, not file count, so this manifest can list a
+    /// million single-row files, each stat'ed and header-read below: a kill must not wait for it all.
     {
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
+            CurrentThread::checkIfNotCancelled();
             UInt64 idx = 0;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
@@ -212,6 +215,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     auto first_existing_file = files.begin();
     while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
     {
+        CurrentThread::checkIfNotCancelled();
         LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", *first_existing_file);
         ++first_existing_file;
     }
@@ -220,6 +224,8 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
+        CurrentThread::checkIfNotCancelled();
+
         if (!fs::exists(file))
         {
             LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
