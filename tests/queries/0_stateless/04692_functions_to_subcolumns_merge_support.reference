@@ -1,0 +1,19 @@
+merge over MergeTree, rewritten	1
+merge over MergeTree, values	2	0
+merge over MergeTree, values	3	2
+file child, not rewritten	0
+merge with file child, not rewritten	0
+merge with file child, values	1	0
+merge with file child, values	3	2
+two storages, supporting side first	1
+two storages, opting-out side first	1
+tuple element first, tuple rewritten	1
+tuple element first, length not rewritten	0
+length first, tuple rewritten	1
+length first, length not rewritten	0
+mixed capability, values	10	3
+empty match set, rewritten	1
+empty match set, values	0
+nested merge, rewritten	1
+nested merge, values	2	0
+nested merge, values	3	2
