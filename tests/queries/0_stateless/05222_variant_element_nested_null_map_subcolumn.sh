@@ -42,6 +42,17 @@ WHERE value.\`Tuple(a Nullable(UInt32), b String)\`.a IS NOT NULL SETTINGS optim
 SELECT 'count not null direct', count() FROM t_dyn
 WHERE value.\`Tuple(a Nullable(UInt32), b String)\`.a IS NOT NULL SETTINGS optimize_functions_to_subcolumns = 0;
 
+-- The counts above only agree while the rewrite still happens for this nested subcolumn, so pin that
+-- it does. The second line is the control: without the rewrite the null map must not be in the tree.
+SELECT 'rewrite fires', countIf(explain LIKE '%.a.null%') > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM t_dyn WHERE value.\`Tuple(a Nullable(UInt32), b String)\`.a IS NULL)
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'rewrite off', countIf(explain LIKE '%.a.null%') > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM t_dyn WHERE value.\`Tuple(a Nullable(UInt32), b String)\`.a IS NULL)
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 SELECT 'prewhere', id FROM t_dyn
 PREWHERE value.\`Tuple(a Nullable(UInt32), b String)\`.a.null ORDER BY id;
 
@@ -91,6 +102,24 @@ INSERT INTO t_alter VALUES (1, 'not a tuple');
 ALTER TABLE t_alter MODIFY COLUMN value Variant(Tuple(a Nullable(UInt32), b String), String);
 INSERT INTO t_alter VALUES (2, CAST(tuple(CAST(7, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
 SELECT 'missing stream', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null FROM t_alter ORDER BY id;
+
+-- A pure Variant column added by ALTER: the part predates the column, so the read finds no
+-- discriminators stream at all rather than a run of foreign discriminators.
+CREATE TABLE t_var_add (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO t_var_add VALUES (1);
+ALTER TABLE t_var_add ADD COLUMN value Variant(Tuple(a Nullable(UInt32), b String), String);
+INSERT INTO t_var_add VALUES (2, CAST(tuple(CAST(7, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
+SELECT 'variant added column', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null FROM t_var_add ORDER BY id;
+
+-- The wide twin of the case above: a wide part keeps every column in its own file, so the reader
+-- reaches the absent element by a different route than in a compact part.
+CREATE TABLE t_var_add_wide (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_var_add_wide VALUES (1);
+ALTER TABLE t_var_add_wide ADD COLUMN value Variant(Tuple(a Nullable(UInt32), b String), String);
+INSERT INTO t_var_add_wide VALUES (2, CAST(tuple(CAST(7, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
+SELECT 'variant added column wide', id, value.\`Tuple(a Nullable(UInt32), b String)\`.a.null FROM t_var_add_wide ORDER BY id;
 
 -- A part written before the column existed carries no Dynamic structure at all, so the read has no
 -- state to work from.

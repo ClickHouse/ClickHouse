@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/MaskOperations.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 
@@ -226,7 +227,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     /// A Nullable wrapper added by the extraction is unknown to nested_serialization, so its null map
     /// is filled here from the discriminators. An intrinsic Nullable belongs to nested_serialization,
-    /// which reads the element's own null map; other variants' rows become NULL via insertDefault().
+    /// which reads the element's own null map; other variants' rows become NULL via insertRowsForAbsentElement.
     IColumn * inner_column = &result_column;
     if (nullable_added_by_extraction && isColumnNullable(result_column))
     {
@@ -432,9 +433,8 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     if (prev->size() == local_discriminators->size())
         return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 
-    /// A null map is the one selection whose value for an absent element is not its default: 0 means
-    /// "not null", but the element is not there, so the extracted value is NULL and the map must read 1.
-    /// expand() and insertManyDefaults() both fill with the default, so those rows are written here.
+    /// A null map is the one selection whose value for an absent element is not its default: 0 reads as
+    /// "not null", but the element is not there, so the extracted value is NULL and the map owes 1.
     const bool fill_absent_rows_with_null = absenceGoesIntoNullMap() && checkAndGetColumn<ColumnUInt8>(prev.get());
 
     /// If this variant is empty, fill result column with default values.
@@ -456,21 +456,6 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
             null_map_from_discriminators->push_back(local_discr != local_variant_discriminator);
     }
 
-    if (fill_absent_rows_with_null)
-    {
-        const auto & absent_rows
-            = null_map_from_discriminators ? *null_map_from_discriminators : assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        const auto & prev_data = assert_cast<const ColumnUInt8 &>(*prev).getData();
-
-        auto res_null_map = ColumnUInt8::create();
-        auto & res_data = res_null_map->getData();
-        res_data.reserve(absent_rows.size());
-        size_t prev_offset = 0;
-        for (auto absent : absent_rows)
-            res_data.push_back(absent ? static_cast<UInt8>(1) : prev_data[prev_offset++]);
-        return res_null_map;
-    }
-
     /// Now we can create new column from null-map and variant column using IColumn::expand.
     auto res_column = IColumn::mutate(prev);
 
@@ -481,10 +466,14 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     if (make_nullable && prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();
 
-    if (null_map_from_discriminators)
-        res_column->expand(*null_map_from_discriminators, /*inverted = */ true);
+    const auto & absent_rows
+        = null_map_from_discriminators ? *null_map_from_discriminators : assert_cast<const ColumnUInt8 &>(*null_map).getData();
+
+    if (fill_absent_rows_with_null)
+        expandDataByMask<UInt8>(
+            assert_cast<ColumnUInt8 &>(*res_column).getData(), absent_rows, /*inverted =*/true, /*default_value =*/1);
     else
-        res_column->expand(assert_cast<const ColumnUInt8 &>(*null_map).getData(), /*inverted = */ true);
+        res_column->expand(absent_rows, /*inverted = */ true);
 
     if (make_nullable && prev->canBeInsideNullable())
     {

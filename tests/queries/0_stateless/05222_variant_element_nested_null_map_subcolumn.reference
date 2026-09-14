@@ -9,6 +9,8 @@ count rewritten	2
 count direct	2
 count not null rewritten	1
 count not null direct	1
+rewrite fires	1
+rewrite off	0
 prewhere	2
 prewhere	3
 pooling mismatches	0
@@ -27,6 +29,10 @@ granule absent	3	1
 granule absent	4	1
 missing stream	1	1
 missing stream	2	0
+variant added column	1	1
+variant added column	2	0
+variant added column wide	1	1
+variant added column wide	2	0
 added column	1	1
 added column	2	0
 control absent part	1	1
