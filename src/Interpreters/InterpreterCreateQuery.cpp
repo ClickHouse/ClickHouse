@@ -1249,15 +1249,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// User-supplied `CREATE` and full `ATTACH` definitions must validate experimental types.
+    /// Storage validation also applies to internal `CREATE`, including materialized-view inner tables.
+    const bool validate_storage_types = !create.attach && !create.isView();
+    /// User-supplied `CREATE` and full `ATTACH` definitions must validate experimental time-decay types.
     /// Short `ATTACH` and internal metadata loading remain available for recovery.
-    if (!internal && !create.attach_short_syntax)
+    const bool validate_time_decay_types = !internal && !create.attach_short_syntax;
+    if (validate_storage_types || validate_time_decay_types)
     {
         /// Views store no data themselves; storage gates apply to their inner tables instead.
         DataTypeValidationSettings validation_settings
-            = create.attach || create.isView()
-            ? DataTypeValidationSettings::forExperimentalTimeDecay(settings)
-            : DataTypeValidationSettings(settings);
+            = validate_storage_types
+            ? DataTypeValidationSettings(settings)
+            : DataTypeValidationSettings::forExperimentalTimeDecay(settings);
+        if (!validate_time_decay_types)
+            validation_settings.allow_experimental_time_decay_aggregate_functions = true;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
 
