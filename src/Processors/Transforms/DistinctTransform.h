@@ -115,9 +115,12 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        DistinctSharedSetSizePtr shared_set_size_ = nullptr,
         bool allow_abandoning_ = false,
-        bool skip_null_keys_ = false);
+        bool skip_null_keys_ = false,
+        DistinctSharedSetSizePtr shared_set_size_ = nullptr);
+
+    /// Select non-constant key columns. An empty name list selects every column in the header.
+    static ColumnNumbers getNonConstantKeyColumnPositions(const Block & header, const Names & columns);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -125,7 +128,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    ColumnNumbers key_columns_pos;
+    const ColumnNumbers key_columns_pos;
     /// Reset after the controller abandons deduplication, freeing the accumulated set.
     std::optional<SetVariants> data{std::in_place};
     Sizes key_sizes;

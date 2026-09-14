@@ -5,10 +5,8 @@
 namespace DB
 {
 
-/// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
-/// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
-/// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
-/// anything: at one thread it only hashes every row a second time.
+/// Preliminary hashing `DISTINCT` reduces the rows each stream sends to final deduplication. At one
+/// effective thread it only hashes every row a second time, so the caller should omit that step.
 bool preliminaryDistinctIsUseful(size_t max_threads);
 
 /// Execute DISTINCT for specified columns.
@@ -73,9 +71,9 @@ public:
 private:
     void updateOutputHeader() override;
 
-    /// Repartitions the pipeline by the hash of the DISTINCT columns. Returns `false` if it did not,
-    /// in which case the streams still have to be merged into one before deduplicating.
-    bool scatterStreamsByHash(QueryPipelineBuilder & pipeline) const;
+    /// Partition by the hash of the `DISTINCT` keys when there are multiple streams, threads, and
+    /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
+    bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;

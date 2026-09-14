@@ -104,10 +104,11 @@ DistinctTransform::DistinctTransform(
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
     const Names & columns_,
-    DistinctSharedSetSizePtr shared_set_size_,
     bool allow_abandoning_,
-    bool skip_null_keys_)
+    bool skip_null_keys_,
+    DistinctSharedSetSizePtr shared_set_size_)
     : ISimpleTransform(header_, header_, true)
+    , key_columns_pos(getNonConstantKeyColumnPositions(*header_, columns_))
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , shared_set_size(std::move(shared_set_size_))
@@ -117,17 +118,33 @@ DistinctTransform::DistinctTransform(
     if (allow_abandoning_)
         abandon_controller.emplace();
 
-    const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
-    key_columns_pos.reserve(num_columns);
+    if (skip_null_keys)
+    {
+        for (const auto & name : columns_.empty() ? header_->getNames() : columns_)
+        {
+            const auto & column = header_->getByName(name).column;
+            if (column && isColumnConst(*column) && column->isNullAt(0))
+            {
+                const_null_key = true;
+                break;
+            }
+        }
+    }
+}
+
+ColumnNumbers DistinctTransform::getNonConstantKeyColumnPositions(const Block & header, const Names & columns)
+{
+    const size_t num_columns = columns.empty() ? header.columns() : columns.size();
+    ColumnNumbers positions;
+    positions.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
-        const auto & col = header_->getByPosition(pos).column;
-        if (col && !isColumnConst(*col))
-            key_columns_pos.emplace_back(pos);
-        else if (skip_null_keys && col && col->isNullAt(0))
-            const_null_key = true;
+        const size_t position = columns.empty() ? i : header.getPositionByName(columns[i]);
+        const auto & column = header.getByPosition(position).column;
+        if (column && !isColumnConst(*column))
+            positions.push_back(position);
     }
+    return positions;
 }
 
 template <typename Method>

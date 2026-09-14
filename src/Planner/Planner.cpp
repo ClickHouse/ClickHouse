@@ -1305,8 +1305,7 @@ bool limitByAlwaysReadsTillEnd(
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
 
-void addDistinctStep(
-    QueryPlan & query_plan,
+void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const Names & column_names,
@@ -1807,8 +1806,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
       */
     if (query_node.hasLimit() && query_node.isDistinct())
     {
-        addDistinctStep(
-            query_plan,
+        addDistinctStep(query_plan,
             query_analysis_result,
             planner_context,
             expressions_analysis_result.getProjection().projection_column_names,
@@ -2486,7 +2484,11 @@ void Planner::buildPlanForUnionNode()
         }
 
         auto distinct_step = std::make_unique<DistinctStep>(
-            query_plan.getCurrentHeader(), limits, 0 /*limit hint*/, query_plan.getCurrentHeader()->getNames(), false /*pre distinct*/);
+            query_plan.getCurrentHeader(),
+            limits,
+            0 /*limit hint*/,
+            query_plan.getCurrentHeader()->getNames(),
+            false /*pre distinct*/);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
@@ -2877,8 +2879,7 @@ void Planner::buildPlanForQueryNode()
 
                 if (query_node.isDistinct())
                 {
-                    addDistinctStep(
-                        query_plan,
+                    addDistinctStep(query_plan,
                         query_analysis_result,
                         planner_context,
                         expression_analysis_result.getProjection().projection_column_names,
@@ -2981,8 +2982,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isDistinct())
             {
-                addDistinctStep(
-                    query_plan,
+                addDistinctStep(query_plan,
                     query_analysis_result,
                     planner_context,
                     expression_analysis_result.getProjection().projection_column_names,
@@ -3043,8 +3043,7 @@ void Planner::buildPlanForQueryNode()
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
         if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
-            addDistinctStep(
-                query_plan,
+            addDistinctStep(query_plan,
                 query_analysis_result,
                 planner_context,
                 expression_analysis_result.getProjection().projection_column_names,

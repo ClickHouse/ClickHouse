@@ -1,17 +1,15 @@
+#include <Core/SortDescription.h>
+#include <IO/Operators.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
-#include <IO/Operators.h>
-#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -76,48 +74,23 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-/// The columns the DISTINCT is computed on, derived exactly as `DistinctTransform` derives them:
-/// an empty list of columns means every column of the header, and constant columns are not part of the key.
-static ColumnNumbers getKeyColumnPositions(const Block & header, const Names & columns)
+bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
 {
-    const size_t num_columns = columns.empty() ? header.columns() : columns.size();
-
-    ColumnNumbers key_column_positions;
-    key_column_positions.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const size_t position = columns.empty() ? i : header.getPositionByName(columns[i]);
-        const auto & column = header.getByPosition(position).column;
-        if (column && !isColumnConst(*column))
-            key_column_positions.push_back(position);
-    }
-
-    return key_column_positions;
-}
-
-bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
-{
-    /// Every input chunk is split across all partitions, so the work the scatter adds grows with their
-    /// number: measured against the un-scattered pipeline on `SELECT DISTINCT number FROM
-    /// numbers_mt(4e7)`, the total CPU time grows by 8% at 4 partitions, 20% at 16 and 96% at 96.
-    /// Past a point that outweighs deduplicating in more threads, so do not follow `max_threads` up.
+    /// Each input chunk is split across all partitions. Bound both dimensions of the scatter mesh
+    /// to limit hashing, copying, and scheduling overhead at high thread counts.
     static constexpr size_t max_partitions = 16;
     static constexpr size_t max_scatter_streams = 16;
 
-    /// Repartitioning wires `num_streams * num_partitions` connections. Narrow the input just as
-    /// `ShuffleSendStep` does, so a wide pipeline cannot create an excessive scatter mesh.
-    if (pipeline.getNumStreams() > max_scatter_streams)
-        pipeline.resize(max_scatter_streams);
-
-    const size_t num_streams = pipeline.getNumStreams();
     const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
-    if (num_streams <= 1 || num_partitions <= 1)
+    if (pipeline.getNumStreams() <= 1 || num_partitions <= 1)
         return false;
 
-    auto key_column_positions = getKeyColumnPositions(*pipeline.getSharedHeader(), columns);
+    const auto key_column_positions = DistinctTransform::getNonConstantKeyColumnPositions(*pipeline.getSharedHeader(), columns);
     if (key_column_positions.empty())
         return false;
 
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
     scatterByPartition(pipeline, num_partitions, key_column_positions);
     return true;
 }
@@ -126,22 +99,19 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 {
     /// Final deduplication can keep disjoint streams separate unless a consumer requires their original
     /// order. Preliminary deduplication always processes each stream independently.
-    const bool preserve_order = mustPreserveInputOrder();
     bool scattered = false;
-    if (!pre_distinct && (!skip_stream_merging || preserve_order))
+    if (!pre_distinct && (!skip_stream_merging || preserve_input_order))
     {
         /// Hash partitioning makes the streams disjoint, but changes their order. A sorted transform
         /// also needs its input order to deduplicate one range of equal values at a time.
-        scattered = parallel_distinct && !preserve_order && distinct_sort_desc.empty() && scatterStreamsByHash(pipeline);
+        scattered = parallel_distinct && !preserve_input_order && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
         if (!scattered)
             pipeline.resize(1);
     }
 
-    /// The scattered streams hold disjoint parts of one DISTINCT set, and `max_rows_in_distinct` and
-    /// `max_bytes_in_distinct` limit the size of the whole of it, so the transforms below add up their
-    /// sizes here and check the limits against the total.
+    /// Size limits apply to the combined set across all hash partitions.
     DistinctSharedSetSizePtr shared_set_size;
-    if (scattered && (set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0))
+    if (scattered && set_size_limits.hasLimits())
         shared_set_size = std::make_shared<DistinctSharedSetSize>();
 
     /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
@@ -162,7 +132,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
             return std::make_shared<DistinctTransform>(
-                header, set_size_limits, limit_hint, columns, shared_set_size, allow_abandoning);
+                header, set_size_limits, limit_hint, columns, allow_abandoning, /*skip_null_keys=*/false, shared_set_size);
         });
 
     if (scattered)
@@ -233,7 +203,7 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, 
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Ordering requirements are derived from input sorting properties during plan optimization.
+    /// Limit hints and ordering requirements are derived again during plan optimization.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
