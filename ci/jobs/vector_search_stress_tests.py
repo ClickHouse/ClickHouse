@@ -306,7 +306,7 @@ test_params_laion_5b_1m = {
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: True,  # Will take some time!
-    TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
+    TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
