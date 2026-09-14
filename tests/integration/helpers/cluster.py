@@ -3771,8 +3771,6 @@ class ClickHouseCluster:
             self.login_to_ecr()
             # `docker compose pull` re-verifies every service image against the registry even when
             # it is cached, so a transient registry failure fails a module that needed no download.
-            # Presence is asked of the daemon rather than left to `--policy missing`, which still
-            # re-pulls an implicit `latest`.
             if self._images_prefetched_and_present():
                 logging.debug("Skipping `docker compose pull`: all images are present locally")
             else:

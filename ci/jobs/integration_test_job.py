@@ -1878,8 +1878,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
-        # Contract for tests/integration/helpers/cluster.py: every image this batch declares has
-        # already been fetched, so nothing is left for a per-module pull to download.
+        # Read by tests/integration/helpers/cluster.py: this job's batch prefetch ran and
+        # succeeded. Not a completeness promise, so the helper still checks the daemon.
         "CLICKHOUSE_TESTS_IMAGES_PREFETCHED": "1",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
