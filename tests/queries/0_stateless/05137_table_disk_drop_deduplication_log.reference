@@ -1,0 +1,6 @@
+-- the repeated insert of the same block is deduplicated
+3
+-- the drop leaves no objects behind
+0
+-- a table created on the same disk afterwards does not inherit the deduplication log
+3

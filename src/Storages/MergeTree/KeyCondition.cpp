@@ -4568,6 +4568,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
+        /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
+        /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
+        if (anyFieldSatisfies(const_value, isNaNField))
+            return false;
+
         const auto atom_it = atom_map.find(func_name);
 
         out.key_columns.push_back(key_column_num);

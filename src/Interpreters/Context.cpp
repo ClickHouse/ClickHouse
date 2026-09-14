@@ -6286,12 +6286,20 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
+void Context::shutdownKeeperDispatcherBeforeConnectionsFinish() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->shutdownBeforeConnectionsFinish();
+#endif
+}
+
+void Context::shutdownKeeperDispatcherAfterConnectionsFinish([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        dispatcher->shutdown(closed_all_connections);
+        dispatcher->shutdownAfterConnectionsFinish(closed_all_connections);
         setKeeperDispatcher(nullptr);
     }
 #endif

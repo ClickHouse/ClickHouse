@@ -196,6 +196,17 @@ public:
     UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
     void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
 
+    const NameSet & notNullFiltersDerivedColumns(JoinTableSide side) const
+    {
+        return side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+    }
+
+    void addNotNullFiltersDerivedColumns(JoinTableSide side, const NameSet & columns)
+    {
+        auto & derived = side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+        derived.insert(columns.begin(), columns.end());
+    }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -237,6 +248,10 @@ protected:
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
+
+    /// Columns of each input for which an IS NOT NULL filter was already derived.
+    NameSet not_null_filters_derived_left;
+    NameSet not_null_filters_derived_right;
 
 private:
 
