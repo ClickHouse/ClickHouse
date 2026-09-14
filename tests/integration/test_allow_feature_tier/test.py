@@ -1707,6 +1707,28 @@ def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
         )
 
 
+def test_moving_a_shadowing_user_checks_feature_tier(start_cluster):
+    user = CONFIG_EXPERIMENTAL_USER
+    drop_entities(instance, users=[user], storage="local_directory")
+    drop_entities(instance, users=[user], storage="memory")
+    instance.query(
+        f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
+        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
+    )
+    assert read_experimental_setting(instance, user) == "0"
+
+    try:
+        with feature_tier(instance, "1"):
+            # `memory` is looked up after `users_xml`, so the move exposes the config user again.
+            assert_experimental_change_is_blocked(
+                instance, f"MOVE USER {user} TO memory"
+            )
+        assert read_experimental_setting(instance, user) == "0"
+    finally:
+        drop_entities(instance, users=[user], storage="local_directory")
+        drop_entities(instance, users=[user], storage="memory")
+
+
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
     new_user = "tier_batch_new_user"
     drop_entities(instance, users=[new_user], storage="memory")

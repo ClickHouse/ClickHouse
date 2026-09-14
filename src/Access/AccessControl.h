@@ -319,6 +319,10 @@ private:
         const AccessEntityPtr & entity,
         bool throw_if_exists,
         UUID * conflicting_id) const TSA_REQUIRES(access_entities_mutex);
+    void checkFeatureTierForMoveUnlocked(
+        const std::vector<UUID> & ids,
+        const String & source_storage_name,
+        const String & destination_storage_name) TSA_REQUIRES(access_entities_mutex);
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

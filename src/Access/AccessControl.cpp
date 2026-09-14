@@ -815,12 +815,49 @@ std::vector<UUID> AccessControl::insertInto(
     return inserted_ids;
 }
 
+void AccessControl::checkFeatureTierForMoveUnlocked(
+    const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+{
+    auto storages = getStorages();
+    for (const auto & id : ids)
+    {
+        auto entity = tryRead(id);
+        if (!entity || entity->getType() != AccessEntityType::USER)
+            continue;
+
+        /// A move rewrites no entity, but a login resolves to the first storage holding its name, so
+        /// the move can expose or hide a same-name user of another storage.
+        const String & name = entity->getName();
+        std::optional<UUID> visible_after;
+        for (const auto & storage : storages)
+        {
+            if (storage->getStorageName() == destination_storage_name)
+            {
+                visible_after = id;
+                break;
+            }
+            auto found = storage->find(AccessEntityType::USER, name);
+            if (!found || (*found == id && storage->getStorageName() == source_storage_name))
+                continue;
+            visible_after = found;
+            break;
+        }
+
+        auto visible_before = find(AccessEntityType::USER, name);
+        if (!visible_before || !visible_after || *visible_before == *visible_after)
+            continue;
+        checkFeatureTierForVisibleUserChange(*this, *visible_before, *visible_after);
+    }
+}
+
 void AccessControl::moveAccessEntities(
     const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
 {
     try
     {
         std::lock_guard lock{access_entities_mutex};
+        if (isAnyFeatureTierRestricted(*this))
+            checkFeatureTierForMoveUnlocked(ids, source_storage_name, destination_storage_name);
         MultipleAccessStorage::moveAccessEntities(ids, source_storage_name, destination_storage_name);
     }
     catch (...)

@@ -81,4 +81,9 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
 /// and all of them change which settings are in effect.
 void checkFeatureTierForPendingAccessEntities(
     const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current = {});
+
+/// Refuses a write which changes the user a login resolves to, when the two definitions differ on a
+/// setting of a disabled tier. A move rewrites no entity, so both users belong to the same snapshot.
+void checkFeatureTierForVisibleUserChange(
+    const AccessControl & access_control, const UUID & before_user_id, const UUID & after_user_id);
 }

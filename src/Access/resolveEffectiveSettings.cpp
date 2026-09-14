@@ -39,7 +39,7 @@ void collectRoles(
         return;
     }
 
-    if (skip_ids.count(role_id))
+    if (skip_ids.contains(role_id))
         return;
 
     auto role = get_role_function(role_id);
@@ -791,6 +791,23 @@ void checkFeatureTierForPendingAccessEntities(
     auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current);
     if (checker)
         checker(pending, current);
+}
+
+
+void checkFeatureTierForVisibleUserChange(
+    const AccessControl & access_control, const UUID & before_user_id, const UUID & after_user_id)
+{
+    if (!isAnyFeatureTierRestricted(access_control))
+        return;
+
+    AccessGraph graph(access_control, /* read_all_users= */ true, /* pending= */ {}, /* current= */ {});
+    auto before_user = graph.getUser(before_user_id);
+    auto after_user = graph.getUser(after_user_id);
+    if (!before_user || !after_user)
+        return;
+
+    checkResolvedSettings(
+        access_control, graph.resolveForUser(before_user_id, *before_user), graph.resolveForUser(after_user_id, *after_user));
 }
 
 }
