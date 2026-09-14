@@ -83,6 +83,10 @@ public:
 
     String getName() const override { return "ReadFromFile"; }
 
+    /// The step ships to workers below (`serialize`/`deserialize`), so the distributed-plan decision
+    /// must accept it as a leaf.
+    bool isSerializable() const override { return true; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/) override
     {
         pipeline.init(Pipe(std::make_shared<NativeCompressedSource>(output_header, std::make_unique<ReadBufferFromFile>(file_name), file_name)));
@@ -150,6 +154,10 @@ public:
     }
 
     String getName() const override { return "PrintTSV"; }
+
+    /// Test-only sink at the root of the plan; accepted by the distributed-plan decision like any
+    /// production root step, the fragments below it are what ships.
+    bool isSerializable() const override { return true; }
 
     bool hasOutputStream() const { return false; }
 
@@ -527,6 +535,9 @@ try
         optimization_settings.make_distributed_plan = true;
         optimization_settings.distributed_plan_default_shuffle_join_bucket_count = 4;
         optimization_settings.distributed_plan_single_stage = distributed_plan_single_stage;  /// For debugging
+        /// The decision has to be taken before optimizing for distributed execution, as `buildQueryPipeline` does.
+        query_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+        ASSERT_TRUE(optimization_settings.make_distributed_plan);
         query_plan.optimize(optimization_settings);
 
         auto * root = query_plan.getRootNode();
