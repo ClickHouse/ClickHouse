@@ -79,7 +79,7 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
 }
 
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
-    : const_description(*column_)
+    : const_description(*column_), column(column_)
 {
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
     {
@@ -99,10 +99,21 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
                 sparse_indices_holder = std::move(sparse_desc.valid_offsets);
             else
                 sparse_indices_holder = column_;
+
+            /// Keep the sparse representation until filter data is actually needed.
+            return;
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    materialize();
+}
+
+void FilterWithCachedCount::materialize() const
+{
+    if (data)
+        return;
+
+    ColumnPtr col = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
