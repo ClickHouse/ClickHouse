@@ -840,8 +840,9 @@
                              A plain name is compared case-insensitively with the value after 'rdn_attribute' extraction. A full DN
                              (an entry containing '=', requires 'rdn_attribute') is compared with the raw value before extraction
                              and pins the container, which is recommended for Active Directory because group CNs are unique only
-                             per container. The spelling configured here becomes the role name; 'prefix' is removed afterwards.
-                             Empty and duplicate entries are rejected.
+                             per container. The spelling configured here becomes the role name; 'prefix' is removed afterwards,
+                             so every entry (for a DN, its 'rdn_attribute' value) must start with the configured 'prefix'.
+                             Empty, duplicate, unparsable and prefix-less entries are rejected at startup.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
