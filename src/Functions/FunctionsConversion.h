@@ -4494,28 +4494,6 @@ struct ToDateMonotonicity
     }
 };
 
-/// True if both bounds are known day numbers inside `[min_day_num, max_day_num]`. An absent or
-/// non-integer bound is treated as outside: the range may then contain any day number.
-inline bool dayNumRangeIsWithin(const Field & left, const Field & right, Int64 min_day_num, Int64 max_day_num)
-{
-    auto is_within = [&](const Field & bound)
-    {
-        if (bound.getType() == Field::Types::UInt64)
-        {
-            const UInt64 day_num = bound.safeGet<UInt64>();
-            return day_num <= static_cast<UInt64>(max_day_num) && static_cast<Int64>(day_num) >= min_day_num;
-        }
-        if (bound.getType() == Field::Types::Int64)
-        {
-            const Int64 day_num = bound.safeGet<Int64>();
-            return day_num >= min_day_num && day_num <= max_day_num;
-        }
-        return false;
-    };
-
-    return is_within(left) && is_within(right);
-}
-
 template <typename T>
 struct ToDateTimeMonotonicity
 {
@@ -4539,7 +4517,26 @@ struct ToDateTimeMonotonicity
                 const WhichDataType which_source(*source_type);
                 if (which_source.isDateOrDate32())
                 {
-                    if (!dayNumRangeIsWithin(left, right, which_source.isDate32() ? 1 : 0, MAX_DATETIME_DAY_NUM))
+                    const Int64 min_day_num = which_source.isDate32() ? 1 : 0;
+
+                    /// An absent or non-integer bound is outside the window: the range may then hold any day.
+                    auto is_within_window = [&](const Field & bound)
+                    {
+                        if (bound.getType() == Field::Types::UInt64)
+                        {
+                            const UInt64 day_num = bound.safeGet<UInt64>();
+                            return day_num <= static_cast<UInt64>(MAX_DATETIME_DAY_NUM)
+                                && static_cast<Int64>(day_num) >= min_day_num;
+                        }
+                        if (bound.getType() == Field::Types::Int64)
+                        {
+                            const Int64 day_num = bound.safeGet<Int64>();
+                            return day_num >= min_day_num && day_num <= static_cast<Int64>(MAX_DATETIME_DAY_NUM);
+                        }
+                        return false;
+                    };
+
+                    if (!is_within_window(left) || !is_within_window(right))
                         return {};
 
                     /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
