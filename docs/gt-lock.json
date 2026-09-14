@@ -7,36 +7,36 @@
       "versionId": "0b240341596183431a2c0d2988a1d4211d0dfcc018e1a88b8cfa67f4b0deaf22",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-14T19:23:29.949Z",
+          "updatedAt": "2026-09-14T20:52:35.475Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-14T19:23:29.465Z",
+          "updatedAt": "2026-09-14T20:52:34.958Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-14T19:23:29.293Z",
+          "updatedAt": "2026-09-14T20:52:34.775Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-14T19:23:30.425Z",
+          "updatedAt": "2026-09-14T20:52:35.972Z",
           "fileName": "docs.json",
           "postProcessHash": "caff8db5c6a380686b6539de6f92456b0b843fbedde432ab0e8ebb81276f52ea"
         },
         "ko": {
-          "updatedAt": "2026-09-14T19:23:29.628Z",
+          "updatedAt": "2026-09-14T20:52:35.130Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-14T19:23:29.791Z",
+          "updatedAt": "2026-09-14T20:52:35.302Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-14T19:23:30.112Z",
+          "updatedAt": "2026-09-14T20:52:35.639Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-14T19:23:30.285Z",
+          "updatedAt": "2026-09-14T20:52:35.805Z",
           "fileName": "docs.json"
         }
       },
@@ -82780,47 +82780,47 @@
     },
     {
       "fileId": "1485b59e55065d39944a24a23d30aeace37dd8746b155123e6fd7e2b3b962877",
-      "versionId": "fd717c8553b3e1832579a2d8c7e37684adea663e59f268b9c960bfe4351e9ebf",
+      "versionId": "598ae05d5710a64a2c5d313eacb6178f3c91edabf3ac221a929a9e14ecf6d785",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-09-12T10:54:09.124Z",
-          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "74df29586c4c9403878bdff6dcc987fff6c65eed288f2102c3de7b3c89d5555c"
+        "es": {
+          "updatedAt": "2026-09-14T20:52:40.856Z",
+          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "34dab2bc1c6b3901fdc140acd40f0c64a0137bed09d28d988ff1a5946bb093a8"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-12T10:54:09.152Z",
+          "updatedAt": "2026-09-14T20:52:40.857Z",
           "fileName": "pt-BR/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "13b494837299d088422f8388cdee3d07f86d33400d4b67f41f99680523f81206"
-        },
-        "ru": {
-          "updatedAt": "2026-09-12T10:54:09.196Z",
-          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "9eb30f6b5a9f12e1b783a2618f1197c4ec54632021b4faebeb7e1b6307f5f065"
-        },
-        "ja": {
-          "updatedAt": "2026-09-12T10:54:09.201Z",
-          "fileName": "ja/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "9fe628d09374e5b8fffaac0a2e2c5725032cca0a897e227913a9be996171ee49"
-        },
-        "zh": {
-          "updatedAt": "2026-09-12T10:54:09.202Z",
-          "fileName": "zh/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "bb008ddb078fe46dd3d2317240c5126ebb78de221fb96886e5e4d73982a48393"
-        },
-        "es": {
-          "updatedAt": "2026-09-12T10:54:09.204Z",
-          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "a5058d238e7fc21a036aaf63ae518e445c34c606296a6ea651824f10ab96d451"
-        },
-        "ar": {
-          "updatedAt": "2026-09-12T10:54:09.207Z",
-          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "7113447e35781a0cbbb775c331132cc7aa30f18cddaf1684cac64ea09a023bdc"
+          "postProcessHash": "f16b6728d1a9244412531d3ee55ae0c99308b807f476cd97f2ce787c55772a16"
         },
         "fr": {
-          "updatedAt": "2026-09-12T10:54:09.215Z",
+          "updatedAt": "2026-09-14T20:52:40.857Z",
           "fileName": "fr/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "3353fc7c23da04001c27737b35dc41dc2361d37d8ed5cb931e604fa3a0f4d962"
+          "postProcessHash": "a2d83a363e959890d6e7de1489b6ff4f2e3f29d6a0083aa1d943d2945f899c8f"
+        },
+        "ru": {
+          "updatedAt": "2026-09-14T20:52:40.858Z",
+          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "2f34740b1a72b33090418a5b255920f2210b72672b8f174a06a6de3cb8f1e88c"
+        },
+        "ar": {
+          "updatedAt": "2026-09-14T20:52:40.859Z",
+          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "46d0de44466cc78176093ab994f493b09a7664c19813ec3398021a89928c1888"
+        },
+        "zh": {
+          "updatedAt": "2026-09-14T20:52:40.859Z",
+          "fileName": "zh/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "b6490714afa125d79d278e45328dba9a39a555364171e56fe2caf4a1708799fe"
+        },
+        "ko": {
+          "updatedAt": "2026-09-14T20:52:40.860Z",
+          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "531ede423a42449449f081a9e81963f683c5543d7650c0544e6fcb30342ed35b"
+        },
+        "ja": {
+          "updatedAt": "2026-09-14T20:52:40.861Z",
+          "fileName": "ja/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "48cc3700ee79617b9e7b763bb38765a73de6227fc7339265de74651f20807f38"
         }
       },
       "fileName": "products/cloud/features/infrastructure/replica-aware-routing.mdx"
