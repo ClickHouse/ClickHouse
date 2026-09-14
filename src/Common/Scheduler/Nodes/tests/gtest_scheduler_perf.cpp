@@ -3,7 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <cstdio>
+#include <print>
 #include <thread>
 #include <vector>
 
@@ -199,8 +199,8 @@ void runLoad(const PerfEnv & env, const char * load, const String & resource_ddl
             double rps = measureRps(*manager, "all", resource, cost, env.threads, env.duration_ms);
             EXPECT_GT(rps, 0.0);
             if (env.stress)
-                std::printf("SCHED_PERF\tload=%s\tscheduler=%s\tthreads=%zu\tround=%zu\trps=%.0f\n",
-                            load, sched, env.threads, r, rps);
+                std::println("SCHED_PERF\tload={}\tscheduler={}\tthreads={}\tround={}\trps={:.0f}",
+                             load, sched, env.threads, r, rps);
         }
     }
 }
