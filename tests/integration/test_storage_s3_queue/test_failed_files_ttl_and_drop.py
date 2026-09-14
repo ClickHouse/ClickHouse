@@ -1327,8 +1327,8 @@ def test_lowering_loading_retries_is_honored_same_process_hot_cache(started_clus
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 100,
             "failed_files_ttl_sec": 0,
-            "polling_min_timeout_ms": 3000,
-            "polling_max_timeout_ms": 3000,
+            "polling_min_timeout_ms": 15000,
+            "polling_max_timeout_ms": 15000,
         },
     )
 
@@ -1475,8 +1475,8 @@ def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
             # before we lower the limit below.
             "s3queue_loading_retries": 100,
             "failed_files_ttl_sec": 0,  # Disabled: avoid a TTL sweep racing with this test.
-            "polling_min_timeout_ms": 3000,
-            "polling_max_timeout_ms": 3000,
+            "polling_min_timeout_ms": 15000,
+            "polling_max_timeout_ms": 15000,
         },
     )
 
@@ -3408,8 +3408,8 @@ def test_system_drop_failed_files_azure_queue(started_cluster):
             # which under contended CI parallelism can push the first poll past this
             # test's 60s wait-loop, so the file never gets discovered/failed in time
             # even though nothing is actually wrong - a false failure, not a product bug.
-            "polling_min_timeout_ms": 3000,
-            "polling_max_timeout_ms": 3000,
+            "polling_min_timeout_ms": 15000,
+            "polling_max_timeout_ms": 15000,
         },
     )
 
