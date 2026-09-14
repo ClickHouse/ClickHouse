@@ -1,6 +1,7 @@
 -- `MODIFY SETTING name = DEFAULT` resets the setting, so it must pass the same engine checks as `RESET SETTING name`.
 
 DROP TABLE IF EXISTS t_modify_setting_default_mt;
+DROP TABLE IF EXISTS t_modify_setting_default_column;
 DROP TABLE IF EXISTS t_modify_setting_default_memory;
 DROP TABLE IF EXISTS t_modify_setting_default_ts;
 
@@ -33,6 +34,22 @@ ALTER TABLE t_modify_setting_default_ts MODIFY SETTING filter_by_min_time_and_ma
 SELECT extract(create_table_query, 'filter_by_min_time_and_max_time = (\\w+)')
 FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_ts';
 
+SELECT '-- MergeTree: a column setting is reset too';
+CREATE TABLE t_modify_setting_default_column (x UInt64, s String SETTINGS (max_compress_block_size = 100000))
+ENGINE = MergeTree ORDER BY x;
+ALTER TABLE t_modify_setting_default_column MODIFY COLUMN s MODIFY SETTING max_compress_block_size = 200000, max_compress_block_size = DEFAULT; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_modify_setting_default_column MODIFY COLUMN s MODIFY SETTING max_compress_block_size = DEFAULT;
+SELECT create_table_query LIKE '%max_compress_block_size%'
+FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_column';
+
+SELECT '-- ALTER DATABASE has no reset';
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 2;
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = DEFAULT; -- { serverError NOT_IMPLEMENTED }
+SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+DROP TABLE t_modify_setting_default_column;
 DROP TABLE t_modify_setting_default_mt;
 DROP TABLE t_modify_setting_default_memory;
 DROP TABLE t_modify_setting_default_ts;

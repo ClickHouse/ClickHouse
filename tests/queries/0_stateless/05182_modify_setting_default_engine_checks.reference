@@ -6,3 +6,7 @@
 1
 -- an altered setting a reset does not touch still takes effect
 false
+-- MergeTree: a column setting is reset too
+0
+-- ALTER DATABASE has no reset
+2
