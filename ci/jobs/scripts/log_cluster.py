@@ -8,6 +8,9 @@ from ci.praktika.info import Info
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Utils
 
+# The build profile collect and diff jobs
+BUILD_PROFILE_USER = "ci_build_profiler"
+
 
 @dataclass(frozen=True)
 class MetaColumn:
@@ -34,7 +37,6 @@ class LogCluster:
     # profile uploads of the whole CI fleet do not compete for one endpoint.
     # Not a secret, unlike the writer endpoint, hence no AWS SSM parameter.
     READONLY_URL = "https://t6h0zvqlgy.us-east-2.aws.clickhouse-staging.com"
-    USER = "ci"
 
     # The CI metadata every export to this cluster carries, defined once so
     # that the DDL of the destination table, the INSERT column list and the
@@ -95,14 +97,11 @@ class LogCluster:
     def workflow_start_time(cls):
         """Start of the workflow this job belongs to, as a UTC datetime string.
 
-        `Info().workflow_start_time` is GitHub's `created_at` of the run
-        (`2026-08-14T17:01:52Z`), resolved by the config job: the same value
-        for every job of the run, and a rerun keeps it. Grouping rows by it
-        therefore reconstructs one workflow run.
+        `Info().workflow_start_time` is a Unix timestamp resolved by the config
+        job: the same value for every job of the run, and a rerun keeps it.
+        Grouping rows by it therefore reconstructs one workflow run.
         """
-        return Utils.gh_str_to_datetime(Info().workflow_start_time).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        return Utils.timestamp_to_str(Info().workflow_start_time)
 
     @classmethod
     def meta_values(cls, check_start_time, check_name="", commit_sha=""):
@@ -155,10 +154,10 @@ class LogCluster:
         values = cls.meta_values(check_start_time, check_name)
         return [c.literal.format(values[c.name]) for c in cls.meta_columns()]
 
-    def __init__(self, url="", user="", password=None, readonly=False):
+    def __init__(self, user, url="", password=None, readonly=False):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
-        self.user = user or self.USER
+        self.user = user
         self.readonly = readonly
         self.url = url or (self.READONLY_URL if readonly else "")
         self._session = None
@@ -385,9 +384,9 @@ class LogClusterBuildProfileQueries:
         "PerformPendingInstantiations",
     )
 
-    def __init__(self):
+    def __init__(self, user):
         self._info = Info()
-        self._log_cluster = LogCluster()
+        self._log_cluster = LogCluster(user=user)
 
     def _columns(self, table_columns):
         names = LogCluster.meta_column_names() + list(table_columns)
@@ -486,8 +485,3 @@ class LogClusterBuildProfileQueries:
     FROM input('file String, address String, size String, type String, symbol String')
     SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
     FORMAT Regexp"""
-
-
-if __name__ == "__main__":
-    LogCluster = LogCluster()
-    assert LogCluster.is_ready()

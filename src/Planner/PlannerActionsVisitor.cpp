@@ -36,6 +36,7 @@
 #include <Functions/indexHint.h>
 
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 
@@ -55,9 +56,8 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool rewrite_in_to_join;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
 }
 
 namespace ErrorCodes
@@ -1337,7 +1337,7 @@ bool PlannerActionsVisitorImpl::canRewriteInFunctionToJoin(const QueryTreeNodePt
     /// The join is produced by the decorrelation pass, skip the rewrite when decorrelation is disbaled.
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     if (!settings[Setting::rewrite_in_to_join] ||
-        !settings[Setting::allow_experimental_correlated_subqueries])
+        !settings[Setting::allow_correlated_subqueries])
         return false;
 
     const auto & arguments = function_node.getArguments().getNodes();
@@ -1500,7 +1500,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
 
-    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(planner_context->getQueryContext()))
         markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")

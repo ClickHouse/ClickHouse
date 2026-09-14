@@ -42,6 +42,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -84,13 +85,17 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
+<<<<<<< HEAD
+=======
+    extern const SettingsBool allow_correlated_subqueries;
+    extern const SettingsBool rewrite_in_to_join;
+>>>>>>> master
     extern const SettingsMap additional_table_filters;
 }
 
@@ -468,6 +473,8 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || query.hasOrderBy()
         || query.hasLimitBy()
         || query.hasLimit()
+        || query.hasLimitAfter()
+        || query.hasLimitUntil()
         || query.hasOffset())
         return false;
 
@@ -2030,7 +2037,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         allow_niladic_functions);
 
     /// Mask arguments if needed
-    if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(scope.context))
     {
         if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
@@ -2120,24 +2127,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-        {
-            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
-            {{
-                {"in", "nullIn"},
-                {"notIn", "notNullIn"},
-                {"globalIn", "globalNullIn"},
-                {"globalNotIn", "globalNotNullIn"},
-            }};
-
-            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
-            {
-                if (function_name == in_function_name)
-                {
-                    function_name = in_function_name_to_replace;
-                    break;
-                }
-            }
-        }
+            function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
@@ -2324,7 +2314,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element into the tuple type, so a non-parseable value raises the same parsing
                     /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
                     /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
-                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
+                    /// columns are gated by `enable_nullable_tuple_type`, and the
                     /// constant `Set` path throws for a non-parseable tuple element rather than
                     /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)

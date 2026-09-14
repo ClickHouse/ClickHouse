@@ -2,7 +2,7 @@
 -- accepted one gives the same answer as the set.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 
 DROP TABLE IF EXISTS t;
