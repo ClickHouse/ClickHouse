@@ -278,14 +278,36 @@ def test_stored_alter_query_settings(index, value):
         current.query(f"DROP TABLE IF EXISTS {cluster_name} SYNC; DROP TABLE IF EXISTS {local_name} SYNC", settings=SETTINGS, timeout=30)
 
 
-def test_create_as_select_profile_setting():
-    table = "profile_ctas"
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("value", ["0", "1", "DEFAULT"])
+def test_create_as_select_profile_setting(peer_name, value):
+    table = f"profile_ctas_{peer_name}_{value.lower()}"
+    peer = PEERS[peer_name]
     try:
         coordinator.query(
-            f"CREATE TABLE {table} ON CLUSTER current_cluster ENGINE=Memory AS SELECT x FROM default.source SETTINGS send_profile_traces=1",
+            f"CREATE TABLE {table} ON CLUSTER {peer_name}_cluster ENGINE=Memory AS SELECT x FROM default.source SETTINGS send_profile_traces={value}",
             settings=SETTINGS,
             timeout=30,
         )
-        assert current.query(f"SELECT x FROM {table} ORDER BY x", settings=SETTINGS, timeout=30) == "0\n1\n2\n"
+        assert peer.query(f"SELECT x FROM {table} ORDER BY x", settings=SETTINGS, timeout=30) == "0\n1\n2\n"
     finally:
-        current.query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)
+        peer.query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)
+
+
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("clause", ["'not-a-bool'", "'not-a-bool', send_profile_traces=1", "1, send_profile_traces='not-a-bool'"])
+def test_create_as_select_invalid_nested_profile_setting(peer_name, clause):
+    table = "profile_ctas_invalid_nested"
+    try:
+        # Explicit columns defer analysis of the nested `SELECT` until worker execution.
+        # Every delivery setting value must be validated before the queued SQL is rewritten.
+        error = coordinator.http_query_and_get_error(
+            f"CREATE TABLE {table} ON CLUSTER {peer_name}_cluster (x UInt64) ENGINE=Memory AS SELECT x FROM (SELECT toUInt64(42) AS x SETTINGS send_profile_traces={clause})",
+            method="POST",
+            params=SETTINGS,
+            timeout=30,
+        )
+        assert "CANNOT_PARSE_BOOL" in error
+        assert PEERS[peer_name].query(f"EXISTS TABLE {table}", settings=SETTINGS, timeout=30) == "0\n"
+    finally:
+        PEERS[peer_name].query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)
