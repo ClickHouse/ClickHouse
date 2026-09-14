@@ -972,6 +972,56 @@ def test_prepared_statement_create_and_close():
     stmt.close()
 
 
+def test_prepared_statement_omits_schema_that_follows_a_setting():
+    """A handle only advertises a schema it can still serve later.
+
+    A handle outlives the session that created it, and every later call re-reads
+    `output_format_arrow_unsupported_types` from whichever session serves it. The Arrow type of a
+    column with no Arrow mapping comes from that setting, so a schema holding one would be a promise
+    the handle cannot keep - it is left out, and the client reads the schema at execution instead.
+    An `AggregateFunction` is the exception: it is `binary` whichever mode is in force, so a schema
+    holding one does not move and is still advertised.
+    """
+    client = get_client()
+
+    client.execute_update(
+        "CREATE TABLE mytable (id UInt32, s String, j JSON, a AggregateFunction(sum, UInt64), arr Array(JSON)) "
+        "ENGINE = Memory"
+    )
+
+    for query in ["SELECT id, s FROM mytable", "SELECT id, a FROM mytable"]:
+        stmt = client.prepare(query)
+        assert stmt.dataset_schema is not None, query
+        stmt.close()
+
+    for query in [
+        "SELECT id, j FROM mytable",
+        "SELECT arr FROM mytable",
+        "SELECT j, a FROM mytable",
+    ]:
+        stmt = client.prepare(query)
+        assert stmt.dataset_schema is None, query
+        stmt.close()
+
+
+def test_prepared_statement_advertised_schema_survives_a_setting_change():
+    """What a handle does advertise stays true after the serving session changes the mode."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, a AggregateFunction(sum, UInt64)) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable SELECT 1, sumState(toUInt64(1))")
+
+    client.set_session_options({"output_format_arrow_unsupported_types": "text"})
+    stmt = client.prepare("SELECT id, a FROM mytable")
+    assert stmt.dataset_schema is not None
+    advertised = [field.type for field in stmt.dataset_schema]
+
+    client.set_session_options({"output_format_arrow_unsupported_types": "binary"})
+    assert [field.type for field in stmt.execute().schema] == advertised
+
+    stmt.close()
+
+
 def test_prepared_statement_invalid_sql():
     """CreatePreparedStatement with invalid SQL should return an error."""
     client = get_client()
