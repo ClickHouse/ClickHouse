@@ -29,8 +29,9 @@ SELECT bitCount(bitNot(c0)) FROM t_bit_swap_last_two
 
 SYSTEM FLUSH LOGS query_log;
 
--- `UInt8` still compiles. Comparing the two shapes instead of pinning a literal keeps this row
--- green in a build with no embedded compiler, where both are 0.
+-- `UInt8` still compiles. The first column compares the two shapes rather than pinning a literal, so a
+-- build without the embedded compiler stays green with both at 0; the second column requires that 0 to
+-- coincide with the build actually lacking the compiler, so the pair cannot pass while JIT is present.
 WITH shapes AS
 (
     SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
@@ -40,6 +41,8 @@ WITH shapes AS
     GROUP BY log_comment
 )
 SELECT (SELECT compiled FROM shapes WHERE log_comment = '05056_uint8')
-     = (SELECT compiled FROM shapes WHERE log_comment = '05056_control');
+     = (SELECT compiled FROM shapes WHERE log_comment = '05056_control'),
+       (SELECT compiled FROM shapes WHERE log_comment = '05056_control')
+     = ((SELECT value FROM system.build_options WHERE name = 'USE_EMBEDDED_COMPILER') = 'ON');
 
 DROP TABLE t_bit_swap_last_two;
