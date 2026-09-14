@@ -28,6 +28,10 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
 
+/// Returns the path in backup to the file storing a replicated table's metadata version,
+/// placed next to the table's metadata file ("<table>.sql" -> "<table>.metadata_version.txt").
+String getMetadataVersionPathInBackup(const String & table_metadata_path_in_backup);
+
 }
 
 }
