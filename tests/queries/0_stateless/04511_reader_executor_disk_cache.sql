@@ -8,9 +8,17 @@
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
+-- Full (not Packed) part storage, so every stream of the part is its own object and therefore its own
+-- cache key. With Packed storage the whole part is ONE object: the marks streams and the data stream
+-- resolve to the SAME cache segment and race for its single downloader role, and only the role winner
+-- writes. Each stream is bounded to its own slice of the archive (see `ReadBufferFromFileView`), so
+-- the winner fills only that slice and the cold read leaves the segment with holes, which the warm
+-- read then goes back to the source for. `min_bytes_for_full_part_storage` is randomized by the test
+-- harness, so leaving it unpinned made the assertion below fail in about a third of the runs.
 CREATE TABLE t_re_disk_cache (k UInt64, v String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0;
+SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0;
 
 -- No cache-on-write, so the first SELECT below is a genuine cold read that must populate the cache.
 INSERT INTO t_re_disk_cache SELECT number, toString(number) FROM numbers(200000)
