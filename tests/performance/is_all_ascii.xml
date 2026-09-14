@@ -7,12 +7,20 @@
     <query>SELECT substringUTF8(materialize(repeat('a', 8)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT substringUTF8(materialize(repeat('a', 63)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT substringUTF8(materialize(repeat('a', 64)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 511)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 512)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 513)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 4096)), 2, 5) FROM numbers(100000) FORMAT Null</query>
     <query>SELECT substringUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 2, 5) FROM numbers(3000000) FORMAT Null</query>
 
     <query>SELECT substringIndexUTF8(materialize(repeat('a', 63) || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT substringIndexUTF8(materialize(repeat('a', 62) || '\xC3\xA9' || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
 
     <query>SELECT reverseUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 511))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 512))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 513))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 4096))) FROM numbers(100000) FORMAT Null</query>
     <query>SELECT reverseUTF8(materialize(repeat('a', 62) || '\xC3\xA9')) FROM numbers(3000000) FORMAT Null</query>
 
     <query>SELECT leftPadUTF8(materialize(repeat('a', 63)), 80, 'x') FROM numbers(3000000) FORMAT Null</query>

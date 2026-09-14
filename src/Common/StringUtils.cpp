@@ -4,10 +4,43 @@
 
 #include "config.h"
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || defined(__AVX512F__) || USE_MULTITARGET_CODE
 #include <immintrin.h>
-#elif USE_SIMDUTF
+#endif
+
+#if USE_SIMDUTF && !defined(__AVX2__)
 #    include <simdutf.h>
+#endif
+
+
+namespace
+{
+constexpr size_t AVX512_ASCII_THRESHOLD = 512;
+}
+
+#if USE_MULTITARGET_CODE || (defined(__AVX512F__) && defined(__AVX512BW__))
+namespace DB::TargetSpecific::x86_64_v4
+{
+#if USE_MULTITARGET_CODE
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
+#endif
+static bool NO_INLINE isAllASCIIAVX512(const UInt8 * data, size_t size)
+{
+    __m512i mask = _mm512_setzero_si512();
+
+    size_t i = 0;
+    for (; i + 64 <= size; i += 64)
+        mask = _mm512_or_si512(mask, _mm512_loadu_si512(reinterpret_cast<const void *>(data + i)));
+
+    if (i < size)
+    {
+        const auto tail_mask = static_cast<__mmask64>(~UInt64{0} >> (64 - (size - i)));
+        mask = _mm512_or_si512(mask, _mm512_maskz_loadu_epi8(tail_mask, data + i));
+    }
+
+    return _mm512_movepi8_mask(mask) == 0;
+}
+}
 #endif
 
 
@@ -28,6 +61,14 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    if (size >= AVX512_ASCII_THRESHOLD)
+        return DB::TargetSpecific::x86_64_v4::isAllASCIIAVX512(data, size);
+#elif USE_MULTITARGET_CODE
+    if (size >= AVX512_ASCII_THRESHOLD && DB::isArchSupported(DB::TargetArch::x86_64_v4))
+        return DB::TargetSpecific::x86_64_v4::isAllASCIIAVX512(data, size);
+#endif
+
 #if defined(__AVX2__)
     __m256i masks = _mm256_setzero_si256();
 
