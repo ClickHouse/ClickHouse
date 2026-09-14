@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
@@ -64,6 +65,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"allow_url_wildcard_from_index_pages", false, false, "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."},
+            {"allow_kafka_offsets_storage_in_keeper", false, false, "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."},
+            {"allow_correlated_subqueries", true, true, "Added an alias for setting `allow_experimental_correlated_subqueries`."},
+            {"allow_geo_types_in_iceberg", false, false, "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."},
+            {"enable_materialized_postgresql_table", false, false, "Added an alias for setting `allow_experimental_materialized_postgresql_table`."},
+            {"enable_funnel_functions", false, false, "Added an alias for setting `allow_experimental_funnel_functions`."},
+            {"enable_unique_key", false, false, "Added an alias for setting `allow_experimental_unique_key`."},
+            {"allow_join_right_table_sorting", false, false, "Added an alias for setting `allow_experimental_join_right_table_sorting`."},
+            {"enable_json_lazy_type_hints", false, false, "Added an alias for setting `allow_experimental_json_lazy_type_hints`."},
             {"enable_join_runtime_filters", true, true, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "The JOIN runtime filters became a Production tier feature."},
@@ -1448,7 +1458,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "20.7",
         {
-            {"show_table_uuid_in_table_create_query_if_not_nil", true, false, "Stop showing  UID of the table in its CREATE query for Engine=Atomic"}
+            {"show_table_uuid_in_table_create_query_if_not_nil", true, false, "Stop showing UID of the table in its CREATE query for Engine=Atomic"}
         });
         addSettingsChanges(settings_changes_history, "20.5",
         {
@@ -1640,7 +1650,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
-            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions for zero level parts"},
             {"object_shared_data_buckets_for_compact_part", 8, 8, "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"},
             {"object_shared_data_buckets_for_wide_part", 32, 32, "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"},
             {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
