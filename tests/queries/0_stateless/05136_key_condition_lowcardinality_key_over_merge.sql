@@ -109,12 +109,16 @@ SELECT trimLeft(explain) FROM (
 ) WHERE explain LIKE '%Granules%' SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
 
 -- The same predicate executed, with the index and then without it, to pin that the pruning above
--- loses no rows.
-SELECT count() FROM t_05136_merge2
-    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0);
+-- loses no rows. The query condition cache is keyed on the predicate and is consulted with every
+-- index switch off, so pin it off on both (the runner randomizes it): a shared entry would let the
+-- second count reuse the first one's mark ranges instead of measuring them independently.
 SELECT count() FROM t_05136_merge2
     WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0)
-    SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+    SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_05136_merge2
+    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0)
+    SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0,
+             use_query_condition_cache = 0;
 
 DROP TABLE t_05136_lc2;
 DROP TABLE t_05136_merge2;
