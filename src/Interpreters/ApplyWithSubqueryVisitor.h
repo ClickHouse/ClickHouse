@@ -19,7 +19,15 @@ class ApplyWithSubqueryVisitor
 public:
     struct Data
     {
-        std::map<String, ASTPtr> subqueries;
+        /// A CTE body together with whether its list was `WITH RECURSIVE`, kept in one entry so that
+        /// re-declaring the name in a nested list replaces both at once.
+        struct Subquery
+        {
+            ASTPtr ast;
+            bool recursive_with = false;
+        };
+
+        std::map<String, Subquery> subqueries;
         std::map<String, ASTPtr> literals;
         /// When set, each subquery's own settings are applied while descending, so that an inherited
         /// `subqueries` element is not substituted into a subquery whose settings hide it. Inherited
