@@ -1,103 +1,519 @@
-<test>
+<test run_all_queries="1">
+    <!--
+        This is an exhaustive long performance matrix for the fused index reductions.
+        It deliberately covers every implementation transition, all four extrema positions,
+        both directions, several numeric widths, floating point edge values, strings,
+        Nullable values, lambda forms, and two-array lambdas.
+    -->
+    <tag>long</tag>
+
     <settings>
         <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
     </settings>
 
-    <create_query>CREATE TABLE array_min_max_index_perf_u64 (case_id UInt8, a Array(UInt64)) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE array_min_max_index_perf_float (a Array(Float64)) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE array_min_max_index_perf_string (a Array(String)) ENGINE = Memory</create_query>
+    <substitutions>
+        <substitution>
+            <name>matrix_length</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>47</value>
+                <value>48</value>
+                <value>49</value>
+                <value>63</value>
+                <value>64</value>
+                <value>65</value>
+                <value>95</value>
+                <value>96</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
+                <value>191</value>
+                <value>192</value>
+                <value>255</value>
+                <value>256</value>
+                <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
+                <value>767</value>
+                <value>768</value>
+                <value>1023</value>
+                <value>1024</value>
+                <value>1025</value>
+                <value>2047</value>
+                <value>2048</value>
+                <value>2049</value>
+                <value>4095</value>
+                <value>4096</value>
+                <value>4097</value>
+                <value>8191</value>
+                <value>8192</value>
+                <value>8193</value>
+                <value>16383</value>
+                <value>16384</value>
+                <value>16385</value>
+                <value>32767</value>
+                <value>32768</value>
+                <value>32769</value>
+                <value>65536</value>
+            </values>
+        </substitution>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 1, arrayMap(x -&gt; if(x = number % 8, toUInt64('18446744073709551615'), x), range(8))
-        FROM numbers(20000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 2, arrayMap(x -&gt; if(x = number % 32, toUInt64('18446744073709551615'), x), range(32))
-        FROM numbers(20000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 3, arrayMap(x -&gt; if(x = number % 64, toUInt64('18446744073709551615'), x), range(64))
-        FROM numbers(20000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 4, arrayMap(x -&gt; if(x = number % 128, toUInt64('18446744073709551615'), x), range(128))
-        FROM numbers(10000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 5, arrayMap(x -&gt; if(x = number % 256, toUInt64('18446744073709551615'), x), range(256))
-        FROM numbers(4000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 6, arrayMap(x -&gt; if(x = number % 512, toUInt64('18446744073709551615'), x), range(512))
-        FROM numbers(2000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 7, arrayMap(x -&gt; if(x = number % 2048, toUInt64('18446744073709551615'), x), range(2048))
-        FROM numbers(400)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 8, arrayMap(x -&gt; if(x = number % 16384, toUInt64('18446744073709551615'), x), range(16384))
-        FROM numbers(40)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 9, arrayMap(x -&gt; if(x = 0, toUInt64('18446744073709551615'), x), range(128))
-        FROM numbers(10000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 10, arrayMap(x -&gt; if(x = 64, toUInt64('18446744073709551615'), x), range(128))
-        FROM numbers(10000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 11, range(128)
-        FROM numbers(10000)</fill_query>
+        <substitution>
+            <name>edge_length</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>7</value>
+                <value>8</value>
+                <value>15</value>
+                <value>16</value>
+                <value>31</value>
+                <value>32</value>
+                <value>47</value>
+                <value>48</value>
+                <value>49</value>
+                <value>63</value>
+                <value>64</value>
+                <value>65</value>
+                <value>95</value>
+                <value>96</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
+                <value>191</value>
+                <value>192</value>
+                <value>255</value>
+                <value>256</value>
+                <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
+                <value>1023</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+                <value>8192</value>
+                <value>16384</value>
+                <value>32768</value>
+                <value>65536</value>
+            </values>
+        </substitution>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_float
-        SELECT arrayMap(x -&gt; if(x = number % 128, toFloat64('1000000'), toFloat64(x)), range(128))
-        FROM numbers(10000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_float
-        SELECT arrayMap(x -&gt; toFloat64(x) - 2048, range(2048))
-        FROM numbers(400)</fill_query>
+        <substitution>
+            <name>position_case</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+            </values>
+        </substitution>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_string
-        SELECT arrayMap(x -&gt; concat('item-', toString(x)), range(32))
-        FROM numbers(20000)</fill_query>
+        <substitution>
+            <name>numeric_type</name>
+            <values>
+                <value>UInt8</value>
+                <value>UInt16</value>
+                <value>UInt32</value>
+                <value>UInt64</value>
+                <value>Int8</value>
+                <value>Int16</value>
+                <value>Int32</value>
+                <value>Int64</value>
+                <value>Float32</value>
+                <value>Float64</value>
+            </values>
+        </substitution>
+    </substitutions>
 
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 1 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 1 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 2 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 2 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 4 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 4 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 5 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 5 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 7 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 7 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 8 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 8 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 9 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 9 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 10 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 10 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 11 FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 11 FORMAT Null</query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_u64
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(UInt64)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_i64
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(Int64)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_float
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(Float64)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_string
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(String)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE array_min_max_index_perf_nullable
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(Nullable(Int64))
+        ) ENGINE = Memory
+    </create_query>
 
-    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 4, 6, 8) FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 4, 6, 8) FORMAT Null</query>
-    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id IN (9, 10, 11) FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_u64 WHERE case_id IN (9, 10, 11) FORMAT Null</query>
+    <!-- Every length is populated with first, middle, last, and changing-position maxima and minima. -->
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u64
+        SELECT
+            case_id,
+            {matrix_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toUInt64('18446744073709551615'),
+                    case_id = 2 AND x = intDiv({matrix_length}, 2), toUInt64('18446744073709551615'),
+                    case_id = 3 AND x = {matrix_length} - 1, toUInt64('18446744073709551615'),
+                    case_id = 4 AND x = number % {matrix_length}, toUInt64('18446744073709551615'),
+                    case_id = 5 AND x = 0, toUInt64(0),
+                    case_id = 6 AND x = intDiv({matrix_length}, 2), toUInt64(0),
+                    case_id = 7 AND x = {matrix_length} - 1, toUInt64(0),
+                    case_id = 8 AND x = number % {matrix_length}, toUInt64(0),
+                    case_id &gt; 4, toUInt64(x + 1),
+                    toUInt64(x)),
+                range({matrix_length}))
+        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
 
-    <query>SELECT sum(arrayMaxIndex(x -&gt; x % 97, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(x, y -&gt; x + y, a, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_i64
+        SELECT
+            case_id,
+            {matrix_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toInt64(1000000000000),
+                    case_id = 2 AND x = intDiv({matrix_length}, 2), toInt64(1000000000000),
+                    case_id = 3 AND x = {matrix_length} - 1, toInt64(1000000000000),
+                    case_id = 4 AND x = number % {matrix_length}, toInt64(1000000000000),
+                    case_id = 5 AND x = 0, toInt64(-1000000000000),
+                    case_id = 6 AND x = intDiv({matrix_length}, 2), toInt64(-1000000000000),
+                    case_id = 7 AND x = {matrix_length} - 1, toInt64(-1000000000000),
+                    case_id = 8 AND x = number % {matrix_length}, toInt64(-1000000000000),
+                    case_id &gt; 4, toInt64(x + 1),
+                    toInt64(x)),
+                range({matrix_length}))
+        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
 
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_float FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_float FORMAT Null</query>
-    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_float FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_float FORMAT Null</query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT
+            case_id,
+            {matrix_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toFloat64('1000000000000'),
+                    case_id = 2 AND x = intDiv({matrix_length}, 2), toFloat64('1000000000000'),
+                    case_id = 3 AND x = {matrix_length} - 1, toFloat64('1000000000000'),
+                    case_id = 4 AND x = number % {matrix_length}, toFloat64('1000000000000'),
+                    case_id = 5 AND x = 0, toFloat64('-1000000000000'),
+                    case_id = 6 AND x = intDiv({matrix_length}, 2), toFloat64('-1000000000000'),
+                    case_id = 7 AND x = {matrix_length} - 1, toFloat64('-1000000000000'),
+                    case_id = 8 AND x = number % {matrix_length}, toFloat64('-1000000000000'),
+                    case_id &gt; 4, toFloat64(x + 1),
+                    toFloat64(x)),
+                range({matrix_length}))
+        FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
 
-    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(arrayMaxIndex(x -&gt; length(x), a)) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a))) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_string
+        SELECT
+            case_id,
+            {edge_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, 'zzzzzzzzzz',
+                    case_id = 2 AND x = intDiv({edge_length}, 2), 'zzzzzzzzzz',
+                    case_id = 3 AND x = {edge_length} - 1, 'zzzzzzzzzz',
+                    case_id = 4 AND x = number % {edge_length}, 'zzzzzzzzzz',
+                    case_id = 5 AND x = 0, '',
+                    case_id = 6 AND x = intDiv({edge_length}, 2), '',
+                    case_id = 7 AND x = {edge_length} - 1, '',
+                    case_id = 8 AND x = number % {edge_length}, '',
+                    concat('item-', toString(x))),
+                range({edge_length}))
+        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_nullable
+        SELECT
+            case_id,
+            {edge_length},
+            arrayMap(x -&gt;
+                toNullable(multiIf(
+                    case_id = 1 AND x = 0, toInt64(1000000000000),
+                    case_id = 2 AND x = intDiv({edge_length}, 2), toInt64(1000000000000),
+                    case_id = 3 AND x = {edge_length} - 1, toInt64(1000000000000),
+                    case_id = 4 AND x = number % {edge_length}, toInt64(1000000000000),
+                    case_id = 5 AND x = 0, toInt64(-1000000000000),
+                    case_id = 6 AND x = intDiv({edge_length}, 2), toInt64(-1000000000000),
+                    case_id = 7 AND x = {edge_length} - 1, toInt64(-1000000000000),
+                    case_id = 8 AND x = number % {edge_length}, toInt64(-1000000000000),
+                    case_id &gt; 4, toInt64(x + 1),
+                    toInt64(x))),
+                range({edge_length}))
+        FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
+
+    <!-- Long floating point rows exercise the NaN and record-block paths. -->
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT 9, 16384, arrayMap(x -&gt; nan, range(16384))
+        FROM numbers(32)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT
+            10,
+            17408,
+            arrayConcat(
+                arrayMap(x -&gt; toFloat64(x), range(1024)),
+                arrayMap(x -&gt; nan, range(1024)),
+                arrayMap(x -&gt; toFloat64(x), range(15360)))
+        FROM numbers(32)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT 11, 1024, arrayMap(x -&gt; if(x % 2 = 0, 0.0, -0.0), range(1024))
+        FROM numbers(256)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT 12, 4, [nan, -inf, -inf, 0.0]
+        FROM numbers(2000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT 13, 4, [0.0, -0.0, 0.0, -0.0]
+        FROM numbers(2000)
+    </fill_query>
+
+    <!-- UInt64: every matrix length and every position pattern, then lambda forms. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {matrix_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {matrix_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {edge_length} AND case_id = {position_case}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {edge_length} AND case_id = {position_case}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT
+            sum(
+                arrayMinIndex(x -&gt; x % 97, a)
+                + arrayMaxIndex(x -&gt; x % 97, a)
+                + arrayMinIndex(x, y -&gt; x + y, a, a)
+                + arrayMaxIndex(x, y -&gt; x + y, a, a))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT
+            sum(
+                indexOf(arrayMap(x -&gt; x % 97, a), arrayMin(x -&gt; x % 97, a))
+                + indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a))
+                + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMin(x, y -&gt; x + y, a, a))
+                + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a)))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+
+    <!-- Exercise every numeric instantiation, including narrow integer and Float32 paths. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM
+        (
+            SELECT arrayMap(x -&gt; to{numeric_type}(x + number), range({edge_length})) AS a
+            FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        )
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM
+        (
+            SELECT arrayMap(x -&gt; to{numeric_type}(x + number), range({edge_length})) AS a
+            FROM numbers(greatest(1, intDiv(6000, {edge_length})))
+        )
+        FORMAT Null
+    </query>
+
+    <!-- Int64: the same full matrix plus higher-order evaluation. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_i64
+        WHERE array_length = {matrix_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_i64
+        WHERE array_length = {matrix_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(x -&gt; abs(x), a) + arrayMaxIndex(x -&gt; abs(x), a))
+        FROM array_min_max_index_perf_i64
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT
+            sum(
+                indexOf(arrayMap(x -&gt; abs(x), a), arrayMin(x -&gt; abs(x), a))
+                + indexOf(arrayMap(x -&gt; abs(x), a), arrayMax(x -&gt; abs(x), a)))
+        FROM array_min_max_index_perf_i64
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+
+    <!-- Float64: normal values at every length and long floating point edge rows. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_float
+        WHERE array_length = {matrix_length} AND case_id &lt;= 8
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_float
+        WHERE array_length = {matrix_length} AND case_id &lt;= 8
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_float
+        WHERE case_id &gt;= 9
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_float
+        WHERE case_id &gt;= 9
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(x -&gt; -x, a) + arrayMaxIndex(x -&gt; -x, a))
+        FROM array_min_max_index_perf_float
+        WHERE array_length = {edge_length} AND case_id &lt;= 8
+        FORMAT Null
+    </query>
+    <query>
+        SELECT
+            sum(
+                indexOf(arrayMap(x -&gt; -x, a), arrayMin(x -&gt; -x, a))
+                + indexOf(arrayMap(x -&gt; -x, a), arrayMax(x -&gt; -x, a)))
+        FROM array_min_max_index_perf_float
+        WHERE array_length = {edge_length} AND case_id &lt;= 8
+        FORMAT Null
+    </query>
+
+    <!-- String: generic compareAt path, every position pattern at every edge length. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_string
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_string
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(x -&gt; length(x), a) + arrayMaxIndex(x -&gt; length(x), a))
+        FROM array_min_max_index_perf_string
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT
+            sum(
+                indexOf(arrayMap(x -&gt; length(x), a), arrayMin(x -&gt; length(x), a))
+                + indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a)))
+        FROM array_min_max_index_perf_string
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+
+    <!-- Nullable keeps the generic path visible even when all values are non-null. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_nullable
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_nullable
+        WHERE array_length = {edge_length}
+        FORMAT Null
+    </query>
 
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_i64</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_nullable</drop_query>
 </test>
