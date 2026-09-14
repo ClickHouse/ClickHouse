@@ -262,10 +262,7 @@ RefreshTask::RefreshTask(
     else
     {
         if (is_restore_from_backup)
-        {
-            scheduling.stop_requested = true;
             scheduling.not_ready = true;
-        }
     }
 }
 
@@ -344,14 +341,12 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
-    /// Both `markReady` and `startReplicated` refuse to resume a view whose coordination is
-    /// permanently unavailable, each checking under `mutex`. Checking it here too would only be a
-    /// racy duplicate: `unavailable` is also written by the scheduling thread
-    /// (markCoordinationUnavailable), so it can be set right after an unlocked read here.
+    /// No `unavailable` check here: `startReplicated` does it under `mutex`, and an unlocked read
+    /// here would be racy - the scheduling thread can set it right afterwards.
     if (coordination.coordinated)
         startReplicated();
     else
-        markReady(/*resume=*/ true);
+        markReady(/*resume=*/ false);
 }
 
 void RefreshTask::finalizeCreateOrReplace(bool stay_stopped)
