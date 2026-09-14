@@ -36,6 +36,7 @@ import time
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_with_retry
 
@@ -467,10 +468,11 @@ def test_roles_are_created_once_in_the_pinned_storage():
 
 def test_users_are_materialised_with_their_roles_before_any_login(janedoe_in_role_a):
     for node in (node1, node2):
+        # `auth_type` is an array: a user may carry several authentication methods.
         assert admin(
             node,
             "SELECT name, storage, auth_type FROM system.users WHERE name = 'janedoe'",
-        ) == TSV([["janedoe", "ldap", "ldap"]])
+        ) == TSV([["janedoe", "ldap", "['ldap']"]])
         assert admin(node, granted_roles_query("permanent")) == TSV([["role_a"]])
         assert node.contains_in_log("Added LDAP user 'janedoe'")
     # The password is still checked against the directory.
@@ -696,8 +698,9 @@ def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
     """1200 users in `clickhouse-role_b` need 13 pages of 100 and exceed the default OpenLDAP
     size limit of 500, which the fixture lifts for the service account. Deleting the group would
     remove them all at once: `max_removed_fraction` refuses the run. Deleting the users afterwards
-    trips the same guard on purpose; the nodes are restarted to start from an empty directory,
-    which also covers the restart window."""
+    trips the same guard on purpose, on every node that synchronises the same search (`node_stale`
+    included; `node_dry` applies nothing and the others never got that far); those nodes are
+    restarted to start from an empty directory, which also covers the restart window."""
     base = int(admin(node1, ldap_users_query()).strip())
     ldap_add_bulk_users(BULK_USERS)
     ldap_set_bulk_membership(ROLE_B_GROUP, BULK_USERS)
@@ -734,7 +737,7 @@ def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
 
     # Every run now wants to remove 1200 of 1202 users and is refused. A restart starts from an
     # empty directory: nobody logs in through it until the first run, then the users are back.
-    for node in (node1, node2):
+    for node in (node1, node2, node_stale):
         node.restart_clickhouse()
     for node in (node1, node2):
         assert_eq_with_retry(
@@ -742,6 +745,9 @@ def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
         )
         wait_granted_roles(node, "janedoe", ["role_a"])
         assert login(node, "janedoe") == TSV([["janedoe"]])
+    # `node_stale` excludes nobody and syncs every second; it must be fresh again for the
+    # staleness test below.
+    wait_ldap_user(node_stale, "janedoe", present=True)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -811,14 +817,19 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
     try:
         reload_config(node_stale, "ldap_server.xml", broken_config)
 
-        # The runs fail every second from now on; after 3 s the snapshot counts as stale.
+        # The runs fail every second from now on; after 3 s the snapshot counts as stale. Until then
+        # a login may still succeed (or fail on the lookup bind, whose cache the reload cleared).
+        # `AccessControl::authenticate` hides every reason behind "Authentication failed"; the
+        # staleness error is visible in the server log only.
         deadline = time.time() + 30
-        while True:
-            error = login_error(node_stale, "janedoe")
-            if node_stale.contains_in_log("has not been synchronised for"):
-                break
-            assert time.time() < deadline, error
+        while not node_stale.contains_in_log("has not been synchronised for"):
+            assert time.time() < deadline, "the directory did not become stale in time"
+            try:
+                login(node_stale, "janedoe")
+            except QueryRuntimeException:
+                pass
             time.sleep(0.5)
+        login_error(node_stale, "janedoe")
         assert node_stale.contains_in_log("refusing to authenticate user 'janedoe'")
 
         # Gate order: the local user behind the directory and an unknown name are unaffected.
@@ -937,6 +948,11 @@ def test_startup_validation_of_the_other_sync_keys():
         directories_bad_config(max_user="5"),
         "Unknown entry 'max_user' in 'user_directories.ldap.sync' section",
     )
+    # A duration that does not fit into the signed count would wrap into a negative wait.
+    assert_startup_fails_with(
+        directories_bad_config(interval="315360001"),
+        "'interval' in 'user_directories.ldap.sync' section must not exceed 315360000 s (ten years), got 315360001",
+    )
     # `create_roles` without any `groups` allow-list: nothing would be safe to create.
     without_groups = directories_bad_config(create_roles="true")
     start = without_groups.index("<groups>")
@@ -945,9 +961,4 @@ def test_startup_validation_of_the_other_sync_keys():
     assert_startup_fails_with(
         without_groups,
         "'create_roles' in 'user_directories.ldap.sync' section requires a non-empty 'groups' allow-list",
-    )
-    # A duration that does not fit into the signed count would wrap into a negative wait.
-    assert_startup_fails_with(
-        directories_bad_config(interval="315360001"),
-        "'interval' in 'user_directories.ldap.sync' section must not exceed 315360000 s (ten years), got 315360001",
     )
