@@ -1,6 +1,5 @@
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskBackup.h>
 
 #include <Common/Exception.h>
 
@@ -98,15 +97,6 @@ bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)
         disk = delegate_disk;
 
     return std::dynamic_pointer_cast<const DiskObjectStorage>(disk) != nullptr;
-
-}
-
-bool isDiskBackup(std::shared_ptr<const IDisk> disk)
-{
-    while (auto delegate_disk = disk->getDelegateDiskIfExists())
-        disk = delegate_disk;
-
-    return std::dynamic_pointer_cast<const DiskBackup>(disk) != nullptr;
 
 }
 

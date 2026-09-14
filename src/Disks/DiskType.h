@@ -63,6 +63,5 @@ struct DataSourceDescription
 
 class IDisk;
 bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
-bool isDiskBackup(std::shared_ptr<const IDisk> disk);
 
 }

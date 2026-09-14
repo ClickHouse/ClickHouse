@@ -1,10 +1,7 @@
-#include <Disks/DiskBackup.h>
 #include <Disks/DiskFromAST.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -125,46 +122,6 @@ static std::string getOrCreateCustomDisk(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
-
-    if (!attach && !isDiskBackup(disk))
-    {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        auto check_local_path = [&](const String & path)
-        {
-            if (disk_path_expected_prefix.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Base path for custom local disks must be defined in config file by `{}`",
-                    custom_local_disks_base_dir_in_config);
-
-            if (!pathStartsWith(path, disk_path_expected_prefix))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Path of the custom local disk must be inside `{}` directory",
-                    disk_path_expected_prefix);
-        };
-
-        auto underlying_disk = disk;
-        while (auto delegate_disk = underlying_disk->getDelegateDiskIfExists())
-            underlying_disk = delegate_disk;
-
-        if (auto object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(underlying_disk))
-        {
-            auto object_storage = object_storage_disk->getObjectStorage();
-            if (!object_storage->isRemote())
-                check_local_path(object_storage->getCommonKeyPrefix());
-
-            if (!object_storage_disk->getMetadataStorage()->isRemote())
-                if (config->has("metadata_path"))
-                    check_local_path(disk->getPath());
-        }
-        else if (!disk->isRemote())
-        {
-            check_local_path(disk->getPath());
-        }
-    }
 
     return disk_name;
 }
