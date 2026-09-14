@@ -982,28 +982,34 @@ void StorageObjectStorage::truncate(
 
     auto paths = configuration->getPaths();
 
-    StoredObjects objects;
-    for (const auto & key : paths)
-    {
-        objects.emplace_back(key.path);
-    }
-
     /// The keys after the first one were written by the inserts into this table - with `*_create_new_file_on_insert`
-    /// or by splitting the data by size. The table forgets each of them as soon as its object is gone: otherwise
-    /// it would go on planning reads of an object that does not exist anymore. The removal can succeed only
+    /// or by splitting the data by size. They are deleted before the first key, and the first key is deleted last:
+    /// the first key is the table itself, and it stays in the list of the paths whatever happens, so its object
+    /// has to remain readable until everything else is gone - otherwise a removal that fails part-way through
+    /// the tail would leave the table planning reads of an object that does not exist anymore, and every
+    /// following `SELECT` would fail with `FILE_DOESNT_EXIST` until an insert recreates the object.
+    ///
+    /// The table forgets each of the tail keys as soon as its object is gone. The removal can succeed only
     /// partially - the object storages report which objects they did delete - so the keys are retired from
     /// the reported set even when the removal throws, exactly like the truncating insert retires the keys
-    /// one by one. The first key stays in the list whatever happens: it is the table itself.
-    StoredObjects successful_objects;
-    SCOPE_EXIT({
-        for (const auto & object : successful_objects)
-        {
-            if (object.remote_path != paths.front().path)
-                configuration->retirePath(object.remote_path);
-        }
-    });
+    /// one by one.
+    if (paths.size() > 1)
+    {
+        StoredObjects tail_objects;
+        tail_objects.reserve(paths.size() - 1);
+        for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+            tail_objects.emplace_back(it->path);
 
-    object_storage->removeObjectsIfExist(objects, &successful_objects);
+        StoredObjects successful_objects;
+        SCOPE_EXIT({
+            for (const auto & object : successful_objects)
+                configuration->retirePath(object.remote_path);
+        });
+
+        object_storage->removeObjectsIfExist(tail_objects, &successful_objects);
+    }
+
+    object_storage->removeObjectIfExists(StoredObject(paths.front().path));
 }
 
 void StorageObjectStorage::drop()
