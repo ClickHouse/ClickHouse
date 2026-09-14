@@ -155,6 +155,10 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto step_name = node->step->getSerializationName();
         writeStringBinary(step_name, out);
 
+        /// The per-step version selects how this step writes its own payload (in `serialize` below).
+        /// It is chosen for the global plan version the writer serializes with, so an older-release
+        /// peer receives the step encoding it knows. The step settings written further down are gated
+        /// by the global version, not by this per-step version.
         UInt64 step_version = 0;
         if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
         {
