@@ -42,7 +42,9 @@ DROP TABLE IF EXISTS tab_quantized;
 CREATE TABLE tab_quantized(id Int32, vec Array(Float32) CODEC(Quantized('int8', 2))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab_quantized VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 
--- The shortlist is clamped to query_plan_max_limit_for_lazy_materialization when it is set, and stays unbounded when it is 0.
+-- The shortlist size is computed before it is checked against query_plan_max_limit_for_lazy_materialization, so this
+-- LIMIT drives the multiplication in both cases: the rewrite declines because the shortlist cannot stay within the cap
+-- (first query), and applies because the cap is 0, i.e. unbounded (second query). Both return the exact result.
 WITH [0.0, 2.0] AS reference_vec
 SELECT id
 FROM tab_quantized
