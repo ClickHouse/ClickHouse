@@ -17,6 +17,8 @@
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -54,6 +56,13 @@ ASTPtr extractExplainOutputFormatFromInsert(const ASTPtr & query, IParser::Pos &
     insert_query->end = nullptr;
 
     return explain_output_format;
+}
+
+void rejectExplainTextInlineData(const ASTPtr & query)
+{
+    if (const auto * insert_query = query->as<ASTInsertQuery>();
+        insert_query && insert_query->hasInlinedData())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
 }
 
 }
@@ -136,10 +145,40 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (parenthesized_source)
         {
             ++pos;
-            ParserQuery source_parser(end, allow_settings_after_format_in_insert);
-            if (!source_parser.parse(pos, query, expected) || pos->type != TokenType::ClosingRoundBracket)
+            auto source_end = pos;
+            size_t depth{1};
+            while (!source_end->isEnd() && !source_end->isError())
+            {
+                if (source_end->type == TokenType::OpeningRoundBracket)
+                    ++depth;
+                else if (source_end->type == TokenType::ClosingRoundBracket && --depth == 0)
+                    break;
+
+                ++source_end;
+            }
+
+            if (depth != 0)
                 return false;
 
+            /// bound both the token stream and the raw input so `ParserInsertQuery` cannot
+            /// mistake the closing parenthesis or actions for inline data
+            Tokens source_tokens(pos->begin, source_end->begin);
+            Pos source_pos(source_tokens, pos);
+            ParserQuery source_parser(source_end->begin, allow_settings_after_format_in_insert);
+
+            const bool parsed = source_parser.parse(source_pos, query, expected);
+            pos.backtracks = std::max(pos.backtracks, source_pos.backtracks);
+
+            if (!parsed)
+                return false;
+
+            rejectExplainTextInlineData(query);
+
+            if (source_pos->type != TokenType::EndOfStream)
+                return false;
+
+            source_end.backtracks = pos.backtracks;
+            pos = source_end;
             ++pos;
 
             /// actions are optional. upon failing the parser restores `pos` while keeping
@@ -157,11 +196,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 action->as<const ASTExplainTextAction &>().validateShape();
         }
 
-        if (const auto * insert_query = query->as<ASTInsertQuery>();
-            insert_query && insert_query->hasInlinedData())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
-        }
+        rejectExplainTextInlineData(query);
 
         /// parentheses and actions explicitly delimit from the source. only bare form
         /// without actions gives a trailing `FORMAT` to `EXPLAIN TEXT`
@@ -396,7 +431,7 @@ Actions are applied from left to right. Separate consecutive actions with commas
 
 `MODIFY OFFSET` and `PAGE` are not supported when the source query uses `LIMIT ... AFTER` or `LIMIT ... UNTIL`, including their combined form. This restriction also applies to `PAGE 1`.
 
-For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. An expression limit remains an expression in the generated offset.
+For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. Fractional limit literals between zero and one are not supported, including with `PAGE 1`. An expression limit remains an expression in the generated offset; its value is not evaluated or validated.
 
 **Source and result options**
 

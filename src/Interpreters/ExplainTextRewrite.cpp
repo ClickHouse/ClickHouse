@@ -62,6 +62,14 @@ void applyPage(ASTPtr & query, const ASTExplainTextAction & action)
     if (!limit)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE requires an existing LIMIT");
 
+    if (const auto * literal = limit->as<ASTLiteral>();
+        literal && literal->value.getType() == Field::Types::Float64)
+    {
+        const auto value = literal->value.safeGet<Float64>();
+        if (value > 0 && value < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE is not supported with a fractional LIMIT literal");
+    }
+
     const auto & page_literal = action.getOperand()->as<const ASTLiteral &>();
     const UInt64 page = page_literal.value.safeGet<UInt64>();
     if (page == 1)

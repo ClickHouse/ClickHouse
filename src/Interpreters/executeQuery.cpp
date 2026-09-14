@@ -1129,6 +1129,20 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
         auto node = nodes_to_process.back();
         nodes_to_process.pop_back();
 
+        if (const auto * explain_query = node->as<ASTExplainQuery>();
+            explain_query && explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+        {
+            /// the source and actions of `EXPLAIN TEXT` are preserved text
+            /// only outer output options belong to the executing request
+            for (auto member : ASTQueryWithOutput::output_option_members)
+            {
+                const auto & output_option = explain_query->*member;
+                if (output_option)
+                    nodes_to_process.push_back(output_option);
+            }
+            continue;
+        }
+
         if (auto * set_query = node->as<ASTSetQuery>())
         {
             if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
