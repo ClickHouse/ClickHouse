@@ -27,8 +27,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
-    bool can_use_minmax_filter_,
-    bool use_only_minmax_filter_,
+    RuntimeFilterMinMaxMode minmax_filter_mode_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_,
@@ -50,6 +49,15 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         pass_ratio_threshold_for_disabling_,
         blocks_to_skip_before_reenabling_};
 
+    if (minmax_filter_mode_ != RuntimeFilterMinMaxMode::Disabled
+        && (!allow_to_use_not_exact_filter_ || !AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type)
+            || !supportsNumericMinMaxRuntimeFilter(filter_column_target_type)))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot use numeric minmax runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
+            filter_column_target_type->getName(),
+            allow_to_use_not_exact_filter_);
+
     if (allow_to_use_not_exact_filter_)
     {
         if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
@@ -65,8 +73,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                     max_ratio_of_set_bits_in_bloom_filter_,
                     distinct_keys_hint_,
                     distinct_keys_hint_matches_filter_key_,
-                    use_only_minmax_filter_),
-                can_use_minmax_filter_ && supportsNumericMinMaxRuntimeFilter(filter_column_target_type));
+                    minmax_filter_mode_ == RuntimeFilterMinMaxMode::Only),
+                minmax_filter_mode_ != RuntimeFilterMinMaxMode::Disabled);
         }
         else
         {

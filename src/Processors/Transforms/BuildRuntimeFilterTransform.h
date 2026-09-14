@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterTypes.h>
 
 namespace DB
 {
@@ -31,8 +32,7 @@ public:
         UInt64 blocks_to_skip_before_reenabling_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
         bool allow_to_use_not_exact_filter_,
-        bool can_use_minmax_filter_,
-        bool use_only_minmax_filter_,
+        RuntimeFilterMinMaxMode minmax_filter_mode_,
         bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_,
         bool distinct_keys_hint_matches_filter_key_,

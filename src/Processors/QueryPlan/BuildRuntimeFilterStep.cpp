@@ -71,15 +71,11 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
-    bool can_use_minmax_filter_,
-    bool use_only_minmax_filter_,
+    RuntimeFilterMinMaxMode minmax_filter_mode_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_)
-    : ITransformingStep(
-        input_header_,
-        input_header_,
-        getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
@@ -91,8 +87,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
-    , can_use_minmax_filter(can_use_minmax_filter_)
-    , use_only_minmax_filter(use_only_minmax_filter_)
+    , minmax_filter_mode(minmax_filter_mode_)
     , track_key_range(track_key_range_)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
@@ -145,8 +140,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
             allow_to_use_not_exact_filter,
-            can_use_minmax_filter,
-            use_only_minmax_filter,
+            minmax_filter_mode,
             track_key_range,
             distinct_keys_hint,
             distinct_keys_hint_matches_filter_key,
@@ -167,7 +161,7 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling] = pass_ratio_threshold_for_disabling;
     settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling] = blocks_to_skip_before_reenabling;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
-    settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax] = can_use_minmax_filter;
+    settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax] = minmax_filter_mode != RuntimeFilterMinMaxMode::Disabled;
 }
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
@@ -217,8 +211,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         blocks_to_skip_before_reenabling,
         max_ratio_of_set_bits_in_bloom_filter,
         allow_to_use_not_exact_filter,
-        can_use_minmax_filter,
-        /*use_only_minmax_filter_=*/false,
+        can_use_minmax_filter ? RuntimeFilterMinMaxMode::Combined : RuntimeFilterMinMaxMode::Disabled,
         /*track_key_range_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
 }
 
@@ -251,8 +244,8 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     else
     {
         format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
-        format_settings.out << prefix << "Can use minmax filter: " << can_use_minmax_filter << '\n';
-        format_settings.out << prefix << "Use only minmax filter: " << use_only_minmax_filter << '\n';
+        format_settings.out << prefix << "Can use minmax filter: " << (minmax_filter_mode != RuntimeFilterMinMaxMode::Disabled) << '\n';
+        format_settings.out << prefix << "Use only minmax filter: " << (minmax_filter_mode == RuntimeFilterMinMaxMode::Only) << '\n';
     }
 }
 

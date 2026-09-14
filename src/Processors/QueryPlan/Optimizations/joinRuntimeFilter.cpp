@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterTypes.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -153,7 +154,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const DataTypePtr & common_type,
     const QueryPlanOptimizationSettings & optimization_settings,
     bool check_left_does_not_contain,
-    bool use_only_minmax_filter,
+    RuntimeFilterMinMaxMode minmax_filter_mode,
     std::optional<UInt64> distinct_keys_hint,
     bool distinct_keys_hint_matches_filter_key)
 {
@@ -166,9 +167,6 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
 
     /// Add filter lookup to the probe subtree.
     const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
-
-    const bool can_use_minmax_filter = !check_left_does_not_contain && optimization_settings.join_runtime_filter_use_minmax
-        && supportsNumericMinMaxRuntimeFilter(common_type);
 
     /// Add building filter to the build subtree of join.
     QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
@@ -185,13 +183,16 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
         optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
         /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
-        can_use_minmax_filter,
-        use_only_minmax_filter,
+        minmax_filter_mode,
         /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
         distinct_keys_hint,
         distinct_keys_hint_matches_filter_key);
     new_build_filter_node->step->setStepDescription(
-        fmt::format("Build {}runtime join filter on {}", use_only_minmax_filter ? "minmax-only " : "", join_key_build_side.name), 200);
+        fmt::format(
+            "Build {}runtime join filter on {}",
+            minmax_filter_mode == RuntimeFilterMinMaxMode::Only ? "minmax-only " : "",
+            join_key_build_side.name),
+        200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
 
@@ -576,8 +577,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                 /*allow_to_use_not_exact_filter_=*/false,
-                /*can_use_minmax_filter_=*/false,
-                /*use_only_minmax_filter_=*/false,
+                RuntimeFilterMinMaxMode::Disabled,
                 /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key_=*/true);
@@ -666,6 +666,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
             }
 
+            const auto minmax_filter_mode = planner_should_skip_membership
+                ? RuntimeFilterMinMaxMode::Only
+                : (can_use_minmax_filter ? RuntimeFilterMinMaxMode::Combined : RuntimeFilterMinMaxMode::Disabled);
+
             const auto & filter_condition = addJoinKeyRuntimeFilter(
                 filter_dag,
                 build_filter_node,
@@ -677,7 +681,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 common_type,
                 optimization_settings,
                 check_left_does_not_contain,
-                /*use_only_minmax_filter=*/planner_should_skip_membership,
+                minmax_filter_mode,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);
             all_filter_conditions.push_back(
