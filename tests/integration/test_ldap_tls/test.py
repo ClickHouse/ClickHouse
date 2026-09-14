@@ -20,7 +20,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_logs_contain_with_retry
 
 LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
 LDAP_ADMIN_PASSWORD = "clickhouse"
@@ -28,9 +28,14 @@ LDAP_PASSWORD = "qwerty"
 
 cluster = ClickHouseCluster(__file__)
 
+# The CA that issued the fixture's server certificate is taken from the runner image sources,
+# so that there is a single copy to keep in sync with `generate.sh`.
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/ldap_servers.xml", "certs/ca.pem"],
+    main_configs=[
+        "configs/ldap_servers.xml",
+        "../../../ci/docker/integration/runner/misc/openldap/certs/ca.pem",
+    ],
     user_configs=["configs/users.xml"],
     with_ldap=True,
 )
@@ -73,19 +78,13 @@ def started_cluster():
         cluster.shutdown()
 
 
-def failed_logins_in_log(user, retry_count=20, sleep_time=0.5):
+def failed_logins_in_log(user):
     """Returns the `Authentication failed` lines that `AccessControl::authenticate` logged for
     `user`, each of which carries the underlying exception. The log is written asynchronously
-    with respect to the client's error, so poll briefly."""
+    with respect to the client's error, so wait for the line to appear first."""
     pattern = f"user: {user}: Authentication failed"
-    for _ in range(retry_count):
-        lines = [
-            line for line in node.grep_in_log(pattern).splitlines() if line.strip()
-        ]
-        if lines:
-            return lines
-        time.sleep(sleep_time)
-    raise AssertionError(f"no failed login of {user} in the server log")
+    assert_logs_contain_with_retry(node, pattern)
+    return [line for line in node.grep_in_log(pattern).splitlines() if line.strip()]
 
 
 def assert_login_works(user):
