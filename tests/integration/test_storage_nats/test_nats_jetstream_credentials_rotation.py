@@ -31,7 +31,11 @@ PROXY_PORT = 4457
 PROXY_STATE = "/nats_auth_proxy_state"
 PROXY_LOG = "/var/log/clickhouse-server/nats_auth_proxy.log"
 
-CONNECTION_CLOSED_LOG_LINE = "The NATS client library closed the connection to"
+# The table reports the closed connection under its own name, with the error the proxy injected.
+CONNECTION_CLOSED_LOG_LINE = (
+    r"StorageNATS \(test\.nats\): The NATS client library closed the connection to .* "
+    r"Last error: Authorization Violation\."
+)
 
 STREAM = "rotated_stream"
 SUBJECT = "rotated_subject"

@@ -349,10 +349,14 @@ void StorageNATS::createConsumersConnection()
     /// the table would stay silently idle until it is detached and attached again.
     if (consumers_connection && consumers_connection->isClosed())
     {
-        LOG_INFO(
+        /// The table name is in the logger. The error handler of the client library reports the
+        /// rejected credentials too, but it knows only the connection, so this is the line which
+        /// tells an operator which table lost its connection and why.
+        LOG_WARNING(
             log,
-            "The NATS client library closed the connection to {}, creating a new one",
-            consumers_connection->connectionInfoForLog());
+            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
+            consumers_connection->connectionInfoForLog(),
+            consumers_connection->lastErrorForLog());
 
         dropConsumers();
         consumers_connection.reset();
