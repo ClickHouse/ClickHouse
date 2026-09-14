@@ -558,9 +558,12 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        /// Below the epoch a value may sit in a period whose offset has a sub-hour component; rounding it by
-        /// modular arithmetic would land on a UTC-aligned boundary instead of the local one, so the helper
-        /// picks the flag that covers `x`. `toStartOfMinuteInterval` guards its own fast path the same way.
+        /// Both sides of the epoch. What the flag excludes is a sub-hour component in the offset, which
+        /// would put the result off any local boundary at all - below the epoch the offset of a zone such as
+        /// `Europe/Moscow` (+02:30:17 until 1919) has one, so the helper picks the flag that covers `x`. A
+        /// whole number of hours is enough: the local day then starts on a multiple of `divisor` for an hour
+        /// interval, and a second interval is measured from the epoch rather than from the start of the local
+        /// day. `toStartOfMinuteInterval` guards its own fast path the same way.
         if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
             return roundDownToMultiple(x, divisor);
 
@@ -1857,7 +1860,13 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        /// Both sides of the epoch, for the same reason as in `roundDown` above.
+        /// Both sides of the epoch, for the same reason as in `roundDown` above: the flag excludes only a
+        /// sub-minute component in the offset (`Europe/Amsterdam` was +00:19:32 until 1937), which would put
+        /// the result off any local minute boundary. A whole number of minutes is enough even when it is not
+        /// a multiple of the interval, because a minute interval is measured from the epoch and not from the
+        /// start of the local day, so a zone such as `Australia/Eucla` (+08:45) rounds a ten-minute interval
+        /// to the same boundaries on either side of 1970. This is also what `minuteIntervalModularDivisor`
+        /// reports to the vectorized loop of `toStartOfInterval`, so the two paths cannot disagree.
         if (offsetIsWholeNumberOfMinutes(static_cast<Time>(t))) [[likely]]
             return roundDownToMultiple(t, divisor);
 

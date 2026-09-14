@@ -134,3 +134,51 @@ SELECT count() AS values, countIf(toString(CAST(number AS Time)) != concat(
     if(intDiv(number, 60) % 60 < 10, '0', ''), toString(intDiv(number, 60) % 60), ':',
     if(number % 60 < 10, '0', ''), toString(number % 60))) AS wrong
 FROM numbers(3600000);
+
+-- A minute interval is measured from the epoch and not from the start of the local day, so a zone whose
+-- offset is a whole number of minutes that is not a multiple of the interval rounds to the same boundaries
+-- on both sides of 1970: `Australia/Eucla` is +08:45 over the whole table, `Africa/Bamako` was -00:32 until
+-- 1912. The scalar `toStartOf*Minutes` and the vectorized `toStartOfInterval` reach that through different
+-- code, gated on the same offset property, so they must agree row by row.
+SET enable_extended_results_for_datetime_functions = 1;
+
+SELECT 'Australia/Eucla',
+    countIf(toStartOfMinute(t) != toStartOfInterval(t, INTERVAL 1 MINUTE)) AS minute_disagrees,
+    countIf(toStartOfFiveMinutes(t) != toStartOfInterval(t, INTERVAL 5 MINUTE)) AS five_minutes_disagree,
+    countIf(toStartOfTenMinutes(t) != toStartOfInterval(t, INTERVAL 10 MINUTE)) AS ten_minutes_disagree,
+    countIf(toStartOfFifteenMinutes(t) != toStartOfInterval(t, INTERVAL 15 MINUTE)) AS fifteen_minutes_disagree
+FROM (SELECT toDateTime64(-2208900000 + number * 44351, 0, 'Australia/Eucla') AS t FROM numbers(100000));
+
+SELECT 'Africa/Bamako',
+    countIf(toStartOfMinute(t) != toStartOfInterval(t, INTERVAL 1 MINUTE)) AS minute_disagrees,
+    countIf(toStartOfFiveMinutes(t) != toStartOfInterval(t, INTERVAL 5 MINUTE)) AS five_minutes_disagree,
+    countIf(toStartOfTenMinutes(t) != toStartOfInterval(t, INTERVAL 10 MINUTE)) AS ten_minutes_disagree,
+    countIf(toStartOfFifteenMinutes(t) != toStartOfInterval(t, INTERVAL 15 MINUTE)) AS fifteen_minutes_disagree
+FROM (SELECT toDateTime64(-2208900000 + number * 44351, 0, 'Africa/Bamako') AS t FROM numbers(100000));
+
+-- The same interval either side of the epoch in `Australia/Eucla`: a ten-minute interval lands on :45, :55
+-- and :05 local, because the boundaries are the UTC ones and the offset is 45 minutes past the UTC hour.
+SELECT toString(t, 'Australia/Eucla') AS local,
+       toString(toStartOfTenMinutes(t), 'Australia/Eucla') AS start_of_ten_minutes,
+       toString(toStartOfInterval(t, INTERVAL 10 MINUTE), 'Australia/Eucla') AS ten_minute_interval
+FROM (SELECT arrayJoin([toDateTime64('1969-12-31 08:52:00', 0, 'Australia/Eucla'),
+                        toDateTime64('1970-01-02 08:52:00', 0, 'Australia/Eucla')]) AS t)
+ORDER BY t;
+
+-- `Africa/Bamako` before 1912, where the offset is not a multiple of five minutes either.
+SELECT toString(t, 'Africa/Bamako') AS local,
+       toString(toStartOfFiveMinutes(t), 'Africa/Bamako') AS start_of_five_minutes,
+       toString(toStartOfInterval(t, INTERVAL 5 MINUTE), 'Africa/Bamako') AS five_minute_interval
+FROM (SELECT toDateTime64('1900-06-15 12:52:00', 0, 'Africa/Bamako') AS t);
+
+-- And the zones the guard does exclude: a sub-minute component in the offset would put a modular result off
+-- any local minute boundary, so these keep going through the table before the epoch.
+SELECT toString(t, 'Europe/Amsterdam') AS local,
+       toString(toStartOfTenMinutes(t), 'Europe/Amsterdam') AS start_of_ten_minutes,
+       toString(toStartOfInterval(t, INTERVAL 10 MINUTE), 'Europe/Amsterdam') AS ten_minute_interval
+FROM (SELECT toDateTime64('1930-06-15 12:52:00', 0, 'Europe/Amsterdam') AS t);
+
+SELECT toString(t, 'Asia/Kolkata') AS local,
+       toString(toStartOfTenMinutes(t), 'Asia/Kolkata') AS start_of_ten_minutes,
+       toString(toStartOfInterval(t, INTERVAL 10 MINUTE), 'Asia/Kolkata') AS ten_minute_interval
+FROM (SELECT toDateTime64('1902-06-15 12:52:00', 0, 'Asia/Kolkata') AS t);
