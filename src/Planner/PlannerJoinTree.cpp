@@ -1605,7 +1605,8 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 
     const auto join_kind = join_node->getKind();
     const auto join_strictness = join_node->getStrictness();
-    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
+    /// A comma join behaves like `INNER ALL`: its keys come from `WHERE` in the query plan.
+    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left || join_kind == JoinKind::Comma)
     {
         // check that left table expression can be used for parallel replicas
         if (left_table)
@@ -3431,7 +3432,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (join_kind == JoinKind::Full)
                 is_full_join = true;
 
-            if (isCrossOrComma(join_kind))
+            /// A comma join is like `INNER` here: it gets its keys from `WHERE` in the query plan, and a cross
+            /// product left over is kept local by `applyParallelReplicas` and `findParallelReplicasQuery`.
+            if (join_kind == JoinKind::Cross)
                 is_cross_join = true;
 
             if (join_node.getLocality() == JoinLocality::Global)
@@ -3472,10 +3475,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
             /// pairs rows by position, and `FULL` emits unmatched right rows, which each replica
             /// would decide from its own slice of the left side.
+            /// A comma join carries no strictness of its own and is decided per left row like `INNER ALL`.
             if (is_non_leftmost_join_tree_node
                 && (join_kind == JoinKind::Paste
                     || join_kind == JoinKind::Full
-                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left && join_kind != JoinKind::Comma)))
                 has_unsafe_non_leftmost_join = true;
 
             continue;

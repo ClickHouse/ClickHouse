@@ -1,0 +1,5 @@
+4	0
+│  Expression: equals(__table5.LO_PARTKEY, __table4.P_PARTKEY)
+│  │  Expression: equals(__table5.LO_SUPPKEY, __table3.S_SUPPKEY)
+│  │  │  Expression: equals(__table5.LO_CUSTKEY, __table2.C_CUSTKEY)
+│  │  │  │  Expression: equals(__table5.LO_ORDERDATE, __table1.D_DATEKEY)

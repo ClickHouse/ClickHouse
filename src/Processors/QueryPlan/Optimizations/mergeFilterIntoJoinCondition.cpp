@@ -486,7 +486,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     const auto & join_settings = join_step->getJoinSettings();
     const bool allow_dynamic_type_in_join_keys = join_settings.allow_dynamic_type_in_join_keys;
-    /// Without keys the physical join can only be a hash join with a residual filter.
+    /// A hyperedge that no reordering turns into a key leaves a join without keys, and only the hash join
+    /// executes one as a cross product with a residual filter (see `can_convert_to_cross` in `JoinStepLogical`).
     const bool allow_hyperedges = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
 
     auto & filter_dag = filter_step->getExpression();

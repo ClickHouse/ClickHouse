@@ -1,6 +1,8 @@
 -- Comma joins are kept as plain JOIN nodes in the query tree; the conversion to INNER JOIN
 -- with the equalities from WHERE happens in the query plan.
 
+SET query_plan_optimize_join_order_limit = 10;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
@@ -42,6 +44,14 @@ SELECT '-- results';
 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t2.a = t3.a ORDER BY ALL;
 SELECT * FROM t1, t2, t3 WHERE t1.a = t3.a ORDER BY ALL;
 
+SELECT '-- an expression as the key and a subquery in the comma join';
+SELECT * FROM t1, t2, (SELECT a AS x FROM t3 WHERE a + 1 = b) AS t3
+WHERE t1.a = if(t2.b > 0, t2.a, 0) AND t2.a = t3.x AND 1
+ORDER BY ALL;
+SELECT * FROM t1, t2, (SELECT a AS x FROM t3 WHERE a + 1 = b) AS t3
+WHERE t1.a = if(t2.b > 0, t2.a, 0)
+ORDER BY ALL;
+
 SELECT '-- force mode: a comma join without an equi-join condition is an error';
 SELECT count() FROM t1, t2, t3 WHERE t1.a = t3.a SETTINGS cross_to_inner_join_rewrite = 2; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t1, t2 WHERE t1.a > t2.a SETTINGS cross_to_inner_join_rewrite = 2; -- { serverError INCORRECT_QUERY }
@@ -56,6 +66,28 @@ SELECT countIf(explain ILIKE '%Type: CROSS%' OR explain ILIKE '%Type: COMMA%'), 
 FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2 WHERE t1.a = t2.a SETTINGS cross_to_inner_join_rewrite = 0);
 SELECT '-- explicit CROSS JOIN is never forced';
 SELECT count() FROM t1 CROSS JOIN t2 WHERE t1.a > t2.a SETTINGS cross_to_inner_join_rewrite = 2;
+
+SELECT '-- the leftover equality is not copied to the other side as a tautology';
+SELECT countIf(explain LIKE '%equals(__table3.a, __table3.a)%')
+FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a AND t2.a = t3.a);
+
+SELECT '-- without statistics the cross product is placed last';
+DROP TABLE IF EXISTS l1;
+DROP TABLE IF EXISTS l2;
+DROP TABLE IF EXISTS l3;
+CREATE TABLE l1 (a UInt64) ENGINE = Log;
+CREATE TABLE l2 (a UInt64) ENGINE = Log;
+CREATE TABLE l3 (a UInt64) ENGINE = Log;
+INSERT INTO l1 VALUES (1), (3);
+INSERT INTO l2 VALUES (1), (3);
+INSERT INTO l3 VALUES (3), (5);
+SELECT trimLeft(explain) FROM (
+    EXPLAIN keep_logical_steps = 1, actions = 1 SELECT * FROM l1, l2, l3 WHERE l1.a = l3.a
+    SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0, explain_query_plan_default = 'legacy'
+) WHERE explain LIKE '%Join:%';
+DROP TABLE l1;
+DROP TABLE l2;
+DROP TABLE l3;
 
 SELECT '-- GLOBAL is kept for a cross join';
 SELECT countIf(explain LIKE '%GLOBAL CROSS JOIN%')

@@ -355,10 +355,6 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
-/// Turns the comma joins left unrewritten by `mergeFilterIntoJoinCondition` into `Cross`,
-/// or throws if `cross_to_inner_join_rewrite >= 2` demands that every comma join gets join keys.
-void normalizeCommaJoins(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
-
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
