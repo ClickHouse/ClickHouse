@@ -515,6 +515,12 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     // ~10 ms for another thread's consume(). A parker that was only borrowing holds no spare quantum
     // (allocated already <= cap) and skips this. effectiveMaxSlots() is clamped at 0, so the first
     // condition already implies allocated > 0.
+    // TODO(serxa): finish() frees the scheduler semaphore unit but does not retract this query's
+    // requested_ns nor the surviving request's max_consumed watermark (requested_ns is monotonic).
+    // Since finish() retires the oldest (lowest-watermark) request, a large downscale (many threads
+    // parking at once) leaves the surviving thread with an inflated watermark, delaying its next
+    // renew() preemption by up to (parked count) * quantum. Freed slots are accounted correctly and
+    // the skew is one-time and self-correcting, so it is left as a known limitation for now.
     while (allocated > effectiveMaxSlots())
     {
         --allocated;
