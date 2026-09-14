@@ -229,6 +229,7 @@
                 },
                 "zh/concepts/features/interfaces/postgresql",
                 "zh/concepts/features/interfaces/prometheus",
+                "zh/concepts/features/interfaces/prometheus-metrics",
                 "zh/concepts/features/interfaces/ssh",
                 "zh/concepts/features/interfaces/grpc",
                 "zh/concepts/features/interfaces/arrowflight"
