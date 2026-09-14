@@ -17,7 +17,8 @@
             clustered_mask UInt8,
             random_mask UInt8,
             alternating_mask UInt8,
-            dense_mask UInt8
+            dense_mask UInt8,
+            short_runs_mask UInt8
         )
         ENGINE = MergeTree ORDER BY tuple()
     </create_query>
@@ -31,7 +32,8 @@
                 OR (number % 64 BETWEEN 48 AND 55)),
             toUInt8(cityHash64(number) % 2 = 0),
             toUInt8(number % 2 = 0),
-            toUInt8(number % 64 != 32)
+            toUInt8(number % 64 != 32),
+            toUInt8((number % 14 BETWEEN 0 AND 2) OR (number % 14 BETWEEN 7 AND 10))
         FROM numbers(10000000)
     </fill_query>
 
@@ -60,6 +62,13 @@
         WHERE dense_mask = 1
         FORMAT Null
     </query>
+    <!-- Exercise the range-copy threshold with alternating three- and four-row runs. -->
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        WHERE short_runs_mask = 1
+        FORMAT Null
+    </query>
 
     <!-- PREWHERE applies the in-place ColumnVector filter to the generic UInt128 value column. -->
     <query>
@@ -84,6 +93,12 @@
         SELECT sum(value)
         FROM t_column_vector_filter_runs
         PREWHERE dense_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        PREWHERE short_runs_mask = 1
         FORMAT Null
     </query>
 

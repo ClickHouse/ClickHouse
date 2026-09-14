@@ -840,6 +840,8 @@ DECLARE_DEFAULT_CODE(
 template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
 {
+    static constexpr UInt64 MIN_RANGE_COPY_MASK = 0xF;
+
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
@@ -865,8 +867,9 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
                     const size_t index = std::countr_zero(mask);
                     const UInt64 shifted_mask = mask >> index;
 
-                    /// A zero second bit means that this selected row is a singleton.
-                    if ((shifted_mask & 2) == 0)
+                    /// Short runs are cheaper to append one row at a time than to pass through
+                    /// insertRange(), which uses memmove() for in-place filtering.
+                    if ((shifted_mask & MIN_RANGE_COPY_MASK) != MIN_RANGE_COPY_MASK)
                     {
                         inserter.insertSingle(data_pos[index]);
                         mask = blsr(mask);

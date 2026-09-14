@@ -15,6 +15,7 @@ enum class FilterPattern
     Random,
     Alternating,
     DenseWithHole,
+    ShortRuns,
 };
 
 IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
@@ -54,6 +55,10 @@ IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
             for (size_t block = 0; block < rows; block += 64)
                 if (block + 32 < rows)
                     filter[block + 32] = 0;
+            break;
+        case FilterPattern::ShortRuns:
+            for (size_t i = 0; i < rows; ++i)
+                filter[i] = (i % 14 < 3) || (i % 14 >= 7 && i % 14 < 11);
             break;
     }
 
@@ -116,16 +121,20 @@ BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Clustered)->Arg(1 << 20)->
 BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
 
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
