@@ -3423,7 +3423,7 @@ def test_system_drop_failed_files_azure_queue(started_cluster):
 
     def get_failed_count():
         return int(node.query(
-            f"SELECT count() FROM system.s3queue_metadata_cache "
+            f"SELECT count() FROM system.azure_queue_metadata_cache "
             f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
         ).strip())
 
