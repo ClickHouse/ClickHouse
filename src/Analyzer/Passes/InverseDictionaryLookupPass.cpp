@@ -250,8 +250,18 @@ bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypeP
 /// column throws for values outside of `UInt8`. The rewrites compare the key expression with
 /// values of the key column types and convert via a common supertype instead, which both
 /// rejects valid lookups (`NO_COMMON_TYPE` for `String` against `UUID`) and silently returns
-/// false where `dictGet` throws. Mirror the conversion with `accurateCast`, which matches
-/// `castColumnAccurate` exactly, including the errors.
+/// false where `dictGet` throws. Mirror the conversion with `accurateCast`, which computes the
+/// same value as `castColumnAccurate` and throws the same error on every row it is evaluated on.
+///
+/// That is a per-row guarantee, not a per-query one. The rewritten predicate is an ordinary
+/// expression, so the planner decides which rows it runs on, and that set can differ from the
+/// rows the `dictGet` call would have converted: index analysis skips granules, `PREWHERE`
+/// reorders the filtering, and for a composite key the single-match fold `tuple(...) = (c1, c2)`
+/// is split by `ComparisonTupleEliminationPass` into a short-circuiting `and`, which converts an
+/// element only on rows where the preceding elements matched. A conversion error `dictGet` would
+/// raise for a row the optimized query never converts disappears together with the lookup, the
+/// same way the zero-match constant fold elides the key expression entirely. The test pins the
+/// behavior on rows that are converted either way.
 ///
 /// Expressions that need no cast are left untouched, which keeps them usable for index
 /// analysis. For a `Nullable` expression that does need one the rewrite is skipped instead:

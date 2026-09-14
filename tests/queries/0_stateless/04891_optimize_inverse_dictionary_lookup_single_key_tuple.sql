@@ -463,17 +463,20 @@ CREATE TABLE data_mc
 (
     k1 UUID,
     k2_i16 Int16,
-    k2_u8 UInt8
+    k2_u8 UInt8,
+    -- The same key as `(toString(k1), k2_u8)`, carried by a tuple-typed column instead of a
+    -- syntactic `tuple(...)` call.
+    kt Tuple(String, UInt16)
 )
 ENGINE = MergeTree
 ORDER BY k1;
 
 INSERT INTO data_mc VALUES
-    ('11111111-1111-1111-1111-111111111111', 1, 1),
-    ('33333333-3333-3333-3333-333333333333', -1, 7),
+    ('11111111-1111-1111-1111-111111111111', 1, 1, ('11111111-1111-1111-1111-111111111111', 1)),
+    ('33333333-3333-3333-3333-333333333333', -1, 7, ('33333333-3333-3333-3333-333333333333', 7)),
     -- Shares `k1` with the matching dictionary key, so the rewritten conjunction cannot
     -- short-circuit past the out-of-range `k2_i16` and the conversion is always evaluated.
-    ('11111111-1111-1111-1111-111111111111', -1, 9);
+    ('11111111-1111-1111-1111-111111111111', -1, 9, ('11111111-1111-1111-1111-111111111111', 9));
 
 -- A `String` expression for the `UUID` key column is a valid `dictGet` key, but the
 -- comparison has no common type for `String` and `UUID`. Only that element is cast;
@@ -488,9 +491,11 @@ SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the rows
--- holding `-1`, and so must the rewrite instead of silently comparing in `Int32`. One of
--- those rows carries the matching `k1`, so no evaluation order of the rewritten conjunction
--- can skip the conversion.
+-- holding `-1`, and so does the rewrite's `accurateCast` on every row it is evaluated on,
+-- instead of silently comparing in `Int32`. Which rows that is depends on the plan:
+-- `ComparisonTupleEliminationPass` splits the single-match fold into a short-circuiting
+-- `and`, so the conversion of `k2_i16` runs only on rows whose `k1` matched. One of the
+-- out-of-range rows carries the matching `k1`, so the error is raised in any case.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
@@ -515,6 +520,41 @@ SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u
 SELECT 'two-column key, String for UUID column, like, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- The key can be a tuple-typed column rather than a syntactic `tuple(...)` call. The rewrite
+-- then takes it apart with `tupleElement`, one call per key column over the same expression,
+-- and casts only the `String` element.
+SELECT 'two-column key, tuple-typed column, equals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) = 'paywall';
+SELECT 'two-column key, tuple-typed column, equals';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) = 'paywall';
+SELECT 'two-column key, tuple-typed column, equals, opt off';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'two-column key, tuple-typed column, like - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) LIKE 'pay%';
+SELECT 'two-column key, tuple-typed column, like';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) LIKE 'pay%';
+SELECT 'two-column key, tuple-typed column, like, opt off';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) LIKE 'pay%'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- An outer `Nullable` carrier around a multi-column key that needs a conversion: the rewrite
+-- is skipped (the plan keeps `dictGet`), and the query fails the same way with the
+-- optimization on and off, because at `NULL` rows the nested tuple holds an empty string for
+-- the `UUID` key column.
+SELECT 'two-column key, nullable carrier needing conversion - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc
+WHERE dictGet('dict_mc', 'attr', if(k1 != '33333333-3333-3333-3333-333333333333', (toString(k1), k2_u8), NULL)) = 'paywall';
+SELECT count() FROM data_mc
+WHERE dictGet('dict_mc', 'attr', if(k1 != '33333333-3333-3333-3333-333333333333', (toString(k1), k2_u8), NULL)) = 'paywall'; -- { serverError CANNOT_PARSE_UUID }
+SELECT count() FROM data_mc
+WHERE dictGet('dict_mc', 'attr', if(k1 != '33333333-3333-3333-3333-333333333333', (toString(k1), k2_u8), NULL)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_UUID }
 
 -- Key expressions whose shape `dictGet` rejects must not be rewritten at all: the constant
 -- fold would otherwise replace the error with a result. `dictGet` only validates the shape

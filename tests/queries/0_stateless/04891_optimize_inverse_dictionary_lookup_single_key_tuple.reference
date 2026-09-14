@@ -150,3 +150,17 @@ two-column key, String for UUID column, like
 1
 two-column key, String for UUID column, like, opt off
 1
+two-column key, tuple-typed column, equals - plan
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE and(equals(accurateCast(tupleElement(__table1.kt, 1), \'UUID\'), \'11111111-1111-1111-1111-111111111111\'), equals(tupleElement(__table1.kt, 2), _CAST(1, \'UInt16\')))
+two-column key, tuple-typed column, equals
+1
+two-column key, tuple-typed column, equals, opt off
+1
+two-column key, tuple-typed column, like - plan
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE in(tuple(accurateCast(tupleElement(__table1.kt, 1), \'UUID\'), tupleElement(__table1.kt, 2)), (\n    SELECT\n        k1 AS k1,\n        k2 AS k2\n    FROM dictionary(\'default.dict_mc\')\n    WHERE like(attr, \'pay%\')\n))
+two-column key, tuple-typed column, like
+1
+two-column key, tuple-typed column, like, opt off
+1
+two-column key, nullable carrier needing conversion - plan
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE equals(dictGet(\'default.dict_mc\', \'attr\', if(notEquals(__table1.k1, \'33333333-3333-3333-3333-333333333333\'), tuple(toString(__table1.k1), __table1.k2_u8), _CAST(NULL, \'Nullable(Nothing)\'))), \'paywall\')
