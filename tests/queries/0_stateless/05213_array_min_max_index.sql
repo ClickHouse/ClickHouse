@@ -63,6 +63,11 @@ SELECT arrayMinIndex(a), arrayMaxIndex(a)
 FROM (SELECT arrayJoin([range(65), arrayReverse(range(66)), range(128), arrayReverse(range(256)), range(257)]) AS a)
 ORDER BY length(a);
 SELECT
+    arrayMinIndex(arrayMap(x -> toUInt64(42), range(16384))),
+    arrayMaxIndex(arrayMap(x -> toUInt64(42), range(16384))),
+    arrayMinIndex(arrayMap(x -> toFloat64(42), range(16384))),
+    arrayMaxIndex(arrayMap(x -> toFloat64(42), range(16384)));
+SELECT
     n,
     arrayMaxIndex(arrayMap(i -> if(i = 0, toInt64(100000), toInt64(i)), range(n))),
     arrayMaxIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(100000), toInt64(i)), range(n))),
@@ -74,3 +79,24 @@ SELECT
     arrayMinIndex(arrayMap(i -> if(i = intDiv(n * 3, 5), toInt64(-100000), toInt64(i)), range(n)))
 FROM (SELECT arrayJoin(range(1, 129)) AS n)
 ORDER BY n;
+SELECT
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toUInt8(0), toUInt8(i % 200 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toUInt8(255), toUInt8(i % 200)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toUInt16(0), toUInt16(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toUInt16(65535), toUInt16(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toUInt32(0), toUInt32(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toUInt32(4294967295), toUInt32(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toUInt64(0), toUInt64(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toUInt64('18446744073709551615'), toUInt64(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toInt8(-128), toInt8(i % 100 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toInt8(127), toInt8(i % 100)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toInt16(-32768), toInt16(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toInt16(32767), toInt16(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toInt32(-2147483648), toInt32(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toInt32(2147483647), toInt32(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toInt64('-9223372036854775807'), toInt64(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toInt64('9223372036854775807'), toInt64(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toFloat32('-1000000000000'), toFloat32(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toFloat32('1000000000000'), toFloat32(i % 20000)), range(16384))),
+    arrayMinIndex(arrayMap(i -> if(i = 8192, toFloat64('-1000000000000'), toFloat64(i % 20000 + 1)), range(16384))),
+    arrayMaxIndex(arrayMap(i -> if(i = 8192, toFloat64('1000000000000'), toFloat64(i % 20000)), range(16384)));
