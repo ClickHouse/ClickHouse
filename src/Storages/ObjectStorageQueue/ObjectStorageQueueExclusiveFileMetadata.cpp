@@ -115,7 +115,7 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
-    std::string & failure_message, UInt64 * retries_out) const
+    std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const
 {
     const auto state = file_status->state.load();
 
@@ -126,6 +126,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
             failure_message = file_status->getException();
             if (retries_out)
                 *retries_out = file_status->retries.load();
+            /// Exclusive mode has no `.retriable` marker concept - a Failed state here
+            /// is always the terminal, non-retryable outcome.
+            if (is_terminal_out)
+                *is_terminal_out = true;
             return PathState::Failed;
         default:
             return PathState::Unknown;

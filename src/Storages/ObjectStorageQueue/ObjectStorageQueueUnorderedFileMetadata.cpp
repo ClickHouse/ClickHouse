@@ -186,7 +186,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetadata::getPathState(
-    std::string & failure_message, UInt64 * retries_out) const
+    std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const
 {
     /// Check the terminal failed node and the retriable failed-marker together.
     /// A live `.retriable` node still holds retry state (the retry count), so its
@@ -225,6 +225,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetada
             if (retries_out)
                 *retries_out = metadata.retries;
         }
+        /// The terminal /failed/<hash> node exists - permanent, not retryable
+        /// regardless of a later-raised retry limit.
+        if (is_terminal_out)
+            *is_terminal_out = true;
         return PathState::Failed;
     }
 
@@ -241,6 +245,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetada
             if (retries_out)
                 *retries_out = metadata.retries;
         }
+        /// Live `.retriable` marker only - not yet terminalized, still eligible for
+        /// the live retry-limit comparison.
+        if (is_terminal_out)
+            *is_terminal_out = false;
         return PathState::Failed;
     }
 

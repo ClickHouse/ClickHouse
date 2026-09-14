@@ -30,7 +30,8 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    PathState getPathState(std::string & failure_message, UInt64 * retries_out) const override;
+    PathState getPathState(
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out = nullptr) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

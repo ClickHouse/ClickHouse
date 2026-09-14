@@ -450,7 +450,7 @@ bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata::getPathState(
-    std::string & failure_message, UInt64 * retries_out) const
+    std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const
 {
     auto state = getProcessingStateFromKeeper(/*check_failed=*/true, log);
     if (state.is_failed)
@@ -458,6 +458,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata
         failure_message = state.failure_message;
         if (retries_out)
             *retries_out = state.retries;
+        /// getProcessingStateFromKeeper()'s is_failed comes from the terminal failed
+        /// node - permanent, not retryable regardless of a later-raised retry limit.
+        if (is_terminal_out)
+            *is_terminal_out = true;
         return PathState::Failed;
     }
     if (state.is_processed)
@@ -485,6 +489,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata
             if (retries_out)
                 *retries_out = metadata.retries;
         }
+        /// Live `.retriable` marker only - not yet terminalized, still eligible for
+        /// the live retry-limit comparison.
+        if (is_terminal_out)
+            *is_terminal_out = false;
         return PathState::Failed;
     }
 

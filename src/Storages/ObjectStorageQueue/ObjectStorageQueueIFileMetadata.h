@@ -139,7 +139,12 @@ public:
     /// count stored in Keeper (from either the terminal failed node or a live `.retriable`
     /// marker) so callers can revalidate a lowered `loading_retries` limit even when their
     /// own in-memory cache is cold (e.g. after a restart or on a different replica).
-    virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out) const = 0;
+    /// If `is_terminal_out` is non-null and the result is `Failed`, it is set to true when
+    /// the failure came from the terminal `/failed/<hash>` node (permanent, not retryable
+    /// regardless of a later-raised `loading_retries`) and false when it came from a live
+    /// `.retriable` marker (still eligible for the live retry-limit comparison).
+    virtual PathState getPathState(
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out = nullptr) const = 0;
 
     /// Cheap check for a fresh file (state == None): only probes the live
     /// `.retriable` marker (a single Keeper read), which nothing in the

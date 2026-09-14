@@ -2099,24 +2099,35 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     {
         std::string failure_message;
         UInt64 keeper_retries = 0;
-        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
+        bool is_terminal = false;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries, &is_terminal);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        /// Read the retry limit live from table metadata rather than the long-lived
-        /// file_metadata snapshot: s3queue_loading_retries is alterable at runtime via
-        /// ALTER TABLE ... MODIFY SETTING, and this wait can run for a while (no deadline
-        /// is passed from SYSTEM FLUSH OBJECT STORAGE QUEUE), so a stale threshold could
-        /// make this either hang forever against a now-terminal file (limit lowered) or
-        /// abort early on a still-retryable marker (limit raised).
         FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
-            && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
-            throw Exception(ErrorCodes::ABORTED,
-                "Path '{}' failed to be processed by {}: {}",
-                path, getStorageID().getNameForLogs(), failure_message);
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        {
+            /// A terminal /failed/<hash> node is permanent and never retryable, regardless
+            /// of a later-raised s3queue_loading_retries - only a live `.retriable` marker
+            /// is subject to the live retry-limit comparison below.
+            if (is_terminal)
+                throw Exception(ErrorCodes::ABORTED,
+                    "Path '{}' failed to be processed by {}: {}",
+                    path, getStorageID().getNameForLogs(), failure_message);
+
+            /// Read the retry limit live from table metadata rather than the long-lived
+            /// file_metadata snapshot: s3queue_loading_retries is alterable at runtime via
+            /// ALTER TABLE ... MODIFY SETTING, and this wait can run for a while (no deadline
+            /// is passed from SYSTEM FLUSH OBJECT STORAGE QUEUE), so a stale threshold could
+            /// make this either hang forever against a now-terminal marker (limit lowered) or
+            /// abort early on a still-retryable marker (limit raised).
+            if (keeper_retries >= metadata->getTableMetadata().loading_retries.load())
+                throw Exception(ErrorCodes::ABORTED,
+                    "Path '{}' failed to be processed by {}: {}",
+                    path, getStorageID().getNameForLogs(), failure_message);
+        }
     }
 
     auto event = std::make_shared<Poco::Event>();
@@ -2191,17 +2202,20 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 
         std::string failure_message;
         UInt64 keeper_retries = 0;
-        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
+        bool is_terminal = false;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries, &is_terminal);
 
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        /// Same reasoning as above: read the live limit, not the stale file_metadata snapshot.
+        /// Same reasoning as above: read the live limit, not the stale file_metadata snapshot,
+        /// and only apply that live-limit comparison to a live `.retriable` marker - a terminal
+        /// /failed/<hash> node is permanent and never retryable.
         FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
-            && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
+            && (is_terminal || keeper_retries >= metadata->getTableMetadata().loading_retries.load()))
         {
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
