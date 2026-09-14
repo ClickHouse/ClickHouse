@@ -12,6 +12,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -58,6 +59,39 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
     }
 }
 
+LDAPClient::Params::TLSProtocolVersion parseLDAPTLSProtocolVersion(
+    const Poco::Util::AbstractConfiguration & config, const String & ldap_server_config, const String & entry_name)
+{
+    String value = config.getString(ldap_server_config + "." + entry_name);
+    toLowerASCII(value);
+
+    if (value == "ssl2")   return LDAPClient::Params::TLSProtocolVersion::SSL2;
+    if (value == "ssl3")   return LDAPClient::Params::TLSProtocolVersion::SSL3;
+    if (value == "tls1.0") return LDAPClient::Params::TLSProtocolVersion::TLS1_0;
+    if (value == "tls1.1") return LDAPClient::Params::TLSProtocolVersion::TLS1_1;
+    if (value == "tls1.2") return LDAPClient::Params::TLSProtocolVersion::TLS1_2;
+    if (value == "tls1.3") return LDAPClient::Params::TLSProtocolVersion::TLS1_3;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Bad value for '{}' entry, allowed values are: "
+                    "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2', 'tls1.3'", entry_name);
+}
+
+/// The timeouts are handed to libldap as `int` seconds (`LDAP_OPT_TIMELIMIT`) or `timeval`,
+/// and a zero timeout would make every connect or operation fail immediately, so only
+/// positive values that fit into an `int` are accepted.
+std::chrono::seconds parseLDAPTimeout(
+    const Poco::Util::AbstractConfiguration & config, const String & ldap_server_config, const String & entry_name)
+{
+    const UInt64 value = config.getUInt64(ldap_server_config + "." + entry_name);
+    if (value == 0 || value > static_cast<UInt64>(std::numeric_limits<int>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Bad value for '{}' entry, must be a number of seconds between 1 and {}",
+                        entry_name, std::numeric_limits<int>::max());
+
+    return std::chrono::seconds{value};
+}
+
 void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
@@ -76,6 +110,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
+    const bool has_tls_maximum_protocol_version = config.has(ldap_server_config + ".tls_maximum_protocol_version");
     const bool has_tls_require_cert = config.has(ldap_server_config + ".tls_require_cert");
     const bool has_tls_cert_file = config.has(ldap_server_config + ".tls_cert_file");
     const bool has_tls_key_file = config.has(ldap_server_config + ".tls_key_file");
@@ -84,6 +119,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
     const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
+    const bool has_operation_timeout = config.has(ldap_server_config + ".operation_timeout");
+    const bool has_network_timeout = config.has(ldap_server_config + ".network_timeout");
+    const bool has_search_timeout = config.has(ldap_server_config + ".search_timeout");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -169,6 +207,15 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
 
+    if (has_operation_timeout)
+        params.operation_timeout = parseLDAPTimeout(config, ldap_server_config, "operation_timeout");
+
+    if (has_network_timeout)
+        params.network_timeout = parseLDAPTimeout(config, ldap_server_config, "network_timeout");
+
+    if (has_search_timeout)
+        params.search_timeout = parseLDAPTimeout(config, ldap_server_config, "search_timeout");
+
     if (has_enable_tls)
     {
         String enable_tls_lc_str = config.getString(ldap_server_config + ".enable_tls");
@@ -183,24 +230,17 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     }
 
     if (has_tls_minimum_protocol_version)
-    {
-        String tls_minimum_protocol_version_lc_str = config.getString(ldap_server_config + ".tls_minimum_protocol_version");
-        toLowerASCII(tls_minimum_protocol_version_lc_str);
+        params.tls_minimum_protocol_version = parseLDAPTLSProtocolVersion(config, ldap_server_config, "tls_minimum_protocol_version");
 
-        if (tls_minimum_protocol_version_lc_str == "ssl2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL2;
-        else if (tls_minimum_protocol_version_lc_str == "ssl3")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL3;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.0")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_0;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.1")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
-        else
+    if (has_tls_maximum_protocol_version)
+    {
+        params.tls_maximum_protocol_version = parseLDAPTLSProtocolVersion(config, ldap_server_config, "tls_maximum_protocol_version");
+
+        /// The enumerators are ordered by protocol age, see `TLSProtocolVersion`.
+        if (*params.tls_maximum_protocol_version < params.tls_minimum_protocol_version)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: "
-                            "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'");
+                            "Bad value for 'tls_maximum_protocol_version' entry, "
+                            "must not be lower than 'tls_minimum_protocol_version'");
     }
 
     if (has_tls_require_cert)

@@ -70,13 +70,15 @@ public:
             YES
         };
 
+        /// Ordered from oldest to newest so that versions can be compared with the relational operators.
         enum class TLSProtocolVersion : uint8_t
         {
             SSL2,
             SSL3,
             TLS1_0,
             TLS1_1,
-            TLS1_2
+            TLS1_2,
+            TLS1_3
         };
 
         enum class TLSRequireCert : uint8_t
@@ -100,6 +102,8 @@ public:
 
         TLSEnable enable_tls = TLSEnable::YES;
         TLSProtocolVersion tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
+        /// Unset means "whatever the library negotiates"; when set, must not be lower than the minimum.
+        std::optional<TLSProtocolVersion> tls_maximum_protocol_version;
         TLSRequireCert tls_require_cert = TLSRequireCert::DEMAND;
         String tls_cert_file;
         String tls_key_file;
@@ -125,8 +129,13 @@ public:
 
         std::chrono::seconds verification_cooldown{0};
 
+        /// How long to wait for the result of a bind or of a StartTLS negotiation on an established connection (`LDAP_OPT_TIMEOUT`).
+        /// Searches are bounded by `search_timeout` instead.
         std::chrono::seconds operation_timeout{40};
+        /// How long to wait for the TCP connection to the server to be established, including the TLS handshake
+        /// (`LDAP_OPT_NETWORK_TIMEOUT`).
         std::chrono::seconds network_timeout{30};
+        /// Time limit passed with each search request (`ldap_search_ext_s`): requested from the server and enforced on the client.
         std::chrono::seconds search_timeout{20};
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
