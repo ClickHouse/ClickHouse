@@ -4,10 +4,10 @@
 SET session_timezone = 'UTC';
 
 -- Test with large positive value (should throw exception with proper error message)
-SELECT accurateCast(100000000000000000000, 'DateTime'); -- {serverError CANNOT_CONVERT_TYPE}
+SELECT accurateCast(toFloat64(100000000000000000000), 'DateTime'); -- {serverError CANNOT_CONVERT_TYPE}
 
 -- Test with large negative value
-SELECT accurateCast(-100000000000000000000, 'DateTime'); -- {serverError CANNOT_CONVERT_TYPE}
+SELECT accurateCast(toFloat64(-100000000000000000000), 'DateTime'); -- {serverError CANNOT_CONVERT_TYPE}
 
 -- Test with maximum valid DateTime value (should work)
 SELECT accurateCast(4294967295, 'DateTime');

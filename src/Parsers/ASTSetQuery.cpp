@@ -78,7 +78,7 @@ public:
     template <class T>
     String operator() (const T & x) const
     {
-        FieldVisitorToString visitor;
+        FieldVisitorToSettingValueString visitor;
         return visitor(x);
     }
 

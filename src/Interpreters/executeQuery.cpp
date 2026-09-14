@@ -845,7 +845,7 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                String value = convertFieldToString(change.value);
+                String value = convertFieldToSettingValueString(change.value);
                 CoreSettings::maskSettingValue(change.name, change.value, value);
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }

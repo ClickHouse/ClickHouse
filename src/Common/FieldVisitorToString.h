@@ -35,12 +35,30 @@ public:
     String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
+    String operator() (const NumberLiteral & x) const;
     String operator() (const bool & x) const;
+};
+
+/** Same as `FieldVisitorToString`, but a wide integer is written without quotes.
+  * A setting or config value is not a SQL literal: the parsers read bare digits back as the same
+  * wide integer, while the quotes turn the value into a `String`.
+  */
+class FieldVisitorToSettingValueString : public FieldVisitorToString
+{
+public:
+    using FieldVisitorToString::operator();
+    String operator() (const UInt128 & x) const;
+    String operator() (const UInt256 & x) const;
+    String operator() (const Int128 & x) const;
+    String operator() (const Int256 & x) const;
 };
 
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String convertFieldToString(const Field & field);
+
+/// Same as `convertFieldToString`, for a value stored as setting or config text.
+String convertFieldToSettingValueString(const Field & field);
 
 /// Convert Object to String without quotes.
 String convertObjectToString(const Object & object);
