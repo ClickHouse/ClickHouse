@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+
 -- The columns cache write estimate is made in uncompressed bytes - the amount the cache is charged
 -- for when the data lands in it - and the whole query is charged for it before anything is read.
 -- So a query whose data cannot stay in the cache writes nothing at all: neither when its compressed
