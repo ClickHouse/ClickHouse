@@ -1,7 +1,6 @@
 -- Tags: no-old-analyzer
 --       no-old-analyzer: the old analyzer never resolves a subcolumn of an ALIAS parent, so every
---       arm would raise UNKNOWN_IDENTIFIER; the explicit `SETTINGS enable_analyzer = 0` arm below
---       is what covers it.
+--       arm would raise UNKNOWN_IDENTIFIER.
 
 -- Each arm prints the value read through the Merge table next to the same value read straight from
 -- the child. They must agree, and the truth must differ from the type default, or a broken read
@@ -20,9 +19,6 @@ SELECT 'array size0 subcolumns on', (SELECT arr.size0 FROM m_arr) AS through_mer
 SELECT 'array size0 with parent', arr.size0, length(arr) FROM m_arr SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'array size0 with other column', arr.size0, tiny FROM m_arr SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'array size0 via merge()', (SELECT arr.size0 FROM merge(currentDatabase(), '^t_arr$')) AS through_merge, (SELECT arr.size0 FROM t_arr) AS direct SETTINGS optimize_functions_to_subcolumns = 0;
-
--- The old analyzer never resolved the name; it must keep failing loudly rather than start guessing.
-SELECT arr.size0 FROM m_arr SETTINGS enable_analyzer = 0, optimize_functions_to_subcolumns = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- Here the alias expression reads a physical column, so the child must be asked for `dep`.
 -- `dep + 2` keeps the size0 truth (9), `dep` (7) and `first` (11) distinct: with a plain

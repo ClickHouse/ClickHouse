@@ -34,7 +34,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_key` - إذا استُخدم storage&#95;account&#95;url، فيمكن تحديد مفتاح الحساب هنا
 * `format` — [تنسيق](/ar/reference/formats/index) الملف.
 * `compression` — القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`).
-* `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا يسمح بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. إذا كان المسار يتضمن عنصرًا نائبًا `{_partition_id}`، فالقيمة الافتراضية هي `wildcard` — وهي الاستراتيجية الوحيدة المتوافقة مع هذا المسار. وبخلاف ذلك، تكون القيمة الافتراضية وفق إعداد `file_like_engine_default_partition_strategy` (`wildcard` ضمن إعدادات `compatibility` الأقدم من `26.6`، و`hive` بخلاف ذلك).
+* `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا يسمح بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. في حال عدم تحديد استراتيجية صراحةً، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. والمسار الذي يحتوي على glob آخر لا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. أما المسار الذي لا يحتوي على glob فيستخدم `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وبخلاف ذلك لا يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم في ملف البيانات. والقيمة الافتراضية `false`.
 * `extra_credentials` - استخدم `client_id` و `tenant_id` للمصادقة. إذا جرى توفير extra&#95;credentials، فستُعطى أولوية على `account_name` و `account_key`.
 
@@ -121,7 +121,9 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
   #### استراتيجية التقسيم
 </div>
 
-`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد افتراضيًا عندما يحتوي المسار على عنصر نائب `{_partition_id}` (وهي الاستراتيجية الوحيدة المتوافقة مع مثل هذا المسار)، وإلا فضمن إعدادات `compatibility` الأقدم من `26.6`؛ وفي الحالات المتبقية تكون القيمة الافتراضية هي `hive` (راجع الإعداد `file_like_engine_default_partition_strategy`).
+`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
+
+عند عدم تعيين `partition_strategy`، لا يستخدم المسار الذي يحتوي على glob آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وإلا فلا يستخدم أي استراتيجية تقسيم.
 
 يطبّق `hive` التقسيم بنمط Hive لعمليات القراءة والكتابة. تُنفَّذ القراءة باستخدام نمط glob تكراري. وتُنشئ الكتابة ملفات بالتنسيق التالي: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 

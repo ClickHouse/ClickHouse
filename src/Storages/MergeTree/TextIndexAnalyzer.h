@@ -42,6 +42,8 @@ public:
         bool is_failed = false;
         /// Query was discarded (low-selectivity hint, pattern bypass).
         bool is_bypassed = false;
+        /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
+        bool is_analysis_incomplete = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
@@ -70,7 +72,7 @@ public:
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
-    void addPostings(std::string_view token, PostingListPtr postings);
+    void addPostings(std::string_view token, const PostingList & postings);
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);

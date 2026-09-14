@@ -102,7 +102,7 @@ Veja também:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nova configuração que limita a agregação a, no máximo, LIMIT chaves distintas para consultas `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-Habilita ou desabilita a otimização de uma consulta trivial `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sem funções de agregação na projeção, sem cláusulas `HAVING`/`ORDER BY`/`LIMIT BY`/window e sem modificadores `GROUP BY`) definindo `max_rows_to_group_by = n + offset` com `group_by_overflow_mode = 'any'`. A agregação é interrompida assim que `n + offset` chaves distintas são geradas.
+Habilita ou desabilita a otimização de uma consulta trivial `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sem funções de agregação, funções de janela ou `arrayJoin` na projeção, sem cláusulas `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window e sem modificadores `GROUP BY`) definindo `max_rows_to_group_by = n + offset` com `group_by_overflow_mode = 'any'`. A agregação é interrompida assim que `n + offset` chaves distintas são geradas.
 
 A otimização é suprimida quando o usuário definiu explicitamente `group_by_overflow_mode` para um valor diferente de `any` (para preservar a semântica explícita de `throw`/`break`) e quando o usuário já definiu um `max_rows_to_group_by` mais restritivo (a otimização seria um no-op).
 

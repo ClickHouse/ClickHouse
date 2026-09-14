@@ -9,5 +9,7 @@
     <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
     <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
 
-    <query>with 'clickhouse' as str select arrayJoin(range(number % 10)),  materialize(str) from numbers(10000000)</query>
+    <!-- The arrayJoin function form expands in ExpressionActions, which by default wraps a String passenger in
+         a lazy ColumnReplicated; enable_lazy_columns_replication = 0 is what replicates it eagerly, and format Null keeps the result off the wire. -->
+    <query>with 'clickhouse' as str select arrayJoin(range(number % 10)),  materialize(str) from numbers(10000000) settings enable_lazy_columns_replication = 0 format Null</query>
 </test>

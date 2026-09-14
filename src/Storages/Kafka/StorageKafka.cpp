@@ -294,6 +294,13 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
 void StorageKafka::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     // Start the reader thread
     for (auto & task : tasks)
     {

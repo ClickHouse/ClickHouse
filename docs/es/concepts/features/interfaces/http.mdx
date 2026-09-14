@@ -200,7 +200,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-Puede usar el parámetro de URL `default_format` o la cabecera `X-ClickHouse-Format` para especificar un formato predeterminado distinto de `TabSeparated`.
+Puede usar el parámetro de URL `default_format` para especificar un formato predeterminado distinto de `TabSeparated`. La cabecera `X-ClickHouse-Format` selecciona explícitamente el formato de la respuesta: es un alias de la configuración `output_format`, por lo que también sobrescribe una cláusula `FORMAT` en la consulta. Nunca cambia cómo se analiza el cuerpo de la solicitud de un `INSERT`; use `input_format` o `format` para ello.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -218,6 +218,150 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+<div id="tables-as-files">
+  ## Acceda a las tablas mediante rutas URL y construya consultas
+</div>
+
+Disponible en ClickHouse 26.8 y versiones posteriores.
+
+La interfaz HTTP puede interpretar una ruta URL como una base de datos, una tabla, un formato de salida y un método de compresión. Los parámetros de URL pueden determinar el resultado, por lo que las solicitudes de lectura sencillas no requieren SQL. Estas funciones están deshabilitadas de forma predeterminada y deben habilitarse explícitamente.
+
+<div id="enabling-path-routing">
+  ### Habilite el enrutamiento por rutas
+</div>
+
+La interpretación de rutas se habilita en dos niveles:
+
+1. Habilite el ajuste de configuración `http_allow_path_requests` a nivel de servidor, que permite a la interfaz HTTP enrutar solicitudes basadas en rutas al controlador de consultas:
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. Habilite los ajustes por usuario necesarios:
+
+| Configuración                                       | Efecto                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `http_allow_table_as_file`                          | Interpreta el último componente de la ruta como `table`, `table.format` o `table.format.compression`. |
+| `http_allow_database_as_path`                       | Interpreta un componente inicial de la ruta `/database/` como la base de datos actual.                |
+| `http_allow_filters_as_path`                        | Interpreta componentes de ruta `/name=value/` de estilo Hive como filtros `WHERE`.                    |
+| `http_allow_filters_as_unrecognized_url_parameters` | Interpreta parámetros URL no reconocidos como filtros `WHERE`.                                        |
+
+<Note>
+  El enrutamiento se realiza antes de la autenticación, por lo que no puede depender de un ajuste por usuario. Cuando `http_allow_path_requests` está deshabilitado, una ruta desconocida devuelve un `404` previo a la autenticación. Después del enrutamiento y la autenticación, los ajustes por usuario determinan cómo se interpreta la ruta, lo que permite habilitar esta funcionalidad de forma selectiva para un usuario, un rol o un perfil.
+</Note>
+
+<div id="table-as-file-examples">
+  ### Acceder a tablas como archivos
+</div>
+
+Con `http_allow_table_as_file` habilitado, una solicitud a `/table.format.compression` se procesa como `SELECT * FROM table`. Habilite `http_allow_database_as_path` para usar `/database/table.format.compression`.
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+Las extensiones de formato y compresión se reconocen sin distinguir mayúsculas de minúsculas, por lo que `hits.csv` y `hits.CSV` son equivalentes.
+
+Un parámetro URL explícito `format` u `output_format` sobrescribe el formato de la ruta. `default_format` no lo hace: solo proporciona el formato que se debe usar cuando ningún otro lo selecciona, y la extensión de la ruta es más específica. Un parámetro `compression` explícito debe coincidir con la compresión de la ruta; los valores en conflicto generan una excepción.
+
+<div id="query-construction">
+  ### Construir una consulta
+</div>
+
+Los siguientes ajustes encapsulan la consulta base en una tabla derivada. Se pueden combinar entre sí y con una consulta existente. Puede proporcionarlos como parámetros de URL HTTP, en una cláusula `SETTINGS` de la consulta o mediante un perfil de usuario.
+
+| Ajuste                                                                                                                      | Efecto                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                    | `SELECT <expression_list> FROM (…)`                                                                                                                                                                                              |
+| `filter`                                                                                                                    | Añade `WHERE <expression>`. Varios parámetros de URL `filter` se combinan con `AND`.                                                                                                                                             |
+| `order`                                                                                                                     | Añade `ORDER BY <expression_list>`.                                                                                                                                                                                              |
+| `sort`                                                                                                                      | Añade `ORDER BY` a partir de una lista de identificadores o posiciones de columna separada por comas, cada uno con un prefijo opcional `+` (ascendente) o `-` (descendente), como `sort=a,-b`. No se puede combinar con `order`. |
+| [`limit`](/es/reference/settings/session-settings/other#limit) y [`offset`](/es/reference/settings/session-settings/other#offset) | Añaden `LIMIT <n> OFFSET <m>`. Ambos aceptan valores negativos para seleccionar desde el final y valores fraccionarios que representan una proporción de las filas.                                                              |
+| `page`                                                                                                                      | Establece `offset = limit * (page - 1)`. Requiere `limit` y no se puede combinar con `offset`.                                                                                                                                   |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### Modificar una consulta existente
+</div>
+
+La configuración de construcción no se limita a las solicitudes de rutas; también da forma a las consultas que escriba. La consulta se convierte en la tabla derivada, por lo que la configuración se aplica a su resultado en lugar de combinarse con ella. Por ejemplo, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` se ejecuta como:
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+Esto resulta útil para paginar, ordenar o restringir el resultado de una consulta definida en otro lugar, ya sea en una consulta guardada en un dashboard, un `predefined_query_handler` o un cliente que solo permite añadir parámetros de URL:
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+Como las configuraciones envuelven la consulta en lugar de reescribirla, son compatibles con una cláusula `FORMAT` y con un `ORDER BY` dentro de la consulta, y nunca cambian qué filas inserta un `INSERT`: una configuración de construcción incluida en una sentencia `INSERT ... SELECT` da forma al resultado propio (vacío) de la sentencia, no a su `SELECT` de origen. Para dar forma al origen, incluya la configuración en la cláusula `SETTINGS` del propio `SELECT`:
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  `filter` no es un mecanismo de control de acceso. Añade una cláusula `WHERE` a una subconsulta envolvente, por lo que los datos subyacentes pueden leerse y procesarse antes de aplicar el filtro. Para restringir las filas a las que puede acceder un usuario, use [políticas de filas](/es/concepts/features/security/access-rights#row-policy-management) o [`additional_table_filters`](/es/reference/settings/session-settings/additional#additional_table_filters).
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### Sobrescrituras de formatos y compresión
+</div>
+
+| Configuración    | Efecto                                                                                                                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `output_format`  | Sobrescribe el formato de salida. Tiene prioridad sobre la cláusula `FORMAT` de la consulta, la extensión de la ruta, `format` y `default_format`. También puede establecerse mediante la cabecera `X-ClickHouse-Format`. |
+| `input_format`   | Sobrescribe el formato de entrada para `INSERT`. Tiene prioridad sobre la cláusula `FORMAT` de la consulta y `format`.                                                                                                      |
+| `format`         | Sobrescribe el formato en ambas direcciones, salvo que se proporcione una configuración específica para una dirección.                                                                                                      |
+| `default_format` | Establece el formato de salida cuando la consulta no tiene cláusula `FORMAT`, extensión de ruta ni ninguna otra sobrescritura de formato.                                                                                   |
+| `compression`    | Comprime el cuerpo de la respuesta, por ejemplo, con `compression=gz`. Es independiente de HTTP `Content-Encoding` y del parámetro nativo `compress` de ClickHouse.                                                         |
+
+Las configuraciones de formato también funcionan con otros protocolos, incluido el client nativo y `clickhouse-local`. `input_format` y `output_format` corresponden a las opciones `--input-format` y `--output-format`. La opción `--format` se asigna a la configuración bidireccional `format` en `clickhouse-local`, mientras que en `clickhouse-client` conserva su significado histórico de solo salida y se asigna a `output_format`.
+
+`compression` es específico de la configuración de respuestas HTTP y se procesa antes de la ejecución de la consulta. Proporciónelo mediante un parámetro de URL HTTP, una extensión de ruta o un perfil de usuario. Se rechaza en una cláusula `SETTINGS` de la consulta.
+
+Las respuestas HTTP binarias y comprimidas incluyen un encabezado `Content-Disposition: attachment; filename=…`. El nombre de archivo se deriva de la ruta de la URL o se usa `result.<format>.<compression>` cuando la ruta no proporciona uno.
+
+<div id="implicit-table">
+  ### Usar una tabla identificada por la ruta con una consulta
+</div>
+
+Cuando la ruta identifica una tabla y también se proporciona un parámetro `query`, la tabla identificada por la ruta se expone mediante [`implicit_table_at_top_level`](/es/reference/settings/session-settings/implicit#implicit_table_at_top_level). Un `SELECT` sin una cláusula `FROM` lee de la tabla identificada por la ruta:
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+Si la consulta ya contiene una cláusula `FROM`, el componente de ruta solo especifica el nombre del archivo descargado.
 
 <div id="insert-queries">
   ## Consultas `INSERT` a través de HTTP/HTTPS

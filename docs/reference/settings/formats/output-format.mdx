@@ -763,6 +763,14 @@ Target row group size in bytes, before compression.
 
 Use Parquet String type instead of Binary for String columns.
 
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standard Parquet `DECIMAL` values. The previous value keeps the legacy little-endian `FIXED_LEN_BYTE_ARRAY` representation."}]}]}/>
+
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
+
 ## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

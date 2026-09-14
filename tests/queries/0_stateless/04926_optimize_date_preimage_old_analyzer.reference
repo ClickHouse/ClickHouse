@@ -1,0 +1,10 @@
+toDate result	2
+toDate retained	0
+today retains toDate	0
+nonconstant retains toDate	1
+toStartOfMonth result	4
+toStartOfMonth retained	0
+Date toStartOfDay result	1
+Date toStartOfDay retained	0
+reversed comparison result	2
+reversed comparison retains toDate	0
