@@ -167,9 +167,7 @@ void applyPatchesIndices(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        /// A patch writes distinct values into distinct rows, so a Const column must be materialized:
-        /// neither `updateInplaceFrom` nor `updateFrom` can write into a `ColumnConst`.
-        result_column.column = removeSpecialRepresentations(result_column.column->convertToFullColumnIfConst());
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         for (const auto & patch_indices : patches)
         {
@@ -313,11 +311,14 @@ ColumnRawPtrs extractRawColumns(const Block & block, const Names & column_names)
     return out;
 }
 
-Block getBlockWithSortingKey(const Block & block, const KeyDescription & sorting_key)
+Block getBlockWithSortingKey(const Block & block, const Block & key_columns, const KeyDescription & sorting_key)
 {
     Block result;
+    /// `key_columns` holds the key materialized once per main block, before any patch was applied,
+    /// which is the identity the patch part is sorted by. The result block's own copy of a key column
+    /// may instead hold a default computed from already patched inputs, which is a different value.
     for (const auto & name : sorting_key.column_names)
-        result.insert(block.getByName(name));
+        result.insert(key_columns.getByName(name));
 
     result.insert(block.getByName(BlockNumberColumn::name));
     result.insert(block.getByName(BlockOffsetColumn::name));
@@ -697,7 +698,7 @@ void updateHashWithColumn(SipHash & hash, const ColumnWithTypeAndName & column)
     hash.update(type_name.data(), type_name.size());
 }
 
-std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, const MergeOnKeyGroup & group)
+std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, const Block & key_columns, const MergeOnKeyGroup & group)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
     size_t main_rows = result_block.rows();
@@ -707,7 +708,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
     const auto & sorting_key = *group.sorting_key;
     const auto & reverse_flags = sorting_key.reverse_flags;
-    auto sorting_key_block = getBlockWithSortingKey(result_block, sorting_key);
+    auto sorting_key_block = getBlockWithSortingKey(result_block, key_columns, sorting_key);
     BlockCursor result_cursor(sorting_key_block, sorting_key);
 
     PatchIndicesGroups indices_groups;
@@ -784,6 +785,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
+    const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
     UInt64 source_data_version)
 {
@@ -817,7 +819,7 @@ void applyPatchesToBlock(
     /// and is applied directly, without combining with other patches.
     for (const auto & group : merge_on_key_groups)
     {
-        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, group);
+        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, key_columns, group);
 
         for (auto & patch_indices : merge_on_key_patches)
         {

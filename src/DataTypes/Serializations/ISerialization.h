@@ -213,6 +213,11 @@ public:
         /// Used for derived subcolumns (e.g. String `.size`) whose data can be
         /// computed from a parent column without being stored separately.
         std::function<ColumnPtr()> lazy_column_creator;
+
+        /// Set by `IDataType::getSubcolumnData` on the data of a resolved subcolumn: whether it is
+        /// the array sizes (`Map` sizes are the same substream), which the name alone cannot tell.
+        /// See `IDataType::getSubcolumnNameForZeroArrayLevel`.
+        bool is_array_sizes_subcolumn = false;
     };
 
     struct Substream
@@ -276,11 +281,6 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
-
-            MapKeyValue,
-            ObjectDistinctPaths,
-            ObjectSubObject,
-            ObjectCombinedPath,
 
             Bucket,
             MapBucketsInfo,
