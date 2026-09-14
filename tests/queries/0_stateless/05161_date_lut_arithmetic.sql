@@ -104,8 +104,8 @@ SELECT 'UTC',
     countIf(toInt64(t) - toInt64(date_trunc('minute', t, 'UTC')) NOT BETWEEN 0 AND 59) AS minute_too_far
 FROM pre_epoch;
 
--- An interval that does not divide a day, before the epoch. `UTC` stays on the arithmetic path and rounds
--- from the epoch; `Europe/Moscow` goes through the table and rounds from the start of the local day.
+-- An interval that does not divide a day, before the epoch. Both round the second interval from the epoch;
+-- for the minute interval `Europe/Moscow` goes through the table and rounds from the start of the local day.
 SET enable_extended_results_for_datetime_functions = 1;
 SELECT toString(toStartOfInterval(toDateTime64('1969-12-31 23:59:58', 0, 'UTC'), INTERVAL 7 SECOND), 'UTC') AS utc_7s,
        toString(toStartOfInterval(toDateTime64('1900-06-01 11:10:47', 0, 'Europe/Moscow'), INTERVAL 7 SECOND), 'Europe/Moscow') AS moscow_7s,
@@ -182,3 +182,57 @@ SELECT toString(t, 'Asia/Kolkata') AS local,
        toString(toStartOfTenMinutes(t), 'Asia/Kolkata') AS start_of_ten_minutes,
        toString(toStartOfInterval(t, INTERVAL 10 MINUTE), 'Asia/Kolkata') AS ten_minute_interval
 FROM (SELECT toDateTime64('1902-06-15 12:52:00', 0, 'Asia/Kolkata') AS t);
+
+-- A second interval needs no property of the offset: every UTC offset is a whole number of seconds, so a
+-- modular result always lands on a local second boundary. `Australia/Eucla` (+08:45), `Pacific/Chatham`
+-- (+12:45) and `Asia/Kolkata` (+05:30) bucket the same instants as `UTC`. The sweep spans 1899 to 2040.
+SET enable_extended_results_for_datetime_functions = 1;
+
+SELECT 'Australia/Eucla',
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 7 SECOND)) != ts - positiveModulo(ts, 7)) AS wrong_7s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 11 SECOND)) != ts - positiveModulo(ts, 11)) AS wrong_11s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 3601 SECOND)) != ts - positiveModulo(ts, 3601)) AS wrong_3601s
+FROM (SELECT -2208900000 + number * 44351 AS ts, toDateTime64(ts, 0, 'Australia/Eucla') AS t FROM numbers(100000));
+
+SELECT 'Pacific/Chatham',
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 7 SECOND)) != ts - positiveModulo(ts, 7)) AS wrong_7s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 11 SECOND)) != ts - positiveModulo(ts, 11)) AS wrong_11s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 3601 SECOND)) != ts - positiveModulo(ts, 3601)) AS wrong_3601s
+FROM (SELECT -2208900000 + number * 44351 AS ts, toDateTime64(ts, 0, 'Pacific/Chatham') AS t FROM numbers(100000));
+
+SELECT 'Asia/Kolkata',
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 7 SECOND)) != ts - positiveModulo(ts, 7)) AS wrong_7s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 11 SECOND)) != ts - positiveModulo(ts, 11)) AS wrong_11s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 3601 SECOND)) != ts - positiveModulo(ts, 3601)) AS wrong_3601s
+FROM (SELECT -2208900000 + number * 44351 AS ts, toDateTime64(ts, 0, 'Asia/Kolkata') AS t FROM numbers(100000));
+
+SELECT 'UTC',
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 7 SECOND)) != ts - positiveModulo(ts, 7)) AS wrong_7s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 11 SECOND)) != ts - positiveModulo(ts, 11)) AS wrong_11s,
+    countIf(toUnixTimestamp64Second(toStartOfInterval(t, INTERVAL 3601 SECOND)) != ts - positiveModulo(ts, 3601)) AS wrong_3601s
+FROM (SELECT -2208900000 + number * 44351 AS ts, toDateTime64(ts, 0, 'UTC') AS t FROM numbers(100000));
+
+-- The start of the epoch itself: the bucket starts there, not a few seconds into it.
+SELECT toString(t, 'Australia/Eucla') AS local,
+       toString(toStartOfInterval(t, INTERVAL 11 SECOND), 'Australia/Eucla') AS eleven_second_interval
+FROM (SELECT toDateTime64('1970-01-01 08:45:10', 0, 'Australia/Eucla') AS t);
+
+SELECT toString(t, 'Pacific/Chatham') AS local,
+       toString(toStartOfInterval(t, INTERVAL 11 SECOND), 'Pacific/Chatham') AS eleven_second_interval
+FROM (SELECT toDateTime64('1970-01-01 12:45:03', 0, 'Pacific/Chatham') AS t);
+
+-- The seam this leaves: a whole number of minutes is a minute interval and keeps measuring from the start of
+-- the local day in `Europe/Amsterdam` (+00:19:32 until 1937), while one second more is measured from the epoch.
+SELECT toString(t, 'Europe/Amsterdam') AS local,
+       toString(toStartOfInterval(t, INTERVAL 60 SECOND), 'Europe/Amsterdam') AS sixty_second_interval,
+       toString(toStartOfInterval(t, INTERVAL 61 SECOND), 'Europe/Amsterdam') AS sixty_one_second_interval
+FROM (SELECT toDateTime64('1930-06-15 12:52:00', 0, 'Europe/Amsterdam') AS t);
+
+-- The `origin` overload rounds the difference between the value and the origin, a duration and not a point in
+-- time. Measuring that from the start of a local day put the start of the bucket before the origin.
+WITH toDateTime64('2023-01-01 14:35:30', 0, 'Asia/Kolkata') AS origin
+SELECT 'Asia/Kolkata',
+    countIf(toStartOfInterval(t, INTERVAL 7 SECOND, origin) < origin) AS before_origin,
+    countIf(toStartOfInterval(t, INTERVAL 7 SECOND, origin)
+            != origin + intDiv(toUnixTimestamp64Second(t) - toUnixTimestamp64Second(origin), 7) * 7) AS wrong_7s
+FROM (SELECT toDateTime64('2023-01-01 14:35:30', 0, 'Asia/Kolkata') + number AS t FROM numbers(100000));

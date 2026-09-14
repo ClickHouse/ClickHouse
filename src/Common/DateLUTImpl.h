@@ -542,11 +542,14 @@ private:
         return res;
     }
 
+    /// Round `x` down to a multiple of `divisor` measured from the start of the local day, so `divisor` must
+    /// divide an hour. An interval anchored at the epoch uses `roundDownToMultiple` directly instead.
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
+        chassert(3600 % divisor == 0);
 
         /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
         /// a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the fast path would round to a UTC boundary
@@ -561,9 +564,8 @@ private:
         /// Both sides of the epoch. What the flag excludes is a sub-hour component in the offset, which
         /// would put the result off any local boundary at all - below the epoch the offset of a zone such as
         /// `Europe/Moscow` (+02:30:17 until 1919) has one, so the helper picks the flag that covers `x`. A
-        /// whole number of hours is enough: the local day then starts on a multiple of `divisor` for an hour
-        /// interval, and a second interval is measured from the epoch rather than from the start of the local
-        /// day. `toStartOfMinuteInterval` guards its own fast path the same way.
+        /// whole number of hours is enough: the local day then starts on a multiple of `divisor`.
+        /// `toStartOfMinuteInterval` guards its own fast path the same way.
         if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
             return roundDownToMultiple(x, divisor);
 
@@ -1804,6 +1806,15 @@ public:
         return static_cast<Int64>(product);
     }
 
+    /// The rounding divisor of a `seconds`-long interval. An interval count above the maximum of `Int64`
+    /// would make the modular arithmetic negative; saturate instead.
+    static Int64 secondIntervalDivisor(UInt64 seconds)
+    {
+        if (unlikely(seconds > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+            return std::numeric_limits<Int64>::max();
+        return static_cast<Int64>(seconds);
+    }
+
     /// `divisor` in seconds if the corresponding `toStartOf*Interval` method equals
     /// `roundDownToMultiple(t, divisor)` from the epoch onward in this time zone. `valid_before_epoch` says
     /// whether it also holds below the epoch: the historical offset of a zone such as `Europe/Amsterdam`
@@ -1832,9 +1843,9 @@ public:
             return ModularDivisor{Int64(1), true};
         if (seconds % 60 == 0)
             return minuteIntervalModularDivisor(seconds / 60);
-        if (offset_is_whole_number_of_hours_during_epoch)
-            return ModularDivisor{static_cast<Int64>(seconds), offset_is_whole_number_of_hours_in_lut_range};
-        return std::nullopt;
+        /// Every time zone, on both sides of the epoch - see `toStartOfSecondInterval`. The out-of-range
+        /// bail-out of the vectorized loop is then conservative: the generic path returns the same value.
+        return ModularDivisor{secondIntervalDivisor(seconds), true};
     }
 
     std::optional<ModularDivisor> hourIntervalModularDivisor(UInt64 hours) const
@@ -1890,7 +1901,12 @@ public:
         if (seconds % 60 == 0)
             return toStartOfMinuteInterval(t, seconds / 60);
 
-        return static_cast<DateOrTime>(roundDown(t, seconds));
+        /// A second interval is measured from the epoch (see the table in the description of
+        /// `toStartOfInterval`), and every UTC offset is a whole number of seconds, so the modular result is
+        /// always on a local second boundary and no time zone needs the table. The minute interval above
+        /// cannot do the same: a sub-minute component (`Europe/Amsterdam` was +00:19:32 until 1937) would put
+        /// it off any local minute boundary.
+        return static_cast<DateOrTime>(roundDownToMultiple(t, secondIntervalDivisor(seconds)));
     }
 
     LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
