@@ -2888,10 +2888,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
 #endif
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
-        case Type::RELOAD_EMBEDDED_DICTIONARIES:
         case Type::UNLOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARIES: {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::RELOAD_EMBEDDED_DICTIONARIES: {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES);
             break;
         }
         case Type::RELOAD_FUNCTION:
