@@ -19,6 +19,9 @@ X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
 #endif
 static bool NO_INLINE isAllASCIIAVX512(const UInt8 * data, size_t size)
 {
+    if (unlikely(_mm512_movepi8_mask(_mm512_loadu_si512(reinterpret_cast<const void *>(data))) != 0))
+        return false;
+
     __m512i mask = _mm512_setzero_si512();
 
     size_t i = 0;
