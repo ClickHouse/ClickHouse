@@ -176,7 +176,10 @@ MatchedTrees::Matches matchTrees(
                         for (const auto * parent : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
+                            /// One function name resolves to different result types depending on the settings
+                            /// the DAG was built with, and differently-typed results are not one calculation.
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
+                                && parent->result_type->equals(*frame.node->result_type))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
@@ -653,15 +656,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
-        return true;
-
-    size_t fixed_args = 0;
-    for (const auto & child : node->children)
-        if (child->type == ActionsDAG::ActionType::COLUMN)
-            ++fixed_args;
-    static const std::vector<String> injective = {"plus", "minus", "negate", "tuple"};
-    return (fixed_args + 1 >= node->children.size()) && (std::ranges::find(injective, node->function_base->getName()) != injective.end());
+    return node->function_base->isInjective({});
 }
 
 NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
