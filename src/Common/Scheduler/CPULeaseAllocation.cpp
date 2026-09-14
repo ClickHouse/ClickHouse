@@ -502,7 +502,7 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     // the give-back loop below then reclaims any slot that lands as a result.
     if (requests.hasEnqueued() && allocated >= effectiveMaxSlots())
     {
-        if (requests.cancel(lock)) // removed before the scheduler processed it -> unwind schedule()
+        if (requests.cancel(lock)) // removed before the scheduler processed it -> drop schedule()'s enqueue
         {
             scheduled_increment.sub();
             wait_timer.reset();
@@ -515,12 +515,13 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     // ~10 ms for another thread's consume(). A parker that was only borrowing holds no spare quantum
     // (allocated already <= cap) and skips this. effectiveMaxSlots() is clamped at 0, so the first
     // condition already implies allocated > 0.
-    // TODO(serxa): finish() frees the scheduler semaphore unit but does not retract this query's
-    // requested_ns nor the surviving request's max_consumed watermark (requested_ns is monotonic).
-    // Since finish() retires the oldest (lowest-watermark) request, a large downscale (many threads
-    // parking at once) leaves the surviving thread with an inflated watermark, delaying its next
-    // renew() preemption by up to (parked count) * quantum. Freed slots are accounted correctly and
-    // the skew is one-time and self-correcting, so it is left as a known limitation for now.
+    // TODO(serxa): requested_ns only grows (in schedule()); the slot releases in this function do
+    // not retract it. The cancel above unwinds schedule()'s enqueue but leaves its `requested_ns +=
+    // cost`, and finish() below frees the oldest granted quantum without lowering requested_ns or
+    // the surviving request's max_consumed watermark. So a park -- especially a large downscale of
+    // many threads at once -- can leave the surviving thread with an inflated watermark, delaying
+    // its next renew() preemption by up to (parked count) * quantum. Freed slots are accounted
+    // correctly and the skew is one-time and self-correcting, so it is left as a known limitation.
     while (allocated > effectiveMaxSlots())
     {
         --allocated;
