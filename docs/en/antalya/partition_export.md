@@ -11,7 +11,7 @@ The set of parts that are exported is based on the list of parts the replica tha
 
 The partition export tasks of both engines can be observed through `system.partition_exports`.
 
-`system.replicated_partition_exports` is kept as an alias of `system.partition_exports` for backwards compatibility. It returns exactly the same rows, including exports of plain `MergeTree` tables. Filter on `source_table` (or join against `system.tables`) if you need only one engine.
+`system.replicated_partition_exports` is kept as an alias of `system.partition_exports` for backwards compatibility. It returns exactly the same rows, including exports of plain `MergeTree` tables.
 
 The same partition can not be exported to the same destination more than once. This behavior can be overriden with `export_merge_tree_partition_force_export`.
 
