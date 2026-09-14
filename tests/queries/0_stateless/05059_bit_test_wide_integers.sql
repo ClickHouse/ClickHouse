@@ -44,7 +44,17 @@ SELECT bitTestAny(toInt256(-1), 256); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt128(1), 64)); -- { serverError NOT_IMPLEMENTED }
 SELECT bitTest(toUInt256(1), bitShiftLeft(toUInt256(1), 128)); -- { serverError NOT_IMPLEMENTED }
 SELECT bitTest(toUInt256(1), toInt8(-1)); -- { serverError PARAMETER_OUT_OF_BOUND }
-SELECT bitTestAll(toUInt128(1), bitShiftLeft(toUInt128(1), 64)); -- { serverError ILLEGAL_COLUMN }
-SELECT bitTestAny(toUInt256(1), bitShiftLeft(toUInt256(1), 128)); -- { serverError ILLEGAL_COLUMN }
 SELECT bitTestAll(toUInt128(1), number) FROM numbers(129); -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT bitTestAny(toUInt256(1), number) FROM numbers(257); -- { serverError PARAMETER_OUT_OF_BOUND }
+
+-- Wide position types are rejected even when their values are valid.
+SELECT bitTestAll(toUInt128(1), toUInt128(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAny(toUInt128(1), toUInt128(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAll(toUInt256(1), toUInt256(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAny(toUInt256(1), toUInt256(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Wide position types are rejected at the type-checking stage for high valid values too.
+SELECT bitTestAll(bitShiftLeft(toUInt128(1), 127), toUInt128(127)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAny(bitShiftLeft(toUInt128(1), 127), toUInt128(127)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAll(bitShiftLeft(toUInt256(1), 255), toUInt256(255)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTestAny(bitShiftLeft(toUInt256(1), 255), toUInt256(255)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
