@@ -10,6 +10,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -106,8 +107,6 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
-    extern const SettingsString network_compression_method;
-    extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
@@ -3063,29 +3062,10 @@ void TCPHandler::initBlockInput(QueryState & state)
 
 CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_settings, Protocol::Compression compression)
 {
-    std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-    std::optional<int> level;
+    if (compression != Protocol::Compression::Enable)
+        return nullptr;
 
-    /// Bad custom logic
-    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-    /// be broken afterwards.
-    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-    /// More bad custom logic
-    if (method == "ZSTD")
-        level = query_settings[Setting::network_zstd_compression_level];
-
-    if (compression == Protocol::Compression::Enable)
-    {
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
-
-        return CompressionCodecFactory::instance().get(method, level);
-    }
-
-    return nullptr;
+    return chooseNetworkCompressionCodec(&query_settings);
 }
 
 void TCPHandler::initMaybeCompressedOut(QueryState & state)
