@@ -144,6 +144,30 @@
                 <value>Float64</value>
             </values>
         </substitution>
+
+        <substitution>
+            <name>adversarial_length</name>
+            <values>
+                <value>257</value>
+                <value>512</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+                <value>8192</value>
+                <value>16383</value>
+                <value>16384</value>
+                <value>16385</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>adversarial_case</name>
+            <values>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <create_query>
@@ -208,6 +232,23 @@
                 range({matrix_length}))
         FROM numbers(greatest(1, intDiv(20000, {matrix_length})))
         ARRAY JOIN [1, 2, 3, 4, 5, 6, 7, 8] AS case_id
+    </fill_query>
+
+    <!-- Keep the 64-bit adversarial workloads that justified the conservative 16384 threshold. -->
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u64
+        SELECT 9, {adversarial_length}, range({adversarial_length})
+        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u64
+        SELECT 10, {adversarial_length}, arrayReverse(range({adversarial_length}))
+        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_u64
+        SELECT 11, {adversarial_length}, arrayMap(x -&gt; toUInt64(42), range({adversarial_length}))
+        FROM numbers(greatest(1, intDiv(8000, {adversarial_length})))
     </fill_query>
 
     <fill_query>
@@ -341,6 +382,18 @@
         SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
         FROM array_min_max_index_perf_u64
         WHERE array_length = {matrix_length}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {adversarial_length} AND case_id = {adversarial_case}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_u64
+        WHERE array_length = {adversarial_length} AND case_id = {adversarial_case}
         FORMAT Null
     </query>
     <query>
