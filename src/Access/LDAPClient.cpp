@@ -921,8 +921,19 @@ std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams & se
     bool more_pages = true;
     size_t pages_received = 0;
 
+    /// With `max_entries` == 0 nothing else bounds the loop: a directory that keeps answering with a
+    /// non-empty cookie would be paged forever. The cookie itself cannot be checked for progress (some
+    /// directories return the same opaque cookie for every page), so bound the number of pages instead;
+    /// at the smallest page size this still allows a million entries.
+    static constexpr size_t max_pages = 1'000'000;
+
     while (more_pages)
     {
+        if (pages_received >= max_pages)
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP search under '{}' on server '{}' did not finish after {} pages ({} entries); the directory keeps returning a paging cookie, refusing to continue",
+                final_base_dn, params.name, pages_received, result.size());
+
         /// One page per lock scope, so that logins on other connections proceed between pages.
         std::lock_guard lock(ldap_global_mutex);
 
@@ -1048,6 +1059,22 @@ std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams & se
                             attr = nullptr;
                         });
 
+                        /// The description may carry options (`userCertificate;binary`, `memberOf;range=0-1499`);
+                        /// the key is the bare name, so that a lookup by the configured attribute finds it.
+                        /// A range option means the directory returned only a slice of the values (Active
+                        /// Directory sends at most `MaxValRange` values, 1500 by default, of a multi-valued
+                        /// attribute): a synchronisation applying it would revoke every role beyond the slice
+                        /// and a login would see only part of the memberships, so refuse the incomplete entry.
+                        const std::string_view description(attr);
+                        const auto options_pos = description.find(';');
+                        const auto attribute_name = toLowerCopyASCII(description.substr(0, options_pos));
+                        if (options_pos != std::string_view::npos && toLowerCopyASCII(description.substr(options_pos)).contains(";range="))
+                            throw Exception(ErrorCodes::LDAP_ERROR,
+                                "LDAP entry '{}' on server '{}' returned attribute '{}' with a range option, i.e. only part of its values "
+                                "(Active Directory returns at most MaxValRange values of a multi-valued attribute); refusing to continue with an "
+                                "incomplete entry. Raise the limit on the directory or map roles with a search over the group entries instead",
+                                entry.dn, params.name, description);
+
                         auto ** vals = ldap_get_values_len(handle, msg, attr);
                         if (!vals)
                             continue;
@@ -1065,7 +1092,7 @@ std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams & se
                         }
 
                         if (!values.empty())
-                            entry.attributes[toLowerCopyASCII(attr)].insert(values.begin(), values.end());
+                            entry.attributes[attribute_name].insert(values.begin(), values.end());
                     }
 
                     result.push_back(std::move(entry));

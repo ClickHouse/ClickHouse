@@ -86,8 +86,10 @@ public:
 
     /// One directory entry as returned by `searchEntries`: its DN and the values of the requested
     /// attributes. Attribute names are ASCII-lower-cased (`memberOf` and `memberof` are the same
-    /// key); attribute options such as `;range=...` are kept as part of the name. Attributes the
-    /// entry has no value for are absent. Empty values are dropped.
+    /// key) and stripped of their options (`userCertificate;binary` is keyed as `usercertificate`);
+    /// an attribute returned with a range option (`memberOf;range=0-1499`, Active Directory's
+    /// `MaxValRange` truncation) fails the search instead of yielding a partial value set. Attributes
+    /// the entry has no value for are absent. Empty values are dropped.
     struct Entry
     {
         String dn;
