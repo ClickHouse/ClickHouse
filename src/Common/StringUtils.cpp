@@ -2,7 +2,11 @@
 
 #include <Common/TargetSpecific.h>
 
-#if defined(__AVX2__)
+#include "config.h"
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#elif defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -24,7 +28,12 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if defined(__AVX2__)
+#if USE_SIMDUTF
+    if (size == 0)
+        return true;
+
+    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), size);
+#elif defined(__AVX2__)
     __m256i masks = _mm256_setzero_si256();
 
     size_t i = 0;
