@@ -3687,6 +3687,25 @@ class ClickHouseCluster:
                             input=password.encode(),
                         )
 
+    def _images_prefetched_and_present(self) -> bool:
+        """Whether the job prefetched images and every image of this project is in the daemon.
+
+        `docker image inspect` prints one id per reference it finds and nothing for one it does
+        not, so an equal count means none is missing. A non-zero exit or an empty enumeration
+        answers False.
+        """
+        if os.environ.get("CLICKHOUSE_TESTS_IMAGES_PREFETCHED") != "1":
+            return False
+        images = sorted(
+            set(run_and_check(self.base_cmd + ["config", "--images"], nothrow=True).split())
+        )
+        if not images:
+            return False
+        found = run_and_check(
+            ["docker", "image", "inspect", "--format", "{{.Id}}"] + images, nothrow=True
+        ).split()
+        return len(found) == len(images)
+
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3743,9 +3762,6 @@ class ClickHouseCluster:
 
             common_opts = ["--verbose", "up", "-d"]
 
-            images_pull_cmd = self.base_cmd + ["pull"]
-            # sometimes dockerhub/proxy can be flaky
-
             def logging_pulling_images(**kwargs):
                 if "exception" in kwargs:
                     logging.info(
@@ -3753,7 +3769,16 @@ class ClickHouseCluster:
                     )
 
             self.login_to_ecr()
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
+            # `docker compose pull` re-verifies every service image against the registry even when
+            # it is cached, so a transient registry failure fails a module that needed no download.
+            # Presence is asked of the daemon rather than left to `--policy missing`, which still
+            # re-pulls an implicit `latest`.
+            if self._images_prefetched_and_present():
+                logging.debug("Skipping `docker compose pull`: all images are present locally")
+            else:
+                # sometimes dockerhub/proxy can be flaky
+                images_pull_cmd = self.base_cmd + ["pull"]
+                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
 
             def logging_compose_up(**kwargs):
                 if "exception" in kwargs:
@@ -4269,10 +4294,6 @@ class ClickHouseCluster:
                 self.wait_ytsaurus_to_start()
 
             if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
-                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
-                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
-                    run_and_check, letsencrypt_pebble_pull_cmd, timeout=180
-                )
                 letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
                 run_and_check(letsencrypt_pebble_start_cmd)
                 self.wait_letsencrypt_pebble_to_start()
