@@ -828,9 +828,13 @@ void ReadFromRemote::addPipe(
             remote_query_executor->setLogger(log);
             remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
             remote_query_executor->setQueryPlanFallbackStage(stage);
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
+            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
+
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
             addConvertingActions(pipes.back(), *output_header, context);
@@ -858,8 +862,11 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
+        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
+        // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
+        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:

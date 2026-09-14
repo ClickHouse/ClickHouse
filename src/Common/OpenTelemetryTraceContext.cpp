@@ -264,7 +264,6 @@ ManualSpan::ManualSpan(std::string_view operation_name, SpanKind kind)
         span.kind = kind;
         span.start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        span.addAttribute("clickhouse.thread_id", getThreadId());
         span_log_table = trace_context.span_log;
     }
     catch (...)

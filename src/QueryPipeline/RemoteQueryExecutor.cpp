@@ -473,7 +473,8 @@ OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() c
         attributes.emplace_back("clickhouse.shard_num", static_cast<UInt64>(shard_scope.shard_num));
     if (shard_scope.replica_num)
         attributes.emplace_back("clickhouse.replica_num", static_cast<UInt64>(*shard_scope.replica_num));
-    attributes.emplace_back("clickhouse.processed_stage", QueryProcessingStage::toString(stage));
+    /// `clickhouse.processed_stage` is deliberately absent here: before the query is sent, `stage`
+    /// can still be downgraded to `query_plan_fallback_stage`, so the attribute is added only once the final stage is known.
     const auto & client_info = context->getClientInfo();
     if (!client_info.current_query_id.empty())
         attributes.emplace_back("clickhouse.query_id", client_info.current_query_id);
