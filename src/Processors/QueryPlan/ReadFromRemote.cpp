@@ -296,7 +296,7 @@ ASTPtr tryBuildAdditionalFilterAST(
             if (typeMayContainDecimal(*node->result_type))
                 /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
                 /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type, /*date_time_as_numbers=*/true);
             else
                 /// Other types keep their raw Field literal. In particular a DateTime serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
@@ -730,6 +730,7 @@ void ReadFromRemote::addLazyPipe(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
+        remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -824,6 +825,7 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -855,6 +857,7 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 

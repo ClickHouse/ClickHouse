@@ -1,0 +1,24 @@
+--- dense union over buffer-less children ---
+()	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+10	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+[(),()]	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+\N	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+()	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+20	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+[(),()]	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+\N	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+--- sparse union over buffer-less children ---
+()	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+2	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+[(),()]	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+\N	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+()	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+6	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+[(),()]	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+\N	Variant(Array(Tuple(\n)), Int32, Tuple(\n))
+--- large dense union, as written ---
+2000000	1000000	499999500000
+--- large dense union, buffer-less child declaring the body's bit count ---
+2000000	1000000	499999500000
+--- the same child with a validity bitmap: rejected ---
+validity buffer is too small
