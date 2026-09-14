@@ -81,6 +81,10 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_), column(column_)
 {
+    /// Keep constant filters lazy. Their uniform value and row count are already known from metadata.
+    if (const_description.always_true || const_description.always_false)
+        return;
+
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
     {
         const auto & values = sparse->getValuesColumn();
@@ -110,7 +114,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 
 void FilterWithCachedCount::materialize() const
 {
-    if (data)
+    if (!column || data)
         return;
 
     ColumnPtr col = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
@@ -641,6 +645,9 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
 
 static std::optional<bool> tryGetUniformFilterValue(const FilterWithCachedCount & filter)
 {
+    if (!filter.present())
+        return {};
+
     if (filter.size() == 0)
         return true;
 
@@ -684,23 +691,35 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 {
     checkInternalConsistency();
 
+    const auto current_filter_uniform = tryGetUniformFilterValue(current_filter);
+
     /// Combine new filter with the previous one if it is present.
     /// This filter has the size of total_rows_per granule. It is applied after reading contiguous chunks from
     /// the start of each granule.
     FilterWithCachedCount filter = current_filter;
     if (final_filter.present())
     {
-        /// If current filter has the same size as the final filter, it means that the final filter has not been applied.
-        /// In this case we AND current filter with the existing final filter.
-        /// In other case, when the final filter has been applied, the size of current step filter will be equal to number of ones
-        /// in the final filter. In this case we combine current filter with the final filter.
-        ColumnPtr combined_filter;
-        if (current_filter.size() == final_filter.size())
-            combined_filter = andFilters(final_filter.getColumn(), current_filter.getColumn());
+        /// A uniform current filter is an identity or an annihilator for the existing final filter.
+        /// Check it before materializing either filter for the combination.
+        if (current_filter_uniform)
+        {
+            if (*current_filter_uniform)
+                filter = final_filter;
+        }
         else
-            combined_filter = combineFilters(final_filter.getColumn(), current_filter.getColumn());
+        {
+            /// If current filter has the same size as the final filter, it means that the final filter has not been applied.
+            /// In this case we AND current filter with the existing final filter.
+            /// In other case, when the final filter has been applied, the size of current step filter will be equal to number of ones
+            /// in the final filter. In this case we combine current filter with the final filter.
+            ColumnPtr combined_filter;
+            if (current_filter.size() == final_filter.size())
+                combined_filter = andFilters(final_filter.getColumn(), current_filter.getColumn());
+            else
+                combined_filter = combineFilters(final_filter.getColumn(), current_filter.getColumn());
 
-        filter = FilterWithCachedCount(combined_filter);
+            filter = FilterWithCachedCount(combined_filter);
+        }
     }
 
     if (total_rows_per_granule == 0 || !filter.present())
@@ -806,7 +825,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             else
             {
                 /// Filter was applied before, so apply only new filter from the current step.
-                applyFilter(current_filter);
+                if (!current_filter_uniform || !*current_filter_uniform)
+                    applyFilter(current_filter);
             }
 
             final_filter = FilterWithCachedCount(new_filter->getPtr());
@@ -827,7 +847,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         /// newly read columns to match the num_rows.
         if (num_rows != total_rows_per_granule)
         {
-            applyFilter(current_filter);
+            if (!current_filter_uniform || !*current_filter_uniform)
+                applyFilter(current_filter);
         }
         /// Another guess, if it's worth filtering at PREWHERE
         else if (must_apply_filter || (static_cast<double>(filter.countBytesInFilter()) < 0.6 * static_cast<double>(filter.size())))

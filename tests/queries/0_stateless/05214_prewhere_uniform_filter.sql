@@ -1,5 +1,6 @@
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 0;
+SET enable_multiple_prewhere_read_steps = 1;
 
 DROP TABLE IF EXISTS prewhere_uniform_filter;
 
@@ -57,22 +58,24 @@ CREATE TABLE prewhere_uniform_filter_sparse
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS
-    index_granularity = 4,
+    index_granularity = 100,
+    min_bytes_for_wide_part = 0,
     ratio_of_defaults_for_sparse_serialization = 0.1,
     compute_exact_num_defaults_for_sparse_columns = 1,
+    serialization_info_version = 'with_types',
     nullable_serialization_version = 'allow_sparse';
 
 INSERT INTO prewhere_uniform_filter_sparse
 SELECT
     number,
-    if(number < 4, toUInt8(2), toUInt8(0)),
-    if(number >= 4 AND number < 8, toUInt8(2), toUInt8(0)),
-    if(number < 4 AND number % 2 = 0, toUInt8(2), toUInt8(0)),
-    if(number < 4, toUInt8(2), NULL),
-    if(number >= 4 AND number < 8, toUInt8(2), NULL),
-    if(number < 4 AND number % 2 = 0, toUInt8(2), NULL),
+    if(number < 100, toUInt8(2), toUInt8(0)),
+    if(number >= 100 AND number < 200, toUInt8(2), toUInt8(0)),
+    if(number < 100 AND number % 2 = 0, toUInt8(2), toUInt8(0)),
+    if(number < 100, toUInt8(2), NULL),
+    if(number >= 100 AND number < 200, toUInt8(2), NULL),
+    if(number < 100 AND number % 2 = 0, toUInt8(2), NULL),
     number + 1
-FROM numbers(10);
+FROM numbers(1000);
 
 SELECT column, serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase()
@@ -82,11 +85,13 @@ WHERE database = currentDatabase()
                  'nullable_sparse_true', 'nullable_sparse_false', 'nullable_sparse_mixed')
 ORDER BY column;
 
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_true WHERE id < 4;
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_false WHERE id < 4;
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_mixed WHERE id < 4;
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_true WHERE id < 4;
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_false WHERE id < 4;
-SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_mixed WHERE id < 4;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_true WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_false WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_mixed WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_true WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_false WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE nullable_sparse_mixed WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_mixed AND sparse_true WHERE id < 100;
+SELECT count(), sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_mixed AND sparse_false WHERE id < 100;
 
 DROP TABLE prewhere_uniform_filter_sparse;

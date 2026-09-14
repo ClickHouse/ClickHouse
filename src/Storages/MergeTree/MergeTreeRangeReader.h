@@ -170,7 +170,11 @@ public:
     {
         if (cached_count_bytes == size_t(-1))
         {
-            if (sparse_indices)
+            if (const_description.always_true)
+                cached_count_bytes = size();
+            else if (const_description.always_false)
+                cached_count_bytes = 0;
+            else if (sparse_indices)
                 cached_count_bytes = sparse_indices->size();
             else
             {
