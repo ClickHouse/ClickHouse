@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <limits>
 #include <sstream>
 #include <Storages/ExportReplicatedMergeTreePartitionTaskEntry.h>
 #include <Storages/MergeTree/ExportPartitionUtils.h>

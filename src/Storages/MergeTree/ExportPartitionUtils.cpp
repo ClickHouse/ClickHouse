@@ -194,6 +194,18 @@ namespace ExportPartitionUtils
         return std::min(initial << shift, max_backoff_seconds);
     }
 
+    bool isExportTaskTimedOut(time_t create_time, size_t timeout_seconds, time_t now)
+    {
+        if (timeout_seconds == 0)
+            return false;
+        if (now <= create_time)
+            return false;
+
+        /// Compare elapsed seconds instead of `create_time + timeout`. A UInt64 timeout that does
+        /// not fit in time_t would wrap to a negative deadline and look expired on the first tick.
+        return static_cast<UInt64>(now) - static_cast<UInt64>(create_time) > timeout_seconds;
+    }
+
     Block getPartitionSourceBlockForIcebergCommit(
         MergeTreeData & storage, const String & partition_id, const std::vector<String> & exported_part_names)
     {

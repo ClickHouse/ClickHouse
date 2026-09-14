@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ctime>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -32,6 +33,8 @@ namespace ExportPartitionUtils
     bool isNonRetryablePlainExportError(int code);
 
     size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds);
+
+    bool isExportTaskTimedOut(time_t create_time, size_t timeout_seconds, time_t now);
 
     struct ExportedPaths
     {

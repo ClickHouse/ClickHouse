@@ -282,9 +282,8 @@ namespace
         std::vector<CommitRecoveryWork> & deferred_commits
     )
     {
-        bool task_timed_out = is_pending
-            && metadata.task_timeout_seconds > 0
-            && metadata.create_time + static_cast<time_t>(metadata.task_timeout_seconds) < now;
+        const bool task_timed_out = is_pending
+            && ExportPartitionUtils::isExportTaskTimedOut(metadata.create_time, metadata.task_timeout_seconds, now);
 
         if (task_timed_out)
         {

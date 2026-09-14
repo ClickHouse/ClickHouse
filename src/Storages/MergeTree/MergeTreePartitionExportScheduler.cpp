@@ -213,16 +213,6 @@ std::vector<PartitionExportInfo> MergeTreePartitionExportScheduler::getInfo() co
     return result;
 }
 
-namespace
-{
-    bool isTimedOut(const MergeTreePartitionExportTask & descriptor, time_t now)
-    {
-        return descriptor.task_timeout_seconds > 0
-            && descriptor.create_time + static_cast<time_t>(descriptor.task_timeout_seconds) < now;
-    }
-
-}
-
 bool MergeTreePartitionExportScheduler::tryPersistTimeoutKill(const String & composite_key, TaskEntry & entry, time_t now)
 {
     const auto transaction_id = entry.getDescriptor().transaction_id;
@@ -267,7 +257,8 @@ bool MergeTreePartitionExportScheduler::enforceTimeouts()
             if (entry.getDescriptor().status != MergeTreePartitionExportTask::Status::PENDING)
                 continue;
 
-            if (!isTimedOut(entry.getDescriptor(), now))
+            if (!ExportPartitionUtils::isExportTaskTimedOut(
+                    entry.getDescriptor().create_time, entry.getDescriptor().task_timeout_seconds, now))
             {
                 any_pending = true;
                 continue;
