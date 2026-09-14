@@ -1192,7 +1192,7 @@ void addStepForResultRenaming(
 }
 
 /// Compare the subquery result with the left argument of `IN`: the comparison reads the outer columns through PLACEHOLDER nodes.
-// Several subquery columns are compared as one tuple.
+// A subquery of several columns is compared element by element when the left argument is a tuple, or as a whole otherwise.
 void addStepForInComparison(
     const CorrelatedSubquery & correlated_subquery,
     QueryPlan & subquery_plan,
@@ -1212,15 +1212,28 @@ void addStepForInComparison(
     ActionsDAG filter_dag(subquery_header->getColumnsWithTypeAndName());
 
     ActionsDAG::NodeRawConstPtrs rhs_nodes = filter_dag.getOutputs();
-    const auto * rhs_node = rhs_nodes.front();
-    if (rhs_nodes.size() > 1)
-        rhs_node = &filter_dag.addFunction(function_factory.get("tuple", query_context), std::move(rhs_nodes), {});
-
     ActionsDAG::NodeRawConstPtrs lhs_nodes;
     filter_dag.mergeNodes(std::move(left_key_dag), &lhs_nodes);
 
-    const auto * predicate
-        = &filter_dag.addFunction(function_factory.get("equals", query_context), {lhs_nodes.front(), rhs_node}, {});
+    const auto * left_key_node = lhs_nodes.front();
+    if (rhs_nodes.size() > 1)
+    {
+        if (left_key_node->type == ActionsDAG::ActionType::FUNCTION && left_key_node->function_base->getName() == "tuple"
+            && left_key_node->children.size() == rhs_nodes.size())
+            lhs_nodes = left_key_node->children;
+        else
+            rhs_nodes = {&filter_dag.addFunction(function_factory.get("tuple", query_context), std::move(rhs_nodes), {})};
+    }
+
+    ActionsDAG::NodeRawConstPtrs equalities;
+    equalities.reserve(lhs_nodes.size());
+    for (size_t i = 0; i < lhs_nodes.size(); ++i)
+        equalities.push_back(
+            &filter_dag.addFunction(function_factory.get("equals", query_context), {lhs_nodes[i], rhs_nodes[i]}, {}));
+
+    const auto * predicate = equalities.size() == 1
+        ? equalities.front()
+        : &filter_dag.addFunction(function_factory.get("and", query_context), std::move(equalities), {});
     filter_dag.getOutputs().push_back(predicate);
 
     auto filter_step = std::make_unique<FilterStep>(
