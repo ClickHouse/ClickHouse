@@ -1,9 +1,12 @@
 #pragma once
 
+#include <base/defines.h>
+
+#ifdef OS_LINUX /// Because of futex
+
 #include <atomic>
 #include <cstddef>
 
-#include <base/defines.h>
 #include <base/types.h>
 #include <Common/CacheLine.h>
 #include <Common/futex.h>
@@ -64,7 +67,7 @@ public:
                 return;
 
             /// A writer is here or on its way; stand back so it can drain.
-            readers.fetch_sub(1, std::memory_order_seq_cst);
+            releaseReader();
             waitForWriter();
         }
     }
@@ -74,27 +77,26 @@ public:
         readers.fetch_add(1, std::memory_order_seq_cst);
         if (!writer_active.load(std::memory_order_seq_cst)) [[likely]]
             return true;
-        readers.fetch_sub(1, std::memory_order_seq_cst);
+        releaseReader();
         return false;
     }
 
     void unlock_shared() TSA_RELEASE_SHARED()
     {
-        readers.fetch_sub(1, std::memory_order_release);
+        releaseReader();
     }
 
     void lock() TSA_ACQUIRE()
     {
-        while (writer_lock.test_and_set(std::memory_order_acquire))
-            spinPause();
+        acquireWriterLock();
         writer_active.store(1, std::memory_order_seq_cst);
-        while (readers.load(std::memory_order_seq_cst) != 0)
-            spinPause();
+        drainReaders();
     }
 
     bool try_lock() TSA_TRY_ACQUIRE(true)
     {
-        if (writer_lock.test_and_set(std::memory_order_acquire))
+        UInt32 unlocked = 0;
+        if (!writer_lock.compare_exchange_strong(unlocked, 1, std::memory_order_acquire, std::memory_order_relaxed))
             return false;
 
         writer_active.store(1, std::memory_order_seq_cst);
@@ -104,7 +106,7 @@ public:
             /// out. Readers that saw the flag meanwhile simply retry.
             writer_active.store(0, std::memory_order_release);
             wakeWaitingReaders();
-            writer_lock.clear(std::memory_order_release);
+            releaseWriterLock();
             return false;
         }
         return true;
@@ -114,13 +116,81 @@ public:
     {
         writer_active.store(0, std::memory_order_release);
         wakeWaitingReaders();
-        writer_lock.clear(std::memory_order_release);
+        releaseWriterLock();
     }
 
 private:
     /// Roughly a microsecond of pauses: long enough to cover a pipeline
     /// modification, short enough that parking is cheaper than continuing.
     static constexpr size_t spin_before_park = 64;
+
+    /// The one place `readers` is decremented. Every such path -- unlocking,
+    /// and the two withdrawals when a reader finds a writer present -- has to
+    /// be able to wake a writer parked in `drainReaders`, or that writer sleeps
+    /// forever behind a reader that withdrew rather than unlocked.
+    void releaseReader()
+    {
+        if (readers.fetch_sub(1, std::memory_order_seq_cst) == 1
+            && writer_active.load(std::memory_order_seq_cst) != 0)
+        {
+            drain_seq.fetch_add(1, std::memory_order_seq_cst);
+            futexWakeAll(drain_seq);
+        }
+    }
+
+    /// Writers are rare, but a primitive in the tree must not spin without
+    /// bound when many of them do arrive: the spinners can then keep the
+    /// holder from finishing. Spin briefly, then block, exactly as readers do.
+    void acquireWriterLock()
+    {
+        for (size_t i = 0; i < spin_before_park; ++i)
+        {
+            UInt32 unlocked = 0;
+            if (writer_lock.compare_exchange_weak(unlocked, 1, std::memory_order_acquire, std::memory_order_relaxed))
+                return;
+            spinPause();
+        }
+
+        while (true)
+        {
+            UInt32 unlocked = 0;
+            if (writer_lock.compare_exchange_strong(unlocked, 1, std::memory_order_acquire, std::memory_order_relaxed))
+                return;
+
+            /// Held: wait for the holder's `releaseWriterLock` to wake us. If it
+            /// released between the failed exchange and here, the value is no
+            /// longer 1 and the wait returns at once.
+            UInt32 held = 1;
+            futexWaitFetch(writer_lock, held);
+        }
+    }
+
+    void releaseWriterLock()
+    {
+        writer_lock.store(0, std::memory_order_release);
+        futexWakeAll(writer_lock);
+    }
+
+    /// Readers hold the lock for a short, non-blocking critical section, so
+    /// this drains quickly; it is bounded anyway so a writer never spins
+    /// indefinitely behind a reader that was descheduled.
+    void drainReaders()
+    {
+        for (size_t i = 0; i < spin_before_park; ++i)
+        {
+            if (readers.load(std::memory_order_seq_cst) == 0)
+                return;
+            spinPause();
+        }
+
+        while (readers.load(std::memory_order_seq_cst) != 0)
+        {
+            UInt32 seq = drain_seq.load(std::memory_order_seq_cst);
+            if (readers.load(std::memory_order_seq_cst) == 0)
+                return;
+            futexWaitFetch(drain_seq, seq);
+        }
+    }
 
     void waitForWriter()
     {
@@ -176,7 +246,27 @@ private:
     /// UInt32 rather than bool so it can be futex-waited on directly.
     alignas(CH_CACHE_LINE_SIZE) std::atomic<UInt32> writer_active{0};
     std::atomic<UInt32> sleeping_readers{0};
-    alignas(CH_CACHE_LINE_SIZE) std::atomic_flag writer_lock;
+    /// A futex word rather than a flag, so a writer waiting for another
+    /// writer can block on it instead of spinning.
+    alignas(CH_CACHE_LINE_SIZE) std::atomic<UInt32> writer_lock{0};
+    /// Bumped by the reader that brings the count to zero while a writer is
+    /// draining, so the writer can block instead of spinning.
+    std::atomic<UInt32> drain_seq{0};
 };
 
 }
+
+#else
+
+#include <Common/SharedMutex.h>
+
+namespace DB
+{
+
+/// The optimisation here is futex-based, so elsewhere fall back to the generic
+/// shared mutex. Non-Linux builds are not a target for the executor's hot path.
+using ReadMostlySharedMutex = SharedMutex;
+
+}
+
+#endif
