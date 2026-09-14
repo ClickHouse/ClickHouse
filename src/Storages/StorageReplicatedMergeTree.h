@@ -173,10 +173,6 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     MutationCounters getMutationCounters() const override;
 
-protected:
-    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
-public:
-
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool optimize(
@@ -189,7 +185,7 @@ public:
         bool cleanup,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -515,6 +511,7 @@ private:
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;

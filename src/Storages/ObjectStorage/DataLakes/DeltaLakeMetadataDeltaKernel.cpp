@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -48,7 +47,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
-    extern const SettingsBool allow_delta_lake_writes;
+    extern const SettingsBool allow_experimental_delta_lake_writes;
     extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -622,29 +621,19 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
-    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
+    if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Delta Lake writes are a Beta feature disabled by default. "
-            "To enable them, set allow_delta_lake_writes = 1");
+            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
-    /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
-    /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
-    if (!snapshot->getPhysicalNamesMap().empty())
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Writing to DeltaLake tables with column mapping enabled is not supported");
-    }
-
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create(partition_columns, snapshot->getTableSchema());
+    delta_transaction->create();
 
     if (partition_columns.empty())
     {
