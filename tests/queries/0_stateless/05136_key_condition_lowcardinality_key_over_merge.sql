@@ -98,19 +98,22 @@ SELECT count() FROM t_05136_merge2 WHERE b < toLowCardinality(toNullable(7))
     SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
 
 -- The count above stays correct even if the chain declines and yields an unknown mask, so assert the
--- sparse chain's pruning too. Combining a selective leading-key predicate with the `b` chain leaves
--- Min-Max and Partition at their unpruned granule counts while PrimaryKey pruning depends on the
--- chain's result: applied it reads 52 of 500 granules, declined it would read the leading-key-only
--- 103. This statement also throws on an unfixed server.
+-- sparse chain's pruning too. The two arms ask for different `b` values, so Min-Max and Partition
+-- prune nothing and PrimaryKey pruning is left to the constant-coordinate bound on `b`: with the
+-- bound the chain reads 52 of 1000 granules, and without it the leading-key-only 103. That is also
+-- what a declined chain reads, so this line distinguishes both.
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1, actions = 0, pretty = 0
     SELECT count() FROM t_05136_merge2
-    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 1)
+    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0)
 ) WHERE explain LIKE '%Granules%' SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
 
--- Same predicate with no index, to pin that the pruning above loses no rows.
+-- The same predicate executed, with the index and then without it, to pin that the pruning above
+-- loses no rows.
 SELECT count() FROM t_05136_merge2
-    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 1)
+    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0);
+SELECT count() FROM t_05136_merge2
+    WHERE (a = 0 AND CAST(b, 'UInt8') = 1) OR (a >= 900 AND CAST(b, 'UInt8') = 0)
     SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
 DROP TABLE t_05136_lc2;
