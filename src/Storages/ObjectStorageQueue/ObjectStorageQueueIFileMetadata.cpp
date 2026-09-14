@@ -463,7 +463,16 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         /// honored immediately even with a cold cache after a restart.
         if (isRetriableMarkerExhausted())
         {
-            tryTerminalizeExhaustedRetriableMarker();
+            if (tryTerminalizeExhaustedRetriableMarker())
+            {
+                /// The .retriable marker was just converted into a terminal /failed/<hash>
+                /// node. Reflect that in the local cache too, otherwise this entry stays
+                /// stuck at State::None -- which does not self-heal in unordered mode, since
+                /// filterOutProcessedAndFailed() strips terminal failures before
+                /// getFileMetadata() runs again, and cache-reconciliation only prunes
+                /// State::Failed rows.
+                file_status->updateState(FileStatus::State::Failed);
+            }
             LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
                      "at or above the current limit", path);
             return false;
@@ -561,7 +570,16 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         /// honored immediately even with a cold cache after a restart.
         if (isRetriableMarkerExhausted())
         {
-            tryTerminalizeExhaustedRetriableMarker();
+            if (tryTerminalizeExhaustedRetriableMarker())
+            {
+                /// The .retriable marker was just converted into a terminal /failed/<hash>
+                /// node. Reflect that in the local cache too, otherwise this entry stays
+                /// stuck at State::None -- which does not self-heal in unordered mode, since
+                /// filterOutProcessedAndFailed() strips terminal failures before
+                /// getFileMetadata() runs again, and cache-reconciliation only prunes
+                /// State::Failed rows.
+                file_status->updateState(FileStatus::State::Failed);
+            }
             LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
                      "at or above the current limit", path);
             return std::nullopt;
