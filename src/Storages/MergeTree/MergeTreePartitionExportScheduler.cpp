@@ -141,7 +141,11 @@ CancellationCode MergeTreePartitionExportScheduler::kill(const String & transact
         auto & entry = it->second;
 
         if (entry.getDescriptor().status != MergeTreePartitionExportTask::Status::PENDING)
+        {
+            LOG_INFO(storage.log, "ExportPartition: export with the transaction id {} is not pending, cannot cancel it", transaction_id);
             return CancellationCode::CancelCannotBeSent;
+        }
+            
 
         if (entry.committing)
         {
