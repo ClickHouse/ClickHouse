@@ -19,40 +19,36 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 若要将对您的 ClickHouse Cloud 服务的访问限制为仅可通过 AWS PrivateLink 地址进行，请按照 ClickHouse Cloud [IP Access Lists](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 中提供的说明操作。
 
-<Note>
-  ClickHouse Cloud 支持从以下区域进行[跨区域 PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/)连接：
+ClickHouse Cloud 支持为托管在以下 AWS 区域中的服务使用[跨区域 PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)：
 
-  * sa-east-1
-  * il-central-1
-  * me-south-1
-  * mx-central-1
-  * eu-central-2
-  * eu-north-1
-  * eu-south-2
-  * eu-west-3
-  * eu-south-1
-  * eu-west-2
-  * eu-west-1
-  * eu-central-1
-  * ca-west-1
-  * ca-central-1
-  * ap-northeast-1
-  * ap-southeast-2
-  * ap-southeast-1
-  * ap-northeast-2
-  * ap-northeast-3
-  * ap-south-1
-  * ap-southeast-5
-  * ap-southeast-4
-  * ap-southeast-3
-  * ap-south-2
-  * ap-east-1
-  * af-south-1
-  * us-west-2
-  * us-west-1
-  * us-east-2
-  * us-east-1
-</Note>
+该表仅涵盖服务托管区域。消费者接口 VPC 端点所在区域采用单独的允许列表；例如，尽管托管在 `mx-central-1` 的服务无法启用跨区域访问，`mx-central-1` 仍是允许的消费者区域。
+
+| 区域代码             | 区域名称          |
+| ---------------- | ------------- |
+| `af-south-1`     | 非洲 (开普敦)      |
+| `ap-east-1`      | 亚太地区 (香港)     |
+| `ap-northeast-1` | 亚太地区 (东京)     |
+| `ap-northeast-2` | 亚太地区 (首尔)     |
+| `ap-south-1`     | 亚太地区 (孟买)     |
+| `ap-southeast-1` | 亚太地区 (新加坡)    |
+| `ap-southeast-2` | 亚太地区 (悉尼)     |
+| `ap-southeast-3` | 亚太地区 (雅加达)    |
+| `ap-southeast-5` | 亚太地区 (马来西亚)   |
+| `ca-central-1`   | 加拿大 (中部)      |
+| `eu-central-1`   | 欧洲 (法兰克福)     |
+| `eu-north-1`     | 欧洲 (斯德哥尔摩)    |
+| `eu-west-1`      | 欧洲 (爱尔兰)      |
+| `eu-west-2`      | 欧洲 (伦敦)       |
+| `il-central-1`   | 以色列 (特拉维夫)    |
+| `me-central-1`   | 中东 (阿联酋)      |
+| `sa-east-1`      | 南美洲 (圣保罗)     |
+| `us-east-1`      | 美国东部 (北弗吉尼亚)  |
+| `us-east-2`      | 美国东部 (俄亥俄)    |
+| `us-west-2`      | 美国西部 (俄勒冈)    |
+
+<Warning>
+  对于托管在 `ap-east-2` 或 `mx-central-1` 的 ClickHouse Cloud 服务，不支持跨区域 PrivateLink。要使用 PrivateLink 连接到任一区域中的服务，请在与服务相同的 AWS 区域中创建接口 VPC 端点。
+</Warning>
 
 <Note>
   AWS 将对跨区域数据传输收费。有关详细信息，请参阅 [AWS PrivateLink 定价](https://aws.amazon.com/privatelink/pricing/)。
@@ -376,61 +372,51 @@ jq .result
   ## 故障排查
 </div>
 
-<div id="multiple-privatelinks-in-one-region">
-  ### 一个区域内的多个 PrivateLinks
-</div>
+<AccordionGroup>
+  <Accordion title="一个区域中的多个 PrivateLink" id="multiple-privatelinks-in-one-region">
+    在大多数情况下，每个 VPC 只需创建一个终结点服务。该终结点可将请求从 VPC 路由到多个 ClickHouse Cloud 服务。
+    请参阅[此处](#considerations)
+  </Accordion>
 
-在大多数情况下，您只需为每个 VPC 创建一个端点服务。该端点可将来自该 VPC 的请求路由到多个 ClickHouse Cloud 服务。
-请参阅[此处](#considerations)
+  <Accordion title="连接专用终结点超时" id="connection-to-private-endpoint-timed-out">
+    * 请将安全组 (Security Group) 关联到 VPC 端点。
+    * 请检查关联到端点的安全组 (Security Group) 的 `inbound` 规则，确保允许访问 ClickHouse 端口。
+    * 请检查关联到用于连接测试的 VM 的安全组 (Security Group) 的 `outbound` 规则，确保允许连接到 ClickHouse 端口。
+  </Accordion>
 
-<div id="connection-to-private-endpoint-timed-out">
-  ### 连接到专用终结点超时
-</div>
+  <Accordion title="私网主机名：找不到主机地址" id="private-hostname-not-found-address-of-host">
+    * 请检查你的 DNS 配置
+  </Accordion>
 
-* 请将安全组 (Security Group) 关联到 VPC 端点。
-* 请检查关联到该端点的安全组 (Security Group) 的 `inbound` 规则，并确保已放行 ClickHouse 端口。
-* 请检查关联到用于连通性测试的 VM 的安全组 (Security Group) 的 `outbound` 规则，并确保允许连接到 ClickHouse 端口。
+  <Accordion title="连接被对端重置" id="connection-reset-by-peer">
+    * 最可能的原因是 Endpoint ID 未添加到服务允许列表，请参阅[步骤](#add-endpoint-id-to-services-allow-list)
+  </Accordion>
 
-<div id="private-hostname-not-found-address-of-host">
-  ### 私有主机名：找不到主机地址
-</div>
+  <Accordion title="检查端点过滤器" id="checking-endpoint-filters">
+    在运行任何命令前，请设置以下环境变量：
 
-* 请检查您的 DNS 配置
+    ```bash
+    KEY_ID=<Key ID>
+    KEY_SECRET=<Key secret>
+    ORG_ID=<please set ClickHouse organization ID>
+    INSTANCE_ID=<Instance ID>
+    ```
 
-<div id="connection-reset-by-peer">
-  ### 连接被对端重置
-</div>
+    你可以从[步骤](#option-2-api)中获取 `INSTANCE_ID`。
 
-* 很可能是因为未将 Endpoint ID 添加到服务的允许列表中，请参阅[此步骤](#add-endpoint-id-to-services-allow-list)
+    ```shell
+    curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+    -X GET -H "Content-Type: application/json" \
+    "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+    jq .result.privateEndpointIds
+    ```
+  </Accordion>
 
-<div id="checking-endpoint-filters">
-  ### 检查端点过滤器
-</div>
+  <Accordion title="连接到远程数据库" id="connecting-to-a-remote-database">
+    根据 [AWS PrivateLink 文档](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)：
 
-在运行任何命令之前，请先设置以下环境变量：
+    > 当你采用客户端/服务器架构，并希望允许一个或多个消费者 VPC 单向访问服务提供商 VPC 中的特定服务或一组实例时，请使用 AWS PrivateLink。只有消费者 VPC 中的客户端才能发起与服务提供商 VPC 中服务的连接。
 
-```bash
-KEY_ID=<Key ID>
-KEY_SECRET=<Key secret>
-ORG_ID=<请填写 ClickHouse 组织 ID>
-INSTANCE_ID=<Instance ID>
-```
-
-您可以从[步骤](#option-2-api)中获取 `INSTANCE_ID`。
-
-```shell
-curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
--X GET -H "Content-Type: application/json" \
-"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
-jq .result.privateEndpointIds
-```
-
-<div id="connecting-to-a-remote-database">
-  ### 连接到远程数据库
-</div>
-
-根据 [AWS PrivateLink 文档](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)：
-
-> 当你采用客户端/服务器架构，并希望允许一个或多个消费者 VPC 单向访问服务提供商 VPC 中的特定服务或一组实例时，请使用 AWS PrivateLink。只有消费者 VPC 中的客户端才能发起与服务提供商 VPC 中服务的连接。
-
-要将 ClickHouse Cloud 中的 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数连接到托管在你的 AWS VPC 中的数据库，请配置你的 AWS 安全组，允许来自 ClickHouse Cloud 的连接。请查看 [ClickHouse Cloud 各区域的默认出口 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
+    要将 ClickHouse Cloud 中的 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数连接到托管在你的 AWS VPC 中的数据库，请配置你的 AWS 安全组，允许来自 ClickHouse Cloud 的连接。请查看 [ClickHouse Cloud 各区域的默认出口 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
+  </Accordion>
+</AccordionGroup>

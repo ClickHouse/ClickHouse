@@ -58,10 +58,13 @@ ValidatedRemoteEngineTarget parseAndValidateRemoteEngineTarget(
 
     /// A freshly introduced definition (`CREATE`, a full-definition `ATTACH`, or a backup
     /// `RESTORE`) must be validated; a load of already-validated metadata stored on this server
-    /// (server startup, short `ATTACH`) must not be, or a validly created table could not be
-    /// re-attached. Inference still runs whenever the structure was omitted, because it is then the
-    /// only source of the table's columns.
-    const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(mode) || attach_short_syntax;
+    /// (server startup, short `ATTACH`, a `Replicated` database replaying metadata it stored in
+    /// Keeper) must not be, or a validly created table could not be re-attached. Recovery shares
+    /// `mode` with an ordinary secondary-replica `CREATE`, which must keep validating, so it is
+    /// recognised from the context rather than from `mode`. Inference still runs whenever the
+    /// structure was omitted, because it is then the only source of the table's columns.
+    const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(mode) || attach_short_syntax
+        || local_context->isRecoveryFromStoredMetadata();
 
     /// A table-function target routing back to a local shard is analyzed under the user's context
     /// even when the columns are given: analyzing it is what checks the creator's access to the

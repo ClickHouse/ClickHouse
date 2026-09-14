@@ -717,15 +717,6 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
 (5 rows)
 ```
 
-<Warning>
-  La ejecución parametrizada impide que el [http driver](#create-server)
-  convierta correctamente las zonas horarias de DateTime en versiones de ClickHouse anteriores a la 25.8,
-  antes de que se [corrigiera] el [error subyacente]. Ten en cuenta que, en ocasiones, PostgreSQL usará
-  un plan de consulta parametrizado incluso sin usar `PREPARE`. Para cualquier consulta que
-  requiera una conversión precisa de la zona horaria, y si actualizar a la 25.8 o a una versión
-  posterior no es una opción, usa en su lugar el [binary driver](#create-server).
-</Warning>
-
 pg&#95;clickhouse aplica el pushdown de las agregaciones, como es habitual, tal como se ve en la
 salida detallada de [EXPLAIN](#explain):
 

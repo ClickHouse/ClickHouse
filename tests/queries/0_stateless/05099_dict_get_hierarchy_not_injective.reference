@@ -1,0 +1,13 @@
+[]	2
+[]	2
+the legacy analyzer has its own injective-function elimination in TreeOptimizer
+[]	2
+[]	2
+1
+keys present in the dictionary are unaffected
+[1]	1
+[2,1]	1
+the function is no longer eliminated from GROUP BY
+1
+uniqExact over absent keys
+1
