@@ -2,6 +2,7 @@ from praktika import Job
 from praktika.utils import Utils
 
 from ci.defs.defs import (
+    ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
@@ -587,8 +588,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_FUZZERS,
+            parameter=BuildTypes.AMD_FUZZERS,
             provides=[],
+            # The target arch comes from the toolchain file, not from the host, so this
+            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
+            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
+            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
+            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
+            # last targets. Only the job that *runs* the binaries needs an amd64 host.
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -1286,10 +1293,7 @@ class JobConfigs:
         ),
     )
     # Despite the name, only release_branches.py uses these.
-    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
-    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
-    # however well they are balanced. At four batches this job timed out on roughly half of
-    # all release-branch runs.
+    # `ASAN_IT_NUM_BATCHES` explains the batch count; keep it in step with the flavor below.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1297,7 +1301,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1308,7 +1312,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1752,6 +1756,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1768,6 +1773,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1942,13 +1948,13 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         # Five hours of fuzzing per target, all targets in parallel, plus
         # artifact download and corpus upload. Praktika's default is exactly
         # five hours, which would kill the job mid-run.
         timeout=5.5 * 3600,
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -1958,12 +1964,12 @@ class JobConfigs:
     )
     libfuzzer_corpus_minimization_job = Job.Config(
         name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command=(
             "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
             "'libFuzzer corpus minimization'"
         ),
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
