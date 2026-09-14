@@ -100,6 +100,9 @@ MERGE_TREE_PRODUCTION_MIN = 536870912
 MERGE_TREE_PRODUCTION_MAX = 2147483648
 MERGE_TREE_PRODUCTION_VALUE = 1073741824
 
+# Defined in configs/users.d/users.xml with a profile setting `EXPERIMENTAL_SETTING` to 1
+CONFIG_EXPERIMENTAL_USER = "tier_config_experimental_user"
+
 # Allowed by configs/custom_settings_prefix.xml
 CUSTOM_SETTING = "custom_setting_of_this_test"
 
@@ -1651,6 +1654,57 @@ def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster)
         assert read_experimental_setting(instance, user) == "1"
     finally:
         drop_entities(instance, users=[user], storage="local_directory")
+
+
+def test_shadowing_a_config_user_checks_feature_tier(start_cluster):
+    user = CONFIG_EXPERIMENTAL_USER
+    drop_entities(instance, users=[user], storage="local_directory")
+    assert read_experimental_setting(instance, user) == "1"
+
+    try:
+        with feature_tier(instance, "1"):
+            # The new user carries no settings, but it takes over the name and drops the EXPERIMENTAL
+            # setting the config user resolves to.
+            assert_experimental_change_is_blocked(
+                instance,
+                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password",
+            )
+            assert (
+                instance.query(
+                    f"SELECT count() FROM system.users WHERE name = '{user}' AND storage = 'local_directory'"
+                ).strip()
+                == "0"
+            )
+        assert read_experimental_setting(instance, user) == "1"
+    finally:
+        drop_entities(instance, users=[user], storage="local_directory")
+
+
+def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
+    user = CONFIG_EXPERIMENTAL_USER
+    drop_entities(instance, users=[user], storage="local_directory")
+    instance.query(
+        f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
+        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
+    )
+    assert read_experimental_setting(instance, user) == "0"
+
+    try:
+        with feature_tier(instance, "1"):
+            # Dropping the user exposes the config user again, which puts the EXPERIMENTAL setting back.
+            assert_experimental_change_is_blocked(
+                instance, f"DROP USER {user} FROM local_directory"
+            )
+            assert_experimental_change_is_blocked(
+                instance, f"ALTER USER {user} RENAME TO tier_renamed_shadow_user"
+            )
+        assert read_experimental_setting(instance, user) == "0"
+    finally:
+        drop_entities(
+            instance,
+            users=[user, "tier_renamed_shadow_user"],
+            storage="local_directory",
+        )
 
 
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):

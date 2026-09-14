@@ -628,7 +628,7 @@ bool AccessControl::insertImpl(
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    bool inserted;
+    bool inserted = false;
     {
         std::lock_guard lock{access_entities_mutex};
         inserted = insertImplUnlocked(storage, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
@@ -637,6 +637,18 @@ bool AccessControl::insertImpl(
         changes_notifier->sendNotifications();
     return inserted;
 }
+
+size_t AccessControl::countStoragesWithEntityName(AccessEntityType type, const String & name) const
+{
+    size_t count = 0;
+    for (const auto & storage : getStorages())
+    {
+        if (storage->find(type, name))
+            ++count;
+    }
+    return count;
+}
+
 
 bool AccessControl::checkNameCollisionInOtherStorage(
     IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const
@@ -719,7 +731,7 @@ bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 
 bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    bool updated;
+    bool updated = false;
     {
         std::lock_guard lock{access_entities_mutex};
         const bool check_feature_tier = isAnyFeatureTierRestricted(*this);

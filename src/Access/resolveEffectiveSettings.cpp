@@ -10,6 +10,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 
@@ -29,7 +30,7 @@ void collectRoles(
     bool with_admin_option,
     bool settings_only)
 {
-    if (roles_info.enabled_roles.count(role_id))
+    if (roles_info.enabled_roles.contains(role_id))
     {
         if (is_current_role)
             roles_info.current_roles.emplace(role_id);
@@ -87,7 +88,7 @@ void substituteProfiles(
 
         auto profile_id = *element.parent_profile;
         element.parent_profile.reset();
-        if (substituted_profiles_set.count(profile_id))
+        if (substituted_profiles_set.contains(profile_id))
             continue;
 
         auto profile = get_profile_function(profile_id);
@@ -222,11 +223,17 @@ namespace
             const PendingAccessEntities & current)
             : access_control(access_control_)
             , default_profile_id(access_control_.getDefaultProfileId())
+            , has_all_users(read_all_users)
         {
             if (read_all_users)
             {
+                /// The storages return their entities in lookup order, so the first user of a name is the
+                /// one a login resolves to and the rest are shadowed.
                 for (auto && [id, user] : access_control_.readAllWithIDs<User>())
+                {
+                    user_order.emplace_back(id);
                     users.emplace(id, std::move(user));
+                }
             }
             else
             {
@@ -254,16 +261,27 @@ namespace
         {
             for (const auto & [id, entity] : pending)
             {
-                users.erase(id);
+                bool was_user = users.erase(id);
                 roles.erase(id);
                 profiles.erase(id);
 
                 if (auto user = typeid_cast<UserPtr>(entity))
+                {
+                    /// A user this write creates is assumed to shadow a same-name user of another storage.
+                    /// Assuming the opposite would let the write escape validation.
+                    if (!was_user)
+                        user_order.insert(user_order.begin(), id);
                     users.emplace(id, std::move(user));
-                else if (auto role = typeid_cast<RolePtr>(entity))
-                    roles.emplace(id, std::move(role));
-                else if (auto profile = typeid_cast<SettingsProfilePtr>(entity))
-                    profiles.emplace(id, std::move(profile));
+                }
+                else
+                {
+                    if (was_user)
+                        std::erase(user_order, id);
+                    if (auto role = typeid_cast<RolePtr>(entity))
+                        roles.emplace(id, std::move(role));
+                    else if (auto profile = typeid_cast<SettingsProfilePtr>(entity))
+                        profiles.emplace(id, std::move(profile));
+                }
             }
         }
 
@@ -285,6 +303,20 @@ namespace
         }
 
         const UsersByID & allUsers() const { return users; }
+
+        bool hasAllUsers() const { return has_all_users; }
+
+        /// The user a login of this name resolves to, or a null entity if no storage holds that name.
+        std::pair<UUID, UserPtr> visibleUser(const String & name) const
+        {
+            for (const auto & id : user_order)
+            {
+                auto it = users.find(id);
+                if (it != users.end() && it->second->getName() == name)
+                    return {id, it->second};
+            }
+            return {UUIDHelpers::Nil, nullptr};
+        }
 
         ResolvedSettings resolveForUser(const UUID & user_id, const User & user) const
         {
@@ -447,9 +479,11 @@ namespace
     private:
         const AccessControl & access_control;
         UsersByID users;
+        VectorWithMemoryTracking<UUID> user_order;
         RolesByID roles;
         SettingsProfilesByID profiles;
         std::optional<UUID> default_profile_id;
+        bool has_all_users;
     };
 
     Replacements findReplacements(const AccessGraph & before, const PendingAccessEntities & pending)
@@ -543,6 +577,26 @@ namespace
         return is_relevant_type(old_entity) || is_relevant_type(new_entity);
     }
 
+    /// Whether the write can change which same-name user a login resolves to. A user that only one
+    /// storage holds cannot shadow or unshadow anything, so its name needs no separate check.
+    bool mayChangeVisibleUserByName(
+        const AccessControl & access_control, const AccessEntityPtr & old_entity, const AccessEntityPtr & new_entity)
+    {
+        auto is_user = [](const AccessEntityPtr & entity)
+        { return entity && entity->getType() == AccessEntityType::USER; };
+
+        size_t storages_with_name = 0;
+        if (is_user(old_entity))
+            storages_with_name = access_control.countStoragesWithEntityName(AccessEntityType::USER, old_entity->getName());
+        /// A rename onto a name another storage already holds creates the collision itself.
+        if (is_user(new_entity) && (!is_user(old_entity) || old_entity->getName() != new_entity->getName()))
+        {
+            storages_with_name = std::max(
+                storages_with_name, access_control.countStoragesWithEntityName(AccessEntityType::USER, new_entity->getName()) + 1);
+        }
+        return storages_with_name > 1;
+    }
+
     bool
     changesOnlyUsers(const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
     {
@@ -601,6 +655,36 @@ namespace
 
         AccessGraph after = before;
         after.apply(pending);
+
+        /// A login is resolved by name across storages, so creating, dropping or renaming a user can
+        /// expose or hide a same-name user of another storage. Compare what each touched name resolves
+        /// to instead of what each id holds.
+        if (before.hasAllUsers())
+        {
+            SetWithMemoryTracking<String> touched_names;
+            for (const auto & [id, entity] : pending)
+            {
+                if (auto old_user = before.getUser(id))
+                    touched_names.emplace(old_user->getName());
+                if (typeid_cast<const User *>(entity.get()))
+                    touched_names.emplace(entity->getName());
+            }
+
+            for (const auto & name : touched_names)
+            {
+                auto [before_id, before_user] = before.visibleUser(name);
+                auto [after_id, after_user] = after.visibleUser(name);
+                /// Nobody can log in under a name no storage holds any more, and a name which keeps
+                /// resolving to the same entity is checked by id below.
+                if (!after_user || before_id == after_id)
+                    continue;
+
+                auto before_settings
+                    = before_user ? before.resolveForUser(before_id, *before_user) : before.resolveForNewUser(after_id, name);
+                checkResolvedSettings(access_control, before_settings, after.resolveForUser(after_id, *after_user));
+            }
+        }
+
         auto affected = before.findAffectedEntities(after, pending);
 
         auto check_user = [&](const UUID & user_id, const UserPtr & user)
@@ -673,6 +757,7 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     if (!isAnyFeatureTierRestricted(access_control))
         return {};
 
+    bool may_change_visible_user = false;
     if (!force)
     {
         bool relevant = false;
@@ -680,17 +765,18 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
         {
             auto current_it = current.find(id);
             auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
-            if (mayChangeSettingsInEffect(old_entity, entity))
-            {
-                relevant = true;
-                break;
-            }
+            if (mayChangeVisibleUserByName(access_control, old_entity, entity))
+                may_change_visible_user = true;
+            else if (!mayChangeSettingsInEffect(old_entity, entity))
+                continue;
+            relevant = true;
         }
         if (!relevant)
             return {};
     }
 
-    bool changes_only_users = !force && changesOnlyUsers(access_control, pending, current);
+    /// Resolving a name needs every user, not only the ones the write names.
+    bool changes_only_users = !force && !may_change_visible_user && changesOnlyUsers(access_control, pending, current);
     auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
     return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
     {

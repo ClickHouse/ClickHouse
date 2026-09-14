@@ -141,6 +141,10 @@ public:
     /// The profile every user gets, named by `default_profile` in the server configuration.
     std::optional<UUID> getDefaultProfileId() const;
 
+    /// How many access storages hold an entity of this type and name. An entity is resolved by name in
+    /// storage order, so a name held more than once means only the first definition is visible.
+    size_t countStoragesWithEntityName(AccessEntityType type, const String & name) const;
+
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
