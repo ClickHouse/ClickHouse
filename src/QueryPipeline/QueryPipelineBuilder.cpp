@@ -545,8 +545,8 @@ void QueryPipelineBuilder::wireSealGatedReading(
     };
 
     /// The optional seal payload: the runtime filter built from this join's build side. It is
-    /// complete by the time the seal is emitted, because the filter transforms sit upstream of
-    /// the filling transforms in the same streams.
+    /// complete by the time the seal is emitted: each build stream publishes its part before
+    /// closing (see `BuildRuntimeFilterTransform::prepare`), and the seal follows the last close.
     FillingRightJoinSideTransform::SealPayloadGetter payload_getter;
     if (!runtime_filter_key.empty())
     {

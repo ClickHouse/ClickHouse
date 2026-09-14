@@ -30,9 +30,10 @@ void RuntimeFilterReadRangesRefiner::setFilterImpl(const RuntimeFilterConstPtr &
 {
     /// The seal payload is the leading filter; it only triggers the refinement. The predicate
     /// is built from ALL the descriptors (the primary key prefix covered by the gating join's
-    /// filters), which are complete by now: their build transforms are upstream of the seal
-    /// emitter. The shared builder makes `key IN (exact values)` else `key BETWEEN [min, max]`
-    /// per filter, ANDed; a filter which recorded nothing usable is skipped (fail-open).
+    /// filters). They are complete: each is published before its build stream closes, and the
+    /// seal comes after the last close (see `BuildRuntimeFilterTransform::prepare`). Per filter:
+    /// `key IN (exact values)` else `key BETWEEN [min, max]`, ANDed; a filter which recorded
+    /// nothing usable is skipped (fail-open).
     chassert(filter && filter->isReady());
 
     ActionsDAG dag;
