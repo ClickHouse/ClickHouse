@@ -256,6 +256,9 @@ public:
         return metadata.get();
     }
 
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

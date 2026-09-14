@@ -802,29 +802,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->unique_key)
         {
-            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::allow_experimental_unique_key])
+            /// Fresh definitions only; previously validated metadata loads with the setting off.
+            if (is_fresh_definition && !local_settings[Setting::allow_experimental_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
                     "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
             }
 
+            if (is_fresh_definition && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNIQUE KEY is only supported on the plain MergeTree engine, not on {}MergeTree",
+                    merging_params.getModeName());
+            }
+
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
-            ///
-            /// Also reject a UK element that names a non-stored column: an existing
-            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
-            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
-            /// dense-index rebuild (`part->getColumns()`) both read the stored
-            /// block, so such a column would be absent at runtime. `getKeyFromAST`
-            /// below resolves against physical + virtual columns, so it would let a
-            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
-            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
-            /// gives a clear reason. A name that matches no column at all (not
-            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
                 auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
