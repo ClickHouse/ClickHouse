@@ -727,6 +727,20 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     return result;
 }
 
+/// The implicit `minmax_count` projection aggregates only with `min`, `max` and `count`
+/// (`ProjectionDescription::getMinMaxCountProjection`), and `matchAggregateFunctions` pairs a query
+/// aggregate with a projection one by exact function name, so no other name can ever match.
+static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & name = aggregate.function->getName();
+        if (name != "min" && name != "max" && name != "count")
+            return false;
+    }
+    return true;
+}
+
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
@@ -753,7 +767,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
-        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
+        && canMinMaxCountProjectionMatchAggregates(aggregates);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
