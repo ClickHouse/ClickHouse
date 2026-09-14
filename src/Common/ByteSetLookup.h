@@ -17,17 +17,22 @@
 namespace DB
 {
 
-/// A set of bytes with an O(1) membership test for the first byte that is (or is not) in the set.
+/// A set of bytes (i.e. at most 256 elements) with two operations:
+///   - `contains`: an O(1) membership test of a single byte;
+///   - `find`: the position of the first byte in a range that is in the set (or, alternatively, the first byte that is not in the set).
 ///
-/// Supports vectorized search for long sequences of bytes.
-/// The vectorized search classifies 16 bytes at once with two nibble lookups (`pshufb` / `tbl`).
-/// Each byte is split into its high nibble (the upper 4 bits) and its low nibble (the lower 4 bits).
-/// Each nibble indexes a 16-entry table.
-/// Think of all 256 bytes as a 16x16 grid: the high nibble picks the row, the low nibble picks the column.
-/// A byte is in the set iff its row is among the rows that have a member in its column, that is, iff the two lookups share a bit.
+/// `find` is vectorized: the membership of 16 consecutive bytes is tested at once,
+/// with two table lookups per byte (`pshufb` on x86, `tbl` on ARM).
+/// Each lookup is indexed by one nibble (half of the byte), because these instructions look up a 16-entry table.
+/// Think of all 256 bytes as a 16x16 grid: the high nibble (the upper 4 bits) picks the row, the low nibble (the lower 4 bits) picks the column.
+/// Every row that has at least one member is assigned its own bit.
+/// `high_nibble_table[row]` holds the bit of the row.
+/// `low_nibble_table[column]` holds the bits of all rows that have a member in the column.
+/// A byte is in the set iff `high_nibble_table[row] & low_nibble_table[column]` is non-zero, i.e. iff the bit of its row is present in its column.
 ///
-/// The bits fit in one byte, so at most 8 non-empty rows (distinct high nibbles) are supported.
-/// That is enough for any set of ASCII characters. A set that needs more is searched by the scalar loop only.
+/// A table entry is one byte and holds at most 8 bits, so at most 8 rows may have members.
+/// That is enough for any set of ASCII characters, which occupy the rows 0 to 7.
+/// A set with members in more than 8 rows is searched by the scalar loop only.
 class ByteSetLookup
 {
 public:
@@ -58,9 +63,9 @@ public:
         UInt8 high = byte >> 4;
         UInt8 low = byte & 0x0F;
 
-        /// Each distinct high nibble gets its own bit, so that `low_nibble_table[low]` can hold the set of high nibbles
-        /// paired with `low` as a bitmask, and `high_nibble_table[high] & low_nibble_table[low]` tests membership.
-        /// A lane holds 8 bits, not 16, so the bits are assigned on first use rather than as `1 << high`.
+        /// See the class comment: `high` is the row of the byte, `low` is the column.
+        /// The rows are assigned their bits in the order of their first appearance, because there are 16 rows,
+        /// but a table entry has only 8 bits, so `1 << high` would not fit.
         if (!high_nibble_bit[high])
         {
             if (num_high_nibbles == 8)
@@ -90,9 +95,9 @@ public:
 
         if (end - pos >= SCALAR_PREFIX)
         {
-            /// Most tokens are short, so the first bytes are checked one by one before paying
-            /// for a vector iteration that would mostly look past the token. The constant trip
-            /// count lets the compiler unroll this loop into a straight sequence of table lookups.
+            /// The callers mostly search short ranges where the byte is found within the first few positions,
+            /// so these are checked one by one before paying for a vector iteration that would mostly look past the found byte.
+            /// The constant trip count lets the compiler unroll this loop into a straight sequence of table lookups.
             for (ptrdiff_t i = 0; i < SCALAR_PREFIX; ++i)
             {
                 if (contains(pos[i]) == positive)
@@ -116,7 +121,7 @@ public:
         return end;
     }
 
-    /// Classifies the `BLOCK_SIZE` bytes at `pos`:
+    /// Tests the membership of the `BLOCK_SIZE` bytes at `pos`:
     /// bit `i` of the result is set iff byte `i` is in the set.
     /// All `BLOCK_SIZE` bytes must be readable.
     ALWAYS_INLINE UInt32 matchBlock(const char * pos) const
@@ -126,7 +131,7 @@ public:
         {
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
-            return blockMask(classify(bytes));
+            return blockMask(containsVector(bytes));
         }
 #endif
         UInt32 mask = 0;
@@ -172,8 +177,8 @@ private:
 #endif
     }
 
-    /// 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
-    ALWAYS_INLINE Int8x16 classify(UInt8x16 bytes) const
+    /// Tests the membership of 16 bytes at once: 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
+    ALWAYS_INLINE Int8x16 containsVector(UInt8x16 bytes) const
     {
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
@@ -193,7 +198,7 @@ private:
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
 
-            auto match = classify(bytes);
+            auto match = containsVector(bytes);
             if constexpr (!positive)
                 match = ~match;
 
