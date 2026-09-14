@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "破壊的変更"
+sidebarTitle: "破壊的変更"
+description: "ClickHouse Private コンポーネントのバージョンごとの破壊的変更。"
+---
+
+ClickHouse Private コンポーネントのバージョンごとの破壊的変更です。アップグレード前にこのページを確認してください。
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` バージョン `1.1.245` — Shared Catalog とステートレスなサーバーノードがデフォルトで有効
+</div>
+
+helm chart バージョン `1.1.245` 以降では、`featureFlags.enableSharedCatalog` と `featureFlags.disableMetadataPersistentVolumes` のデフォルト値が `true` になります。新規インストールでは、追加設定なしで [Shared](https://clickhouse.com/docs/engines/database-engines/shared) データベースエンジンとステートレスなサーバーノードが使用されます。
+
+**新規インストール** では対応は不要です — 新しいデフォルト設定が自動的に適用されます。
+
+**まだ Shared Catalog を使用していない既存のインストール** では、アップグレード時に意図しない移行が発生するのを避けるため、以前のデフォルト値を明示的に設定する必要があります:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+移行の準備ができたら、[Shared Catalog への移行](/ja/products/clickhouse-private/guides/migrate-to-shared-catalog) ガイドに従ってください。
+
+**すでに Shared Catalog を使用している既存のインストール** では、対応は不要です。新しいデフォルト設定は現在の構成と一致しています。
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` version `1.1.210`
+</div>
+
+チャート バージョン `1.1.210` 以降では、新しい設定の制約がデフォルトで含まれます。**25.10未満**の ClickHouse server バージョンを使用している場合は、サーバー設定に以下を追加して、これらの制約を除外する必要があります。
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+この設定がないと、25.10より前のバージョンではこれらの設定が認識されないため、ClickHouseは起動に失敗します。

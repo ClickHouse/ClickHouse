@@ -24,19 +24,16 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
 {
     /// Send copies of data to num_buckets outputs
     auto & pipeline = *pipelines.front();
-
-    /// Serialize once on every stream; the copies for the destinations share the packets instead of
-    /// serializing them again. The sinks are told whether they get packets.
-    bool input_is_serialized = false;
-    pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+    auto stream_header = pipeline.getSharedHeader();
     {
-        auto transform = settings.exchange_lookup->createSerializer(header, exchange_id);
-        input_is_serialized |= transform != nullptr;
-        return transform;
-    });
-    pipeline.resize(1);
-    if (num_buckets > 1)
-        pipeline.addTransform(std::make_shared<CopyTransform>(pipeline.getSharedHeader(), num_buckets));
+        pipeline.resize(1);
+        if (num_buckets > 1)
+        {
+            /// Copies the input block to num_buckets outputs
+            auto copy = std::make_shared<CopyTransform>(stream_header, num_buckets);
+            pipeline.addTransform(copy);
+        }
+    }
 
     const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
@@ -47,7 +44,7 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id), input_is_serialized);
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
     });
 
     if (bucket != num_buckets)

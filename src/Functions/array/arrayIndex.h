@@ -19,7 +19,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -29,16 +28,9 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool type_json_skip_null_typed_paths;
-}
 
 namespace ErrorCodes
 {
@@ -97,20 +89,53 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
-        return accurate::equalsOp(left, right[i]);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+        return left == right[i];
+#pragma clang diagnostic pop
     }
 
-    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        return accurate::equalsOp(left[i], right);
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] == static_cast<Initial>(right);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) == right;
+        }
+        else
+        {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+            return left[i] == right;
+#pragma clang diagnostic pop
+        }
     }
 
-    static bool compare(
+    static constexpr bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
     {
-        return accurate::equalsOp(left[i], right[j]);
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] == static_cast<Initial>(right[j]);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) == right[j];
+        }
+        else
+        {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+            return left[i] == right[j];
+#pragma clang diagnostic pop
+        }
     }
 
     /// LowCardinality
@@ -130,9 +155,24 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        return accurate::greaterOrEqualsOp(left[i], right);
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] >= static_cast<Initial>(right);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) >= right;
+        }
+        else
+        {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+            return left[i] >= right;
+#pragma clang diagnostic pop
+        }
     }
 
     static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
@@ -470,14 +510,7 @@ class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionArrayIndex>(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths]);
-    }
-
-    /// The default is for Map adapters that hold this function as a member; JSON is not reachable from them.
-    explicit FunctionArrayIndex(bool skip_null_typed_paths_ = false) : skip_null_typed_paths(skip_null_typed_paths_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIndex>(); }
 
     /// Get function name.
     String getName() const override { return name; }
@@ -583,66 +616,6 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
-    /// What a date or time type counts. Two types that count different things are told apart by a
-    /// cast between them, and not by the comparison of the raw numbers they are stored as.
-    enum class DateTimeUnit : uint8_t
-    {
-        NotDateTime,
-        Days,
-        EpochSeconds,
-        TimeOfDay,
-    };
-
-    static DateTimeUnit dateTimeUnitOf(const DataTypePtr & type)
-    {
-        if (isDateOrDate32(type))
-            return DateTimeUnit::Days;
-        if (isDateTimeOrDateTime64(type))
-            return DateTimeUnit::EpochSeconds;
-        if (isTimeOrTime64(type))
-            return DateTimeUnit::TimeOfDay;
-        return DateTimeUnit::NotDateTime;
-    }
-
-    /// A `Date` counts days, a `DateTime` counts seconds since the epoch and a `Time` counts seconds
-    /// within a day, and every comparison below reads both sides as the raw numbers they are stored
-    /// as, where 19723 days is not 1704067200 seconds. So `has` did not find
-    /// `toDateTime('2024-01-01 00:00:00')` in an `Array(Date)` holding that same instant, although
-    /// `equals` -- which brings such a pair to the type the two meet in -- does consider them equal,
-    /// and although the `Array(LowCardinality(Date))` encoding of the same haystack, which resolves
-    /// the needle by a cast, did find it. Bring the pair to that type first, so that what is compared
-    /// here is what `equals` compares, whichever way the haystack is encoded.
-    ColumnPtr executeDifferentDateTimeUnits(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
-    {
-        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-        if (!array_type)
-            return nullptr;
-
-        const auto & element_type = array_type->getNestedType();
-        const auto & needle_type = arguments[1].type;
-
-        const auto element_unit = dateTimeUnitOf(removeNullable(element_type));
-        const auto needle_unit = dateTimeUnitOf(removeNullable(needle_type));
-
-        if (element_unit == DateTimeUnit::NotDateTime || needle_unit == DateTimeUnit::NotDateTime
-            || element_unit == needle_unit)
-            return nullptr;
-
-        /// A pair of date or time types always has a common type, which `allowArguments` has already
-        /// required of it: neither side is a native number, so it took the `getLeastSupertype` branch.
-        const auto common_type = getLeastSupertype(DataTypes{element_type, needle_type});
-        const auto common_array_type = std::make_shared<DataTypeArray>(common_type);
-
-        ColumnsWithTypeAndName new_arguments = arguments;
-        new_arguments[0].column = castColumn(arguments[0], common_array_type);
-        new_arguments[0].type = common_array_type;
-        new_arguments[1].column = castColumn(arguments[1], common_type);
-        new_arguments[1].type = common_type;
-
-        return executeArrayImpl(new_arguments, result_type);
-    }
-
     /** If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
@@ -658,9 +631,6 @@ private:
       */
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
-            return res;
-
         const ColumnPtr & ptr = arguments[0].column;
 
         /** The columns here have two general cases, either being Array(T) or Const(Array(T)).
@@ -1003,24 +973,23 @@ private:
      * Check if a path exists in JSON object for a specific row.
      * Returns true if the path (or any path with this prefix) exists.
      */
-    bool hasPathInObjectRow(
+    static bool hasPathInObjectRow(
         const ColumnObject & object_column,
         size_t row,
         const String & path,
         const String & prefix,
         const ColumnString * shared_paths,
-        const ColumnVector<UInt64>::Container & shared_offsets) const
+        const ColumnVector<UInt64>::Container & shared_offsets)
     {
         /// First, check for the requested path in typed paths.
-        /// Typed paths are always considered to be present in each row (even if null),
-        /// unless skip_null_typed_paths is enabled.
+        /// Typed paths are always considered to be present in each row (even if null).
         const auto & typed_paths = object_column.getTypedPaths();
-        if (auto it = typed_paths.find(path); it != typed_paths.end() && (!skip_null_typed_paths || !it->second->isNullAt(row)))
+        if (typed_paths.contains(path))
             return true;
 
         for (const auto & [key, col] : typed_paths)
         {
-            if (key.starts_with(prefix) && (!skip_null_typed_paths || !col->isNullAt(row)))
+            if (key.starts_with(prefix))
                 return true;
         }
 
@@ -1045,14 +1014,13 @@ private:
      * Checks if a path exists in the JSON object.
      *
      * The function checks three storage tiers in order:
-     * 1. Typed paths - explicitly declared paths that are always present (even if null,
-     *    unless skip_null_typed_paths is enabled)
+     * 1. Typed paths - explicitly declared paths that are always present (even if null)
      * 2. Dynamic paths - paths inferred at runtime, null means absence
      * 3. Shared data - overflow storage for rare paths, uses binary search
      *
      * Optimizations:
      * - For constant path: if found in typed paths, returns 1 for all rows immediately
-     * - For constant path: pre-collects relevant columns to avoid repeated lookups
+     * - For constant path: pre-collects relevant dynamic columns to avoid repeated lookups
      * - For non-constant path: uses hasPathInObjectRow() helper with early returns
      *
      * @param arguments - [0] JSON column (or const JSON), [1] path column
@@ -1086,52 +1054,49 @@ private:
             const String path(path_column.getDataAt(0));
             const String prefix = path + ".";
 
-            /// Collect columns that match exact path or prefix.
-            /// These columns need to be checked for non-null values per row.
-            VectorWithMemoryTracking<const IColumn *> relevant_columns;
-
+            /// Optimization: if path or its prefix exists in typed paths,
+            /// we can return 1 for all rows since typed paths are always present.
             const auto & typed_paths = object_column.getTypedPaths();
-            bool found_in_typed = false;
-
-            if (auto it = typed_paths.find(path); it != typed_paths.end())
+            bool found_in_typed = typed_paths.contains(path);
+            if (!found_in_typed)
             {
-                found_in_typed = true;
-                relevant_columns.push_back(it->second.get());
-            }
-
-            for (const auto & [key, col] : typed_paths)
-            {
-                if (key.starts_with(prefix))
+                for (const auto & [key, col] : typed_paths)
                 {
-                    found_in_typed = true;
-                    relevant_columns.push_back(col.get());
+                    if (key.starts_with(prefix))
+                    {
+                        found_in_typed = true;
+                        break;
+                    }
                 }
             }
 
-            /// Optimization: typed paths are always present, so a match means 1 for all rows.
-            /// With skip_null_typed_paths the typed columns are checked per row instead.
-            if (found_in_typed && !skip_null_typed_paths)
+            if (found_in_typed)
             {
+                /// Path exists in typed paths - return 1 for all rows
                 std::fill(res_data.begin(), res_data.end(), 1);
                 return res_col;
             }
 
+            /// Collect columns from dynamic paths that match exact path or prefix.
+            /// These columns need to be checked for non-null values per row.
+            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
-                relevant_columns.push_back(it->second);
+                relevant_dynamic_columns.push_back(it->second);
 
             for (const auto & [key, col] : dynamic_paths)
             {
                 if (key.starts_with(prefix))
-                    relevant_columns.push_back(col);
+                    relevant_dynamic_columns.push_back(col);
             }
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 bool found = false;
 
-                for (const auto * col : relevant_columns)
+                /// Check dynamic paths - need to verify non-null for each row
+                for (const auto * col : relevant_dynamic_columns)
                 {
                     if (!col->isNullAt(i))
                     {
@@ -1140,7 +1105,7 @@ private:
                     }
                 }
 
-                /// Check shared data if not found in typed or dynamic paths
+                /// Check shared data if not found in dynamic paths
                 if (!found)
                 {
                     found = hasPathInSharedData(path, prefix, shared_paths, shared_offsets, i);
@@ -1358,7 +1323,5 @@ private:
 
         return col_res;
     }
-
-    bool skip_null_typed_paths;
 };
 }

@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
@@ -17,12 +16,6 @@
 
 namespace DB
 {
-
-std::shared_ptr<TextLog::Queue> TextLog::getLogQueue(const SystemLogQueueSettings & settings)
-{
-    static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
-    return queue;
-}
 
 ColumnsDescription TextLogElement::getColumnsDescription()
 {
@@ -43,8 +36,6 @@ ColumnsDescription TextLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
@@ -52,7 +43,7 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread from which the logging was done."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "OS thread ID."},
 
-        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace', 9 or 'Test'."},
+        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
@@ -81,8 +72,6 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

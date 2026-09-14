@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides an integration with existing Delta Lake tables
-  in Amazon S3, GCS and Azure Blob Storage, supporting both reads and writes.'
+description: 'This engine provides a read-only integration with existing Delta Lake
+  tables in Amazon S3.'
 sidebarTitle: 'DeltaLake'
 slug: /engines/table-engines/integrations/deltalake
 title: 'DeltaLake table engine'
@@ -69,9 +69,11 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-<Note title="Unsupported gsutil URI">
+<Info>
+**Unsupported gsutil URI**
+
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
-</Note>
+</Info>
 
 **Arguments**
 
