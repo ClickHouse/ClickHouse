@@ -50,7 +50,7 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
         /// FIXME: Implement in other way -- not string comparison
         const std::string next_codec = astToString(ttl_description->recompression_codec);
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
+        const std::string current_codec = astToString(part->default_codec->getFullCodecDescription());
 
         return PartProperties::RecompressTTLInfo{
             .will_change_codec = (next_codec != current_codec),
