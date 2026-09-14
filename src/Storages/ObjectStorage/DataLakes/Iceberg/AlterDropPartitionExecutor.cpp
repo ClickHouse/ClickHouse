@@ -78,7 +78,7 @@ bool partitionEquals(const Row & lhs, const Row & rhs)
     if (lhs.size() != rhs.size())
         return false;
     for (size_t i = 0; i < lhs.size(); ++i)
-        if (!accurateEquals(lhs[i], rhs[i]))
+        if (lhs[i] != rhs[i])
             return false;
     return true;
 }
@@ -366,6 +366,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
         {
             if (!entry->parsed_entry)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
+
             if (partitionEquals(entry->parsed_entry->partition_key_value, target_partition))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported when the selected partition has equality deletes");
@@ -376,10 +377,9 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
 }
 
 AlterDropPartitionExecutor::DropPlan
-AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets) const
+AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const
 {
     DropPlan result;
-    std::set<Row> changed_partitions;
     auto unprocessed_target_file_paths = targets;
 
     UInt64 removed_data_files = 0;
@@ -388,8 +388,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     UInt64 removed_position_deletes = 0;
     UInt64 removed_position_delete_files = 0;
 
-    auto process_entries
-        = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries, size_t & entries_to_keep, size_t & entries_to_remove)
+    auto process_entries = [&](const auto & entries, size_t & entries_to_keep, size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
         {
@@ -403,6 +402,13 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 ++entries_to_keep;
                 continue;
             }
+
+            if (!partitionEquals(parsed_entry.partition_key_value, target_partition))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Manifest file entry partition value ({}) is different from target ({})",
+                    parsed_entry.partition_key_value,
+                    target_partition);
 
             ++entries_to_remove;
             unprocessed_target_file_paths.erase(storage_path);
@@ -422,7 +428,6 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION encountered an equality-delete entry, which is not supported");
             }
-            changed_partitions.insert(parsed_entry.partition_key_value);
         }
     };
 
@@ -465,7 +470,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         .removed_files_size = removed_files_size,
         .removed_position_delete_files = removed_position_delete_files,
         .removed_position_deletes = removed_position_deletes,
-        .num_partitions = static_cast<UInt64>(changed_partitions.size())};
+        .num_partitions = 1};
     return result;
 }
 
