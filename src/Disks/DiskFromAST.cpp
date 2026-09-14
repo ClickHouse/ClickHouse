@@ -18,9 +18,6 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -47,9 +44,8 @@ static String getCustomLocalDisksBaseDirectory(const ContextPtr & context)
     return base_directory;
 }
 
-/// The path of a disk that is local and is not an object storage. It is used exactly as it was
-/// given - a relative path against the working directory of the process - so it is checked that way
-/// too, and only checked.
+/// A location named by a disk definition has to be inside the base directory. It is compared as it
+/// was given: every such location is used that way as well.
 static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr & context)
 {
     auto base_directory = getCustomLocalDisksBaseDirectory(context);
@@ -61,56 +57,32 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
             base_directory);
 }
 
-/// A relative location is resolved against the base directory rather than against the working
-/// directory of the process, which is what the filesystem would resolve it against. The working
-/// directory is not a property of the server - it is `/` under systemd and the log directory when
-/// running as a daemon - so the same definition would otherwise name a different place on the next
-/// start, and no directory could be said to contain it.
-static String resolveCustomDiskPath(const String & path, const ContextPtr & context, bool attach)
-{
-    /// A table that already uses such a disk must keep working even if the setting is gone.
-    if (attach && context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "").empty())
-        return path;
-
-    auto base_directory = getCustomLocalDisksBaseDirectory(context);
-
-    auto absolute_path
-        = (fs::path(path).is_absolute() ? fs::path(path) : fs::path(base_directory) / path).lexically_normal();
-
-    if (!attach && !pathStartsWith(absolute_path.string(), base_directory))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Path `{}` of the custom local disk must be inside `{}` directory",
-            path,
-            base_directory);
-
-    return absolute_path.string();
-}
-
-/// Resolves the locations on the local filesystem that the disk definition names itself, and rejects
-/// the ones outside the base directory. A definition that refers to a disk of the server
-/// configuration (`disk = '<name>'`, as a `cache` or an `encrypted` disk does) inherits the location
-/// of that disk, which the administrator chose and the query did not, so it is left alone.
-static void resolveCustomDiskDefinitionPaths(Poco::Util::AbstractConfiguration & config, const ContextPtr & context, bool attach)
+/// The locations on the local filesystem that the disk definition names itself. A definition that
+/// refers to a disk of the server configuration (`disk = '<name>'`, as a `cache` or an `encrypted`
+/// disk does) inherits the location of that disk, which the administrator chose and the query did
+/// not, so it is left alone. Every location is used exactly as it was given, so it is checked that
+/// way too, and a relative one - which the filesystem resolves against the working directory of the
+/// process, a directory that is not a property of the server - is inside the base directory only if
+/// the server happens to run from the right place.
+static void checkCustomDiskDefinitionPaths(const Poco::Util::AbstractConfiguration & config, const ContextPtr & context)
 {
     const auto disk_type = config.getString("type", "");
     const auto object_storage_type = config.getString("object_storage_type", "");
 
     /// `local_blob_storage` is the compatibility spelling of `object_storage` over `local`; the
     /// object storage types backed by the local filesystem all start with `local`. A `local` disk,
-    /// which is not an object storage, is checked after it is created instead: it uses the path
-    /// exactly as given, so there is nothing to resolve.
+    /// which is not an object storage, is checked after it is created instead.
     const bool names_local_object_storage
         = disk_type == "local_blob_storage" || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
 
     if (names_local_object_storage && config.has("path"))
-        config.setString("path", resolveCustomDiskPath(config.getString("path"), context, attach));
+        checkCustomDiskPathIsAllowed(config.getString("path"), context);
 
     /// The metadata of a disk is written to the local filesystem whenever `metadata_path` is given.
     /// Its default, `<clickhouse path>/disks/<name>/`, needs no check of its own: the check of the
     /// disk name keeps it inside the directory that the server manages itself.
     if (config.has("metadata_path"))
-        config.setString("metadata_path", resolveCustomDiskPath(config.getString("metadata_path"), context, attach));
+        checkCustomDiskPathIsAllowed(config.getString("metadata_path"), context);
 }
 
 static std::string getOrCreateCustomDisk(
@@ -198,9 +170,10 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    /// Resolved and checked before the disk is created, so that a rejected definition creates no
-    /// directory and leaves no disk behind for the statements that follow.
-    resolveCustomDiskDefinitionPaths(*config, context, attach);
+    /// Checked before the disk is created, so that a rejected definition creates no directory and
+    /// leaves no disk behind for the statements that follow.
+    if (!attach)
+        checkCustomDiskDefinitionPaths(*config, context);
 
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
