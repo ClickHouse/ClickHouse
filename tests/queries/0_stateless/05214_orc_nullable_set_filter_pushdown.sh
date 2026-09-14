@@ -36,21 +36,25 @@ predicates=(
     'value NOT IN (0.5, 1.5)'
 )
 
+# One client per column runs all its predicates; each row carries the plain and the pushed-down count.
 for null_in in 0 1; do
     for column in x "tupleElement(t, 'x')"; do
+        queries="SET enable_nullable_tuple_type = 1; SET enable_analyzer = 1; SET max_threads = 1;
+                 SET transform_null_in = ${null_in};"
         for predicate in "${predicates[@]}"; do
             filter="${predicate//value/${column}}"
-            printf '%s | %s | %s' "${null_in}" "${column}" "${predicate}"
+            label="${null_in} | ${column} | ${predicate}"
             for optimize in 0 1; do
-                result=$(${CLICKHOUSE_CLIENT} --query "
-                    SELECT count() FROM file('${DATA_FILE}', ORC) WHERE ${filter}
-                    SETTINGS enable_nullable_tuple_type = 1, enable_analyzer = 1, max_threads = 1,
-                             transform_null_in = ${null_in}, optimize_functions_to_subcolumns = ${optimize},
-                             input_format_orc_filter_push_down = ${optimize}")
-                printf ' | %s' "${result}"
+                prefix=""
+                if [[ "$optimize" == 0 ]]; then
+                    prefix="'${label//\'/\\\'}', "
+                fi
+                queries+="SELECT ${prefix}count() FROM file('${DATA_FILE}', ORC) WHERE ${filter}
+                          SETTINGS optimize_functions_to_subcolumns = ${optimize},
+                                   input_format_orc_filter_push_down = ${optimize};"
             done
-            printf '\n'
         done
+        ${CLICKHOUSE_CLIENT} --format TSVRaw --multiquery --query "$queries" | paste - - | sed 's/\t/ | /g'
     done
 done
 

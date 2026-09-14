@@ -47,7 +47,18 @@ string_predicates=(
     "not_like_outer_not|NOT (value LIKE 'a%b' OR isNull(value))"
 )
 
+# Every case is independent, so they run concurrently and their outputs are printed in order afterwards.
+OUTPUT_PREFIX="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+outputs=()
+
 run_case()
+{
+    local output="${OUTPUT_PREFIX}_$1_${null_in}.out"
+    outputs+=("$output")
+    run_case_queries "$@" > "$output" &
+}
+
+run_case_queries()
 {
     local label="$1" column="$2"
     shift 2
@@ -82,6 +93,9 @@ for null_in in 0 1; do
     run_case nullable_tuple "tupleElement(t, 'x')" "${numeric_predicates[@]}"
 done
 run_case string s "${string_predicates[@]}"
+wait
+cat "${outputs[@]}"
+rm -f "${outputs[@]}"
 
 # A relaxed positive condition can still prune strides that cannot contain a match.
 ${CLICKHOUSE_CLIENT} --query "

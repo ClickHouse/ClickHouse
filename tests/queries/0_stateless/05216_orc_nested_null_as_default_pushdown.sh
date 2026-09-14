@@ -44,7 +44,18 @@ predicates=(
     'not_or|NOT (value = other_value OR isNull(value))'
 )
 
+# Every case is independent, so they run concurrently and their outputs are printed in order afterwards.
+OUTPUT_PREFIX="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+outputs=()
+
 run_case()
+{
+    local output="${OUTPUT_PREFIX}_$1_${null_in}.out"
+    outputs+=("$output")
+    run_case_queries "$@" > "$output" &
+}
+
+run_case_queries()
 {
     local label="$1" structure="$2" column="$3" default_value="$4" other_value="$5"
     local queries="SET enable_nullable_tuple_type = 1; SET enable_analyzer = 1;
@@ -106,6 +117,9 @@ for null_in in 0 1; do
     run_case date_dictionary 'dates Nullable(Tuple(d LowCardinality(Date32)))' "tupleElement(dates, 'd')" \
         "toDate32('1970-01-01')" "toDate32('1970-01-03')"
 done
+wait
+cat "${outputs[@]}"
+rm -f "${outputs[@]}"
 
 # Predicates unaffected by conversion retain pruning, including nullable child fields.
 for structure in 't Nullable(Tuple(x Int64))' 't Nullable(Tuple(x Nullable(Int64)))'; do
