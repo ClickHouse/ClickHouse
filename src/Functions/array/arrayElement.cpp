@@ -2190,10 +2190,11 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
     if (null_map_column)
         result_column = applyOuterNullMap(result_column, element_type, null_map_column);
 
-    /// A `LowCardinality` result type is unwrapped by the adapter before it dispatches here, and the stored
-    /// path keeps its own `LowCardinality`, so it has to be unwrapped with it.
+    /// The default `LowCardinality` handling rebuilds the dictionary itself and dispatches here with the
+    /// top-level wrapper already stripped from `result_type`, so a path stored as `LowCardinality(T)`
+    /// must give it up too. A wrapper nested in the path's type is part of the declared result and stays.
     if (!result_type->lowCardinality())
-        result_column = recursiveRemoveLowCardinality(result_column);
+        result_column = result_column->convertToFullColumnIfLowCardinality();
 
     /// Re-wrap in ColumnConst if the input was const.
     if (is_const)
@@ -3279,8 +3280,9 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             auto nested_arguments = arguments;
             nested_arguments[1] = columnGetNested(arguments[1]);
             auto result = executeImpl(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count);
-            /// `Nullable` inside `LowCardinality` lives in the dictionary, so promoting the result is a
-            /// dictionary rewrite, and the constant index this path requires adds no NULL row to merge.
+            /// `Nullable` inside `LowCardinality` lives in the dictionary, so the promotion is a dictionary
+            /// rewrite, not an added null map. The only source that declares such a result here is a JSON
+            /// path, and its key must be a constant `String`, so no NULL index row needs merging.
             if (result_type->isLowCardinalityNullable())
                 return makeNullableOrLowCardinalityNullableSafe(result);
             return result_type->isNullable()

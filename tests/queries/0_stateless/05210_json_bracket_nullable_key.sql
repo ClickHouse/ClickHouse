@@ -50,10 +50,11 @@ DROP TABLE t_json_nullable_key_lc;
 
 SELECT 'lowcardinality_typed_path_constant_source';
 -- An all-constant call is dispatched with the `LowCardinality` result wrapper already stripped, so the
--- extracted path has to give up its own as well.
+-- extracted path has to give up its own, but only its own: a wrapper nested in the path's type stays.
 SELECT
     CAST('{"s": "x"}', 'JSON(s LowCardinality(String))')['s'] AS plain_key, toTypeName(plain_key),
-    CAST('{"s": "x"}', 'JSON(s LowCardinality(String))')[CAST('s', 'Nullable(String)')] AS nullable_key, toTypeName(nullable_key)
+    CAST('{"s": "x"}', 'JSON(s LowCardinality(String))')[CAST('s', 'Nullable(String)')] AS nullable_key, toTypeName(nullable_key),
+    CAST('{"arr": ["x"]}', 'JSON(arr Array(LowCardinality(String)))')['arr'] AS nested_lc, toTypeName(nested_lc)
 SETTINGS optimize_functions_to_subcolumns = 0;
 
 SELECT 'lowcardinality_typed_path_nullable_json';

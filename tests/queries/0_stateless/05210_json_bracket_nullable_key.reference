@@ -19,7 +19,7 @@ y	LowCardinality(Nullable(String))	1
 x	LowCardinality(Nullable(String))	1
 y	LowCardinality(Nullable(String))	1
 lowcardinality_typed_path_constant_source
-x	LowCardinality(String)	x	LowCardinality(Nullable(String))
+x	LowCardinality(String)	x	LowCardinality(Nullable(String))	['x']	Array(LowCardinality(String))
 lowcardinality_typed_path_nullable_json
 {"s":"x"}	x	LowCardinality(Nullable(String))
 \N	\N	LowCardinality(Nullable(String))
