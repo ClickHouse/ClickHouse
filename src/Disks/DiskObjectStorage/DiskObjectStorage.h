@@ -149,8 +149,6 @@ public:
     time_t getLastChanged(const String & path) const override;
 
     bool isRemote() const override;
-    bool isDataRemote() const;
-    bool isMetadataRemote() const;
 
     void shutdown() override;
 

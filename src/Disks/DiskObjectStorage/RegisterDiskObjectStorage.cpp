@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 void registerObjectStorages();
 void registerMetadataStorages();
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
@@ -84,7 +79,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         LOG_DEBUG(getLogger("registerDiskObjectStorage"), "Metadata type hint: {}", compatibility_metadata_type_hint);
         auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, cluster, object_storages, compatibility_metadata_type_hint, run_local_paths_check);
 
-        auto object_storage_disk = std::make_shared<DiskObjectStorage>(
+        DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,
             std::move(cluster),
             std::move(metadata_storage),
@@ -92,16 +87,6 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             /*wrapped_disk=*/nullptr,
             config,
             config_prefix);
-
-        if (object_storage_disk->isDataRemote() != object_storage_disk->isMetadataRemote())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Disk `{}` stores its data {} but its metadata {}",
-                name,
-                object_storage_disk->isDataRemote() ? "remotely" : "locally",
-                object_storage_disk->isMetadataRemote() ? "remotely" : "locally");
-
-        DiskPtr disk = object_storage_disk;
 
         /// If this disk was created "on the fly" in order to serve as a temporary read-only disk.
         bool is_read_only_disk = config.getBool(config_prefix + ".read_only", false);

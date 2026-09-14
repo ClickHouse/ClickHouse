@@ -522,21 +522,10 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
 
 bool DiskObjectStorage::isRemote() const
 {
-    chassert(isDataRemote() == isMetadataRemote());
-    return isMetadataRemote();
-}
-
-bool DiskObjectStorage::isDataRemote() const
-{
     for (const auto & location : cluster->getEnabledLocations())
-        if (!object_storages->takePointingTo(location)->isRemote())
-            return false;
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
 
-    return true;
-}
-
-bool DiskObjectStorage::isMetadataRemote() const
-{
     return metadata_storage->isRemote();
 }
 
