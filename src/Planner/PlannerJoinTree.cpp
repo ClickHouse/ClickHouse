@@ -3404,7 +3404,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_cross_join = false;
     bool has_global_join_preserving_broadcast_rows = false;
     /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
-    /// join of an n-way tree must be tracked here. Set for JOIN/CROSS_JOIN/ARRAY_JOIN, read only in the JOIN branch.
+    /// join of an n-way tree must be tracked here. Set for JOIN/ARRAY_JOIN, read only in the JOIN branch.
     bool leftmost_join_tree_node_seen = false;
     bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -3414,7 +3414,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         auto table_expression_type = table_expression->getNodeType();
 
         const bool is_join_tree_node = table_expression_type == QueryTreeNodeType::JOIN
-            || table_expression_type == QueryTreeNodeType::CROSS_JOIN
             || table_expression_type == QueryTreeNodeType::ARRAY_JOIN;
         const bool is_non_leftmost_join_tree_node = is_join_tree_node && leftmost_join_tree_node_seen;
         if (is_join_tree_node)
