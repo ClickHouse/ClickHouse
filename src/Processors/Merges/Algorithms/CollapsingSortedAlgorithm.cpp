@@ -9,6 +9,8 @@
 
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 
 /// Maximum number of messages about incorrect data in the log.
 constexpr size_t MAX_ERROR_MESSAGES = 10;
@@ -77,6 +79,48 @@ void CollapsingSortedAlgorithm::insertRow(RowRef & row)
     merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 }
 
+void CollapsingSortedAlgorithm::bufferInvalidSignRow(const RowRef & row, size_t pos)
+{
+    const auto & columns = *row.all_columns;
+
+    if (invalid_sign_columns.empty())
+    {
+        invalid_sign_columns.reserve(columns.size());
+        for (const auto * column : columns)
+            invalid_sign_columns.push_back(column->cloneEmpty());
+    }
+
+    for (size_t i = 0, size = columns.size(); i < size; ++i)
+        invalid_sign_columns[i]->insertFrom(*columns[i], row.row_num);
+
+    invalid_sign_rows.push_back({pos, row.owned_chunk->getNumRows()});
+}
+
+/// The rows of a key have to reach `merged_data` in one run to stay in read order, so this cannot
+/// hand a full block back part way through: a key that buffered a long run of invalid signs
+/// overshoots `max_block_size`, and `merge` pulls the oversized block on its next pass.
+void CollapsingSortedAlgorithm::insertBufferedInvalidSignRowsBefore(size_t pos)
+{
+    if (next_invalid_sign_index >= invalid_sign_rows.size()
+        || invalid_sign_rows[next_invalid_sign_index].pos >= pos)
+        return;
+
+    /// `MergedData::insertRow` reads the values through `ColumnRawPtrs`, so derive that view here
+    /// rather than keeping a second member the buffer above has to stay in step with.
+    ColumnRawPtrs raw_columns;
+    raw_columns.reserve(invalid_sign_columns.size());
+    for (const auto & column : invalid_sign_columns)
+        raw_columns.push_back(column.get());
+
+    while (next_invalid_sign_index < invalid_sign_rows.size()
+           && invalid_sign_rows[next_invalid_sign_index].pos < pos)
+    {
+        merged_data->insertRow(
+            raw_columns, next_invalid_sign_index, invalid_sign_rows[next_invalid_sign_index].source_block_size);
+        ++next_invalid_sign_index;
+    }
+}
+
 std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 {
     if (count_positive == 0 && count_negative == 0 && count_invalid == 0)
@@ -87,34 +131,48 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     std::optional<Chunk> res;
 
-    if ((last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0))
+    /// Emit everything the key contributes in read order: kept invalid-sign rows interleave by row
+    /// number with the rows collapsing selects. With both selected the last positive one is
+    /// the key's last row, so it always follows the first negative one. False here means the signs
+    /// cancelled, or the key held none - the kept rows are then all it contributes.
+    const bool keeps_a_selected_row
+        = (last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0);
+
+    if (keeps_a_selected_row && count_positive <= count_negative && !only_positive_sign)
     {
-        if (count_positive <= count_negative && !only_positive_sign)
-        {
-            insertRow(first_negative_row);
+        insertBufferedInvalidSignRowsBefore(first_negative_pos);
+        insertRow(first_negative_row);
 
-            if (out_row_sources_buf)
-                current_row_sources[first_negative_pos].setSkipFlag(false);
-        }
-
-        if (count_positive >= count_negative)
-        {
-            if (merged_data->hasEnoughRows())
-                res = merged_data->pull();
-
-            insertRow(last_positive_row);
-
-            if (out_row_sources_buf)
-                current_row_sources[last_positive_pos].setSkipFlag(false);
-        }
-
-        if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-        {
-            if (count_incorrect_data < MAX_ERROR_MESSAGES)
-                reportIncorrectData();
-            ++count_incorrect_data;
-        }
+        if (out_row_sources_buf)
+            current_row_sources[first_negative_pos].setSkipFlag(false);
     }
+
+    if (keeps_a_selected_row && count_positive >= count_negative)
+    {
+        insertBufferedInvalidSignRowsBefore(last_positive_pos);
+
+        if (merged_data->hasEnoughRows())
+            res = merged_data->pull();
+
+        insertRow(last_positive_row);
+
+        if (out_row_sources_buf)
+            current_row_sources[last_positive_pos].setSkipFlag(false);
+    }
+
+    if (keeps_a_selected_row
+        && !(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
+    {
+        if (count_incorrect_data < MAX_ERROR_MESSAGES)
+            reportIncorrectData();
+        ++count_incorrect_data;
+    }
+
+    insertBufferedInvalidSignRowsBefore(std::numeric_limits<size_t>::max());
+
+    invalid_sign_columns.clear();
+    invalid_sign_rows.clear();
+    next_invalid_sign_index = 0;
 
     first_negative_row.clear();
     last_positive_row.clear();
@@ -163,7 +221,9 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// We write data for the previous primary key.
             auto res = insertRows();
 
-            current_row.swap(last_row);
+            /// `current_row` is read again below, by the invalid-sign branch in this same
+            /// iteration, so it has to keep its own value here - copy it, do not swap.
+            last_row = current_row;
 
             count_negative = 0;
             count_positive = 0;
@@ -181,7 +241,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
                 return Status(std::move(*res));
         }
 
-        /// Initially, skip all rows. On insert, unskip "corner" rows.
+        /// Initially, skip all rows. On insert, unskip the selected ones.
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
@@ -210,8 +270,14 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
-                insertRow(current_row);
                 ++count_invalid;
+
+                /// Nothing can be emitted ahead of a row met before the key's first selectable one.
+                if (count_positive == 0 && count_negative == 0)
+                    insertRow(current_row);
+                else
+                    bufferInvalidSignRow(current_row, current_pos);
+
                 if (out_row_sources_buf)
                     current_row_sources[current_pos].setSkipFlag(false);
             }
