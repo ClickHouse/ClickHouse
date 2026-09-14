@@ -47,6 +47,7 @@ void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry);
 void registerCubeStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry);
+void registerFillingStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
@@ -93,6 +94,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerRollupStep(registry);
     registerCubeStep(registry);
     registerWindowStep(registry);
+    registerFillingStep(registry);
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
     registerLimitStep(registry);
