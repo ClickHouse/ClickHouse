@@ -95,11 +95,16 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
                 continue;
             /// A bound here is typed from a schema, so comparing it against a filter planned on
             /// another type can order values differently and drop an entry holding matching rows;
-            /// such a column is left out. Nullability and low-cardinality do not reorder values.
+            /// such a column is left out. Low cardinality does not reorder values.
             auto comparable_type = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+            auto is_nullable = [](const DataTypePtr & type) { return type->isNullable() || type->isLowCardinalityNullable(); };
             auto current_column = schema_processor.tryGetFieldCharacteristics(current_schema_id, *input_id);
             if (current_column.has_value()
                 && !comparable_type(current_column->type)->equals(*comparable_type(input->result_type)))
+                continue;
+            /// A NULL partition value is read as the filter type's default but compared as positive
+            /// infinity, so its entry can be pruned while holding rows the filter matches.
+            if (current_column.has_value() && is_nullable(current_column->type) && !is_nullable(input->result_type))
                 continue;
             used_columns_in_filter.push_back(*input_id);
         }

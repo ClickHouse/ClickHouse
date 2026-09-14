@@ -14,6 +14,10 @@
 0
 1
 1
+-- iceberg: a nullable partition key declared non-nullable is not pruned against the metadata NULL
+2
+2
+2
 -- iceberg: a declaration differing only in nullability still prunes manifest entries
 1
 -- iceberg: a declaration differing only in low cardinality still prunes manifest entries
@@ -34,3 +38,7 @@
 ['0','1000']
 ['0','1000']
 ['0','1000']
+-- paimon: a nullable partition key declared non-nullable is not pruned against the metadata NULL
+5
+5
+5

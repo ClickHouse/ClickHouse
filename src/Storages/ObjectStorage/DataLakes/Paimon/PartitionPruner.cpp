@@ -55,10 +55,11 @@ namespace Paimon
 
     /// True when `filter_dag` cannot prune over `table_schema`'s partition keys: a bound is compared against
     /// the type the Paimon schema gives the column, so a filter planned on a type that orders values
-    /// differently can drop a partition holding matching rows. Wrappers and non-partition columns cannot.
+    /// differently can drop a partition holding matching rows. Non-partition columns cannot.
     static bool filterCannotPrunePartitions(const DB::PaimonTableSchema & table_schema, const DB::ActionsDAG & filter_dag)
     {
         auto comparable_type = [](const DB::DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+        auto is_nullable = [](const DB::DataTypePtr & type) { return type->isNullable() || type->isLowCardinalityNullable(); };
         auto is_partition_key = [&](const String & name)
         {
             for (const auto & key : table_schema.partition_keys)
@@ -76,7 +77,12 @@ namespace Paimon
             if (column_idx_it == table_schema.fields_by_name_indexes.end())
                 continue;
             const auto & schema_type = table_schema.fields[column_idx_it->second].type.clickhouse_data_type;
-            if (!comparable_type(schema_type)->equals(*comparable_type(required.getTypeInStorage())))
+            const auto & filter_type = required.getTypeInStorage();
+            if (!comparable_type(schema_type)->equals(*comparable_type(filter_type)))
+                return true;
+            /// A partition's NULL is read as the filter type's default, while `canBePruned` compares it as
+            /// positive infinity, so it can be dropped while holding rows the filter matches.
+            if (is_nullable(schema_type) && !is_nullable(filter_type))
                 return true;
         }
         return false;

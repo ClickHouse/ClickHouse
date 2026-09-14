@@ -86,6 +86,16 @@ SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE 
 -- cannot be ordered by: both leave the key describing something the read will not emit.
 SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id FROM icebergLocal('${NEST}/', 'Parquet', 'id Int64') ORDER BY id);
 SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id, t FROM icebergLocal('${NEST}/', 'Parquet', 'id Int64, t Tuple(x String)') ORDER BY t.x);
+SELECT '-- iceberg: a nullable partition key declared non-nullable is not pruned against the metadata NULL';
+-- A NULL partition value is compared as positive infinity while the two rows holding it read as the
+-- declared type's default, so pruning that partition loses rows the filter matches. Both settings and
+-- an unfiltered oracle over the same declaration must agree.
+CREATE TABLE ice27 (p Nullable(Int64), d String) ENGINE = IcebergLocal('${ICE}27/', 'Parquet') PARTITION BY p;
+INSERT INTO ice27 VALUES (NULL, 'n1'), (NULL, 'n2');
+INSERT INTO ice27 VALUES (5, 'v5'), (7, 'v7');
+SELECT count() FROM icebergLocal('${ICE}27/', 'Parquet', 'p Int64, d String') WHERE p = 0 SETTINGS use_iceberg_partition_pruning = 1, input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
+SELECT count() FROM icebergLocal('${ICE}27/', 'Parquet', 'p Int64, d String') WHERE p = 0 SETTINGS use_iceberg_partition_pruning = 0, input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
+SELECT countIf(p = 0) FROM icebergLocal('${ICE}27/', 'Parquet', 'p Int64, d String') SETTINGS input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
 SQL
 
 # Withholding manifest pruning is invisible in the values, so the only oracle for keeping it is the
@@ -192,5 +202,14 @@ SELECT '-- paimon: a retyped partition key is not pruned against the metadata-ty
 SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 1, parallel_replicas_for_cluster_engines = 0;
 SELECT groupArray(f_bigint_nn) FROM (SELECT f_bigint_nn FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_bigint_nn String') WHERE f_bigint_nn < '2' ORDER BY f_bigint_nn) SETTINGS use_paimon_partition_pruning = 0, parallel_replicas_for_cluster_engines = 0;
 SELECT groupArray(s) FROM (SELECT toString(f_bigint_nn) AS s FROM paimonLocal('${PAIMONP}') WHERE toString(f_bigint_nn) < '2' ORDER BY s);
+
+SELECT '-- paimon: a nullable partition key declared non-nullable is not pruned against the metadata NULL';
+-- The five rows in this fixture's NULL partition read as the declared type's default, which the partition
+-- bound compares as positive infinity, so a partition dropped on the metadata typing loses all five. Both
+-- settings and an unfiltered oracle over the same declaration must agree, and f_date is nullable here
+-- while the twenty _nn keys are not.
+SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_date Date') WHERE f_date = toDate('1970-01-01') SETTINGS use_paimon_partition_pruning = 1, input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
+SELECT count() FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_date Date') WHERE f_date = toDate('1970-01-01') SETTINGS use_paimon_partition_pruning = 0, input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
+SELECT countIf(f_date = toDate('1970-01-01')) FROM paimonLocal('${PAIMONP}', 'Parquet', 'f_date Date') SETTINGS input_format_null_as_default = 1, parallel_replicas_for_cluster_engines = 0;
 SQL
-rm -rf "${PAIMONP}" "${NEST}" "${ICE}13" "${ICE}15" "${ICE}22" "${ICE}23" "${ICE}24"
+rm -rf "${PAIMONP}" "${NEST}" "${ICE}13" "${ICE}15" "${ICE}22" "${ICE}23" "${ICE}24" "${ICE}27"
