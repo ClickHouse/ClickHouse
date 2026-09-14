@@ -4,7 +4,6 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>

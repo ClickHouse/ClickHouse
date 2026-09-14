@@ -54,10 +54,10 @@ public:
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
-        ASTPtr /*order_by*/,
+        ASTPtr order_by,
         bool if_not_exists,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/);
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType);
 

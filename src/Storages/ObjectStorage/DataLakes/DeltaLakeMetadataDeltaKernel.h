@@ -133,8 +133,7 @@ private:
         const ContextPtr & local_context,
         const ColumnsDescription & columns,
         ASTPtr partition_by,
-        bool delta_log_exists,
-        bool /* if_not_exists */);
+        bool delta_log_exists);
 
     /// No version means latest version.
     DeltaLake::TableSnapshotPtr getTableSnapshot(

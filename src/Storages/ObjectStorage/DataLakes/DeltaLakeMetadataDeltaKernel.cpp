@@ -707,8 +707,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     const ContextPtr & local_context,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
-    bool delta_log_exists,
-    bool /* if_not_exists */)
+    bool delta_log_exists)
 {
     auto log = getLogger("DeltaLakeMetadataDeltaKernel");
 
@@ -840,7 +839,7 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
     if (has_explicit_columns)
         createTable(
-            object_storage, configuration, local_context, *columns, partition_by, delta_log_exists, if_not_exists);
+            object_storage, configuration, local_context, *columns, partition_by, delta_log_exists);
     else if (!delta_log_exists)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
