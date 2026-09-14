@@ -28,36 +28,34 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS enable_nullable_tuple_type = 1, engine_file_truncate_on_insert = 1,
              output_format_orc_row_index_stride = 2000"
 
-predicates=(
-    'default|value = default_value'
-    'not_default|value != default_value'
-    'other|value = other_value'
-    'less|value < other_value'
-    'greater_equal|value >= other_value'
-    'is_null|isNull(value)'
-    'is_not_null|isNotNull(value)'
-    'in|value IN (default_value, other_value)'
-    'not_in|value NOT IN (other_value)'
-    'in_null|value IN (NULL)'
-    'not_in_null|value NOT IN (NULL)'
-    'not_and|NOT (value = other_value AND isNotNull(value))'
-    'not_or|NOT (value = other_value OR isNull(value))'
-)
-
-# Every case is independent, so they run concurrently and their outputs are printed in order afterwards.
+# Every case is independent, so they run concurrently through `xargs -P`, each writing to its own file under
+# `CLICKHOUSE_TMP`, and the outputs are printed in the original order afterwards. The concurrency is capped
+# because the test runs in a memory-limited cgroup and a sanitizer client takes hundreds of megabytes of
+# resident memory, so starting all clients at once gets them OOM-killed.
 OUTPUT_PREFIX="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-outputs=()
+MAX_CONCURRENT_CLIENTS=4
+export DATA_FILE OUTPUT_PREFIX
 
+# The argument is a tab-separated line: null_in, label, structure, column, default value, other value.
 run_case()
 {
-    local output="${OUTPUT_PREFIX}_$1_${null_in}.out"
-    outputs+=("$output")
-    run_case_queries "$@" > "$output" &
-}
-
-run_case_queries()
-{
-    local label="$1" structure="$2" column="$3" default_value="$4" other_value="$5"
+    local null_in label structure column default_value other_value
+    IFS=$'\t' read -r null_in label structure column default_value other_value <<< "$1"
+    local predicates=(
+        'default|value = default_value'
+        'not_default|value != default_value'
+        'other|value = other_value'
+        'less|value < other_value'
+        'greater_equal|value >= other_value'
+        'is_null|isNull(value)'
+        'is_not_null|isNotNull(value)'
+        'in|value IN (default_value, other_value)'
+        'not_in|value NOT IN (other_value)'
+        'in_null|value IN (NULL)'
+        'not_in_null|value NOT IN (NULL)'
+        'not_and|NOT (value = other_value AND isNotNull(value))'
+        'not_or|NOT (value = other_value OR isNull(value))'
+    )
     local queries="SET enable_nullable_tuple_type = 1; SET enable_analyzer = 1;
                    SET allow_nullable_tuple_in_extracted_subcolumns = 1;
                    SET allow_suspicious_low_cardinality_types = 1;
@@ -85,39 +83,52 @@ run_case_queries()
             done
         done
     done
-    printf '%s | transform_null_in=%s\n' "$label" "$null_in"
-    # Both counts and row identities must agree across all optimization combinations.
-    ${CLICKHOUSE_CLIENT} --multiquery --query "$queries" | paste - - - -
+    {
+        printf '%s | transform_null_in=%s\n' "$label" "$null_in"
+        # Both counts and row identities must agree across all optimization combinations.
+        ${CLICKHOUSE_CLIENT} --multiquery --query "$queries" | paste - - - -
+    } > "${OUTPUT_PREFIX}_${label}_${null_in}.out"
+}
+export -f run_case
+
+cases=()
+outputs=()
+
+add_case()
+{
+    cases+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s' "$null_in" "$@")")
+    outputs+=("${OUTPUT_PREFIX}_$1_${null_in}.out")
 }
 
 for null_in in 0 1; do
-    run_case scalar 'x Int64' x 0 2
-    run_case tuple 'p Tuple(x Int64)' "tupleElement(p, 'x')" 0 2
-    run_case nullable_tuple 't Nullable(Tuple(x Int64))' "tupleElement(t, 'x')" 0 2
-    run_case nullable_child 't Nullable(Tuple(x Nullable(Int64)))' "tupleElement(t, 'x')" 0 2
-    run_case dictionary 't Nullable(Tuple(x LowCardinality(Int64)))' "tupleElement(t, 'x')" 0 2
-    run_case nullable_dictionary 't Nullable(Tuple(x LowCardinality(Nullable(Int64))))' "tupleElement(t, 'x')" 0 2
-    run_case nested_nullable 'n Nullable(Tuple(inner Nullable(Tuple(x Int64))))' \
+    add_case scalar 'x Int64' x 0 2
+    add_case tuple 'p Tuple(x Int64)' "tupleElement(p, 'x')" 0 2
+    add_case nullable_tuple 't Nullable(Tuple(x Int64))' "tupleElement(t, 'x')" 0 2
+    add_case nullable_child 't Nullable(Tuple(x Nullable(Int64)))' "tupleElement(t, 'x')" 0 2
+    add_case dictionary 't Nullable(Tuple(x LowCardinality(Int64)))' "tupleElement(t, 'x')" 0 2
+    add_case nullable_dictionary 't Nullable(Tuple(x LowCardinality(Nullable(Int64))))' "tupleElement(t, 'x')" 0 2
+    add_case nested_nullable 'n Nullable(Tuple(inner Nullable(Tuple(x Int64))))' \
         "tupleElement(tupleElement(n, 'inner'), 'x')" 0 2
-    run_case nested_default 'n Nullable(Tuple(inner Tuple(x Int64)))' \
+    add_case nested_default 'n Nullable(Tuple(inner Tuple(x Int64)))' \
         "tupleElement(tupleElement(n, 'inner'), 'x')" 0 2
-    run_case nested_nullable_child 'n Nullable(Tuple(inner Tuple(x Nullable(Int64))))' \
+    add_case nested_nullable_child 'n Nullable(Tuple(inner Tuple(x Nullable(Int64))))' \
         "tupleElement(tupleElement(n, 'inner'), 'x')" 0 2
-    run_case dotted_name 'd Nullable(Tuple(`a.b` Int64))' "tupleElement(d, 'a.b')" 0 2
-    run_case folded_name 'T Nullable(Tuple(X Int64))' "tupleElement(T, 'X')" 0 2
-    run_case string 'strings Nullable(Tuple(s String))' "tupleElement(strings, 's')" "''" "'z'"
-    run_case string_dictionary 'strings Nullable(Tuple(s LowCardinality(String)))' \
+    add_case dotted_name 'd Nullable(Tuple(`a.b` Int64))' "tupleElement(d, 'a.b')" 0 2
+    add_case folded_name 'T Nullable(Tuple(X Int64))' "tupleElement(T, 'X')" 0 2
+    add_case string 'strings Nullable(Tuple(s String))' "tupleElement(strings, 's')" "''" "'z'"
+    add_case string_dictionary 'strings Nullable(Tuple(s LowCardinality(String)))' \
         "tupleElement(strings, 's')" "''" "'z'"
     # `Date32` uses the epoch as its column default when the reader replaces NULLs.
-    run_case date_scalar 'date Date32' date "toDate32('1970-01-01')" "toDate32('1970-01-03')"
-    run_case date 'dates Nullable(Tuple(d Date32))' "tupleElement(dates, 'd')" \
+    add_case date_scalar 'date Date32' date "toDate32('1970-01-01')" "toDate32('1970-01-03')"
+    add_case date 'dates Nullable(Tuple(d Date32))' "tupleElement(dates, 'd')" \
         "toDate32('1970-01-01')" "toDate32('1970-01-03')"
-    run_case date_nullable 'dates Nullable(Tuple(d Nullable(Date32)))' "tupleElement(dates, 'd')" \
+    add_case date_nullable 'dates Nullable(Tuple(d Nullable(Date32)))' "tupleElement(dates, 'd')" \
         "toDate32('1970-01-01')" "toDate32('1970-01-03')"
-    run_case date_dictionary 'dates Nullable(Tuple(d LowCardinality(Date32)))' "tupleElement(dates, 'd')" \
+    add_case date_dictionary 'dates Nullable(Tuple(d LowCardinality(Date32)))' "tupleElement(dates, 'd')" \
         "toDate32('1970-01-01')" "toDate32('1970-01-03')"
 done
-wait
+
+printf '%s\n' "${cases[@]}" | xargs -d '\n' -n 1 -P "${MAX_CONCURRENT_CLIENTS}" bash -c 'set -euo pipefail; run_case "$1"' bash
 cat "${outputs[@]}"
 rm -f "${outputs[@]}"
 
