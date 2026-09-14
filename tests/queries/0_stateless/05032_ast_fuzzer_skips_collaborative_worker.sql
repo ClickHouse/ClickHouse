@@ -370,7 +370,7 @@ SELECT 'cluster_no_internal_workers',
 -- A read through a view whose definer is resolved on a rebuilt context. Two properties: the read
 -- succeeds, so the rebuilt context did not lose the coordination callback it needs; and its workers
 -- are skipped too. The rebuilt context keeps the marker because getSQLSecurityOverriddenContext
--- starts from the global context but calls setClientInfo (StorageInMemoryMetadata.cpp:153-158).
+-- starts from the global context but calls setClientInfo.
 -- The workers name the view's source rather than the view itself: the view is expanded before the
 -- statement is sent to them.
 CREATE VIEW t05032_view SQL SECURITY NONE AS SELECT id, v FROM t05032_view_src;

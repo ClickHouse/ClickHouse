@@ -13,13 +13,10 @@ extern const int UNKNOWN_TABLE;
 
 using namespace DB;
 
-/// QueryFuzzer sometimes rewrites a table name into `{fuzz_param_N:Identifier}` and then keeps
-/// fuzzing that AST. Such an identifier carries empty name parts, so reading its name through
-/// ASTTableIdentifier::getTableId() throws UNKNOWN_TABLE ("Both table name and UUID are empty")
-/// instead of yielding an empty StorageID, and the throw leaves fuzzMain. A caller that runs the
-/// fuzzer repeatedly (the server-side fuzzer of `ast_fuzzer_runs`) then loses its remaining runs.
-/// A client's own `{p:Identifier}` cannot cover this: query parameters are substituted before the
-/// server-side fuzzer sees the AST, so only the fuzzer's own rewrite produces the identifier.
+/// A table name QueryFuzzer rewrote into `{fuzz_param_N:Identifier}` has empty name parts, so
+/// reading it through ASTTableIdentifier::getTableId() throws UNKNOWN_TABLE, out of fuzzMain. Only
+/// the fuzzer's own rewrite builds such an identifier: a client's `{p:Identifier}` is substituted
+/// before the server-side fuzzer sees the AST, which is why this coverage is not a SQL test.
 TEST(QueryFuzzer, DoesNotThrowOnParameterizedTableName)
 {
     const String sql = "SELECT count() FROM {p:Identifier}";

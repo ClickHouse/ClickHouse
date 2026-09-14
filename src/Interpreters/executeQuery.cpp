@@ -3446,11 +3446,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
-    /// A collaborative worker's context holds a replica identity and a coordination channel that belong
-    /// to the initiator's in-flight read, not to this query, and both are copied into the fuzz context:
-    /// merge_tree_all_ranges_callback plus number_of_current_replica for a parallel replicas participant,
-    /// next_task_callback for a cluster function worker. Fuzzing here re-enters that channel under a
-    /// borrowed replica number. The initiator still fuzzes its own client query.
+    /// The fuzz context copies this worker's borrowed replica number and the coordination channel of
+    /// the initiator's in-flight read (merge_tree_all_ranges_callback, or next_task_callback for a
+    /// cluster function worker), so fuzzing here re-enters that channel under another query's replica
+    /// number. The initiator still fuzzes its own client query.
     if (context->getClientInfo().collaborate_with_initiator)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
