@@ -42,6 +42,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool supportsPerSubcolumnCodecs() const override { return getTargetTable()->supportsPerSubcolumnCodecs(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
