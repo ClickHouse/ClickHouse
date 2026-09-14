@@ -47,7 +47,7 @@ REGISTER_FUNCTION(ModuloOrZero)
 {
     FunctionDocumentation::Description description = R"(
 Like modulo but returns zero instead of an exception for integer results when the operation would otherwise raise an
-exception. For floating-point results, a zero divisor produces `NaN` according to IEEE 754.
+exception. For floating-point results, a zero divisor produces `NaN`.
     )";
     FunctionDocumentation::Syntax syntax = "moduloOrZero(a, b)";
     FunctionDocumentation::Arguments arguments =
