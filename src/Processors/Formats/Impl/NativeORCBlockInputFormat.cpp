@@ -848,6 +848,14 @@ static void buildORCSearchArgumentImpl(
             if (need_wrap_not)
                 builder.startNot();
 
+            /// A relaxed atom can be false even when its approximation is true. Preserve that
+            /// possibility before negation, as `KeyCondition` does with `can_be_false`.
+            if (curr.relaxed)
+            {
+                builder.startAnd();
+                builder.literal(orc::TruthValue::YES_NO);
+            }
+
             if (contains_is_null)
             {
                 builder.isNull(orc_type->getColumnId(), *predicate_type);
@@ -956,6 +964,9 @@ static void buildORCSearchArgumentImpl(
                     builder.end();
                 }
             }
+
+            if (curr.relaxed)
+                builder.end();
 
             if (need_wrap_not)
                 builder.end();
