@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;

@@ -13,6 +13,7 @@
 SELECT '-- ARRAY JOIN clause: empty-array prefix';
 SELECT number FROM numbers(100) ARRAY JOIN if(number < 3, [], [number]) AS x LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- ARRAY JOIN clause, old analyzer';
+SELECT number FROM numbers(100) ARRAY JOIN if(number < 3, [], [number]) AS x LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 
 -- The same bug shape exercised through `query_plan_enable_optimizations = 0`
 -- proves that the pushdown happens at AST/construction time, not in the
@@ -31,6 +32,7 @@ SETTINGS query_plan_enable_optimizations = 0;
 SELECT '-- WITH alias arrayJoin in SELECT';
 WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT x FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- WITH alias arrayJoin in SELECT, old analyzer';
+WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT x FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 SELECT '-- WITH alias arrayJoin in SELECT, optimizer disabled';
 WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT x FROM numbers(100) LIMIT 3 SETTINGS query_plan_enable_optimizations = 0;
 
@@ -39,6 +41,7 @@ WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT x FROM numbers(100) LIM
 SELECT '-- WITH alias arrayJoin in WHERE only';
 WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT number FROM numbers(100) WHERE x >= 0 LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- WITH alias arrayJoin in WHERE only, old analyzer';
+WITH arrayJoin(if(number < 3, [], [number])) AS x SELECT number FROM numbers(100) WHERE x >= 0 LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 
 -- An UNREFERENCED `WITH` alias produces no expansion, so pushdown is still
 -- valid and the source is correctly capped. A blanket "reject if `query.with()`
@@ -46,3 +49,4 @@ SELECT '-- WITH alias arrayJoin in WHERE only, old analyzer';
 SELECT '-- WITH alias arrayJoin unreferenced: pushdown still valid';
 WITH arrayJoin([10, 20, 30]) AS unused SELECT number FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- WITH alias arrayJoin unreferenced, old analyzer';
+WITH arrayJoin([10, 20, 30]) AS unused SELECT number FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 0;

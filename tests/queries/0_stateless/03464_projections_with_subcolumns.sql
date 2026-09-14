@@ -1,5 +1,4 @@
 -- Tags: long
-SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
 set mutations_sync=1;
