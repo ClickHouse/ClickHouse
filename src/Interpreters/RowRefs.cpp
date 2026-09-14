@@ -382,8 +382,8 @@ void StoredColumnsIndex::resolveEmitColumns(
         {
             auto emit_column = std::make_unique<EmitColumn>();
             emit_column->request_type = request.type;
-            bool any_replicated = false;
-            std::vector<GatherRowRemap> remap(num_blocks);
+            /// Sized on the first replicated block; most columns never have one and skip it.
+            VectorWithMemoryTracking<GatherRowRemap> remap;
             for (size_t b = 0; b < num_blocks; ++b)
             {
                 /// A cleared/popped slot is skipped: no live ref points to it (mirrors `at()`).
@@ -406,8 +406,9 @@ void StoredColumnsIndex::resolveEmitColumns(
                     if (indexes_raw.size() != indexes.size() * index_width)
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR, "Replicated join column indexes do not hold exactly their own rows");
+                    if (remap.empty())
+                        remap.resize(num_blocks);
                     remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
-                    any_replicated = true;
                     column = replicated->getNestedColumn().get();
                     /// `remapFlatWord` puts `indexes[row]` back in a 32-bit row field, so the nested
                     /// column is under a block's limit. A row expanding to none is what exceeds it.
@@ -429,7 +430,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                 emit_column->shape_prototype = request.type->createColumn();
                 resolveGatherNode(emit_column->gather_root, request.type, *emit_column->shape_prototype, 0, 1);
             }
-            if (any_replicated)
+            if (!remap.empty())
                 emit_column->gather_remap_by_block = std::move(remap);
             emit_columns[pos] = std::move(emit_column);
         }

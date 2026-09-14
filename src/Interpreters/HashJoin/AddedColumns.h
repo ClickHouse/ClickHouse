@@ -127,15 +127,17 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /** Build output from the blocks that extract from the encoded refs, to avoid block cache miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from the encoded refs.
-     */
-    template<bool from_row_list, bool from_row_store, bool from_columns>
-    void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
-
-    void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
-
+    /// The columnar output columns read the recorded words in whatever shape they have.
     void emitColumnarOutputs(MutableColumns & columns, const RefWordSelection & selection) const;
+
+    /// The row store is not addressed by ref words: it needs every ref resolved to a row pointer.
+    /// This resolves them once, into one pointer array that every row-store column reads.
+    void fillRowStoreOutputsByPointers(MutableColumns & columns, const RefWordSelection & selection) const;
+
+    /// Each row-store column resolves the refs for itself, so no per-output-row array is kept. The
+    /// choice for keys with many rows, where the output outgrows both inputs.
+    void fillRowStoreOutputsByRefLists(
+        size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     template<bool from_row_store, bool from_columns>
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(

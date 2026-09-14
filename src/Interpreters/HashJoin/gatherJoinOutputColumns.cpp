@@ -322,23 +322,24 @@ void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UIn
     gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
 }
 
-/// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block when
-/// `WITH_RUNS`. `row_no` is in the low bits of the encoding, so the next row of one block is exactly
-/// `word + 1`. Pass 1 picks the specialization, so a scattered selection pays only that compare.
-/// Only one key's rows ever form a run, and only if the build side stored them next to each other.
-template <bool WITH_RUNS>
+/// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`
+/// is in the low bits of the encoding, so the next row of one block is exactly `word + 1`. A scattered
+/// selection degrades to runs of one for one compare per row, which measures within noise of a
+/// per-row loop, so there is no separate per-row specialization. Only one key's rows ever form a
+/// run, and only if the build side stored them next to each other.
 void gatherStringChars(
     UInt8 * out_chars, [[maybe_unused]] const UInt8 * chars_end, const UInt64 * words, size_t count,
     const void * const * offsets_by_block, const void * const * chars_by_block)
 {
-    [[maybe_unused]] const UInt64 * run_offsets = nullptr; /// non-null while a run is open
-    [[maybe_unused]] const UInt8 * run_chars = nullptr;
-    [[maybe_unused]] size_t run_first_row = 0;
-    [[maybe_unused]] size_t run_last_row = 0;
-    [[maybe_unused]] UInt64 expected_word = no_open_run;
+    const UInt64 * run_offsets = nullptr; /// non-null while a run is open
+    const UInt8 * run_chars = nullptr;
+    size_t run_first_row = 0;
+    size_t run_last_row = 0;
+    UInt64 expected_word = no_open_run;
 
-    /// A run of one row keeps the short-value copy idiom that the per-row loop below explains.
-    [[maybe_unused]] auto flush_run = [&]
+    /// A run of one row is usually a short value; both chars arrays are padded, which is what lets
+    /// it take the copy that may read and write 15 bytes past the end.
+    auto flush_run = [&]
     {
         const UInt64 from = run_offsets[static_cast<ssize_t>(run_first_row) - 1];
         const UInt64 bytes = run_offsets[run_last_row] - from;
@@ -364,51 +365,32 @@ void gatherStringChars(
         }
         const UInt64 word = words[i];
 
-        if constexpr (WITH_RUNS)
+        if (word == expected_word)
         {
-            if (word == expected_word)
-            {
-                ++run_last_row;
-                ++expected_word;
-                continue;
-            }
-            if (run_offsets)
-                flush_run();
-            /// A carry into `block_no` would span two blocks. `setRange` rejects a range leaving
-            /// its block, and no block holds 2^32 rows, so it cannot happen.
-            expected_word = word + 1;
-            if (!word)
-            {
-                /// An unmatched row is the empty string, and pass 1 already left its offset in place.
-                run_offsets = nullptr;
-                continue;
-            }
-            const UInt32 block_no = refWordBlockNo(word);
-            run_offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
-            run_chars = static_cast<const UInt8 *>(chars_by_block[block_no]);
-            run_first_row = refWordRowNo(word);
-            run_last_row = run_first_row;
+            ++run_last_row;
+            ++expected_word;
+            continue;
         }
-        else
-        {
-            if (!word)
-                continue;
-            const UInt32 block_no = refWordBlockNo(word);
-            const size_t row = refWordRowNo(word);
-            const UInt64 * offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
-            const UInt64 from = offsets[static_cast<ssize_t>(row) - 1];
-            const UInt64 bytes = offsets[row] - from;
-            /// Both chars arrays are padded, which is what lets short values use this copy.
-            memcpySmallAllowReadWriteOverflow15(out_chars, static_cast<const UInt8 *>(chars_by_block[block_no]) + from, bytes);
-            out_chars += bytes;
-        }
-    }
-
-    if constexpr (WITH_RUNS)
-    {
         if (run_offsets)
             flush_run();
+        /// A carry into `block_no` would span two blocks. `setRange` rejects a range leaving
+        /// its block, and no block holds 2^32 rows, so it cannot happen.
+        expected_word = word + 1;
+        if (!word)
+        {
+            /// An unmatched row is the empty string, and pass 1 already left its offset in place.
+            run_offsets = nullptr;
+            continue;
+        }
+        const UInt32 block_no = refWordBlockNo(word);
+        run_offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
+        run_chars = static_cast<const UInt8 *>(chars_by_block[block_no]);
+        run_first_row = refWordRowNo(word);
+        run_last_row = run_first_row;
     }
+
+    if (run_offsets)
+        flush_run();
     chassert(out_chars == chars_end);
 }
 
@@ -426,10 +408,7 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     UInt64 cursor = dst_offsets[static_cast<ssize_t>(old_rows) - 1];
     chassert(cursor == dst_chars.size());
 
-    /// Pass 1: row lengths become destination offsets; a zero word is an empty string. One compare
-    /// per row also tells pass 2 whether it has any run to coalesce.
-    bool with_runs = false;
-    UInt64 expected_word = no_open_run;
+    /// Pass 1: row lengths become destination offsets; a zero word is an empty string.
     for (size_t i = 0; i < count; ++i)
     {
         if (i + look_ahead < count)
@@ -439,8 +418,6 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
                 __builtin_prefetch(static_cast<const UInt64 *>(offsets_by_block[refWordBlockNo(ahead)]) + refWordRowNo(ahead));
         }
         const UInt64 word = words[i];
-        with_runs |= (word == expected_word);
-        expected_word = word + 1;
         if (word)
         {
             const UInt64 * offsets = static_cast<const UInt64 *>(offsets_by_block[refWordBlockNo(word)]);
@@ -455,10 +432,7 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     dst_chars.resize(cursor);
     UInt8 * const out_chars = dst_chars.data() + old_chars;
     UInt8 * const out_chars_end = dst_chars.data() + dst_chars.size();
-    if (with_runs)
-        gatherStringChars<true>(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
-    else
-        gatherStringChars<false>(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
+    gatherStringChars(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
 }
 
 void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)

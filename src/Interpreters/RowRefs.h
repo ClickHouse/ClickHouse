@@ -449,10 +449,12 @@ struct GatherNode
 
     Kind kind = Kind::Fixed;
     size_t stride = 0;
-    std::vector<const void *> data_by_block;
-    std::vector<const void *> aux_by_block;
+    /// One entry per stored block: sized by the data, so they use the throwing memory tracker like
+    /// `StoredColumnsIndex::blocks` does, and a huge build fails the query rather than the process.
+    VectorWithMemoryTracking<const void *> data_by_block;
+    VectorWithMemoryTracking<const void *> aux_by_block;
     std::vector<GatherNode> children;
-    std::vector<UInt8> local_to_global_by_block;
+    VectorWithMemoryTracking<UInt8> local_to_global_by_block;
     /// `Rows` only: the bound copy, and the output type whose `insertDefaultInto` writes an
     /// unmatched row. Null below a `Nullable`, where `insertDefault` fills the nested column.
     GatherRowsCopy copy_rows = nullptr;
@@ -524,7 +526,7 @@ public:
         GatherNode gather_root;
         /// Indexed by block_no; filled only when at least one block stores the column as `ColumnReplicated`
         /// (identity entries for the blocks that do not).
-        std::vector<GatherRowRemap> gather_remap_by_block;
+        VectorWithMemoryTracking<GatherRowRemap> gather_remap_by_block;
         /// Owns the shape when no live block resolved one - see `resolveEmitColumns`.
         MutableColumnPtr shape_prototype;
     };
