@@ -3265,7 +3265,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -3281,11 +3281,12 @@ The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS 
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
+* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result.
 * Otherwise, each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
 * No insert trigger. When new data is inserted into the table specified in `SELECT`, it's *not* automatically pushed to the refreshable materialized view. Instead, data insertion only takes place during the periodic or manual refresh runs.
-* No restrictions on the `SELECT` query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+* No restrictions on the `SELECT` query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed. `APPEND INCREMENTAL` is the one exception: it requires a single plain `MergeTree` source table with `enable_block_number_column = 1` and `enable_block_offset_column = 1`, and rejects `JOIN`, `UNION`, subqueries, views, and table functions.
 
 <Note>
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
@@ -3443,7 +3444,7 @@ The schedule (`EVERY` or `AFTER`) is mandatory: the statement always replaces *a
 
 - `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` is not supported on materialized views; you must go through `MODIFY REFRESH`.
 
-- Adding or removing `APPEND` is not supported.
+- Changing the refresh mode is not supported: `APPEND` and `INCREMENTAL` can neither be added nor removed.
 
 - The `all_replicas` setting cannot be changed after creation.
 </Note>
