@@ -110,6 +110,18 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.isSelectedForTopKFilterOptimization())
         return false;
 
+    /// Direct read from a text index (`query_plan_direct_read_from_text_index`) rewrites the text-search
+    /// functions of the read's PREWHERE into `__text_index_*` virtual columns, which only this read's
+    /// index read tasks materialize. `ReadFromMergeTree::serialize` does not carry that task map, so a
+    /// replica deserializing the fragment fails with `Column '__text_index_...' not found in table`
+    /// while building the read step. Shipping it also breaks execution when PREWHERE and WHERE carry
+    /// different text-search queries, see https://github.com/ClickHouse/ClickHouse/issues/113664.
+    /// `supportsBucketedRead` refuses a bucketed distributed read for the same reason, but nothing
+    /// rejects an ordinary shipped fragment - `isSerializable` is unconditionally true for this step -
+    /// so the read has to be kept local here, as for Top-K above.
+    if (!read.getIndexReadTasks().empty())
+        return false;
+
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())
