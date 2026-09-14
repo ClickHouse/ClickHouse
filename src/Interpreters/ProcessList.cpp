@@ -28,6 +28,7 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric WaitingQuery;
 }
 
 namespace ProfileEvents
@@ -1132,6 +1133,8 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
     /// WARNING: it is important not to throw below this point, otherwise the matching
     /// `decreaseWaitingQueryAmount` will never be called.
 
+    CurrentMetrics::add(CurrentMetrics::WaitingQuery);
+
     if (status->query_kind == IAST::QueryKind::Insert)
         waiting_insert_queries_amount.fetch_add(1);
     if (status->query_kind == IAST::QueryKind::Select)
@@ -1146,6 +1149,8 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
 
 void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr & status)
 {
+    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
+
     if (status->getUserProcessList()->waiting_queries_amount.fetch_sub(1) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount for user: decrease to negative");
 

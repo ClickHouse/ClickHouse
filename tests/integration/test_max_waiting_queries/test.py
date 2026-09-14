@@ -49,6 +49,12 @@ def waiters_on_startup_job():
     ).strip()
 
 
+def waiting_queries_metric():
+    return node.query(
+        "SELECT value FROM system.metrics WHERE metric = 'WaitingQuery'"
+    ).strip()
+
+
 def wait_for(probe, expected, description, timeout=90):
     """Poll `probe` until it returns `expected`. Every state this waits for is observable in a system
     table, and the paused load job keeps it from changing behind our back, so there are no sleeps."""
@@ -126,6 +132,7 @@ def test_waiting_queries_limit(started_cluster):
             ) from e
         assert "Too many simultaneous waiting queries" in error, error
         assert waiters_on_startup_job() == "2"
+        assert waiting_queries_metric() == "2"
 
         # 0 means no limit, so a query that would have been refused above is now admitted. A server
         # left on the default value must never refuse a query for waiting.
@@ -141,8 +148,10 @@ def test_waiting_queries_limit(started_cluster):
             )
         )
         wait_for(waiters_on_startup_job, "3", "the third query to block on the startup job")
+        assert waiting_queries_metric() == "3"
 
         unpin_and_join(handles)
+        wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
     finally:
         set_config(
             "<max_waiting_queries>0</max_waiting_queries>",
