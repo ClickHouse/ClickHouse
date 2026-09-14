@@ -142,6 +142,34 @@ def test_parking_fires_on_single_thread_async_remote_wait():
     assert parks == unparks, f"parks={parks} != unparks={unparks}"
 
 
+# A running-sum window over the whole table (single partition, ordered frame) has a serial phase
+# that cannot use all the query's threads, so the extra workers sit idle in
+# `ExecutorTasks::tryGetTask` with no runnable task -- the #95727 path. The table is local and the
+# read is not throttled, so no cached-read, throttle, or async park site is reached: any park here
+# comes only from the idle-wait guard, which isolates it (deleting that guard makes this zero).
+IDLE_WORKER_QUERY = (
+    "select max(s) from ("
+    "  select sum(length(value)) over (order by key rows between unbounded preceding and current row) as s "
+    "  from park_data"
+    ") settings workload = 'all', max_threads = 8"
+)
+
+
+def test_parking_fires_on_idle_worker():
+    setup_cpu_workload()
+    create_throttled_table()
+    query_id = "cpu_parking_idle"
+    node.query(IDLE_WORKER_QUERY, query_id=query_id)
+    node.query("system flush logs")
+    parks = get_profile_event(query_id, "ConcurrencyControlParks")
+    unparks = get_profile_event(query_id, "ConcurrencyControlUnparks")
+    # Workers idle during the serial window phase park via the idle wait (#95727), so parking fires
+    # even with no I/O throttling or async wait involved.
+    assert parks > 0, f"expected parks > 0, got {parks}"
+    assert unparks > 0, f"expected unparks > 0, got {unparks}"
+    assert parks == unparks, f"parks={parks} != unparks={unparks}"
+
+
 @pytest.mark.parametrize(
     "with_custom_config",
     [
