@@ -109,7 +109,7 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 }
 
 
-std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
     const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
@@ -117,21 +117,16 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
 
-    auto nested_subcolumn_info = DB::IDataType::getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level, throw_if_null);
-    if (!nested_subcolumn_info)
+    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, initial_array_level, throw_if_null);
+    if (!nested_subcolumn_data)
         return nullptr;
 
     auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
-    auto res = std::make_unique<SubcolumnInfo>();
-    res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
-    res->data.type = creator.create(nested_subcolumn_info->data.type);
+    auto res = std::make_unique<ISerialization::SubstreamData>();
+    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
+    res->type = creator.create(nested_subcolumn_data->type);
     if (data.column)
-        res->data.column = creator.create(nested_subcolumn_info->data.column);
-
-    /// Reached through the nullable elements, exactly as the static enumeration would reach it.
-    res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
-    res->substreams_path.insert(
-        res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
+        res->column = creator.create(nested_subcolumn_data->column);
 
     return res;
 }
@@ -151,17 +146,17 @@ void registerDataTypeNullable(DataTypeFactory & factory)
 {
     factory.registerDataType("Nullable", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-Allows to store special marker ([NULL](/reference/syntax)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
+Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:
-- [Array](/reference/data-types/array) — Not supported
-- [Map](/reference/data-types/map) — Not supported
-- [Tuple](/reference/data-types/tuple) — Beta support available*
+- [Array](../../sql-reference/data-types/array.md) — Not supported
+- [Map](../../sql-reference/data-types/map.md) — Not supported
+- [Tuple](../../sql-reference/data-types/tuple.md) — Beta support available*
 
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
 
 :::note Beta: Nullable Tuples
-* [Nullable(Tuple(...))](/reference/data-types/tuple#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
+* [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
 :::
 
 A `Nullable` type field can't be included in table indexes.
