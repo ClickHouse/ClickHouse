@@ -13,6 +13,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -39,6 +40,7 @@
 
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -52,6 +54,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
 }
@@ -134,7 +137,9 @@ struct IdentifiersToOptimize
     ColumnInSourceSet everywhere;
 
     /// Identifiers that also have plain column references, but have at least one
-    /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
+    /// filter-only transformer use in WHERE/PREWHERE. The permission is scoped
+    /// to the identifier: another otherwise eligible direct transformer for it
+    /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
@@ -361,6 +366,19 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
+/// Forward declaration: the chained transformer also handles the single-key case.
+void optimizeJSONArrayElementChain(
+    QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx,
+    std::vector<FunctionNode *> & intermediate_functions);
+
+/// Thin wrapper for the single-level registration in node_transformers.
+/// Delegates to the chained transformer with empty intermediates.
+void optimizeFunctionArrayElementForJSON(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    std::vector<FunctionNode *> empty;
+    optimizeJSONArrayElementChain(node, function_node, ctx, empty);
 }
 
 std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
@@ -615,6 +633,26 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
+        {TypeIndex::Map, "mapContainsValue"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
+                return;
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
+            function_arguments_nodes[0] = std::move(has_function_argument);
+
+            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+        },
+    },
+    {
         {TypeIndex::Nullable, "count"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
@@ -681,6 +719,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     {
         {TypeIndex::Map, "arrayElement"}, optimizeFunctionArrayElementForMap,
     },
+    {
+        {TypeIndex::Object, "arrayElement"}, optimizeFunctionArrayElementForJSON,
+    },
 };
 
 /// Transformers that can be safely applied even when the column is used in
@@ -692,21 +733,28 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
     {TypeIndex::Map, "arrayElement"},
 };
 
-/// Transformers that should be applied even when the full column is also read
-/// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
+/// Transformers that should mark their identifier for filter-only optimization
+/// even when the full column is also read elsewhere in the query (e.g., in
+/// SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
-/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
-/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// subcolumn identifier complicates analysis. But for Map subcolumn filters,
+/// Tuple element access, Variant element access and QBit element access, the
+/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
+/// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. The reads are independent and semantically
 /// correct.
+/// The second pass applies this permission at identifier granularity, so another
+/// eligible direct transformer on the same identifier may also be rewritten in
+/// the filter. Keep this set limited to transformers that make that behavior safe.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapKeys"},
+    {TypeIndex::Map, "mapValues"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
@@ -826,10 +874,101 @@ void optimizeJSONArrayElement(
         node = buildCastFunction(node, original_result_type, ctx.context);
 }
 
+/// Optimizes:
+///   arrayElement(... arrayElement(arrayElement(ColumnNode(Object), 'key1'), 'key2') ..., 'keyN')
+/// to:
+///   ColumnNode("col.@`key1`.key2...keyN", Dynamic)
+///
+/// intermediate_functions contains the chain from outermost to innermost,
+/// e.g. [arrayElement_inner_1, ..., arrayElement_innermost].
+void optimizeJSONArrayElementChain(
+    QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx,
+    std::vector<FunctionNode *> & intermediate_functions)
+{
+    /// Handles both single json['key'] and chained json['key1']['key2']['key3'].
+    /// When called from the single-level wrapper, intermediate_functions is empty.
+
+    /// Collect keys: outermost first.
+    std::vector<String> keys;
+
+    /// Outermost function: function_node itself.
+    {
+        auto & args = function_node.getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        keys.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// All intermediates must be arrayElement with constant string 2nd arg.
+    for (auto * inner_func : intermediate_functions)
+    {
+        if (inner_func->getFunctionName() != "arrayElement")
+            return;
+        auto & args = inner_func->getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        keys.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// Reverse to get inner-to-outer order (the JSON path).
+    std::reverse(keys.begin(), keys.end());
+
+    /// When json_type_escape_dots_in_keys is enabled, dots in individual path
+    /// elements are stored escaped as %2E. Apply the same escaping to each key.
+    bool escape_dots = ctx.context && ctx.context->getSettingsRef()[Setting::json_type_escape_dots_in_keys];
+    if (escape_dots)
+    {
+        for (auto & key : keys)
+            key = escapeDotInJSONKey(key);
+    }
+
+    /// Build subcolumn name: @`key1`.key2.key3...
+    /// First element is back-quoted (required by tryGetPrefixedSubcolumn);
+    /// subsequent elements are plain dot-separated path components.
+    const auto & data_type_object = assert_cast<const DataTypeObject &>(*ctx.column.type);
+
+    String subcolumn_name = DataTypeObject::getCombinedSubcolumnName(keys[0]);
+    for (size_t i = 1; i < keys.size(); ++i)
+        subcolumn_name += "." + keys[i];
+
+    String full_name = ctx.column.name + "." + subcolumn_name;
+
+    /// Use the actual subcolumn type: a typed path (also one reached by a chain, e.g. `c.d` for
+    /// `json['c']['d']`) is not `Dynamic`, and the node must declare the type storage really produces.
+    /// The result is cast back to the type of the original expression below.
+    DataTypePtr subcolumn_type = data_type_object.tryGetSubcolumnType(subcolumn_name);
+    if (!subcolumn_type)
+        return;
+
+    /// The rewrite means the JSON combined (`@`) subcolumn for this path. A Tuple element or a
+    /// typed path can claim the same flat name, so check the substreams path and the resolved type,
+    /// not just existence.
+    if (sourceHasColumn(ctx.column_source, full_name)
+        || !canOptimizeToExpectedSubcolumn(ctx, full_name, SerializationObjectCombinedPath::isCombinedPathSubcolumn, subcolumn_type))
+        return;
+
+    auto original_result_type = function_node.getResultType();
+    NameAndTypePair column{full_name, subcolumn_type};
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+
+    /// Cast back to the original type if it changed.
+    if (!original_result_type->equals(*node->getResultType()))
+        node = buildCastFunction(node, original_result_type, ctx.context);
+}
+
 std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
 {
     {
         {TypeIndex::Dynamic, "tupleElement"}, optimizeJSONArrayElement,
+    },
+    {
+        {TypeIndex::Object, "arrayElement"}, optimizeJSONArrayElementChain,
     },
 };
 
@@ -1015,20 +1154,24 @@ public:
             return;
         }
 
+        /// Skip nodes that are inner parts of an already-matched chained pattern.
+        /// Without this, inner functions in multi-level chains like
+        /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c')
+        /// or arrayElement(arrayElement(json, 'a'), 'b')
+        /// would also match node_transformers / chained_node_transformers and
+        /// double-count optimized_identifiers_count for the underlying column.
+        /// This check must be before the single-level match, because the inner
+        /// node may also match a single-level transformer (e.g. arrayElement on
+        /// Object), which would return early and skip this check otherwise.
+        if (chained_pattern_inner_nodes.contains(node.get()))
+            return;
+
         auto [function_node, first_argument_node, column_source] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_node && column_source)
         {
             enterImpl(*function_node, *first_argument_node, column_source);
             return;
         }
-
-        /// Skip nodes that are inner parts of an already-matched chained pattern.
-        /// Without this, inner tupleElements in multi-level chains like
-        /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c')
-        /// would also match chained_node_transformers and double-count
-        /// optimized_identifiers_count for the underlying column.
-        if (chained_pattern_inner_nodes.contains(node.get()))
-            return;
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
         auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
@@ -1113,9 +1256,9 @@ public:
         /// When there are also plain column references but a transformable use
         /// exists in WHERE/PREWHERE (recorded in `identifiers_with_filter_optimization`),
         /// the identifier goes into `filter_only` — it is rewritten only inside
-        /// WHERE/PREWHERE by the second pass. This is beneficial for Map key
-        /// lookups: only the relevant bucket is read for the filter while the
-        /// full Map is still read for matching rows in SELECT.
+        /// WHERE/PREWHERE by the second pass. This is beneficial for Map
+        /// subcolumn filters: only the relevant subcolumn is read for the filter,
+        /// while the full Map is still read for matching rows in SELECT.
         ///
         /// Do not optimize index columns (primary, min-max, secondary),
         /// because otherwise analysis of indexes may be broken.
@@ -1317,6 +1460,8 @@ public:
             auto qualified_name = makeColumnInSource(column_source, column.name);
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+            /// The permission is intentionally scoped to the whole identifier,
+            /// not to the transformer that caused it to be marked.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
             if (!should_optimize
                 && identifiers_to_optimize.filter_only.contains(qualified_name)
