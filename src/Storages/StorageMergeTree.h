@@ -371,6 +371,11 @@ private:
     void activateBackgroundWorkers();
     void startBackgroundWorkers();
 
+    /// Whether `activateBackgroundWorkers` has run, i.e. the table runs its background workers.
+    /// A table that started read-only leaves it unset until `table_readonly` is turned off, and
+    /// `startBackgroundMovesIfNeeded` starts nothing while it is unset.
+    std::atomic<bool> background_workers_active {false};
+
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;

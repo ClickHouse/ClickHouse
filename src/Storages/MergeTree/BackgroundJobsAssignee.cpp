@@ -113,10 +113,10 @@ String BackgroundJobsAssignee::toString(Type type)
     }
 }
 
-void BackgroundJobsAssignee::createHolderIfNeeded()
+bool BackgroundJobsAssignee::createHolderIfNeeded()
 {
     if (holder)
-        return;
+        return false;
 
     switch (type)
     {
@@ -128,12 +128,20 @@ void BackgroundJobsAssignee::createHolderIfNeeded()
         holder = getContext()->getStreamingSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
         break;
     }
+
+    return true;
 }
 
 void BackgroundJobsAssignee::prepare()
 {
     std::lock_guard lock(holder_mutex);
-    createHolderIfNeeded();
+
+    /// A freshly created task is schedulable: `trigger` (e.g. from an INSERT or a mutation) would
+    /// queue it right away. Deactivate it so that a prepared assignee stays inert until `start`,
+    /// whatever happens in between. An already existing task is left as it is: it belongs to a
+    /// running assignee, which must not be paused by a repeated preparation.
+    if (createHolderIfNeeded())
+        holder->deactivate();
 }
 
 void BackgroundJobsAssignee::start()

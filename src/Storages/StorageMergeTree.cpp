@@ -531,12 +531,13 @@ void StorageMergeTree::alter(
             ///
             /// The restart is exception-safe as a unit. Everything that can throw (the allocation of
             /// the scheduling tasks) happens here, before the metadata commit, and runs nothing: a
-            /// prepared worker cannot observe the temporarily writable setting, so a failed commit
-            /// leaves the table exactly as read-only as before, with no merge, mutation, or move
-            /// slipping through. The activation happens after the commit (see the end of this method)
-            /// and only flips the prepared tasks on. Preparing is idempotent, so a retried `ALTER`
-            /// completes the transition. This avoids the half-restored state where the table is
-            /// writable but some workers are absent forever.
+            /// prepared worker is deactivated, so neither a `trigger` nor the `storage_policy`
+            /// handling of `changeSettings` above can wake it, and it cannot observe the temporarily
+            /// writable setting. A failed commit thus leaves the table exactly as read-only as
+            /// before, with no merge, mutation, or move slipping through. The activation happens
+            /// after the commit (see the end of this method) and only flips the prepared tasks on.
+            /// Preparing is idempotent, so a retried `ALTER` completes the transition. This avoids
+            /// the half-restored state where the table is writable but some workers are absent forever.
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
                 prepareBackgroundWorkers();
 
@@ -3980,7 +3981,12 @@ MutationCounters StorageMergeTree::getMutationCounters() const
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
-    if (areBackgroundMovesNeeded())
+    /// `changeSettings` calls this on a `storage_policy` change before the metadata commit. For a
+    /// table whose workers are not running (attached with `table_readonly = 1`), starting the move
+    /// assignee here would let it observe the temporarily writable setting of a combined
+    /// `MODIFY SETTING table_readonly = 0, storage_policy = ...` and queue a move that survives a
+    /// failed commit. `activateBackgroundWorkers` starts it after the commit instead.
+    if (background_workers_active && areBackgroundMovesNeeded())
         background_moves_assignee.start();
 }
 
@@ -4006,6 +4012,7 @@ void StorageMergeTree::activateBackgroundWorkers()
     cleanup_thread.start();
     background_operations_assignee.start();
     background_streaming_assignee.start();
+    background_workers_active = true;
     startBackgroundMovesIfNeeded();
     startOutdatedAndUnexpectedDataPartsLoadingTask();
 }

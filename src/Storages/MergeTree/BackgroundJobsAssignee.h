@@ -60,9 +60,10 @@ public:
     };
     Type type{Type::DataProcessing};
 
-    /// Allocates the scheduling task without activating it, so that the allocation (the only part
-    /// of `start` that can throw) can be done ahead of a point of no return, e.g. before a metadata
-    /// commit. A prepared assignee runs nothing until `start` is called. Idempotent.
+    /// Allocates the scheduling task in the deactivated state, so that the allocation (the only
+    /// part of `start` that can throw) can be done ahead of a point of no return, e.g. before a
+    /// metadata commit. A prepared assignee runs nothing until `start` is called: `trigger` and
+    /// `postpone` are no-ops on a deactivated task. Idempotent, and a no-op for a running assignee.
     void prepare();
     /// Allocates the scheduling task if needed and activates it.
     void start();
@@ -109,8 +110,8 @@ private:
 
     static String toString(Type type);
 
-    /// Must be called under `holder_mutex`.
-    void createHolderIfNeeded();
+    /// Must be called under `holder_mutex`. Returns true if the task was created by this call.
+    bool createHolderIfNeeded();
 
     /// Function that executes in background scheduling pool
     void threadFunc();
