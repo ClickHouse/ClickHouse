@@ -5,8 +5,14 @@
 
     <!-- Keep the input non-constant and control the size of ColumnString::Chars in each block. The one-digit suffix
          prevents constant folding, and each row contributes one terminating byte. -->
+    <!-- Cover the scalar and AVX2 ranges, the crossover, different row layouts, and longer AVX-512 scans. -->
+    <query>SELECT substringUTF8(concat(repeat('a', 0), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 2), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 6), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 14), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 22), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 34), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 38), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 46), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 509), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
@@ -20,14 +26,33 @@
     <query>SELECT substringUTF8(concat(repeat('a', 16381), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 1022), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringUTF8(concat(repeat('a', 16383), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 16445), toString(number % 10)), 2, 5) FROM numbers(2000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 1026), toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 16447), toString(number % 10)), 2, 5) FROM numbers(2000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', if(number % 2 = 0, 510, 1534)), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 254), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 64</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 4094), toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
 
+    <!-- Cover valid non-ASCII data at different positions and an ASCII 0x7F payload. -->
     <query>SELECT substringUTF8(concat(repeat('a', 508), '\xC3\xA9', toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat('\xC3\xA9', repeat('a', 1020), toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 510), '\xC3\xA9', repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('\x7F', 1022), toString(number % 10)), 2, 5) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+
+    <!-- Exercise the same scan through other UTF-8 string functions. -->
     <query>SELECT reverseUTF8(concat(repeat('a', 1022), toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT reverseUTF8(concat('\xC3\xA9', repeat('a', 1020), toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT reverseUTF8(concat(repeat('a', 510), '\xC3\xA9', repeat('a', 510), toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT reverseUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringIndexUTF8(concat('.', repeat('a', 1021), toString(number % 10)), '.', 1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT substringIndexUTF8(concat('.', repeat('a', 1019), '\xC3\xA9', toString(number % 10)), '.', 1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringIndexUTF8(concat(repeat('a', 1021), '.', toString(number % 10)), '.', -1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringIndexUTF8(concat(repeat('a', 1019), '\xC3\xA9', '.', toString(number % 10)), '.', -1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT leftPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT leftPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, '\xC3\xA9') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT leftPadUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT rightPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT rightPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, '\xC3\xA9') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
     <query>SELECT rightPadUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
 </test>
