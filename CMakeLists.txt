@@ -376,7 +376,7 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
-if (OS_LINUX AND ARCH_AARCH64)
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # Sign the return address in the prologue and authenticate it before returning, so that
     # overwriting a saved return address cannot redirect control flow. `paciasp` and `autiasp`
     # live in the `NOP` encoding space: they are real operations on a core implementing
@@ -387,6 +387,21 @@ if (OS_LINUX AND ARCH_AARCH64)
     # `bti` is deliberately left out. The linker keeps the BTI property only when every input
     # object carries it, including hand-written assembly and every contrib, so enabling it needs
     # its own audit; without one it would cost code size and enforce nothing.
+    #
+    # Sanitizer builds are excluded, because a signed return address on the stack is only
+    # readable by an unwinder that strips the signature, and the sanitizer runtimes shipped with
+    # the toolchain do not. `compiler-rt`'s frame-pointer unwinder collects the allocation and
+    # deallocation stacks behind every ASan and LSan report, and its `STRIP_PAC_PC` is the
+    # identity unless `compiler-rt` itself was compiled with `-mbranch-protection`. Signed frames
+    # then reach the reports verbatim: the signature occupies the bits above the virtual address,
+    # so every frame past the innermost one symbolizes to `<unknown module>`. It is also a memory
+    # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
+    # different value at every stack depth and each one takes a fresh entry in the stack depot,
+    # which is never freed.
+    # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
+    # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
+    # the frame-pointer walk that `StackTrace::tryCapture` uses under TSan is abseil's, which
+    # strips the signature with `xpaclri` unconditionally.
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
 endif()
 
