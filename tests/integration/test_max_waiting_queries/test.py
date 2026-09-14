@@ -135,10 +135,35 @@ def test_waiting_queries_limit(started_cluster):
         assert waiters_on_startup_job() == "2"
         assert waiting_queries_metric() == "2"
 
+        # Lowering a live nonzero limit cannot cancel queries that are already waiting, it only
+        # refuses new ones (`ProcessList::setMaxWaitingQueriesAmount`). This is also the only arm
+        # where the check runs with the count already above the limit rather than exactly at it.
+        set_config(
+            "<max_waiting_queries>2</max_waiting_queries>",
+            "<max_waiting_queries>1</max_waiting_queries>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        assert server_setting("max_waiting_queries") == "1"
+        assert waiters_on_startup_job() == "2"
+        assert waiting_queries_metric() == "2"
+
+        try:
+            error = node.query_and_get_error(
+                "CREATE TABLE re.refused_lower (a Int) ENGINE = MergeTree ORDER BY a", timeout=60
+            )
+        except Exception as e:
+            raise AssertionError(
+                "the query over the lowered max_waiting_queries was not refused, it is still waiting"
+            ) from e
+        assert "Too many simultaneous waiting queries" in error, error
+        # The refusal throws before any counter moves, so it must leave the waiting set untouched.
+        assert waiters_on_startup_job() == "2"
+        assert waiting_queries_metric() == "2"
+
         # 0 means no limit, so a query that would have been refused above is now admitted. A server
         # left on the default value must never refuse a query for waiting.
         set_config(
-            "<max_waiting_queries>2</max_waiting_queries>",
+            "<max_waiting_queries>1</max_waiting_queries>",
             "<max_waiting_queries>0</max_waiting_queries>",
         )
         node.query("SYSTEM RELOAD CONFIG")
@@ -154,10 +179,13 @@ def test_waiting_queries_limit(started_cluster):
         unpin_and_join(handles)
         wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
     finally:
-        set_config(
-            "<max_waiting_queries>0</max_waiting_queries>",
-            "<max_waiting_queries>2</max_waiting_queries>",
-        )
+        # A failure can land with the limit at 0, 1 or 2, and `set_config` is a `sed` that silently
+        # does nothing when its pattern is absent, so restore from every value this test can leave.
+        for live in ["0", "1"]:
+            set_config(
+                f"<max_waiting_queries>{live}</max_waiting_queries>",
+                "<max_waiting_queries>2</max_waiting_queries>",
+            )
         cleanup(handles)
 
 
