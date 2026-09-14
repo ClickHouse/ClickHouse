@@ -11,10 +11,25 @@
 namespace DB
 {
 
+namespace
+{
+
+/// The database `system.table_settings` reports the named table under. A name without a database may be one of
+/// the session's temporary tables, which that table reports with an empty `database`. As in `SHOW CREATE TABLE`,
+/// a temporary table takes precedence over a table of the current database with the same name.
+String resolveReportedDatabase(const ASTShowTableSettingsQuery & query, const ContextPtr & context)
+{
+    if (query.database.empty() && context->tryResolveStorageID(StorageID("", query.table), Context::ResolveExternal))
+        return "";
+    return context->resolveDatabase(query.database);
+}
+
+}
+
 String InterpreterShowTableSettingsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
-    const String database = getContext()->resolveDatabase(query.database);
+    const String database = resolveReportedDatabase(query, getContext());
 
     /// `system.table_settings` is the statement's whole implementation; this narrows it to one table and picks
     /// the columns that fit a terminal - `description` runs to paragraphs, so it is left out. Anything more is a
@@ -60,7 +75,7 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     /// default. Naming such a database explicitly is an unambiguous request for it, so enable it
     /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
-    const String database = getContext()->resolveDatabase(query.database);
+    const String database = resolveReportedDatabase(query, getContext());
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
