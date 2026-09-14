@@ -424,7 +424,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/tsdb).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -464,6 +464,23 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                             limit_param);
+        return static_cast<UInt64>(parsed_limit);
+    }
+
+    /// Parses the optional `limit` parameter of /status/tsdb: 10 by default, with a maximum of 10000.
+    UInt64 getTSDBStatsLimitParam() const
+    {
+        String limit_param = params->get("limit", "");
+        if (limit_param.empty())
+            return 10;
+
+        Int64 parsed_limit = 0;
+        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || parsed_limit < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the 'limit' parameter: '{}', expected a positive integer",
+                            limit_param);
+        if (parsed_limit > 10000)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'limit' parameter must not exceed 10000");
         return static_cast<UInt64>(parsed_limit);
     }
 
@@ -558,6 +575,11 @@ public:
                 UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/status/tsdb"))
+            {
+                UInt64 limit = getTSDBStatsLimitParam();
+                protocol.getTSDBStats(getOutputStream(response), limit, query_finish_callback);
             }
             else if (uri_path.ends_with("/metadata"))
             {
@@ -731,7 +753,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, status/tsdb)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
