@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnQBit.h>
@@ -106,8 +107,10 @@ public:
             return executeQBitSlice(arguments, input_rows_count);
 
         auto array_column = arguments[0].column;
-        const auto & offset_column = arguments[1].column;
-        const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
+        /// The offset and length are per-row numbers
+        /// The array argument is the one worth keeping lazy: it is consumed by a ReplicatedSource
+        const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
+        const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -120,7 +123,9 @@ public:
             array_column = const_array_column->getDataColumnPtr();
         }
 
-        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(array_column.get()))
+            source = GatherUtils::createArraySourceFromReplicated(*replicated_column);
+        else if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
@@ -176,6 +181,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// When set to true, materializes the columns whenever the offset or length is a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     struct QBitSliceBounds
@@ -466,7 +473,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the res
         {"length", "The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.", {"(U)Int*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a slice of the array with `length` elements from the specified `offset`", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2, NULL, 4]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2,NULL,4]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

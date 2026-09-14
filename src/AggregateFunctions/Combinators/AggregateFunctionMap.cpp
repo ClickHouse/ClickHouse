@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -25,6 +26,8 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -60,7 +63,14 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+        key.clear();
+        readStringGrowing(key, size, buf);
     }
 };
 
@@ -179,21 +189,32 @@ public:
                 key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
             }
 
-            AggregateDataPtr nested_place = nullptr;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
             {
-                // create a new place for each key
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(key, nested_place);
+                /// Take the slot before creating the state. `emplace` allocates a node, and a copy
+                /// of the key when it is a `String`, so it can throw and strand the fresh state:
+                /// nothing would reference it and `destroyImpl` walks only `merged_maps`.
+                it = merged_maps.emplace(key, nullptr).first;
+
+                try
+                {
+                    // create a new place for each key
+                    AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                    nested_func->create(new_place);
+                    it->second = new_place;
+                }
+                catch (...)
+                {
+                    /// The slot still holds a null state, which `destroyImpl` would dereference.
+                    merged_maps.erase(it);
+                    throw;
+                }
             }
-            else
-                nested_place = it->second;
 
             const IColumn * nested_columns[1] = {&val_column};
-            nested_func->add(nested_place, nested_columns, offset + i, arena);
+            nested_func->add(it->second, nested_columns, offset + i, arena);
         }
     }
 
@@ -210,24 +231,30 @@ public:
 
         for (const auto & elem : rhs_maps)
         {
-            const auto & it = merged_maps.find(elem.first);
+            auto it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
-                // elem.second cannot be copied since this it will be destroyed after merging,
-                // and lead to use-after-free.
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(elem.first, nested_place);
-            }
-            else
-            {
-                nested_place = it->second;
+                /// Take the slot before creating the state, for the same reason as in `add`.
+                it = merged_maps.emplace(elem.first, nullptr).first;
+
+                try
+                {
+                    // elem.second cannot be copied since this it will be destroyed after merging,
+                    // and lead to use-after-free.
+                    AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                    nested_func->create(new_place);
+                    it->second = new_place;
+                }
+                catch (...)
+                {
+                    merged_maps.erase(it);
+                    throw;
+                }
             }
 
             if (!zero_size_nested)
-                nested_func->merge(nested_place, elem.second, arena);
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
@@ -283,13 +310,32 @@ public:
         for (UInt64 i = 0; i < size; ++i)
         {
             KeyType key{};
-            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            merged_maps.emplace(key, nested_place);
-            nested_func->deserialize(nested_place, buf, std::nullopt, arena);
+
+            /// Take the slot before creating the state. `emplace` on a key that is already present
+            /// does not insert, so creating first would abandon the fresh state: nothing would
+            /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
+            /// once, so a repeated key means the state is malformed.
+            auto [it, inserted] = merged_maps.try_emplace(key, nullptr);
+            if (!inserted)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Duplicate key in the serialized state of aggregate function {}", getName());
+
+            try
+            {
+                AggregateDataPtr nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(nested_place);
+                it->second = nested_place;
+            }
+            catch (...)
+            {
+                /// The slot still holds a null state, which `destroyImpl` would dereference.
+                merged_maps.erase(it);
+                throw;
+            }
+
+            nested_func->deserialize(it->second, buf, std::nullopt, arena);
         }
     }
 

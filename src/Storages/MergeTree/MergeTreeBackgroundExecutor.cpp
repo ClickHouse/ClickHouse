@@ -98,14 +98,17 @@ MergeTreeBackgroundExecutor<Queue>::~MergeTreeBackgroundExecutor()
 }
 
 template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::requestShutdown()
+{
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+    shutdown = true;
+    has_tasks.notify_all();
+}
+
+template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
-    {
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-        shutdown = true;
-        has_tasks.notify_all();
-    }
-
+    requestShutdown();
     pool->wait();
 }
 
