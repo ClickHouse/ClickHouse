@@ -1,11 +1,9 @@
--- Tests that a text index `preprocessor`/`postprocessor` expression is authorized against the user who
--- submits the DDL. The expression used to be resolved under the global full-access context, so a
--- grant-checked function placed there ran with neither the grant nor `allow_introspection_functions`,
--- and its output was then readable back through the index.
+-- A text index `preprocessor`/`postprocessor` expression must be authorized against the user who
+-- submits the DDL, not resolved under the global full-access context.
 --
 -- `allow_introspection_functions` and the per-function grant are enforced side by side in
 -- `ContextAccess::checkAccessImplHelper`, past the `full_access` short-circuit that used to be taken,
--- so the setting exercises the same gate without needing a second user.
+-- so the setting reaches the same gate without needing a second user.
 
 DROP TABLE IF EXISTS tab;
 
@@ -71,7 +69,7 @@ SELECT '7. With the privilege the same expression is accepted: this is authoriza
 
 SET allow_introspection_functions = 1;
 
--- `demangle` returns its argument unchanged when it is not a mangled name, so the tokens are the words.
+-- `demangle` returns a non-mangled argument unchanged, so the tokens here are just the words.
 CREATE TABLE tab
 (
     id UInt64,

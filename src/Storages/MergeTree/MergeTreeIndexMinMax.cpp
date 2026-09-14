@@ -497,7 +497,7 @@ MergeTreeIndexPtr minmaxIndexCreator(
     return std::make_shared<MergeTreeIndexMinMax>(std::move(metadata_snapshot), index);
 }
 
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/, ContextPtr /*context*/)
 {
     if (attach)
         return;

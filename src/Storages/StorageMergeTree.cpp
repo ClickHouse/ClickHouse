@@ -205,6 +205,7 @@ StorageMergeTree::StorageMergeTree(
     const StorageInMemoryMetadata & metadata_,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_,
+    ContextPtr local_context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_)
@@ -212,6 +213,7 @@ StorageMergeTree::StorageMergeTree(
           table_id_,
           metadata_,
           context_,
+          local_context_,
           date_column_name,
           merging_params_,
           std::move(storage_settings_),

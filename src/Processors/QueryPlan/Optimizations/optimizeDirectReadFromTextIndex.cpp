@@ -840,7 +840,8 @@ private:
             const auto & haystack_name = new_children[0]->result_name;
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
+                postprocessor->getOriginalActionsDAG(
+                    haystack_name, new_children[0]->result_type, tokenizer->getDescription(), context, preprocessor_source_ast),
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();

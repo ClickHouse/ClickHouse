@@ -776,6 +776,7 @@ MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     StorageInMemoryMetadata metadata_,
     ContextMutablePtr context_,
+    ContextPtr local_context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -821,7 +822,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, !sanity_checks);
+            setProperties(metadata_, metadata_, !sanity_checks, local_context_);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -837,7 +838,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, !sanity_checks);
+    setProperties(metadata_, metadata_, !sanity_checks, local_context_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(*settings, metadata_, sanity_checks);
@@ -1186,7 +1187,7 @@ void MergeTreeData::checkProperties(
 
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings(), local_context);
             }
             catch (Exception & e)
             {

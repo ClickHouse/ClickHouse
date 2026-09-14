@@ -9,6 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -35,7 +36,7 @@ struct MergeTreeIndexTextInlineFilter
 class MergeTreeIndexTextPostprocessor
 {
 public:
-    MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description);
+    MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context);
 
     /// Applies the postprocessor to all tokens in one batch execution.
     /// Tokens mapped to an empty string are removed.
@@ -67,7 +68,14 @@ public:
     /// the index stores: arrayMap(x -> postprocessor(x), tokens(col, '<tokenizer>')). Array(String)
     /// index columns are mapped directly (elements are already tokens). Only call when hasActions().
     /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
-    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
+    /// The result is spliced into the caller's filter DAG and evaluated over its data, so `context` must
+    /// be the querying user's.
+    ActionsDAG getOriginalActionsDAG(
+        const String & col_name,
+        const DataTypePtr & col_type,
+        const String & tokenizer_description,
+        ContextPtr context,
+        const ASTPtr & source_ast = nullptr) const;
 
 private:
     std::optional<ExpressionActions> actions;
