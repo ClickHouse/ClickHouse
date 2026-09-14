@@ -334,9 +334,16 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             if (!is_in_operator && !func.getArgumentAt(0).isConstant()
                 && func.getArgumentAt(0).getColumnName() == func.getArgumentAt(1).getColumnName())
             {
-                const bool holds = func_name == "equals" || func_name == "lessOrEquals" || func_name == "greaterOrEquals";
-                out.function = holds ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
+                if (func_name == "equals" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
+                {
+                    out.function = RPNElement::ALWAYS_TRUE;
+                    return true;
+                }
+                if (func_name == "notEquals" || func_name == "less" || func_name == "greater")
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
             }
 
             /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
