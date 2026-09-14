@@ -14,8 +14,15 @@ SELECT arrayFilter(k -> arrayFold((acc, x) -> x IN (SELECT 1), [k], toUInt8(0)),
 -- `arrayFilter` already forwarded the flag, so it is the reference behaviour for the cases above.
 SELECT arrayFilter(k -> k IN (SELECT 1), [1, 2]);
 
--- `mapExtractKeyLike`, `mapExtractValueLike`, `mapContainsKeyLike` and `mapContainsValueLike` reach
--- the adapter through the LowCardinality fast-path mixin and inherit its dry run, so neither their
--- value nor their type may change.
+-- `mapContainsKeyLike` and `mapContainsValueLike` return `UInt8`, so with a `LowCardinality`
+-- argument of their own and every argument constant their declared type is `LowCardinality(UInt8)`,
+-- and a dry run must produce a column of that type rather than a bare `UInt8`.
+SELECT mapContainsKeyLike(map('a', 1, 'b', 2), toLowCardinality('a%')),
+       toTypeName(mapContainsKeyLike(map('a', 1, 'b', 2), toLowCardinality('a%')));
+SELECT mapContainsValueLike(map(1, 'a', 2, 'b'), toLowCardinality('a%')),
+       toTypeName(mapContainsValueLike(map(1, 'a', 2, 'b'), toLowCardinality('a%')));
+
+-- `mapExtractKeyLike` and `mapExtractValueLike` return `Map(...)`, which cannot be inside
+-- `LowCardinality`, so this pins the value and the type of the path that is never wrapped.
 SELECT mapExtractKeyLike(m, 'a%'), toTypeName(mapExtractKeyLike(m, 'a%'))
 FROM (SELECT map('a'::LowCardinality(String), 'b'::String) AS m);
