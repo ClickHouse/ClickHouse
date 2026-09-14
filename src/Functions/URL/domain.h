@@ -350,6 +350,13 @@ struct ExtractDomain
         else
           host = getURLHost(data, size);
 
+        if (!host.empty() && without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        {
+            host = { host.data() + 4, host.size() - 4 };
+            if (host.front() == '.')
+                host = {};
+        }
+
         if (host.empty())
         {
             res_data = data;
@@ -357,9 +364,6 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
-                host = { host.data() + 4, host.size() - 4 };
-
             res_data = host.data();
             res_size = host.size();
         }
