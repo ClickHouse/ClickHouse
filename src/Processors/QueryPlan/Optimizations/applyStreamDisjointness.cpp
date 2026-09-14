@@ -77,9 +77,9 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         if (distinct->mustPreserveInputOrder())
             return {};
 
-        /// Skipping stream merging leaves each partition checking its own set size. Use the normal
-        /// final deduplication pipeline when size limits must apply to the combined set.
-        if (property && settings.distinct_partitions_independently && !distinct->getSetSizeLimits().hasLimits()
+        /// Disjoint inputs can be deduplicated independently. `DistinctStep` enforces size limits on
+        /// their combined set while keeping stream assignments intact for downstream consumers.
+        if (property && settings.distinct_partitions_independently
             && partitionDeterminedByKeys(*property, distinct->getColumnNames()))
         {
             distinct->skipStreamMerging();

@@ -103,19 +103,22 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (preserve_input_order && pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Order-preserving DISTINCT requires a single input stream");
 
-    bool scattered = false;
     if (!pre_distinct && !skip_stream_merging)
     {
         /// Hash partitioning makes the streams disjoint, but changes their order. Sorted deduplication
         /// needs equal prefix values to remain contiguous so it can deduplicate one range at a time.
-        scattered = parallel_distinct && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
+        const bool scattered = parallel_distinct && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
         if (!scattered)
             pipeline.resize(1);
     }
 
-    /// Size limits apply to the combined set across all hash partitions. Each partition reports its new
-    /// keys and retained set bytes to one limit processor, so local size checks are disabled in this case.
-    const bool global_limits = scattered && set_size_limits.hasLimits();
+    /// Size limits apply to the combined set across all disjoint streams, whether inherited from the
+    /// input or created by scattering. Each stream reports its new keys and retained set bytes to one
+    /// limit processor, so local size checks are disabled in this case. Preliminary sets are independent.
+    const bool global_limits = !pre_distinct && pipeline.getNumStreams() > 1 && set_size_limits.hasLimits();
+
+    /// The planner selects sorted final deduplication only for globally ordered, single-stream input.
+    chassert(!global_limits || distinct_sort_desc.empty());
     const SizeLimits local_limits = global_limits ? SizeLimits{} : set_size_limits;
 
     pipeline.addSimpleTransform(
@@ -138,7 +141,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 header, local_limits, limit_hint, columns, allow_abandoning, /*skip_null_keys=*/false, /*report_set_size=*/global_limits);
         });
 
-    /// The scattered outputs are already disjoint, so a later merge needs no further deduplication.
+    /// The parallel final outputs are already disjoint, so a later merge needs no further deduplication.
     /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.
     if (global_limits)
         pipeline.addTransform(std::make_shared<DistinctLimitTransform>(pipeline.getSharedHeader(), set_size_limits, pipeline.getNumStreams()));
