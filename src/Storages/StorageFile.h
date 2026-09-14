@@ -270,9 +270,21 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            std::shared_lock<std::shared_timed_mutex> read_lock_ = {});
 
         String next();
+
+        /// The number of files the iterator was created with, before the `_path` / `_file` filter.
+        size_t getTotalFilesCount() const { return total_files_count; }
+
+        /// Releases the shared lock on the storage that the file list was taken under, see `read_lock`.
+        /// Called by the last reader when it needs the exclusive lock to rename the files it has read.
+        void releaseReadLock()
+        {
+            if (read_lock.owns_lock())
+                read_lock.unlock();
+        }
 
         bool isReadFromArchive() const
         {
@@ -308,6 +320,17 @@ private:
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
+
+        size_t total_files_count = 0;
+
+        /// The shared lock on `StorageFile::rwlock` that the file list was taken under. A writer holds
+        /// the exclusive lock for the whole insert and publishes the files it has written one by one,
+        /// so the list is a consistent set of complete files only while no writer is active. The lock
+        /// is taken when the list is snapshotted (at planning time, which happens before the sources
+        /// are created), and it stays held for as long as a source reads from this list, because every
+        /// source shares this iterator. The sources take no lock of their own: a second shared lock
+        /// from the same reader would wait behind a writer that arrived in between.
+        std::shared_lock<std::shared_timed_mutex> read_lock;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -396,8 +419,6 @@ private:
     LazyFileRegistryPtr lazy_row_index_registry;
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
-
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter

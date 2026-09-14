@@ -1515,7 +1515,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::shared_lock<std::shared_timed_mutex> read_lock_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
@@ -1523,6 +1524,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , archive_member_path(std::move(archive_member_path_))
+    , total_files_count(files_.size())
+    , read_lock(std::move(read_lock_))
 {
     std::optional<ActionsDAG> filter_dag;
     auto & filter_sources = archive_info ? archive_info->paths_to_archives : files;
@@ -1633,13 +1636,10 @@ StorageFileSource::StorageFileSource(
     , need_only_count(need_only_count_)
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
+    /// The storage is locked for reading by `files_iterator`, which holds the shared lock the file
+    /// list was taken under (see `ReadFromFile::createIterator`) for as long as this source exists.
     if (!storage->use_table_fd)
-    {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         storage->readers_counter.fetch_add(1, std::memory_order_release);
-    }
 }
 
 void StorageFileSource::beforeDestroy()
@@ -1651,7 +1651,8 @@ void StorageFileSource::beforeDestroy()
 
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
-        shared_lock.unlock();
+        /// This is the last reader, so the lock shared by all of them through the iterator can go.
+        files_iterator->releaseReadLock();
         auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
 
         if (!exclusive_lock)
@@ -2465,6 +2466,19 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
     if (files_iterator)
         return;
 
+    /// The list of the files is taken under the shared lock, and the lock stays with the iterator
+    /// until the sources are done with it: an insert that is split into several files publishes them
+    /// one by one while it holds the exclusive lock, so a snapshot taken without the lock could see
+    /// a prefix of the files of an insert that is complete by the time the sources open them, or
+    /// the files a truncating insert is about to delete.
+    std::shared_lock<std::shared_timed_mutex> read_lock;
+    if (!storage->use_table_fd)
+    {
+        read_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
+        if (!read_lock)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    }
+
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
         storage->getPathsSnapshot(),
         storage->archive_info,
@@ -2473,7 +2487,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        std::move(read_lock));
 }
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
@@ -2486,7 +2501,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (storage->archive_info)
         files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = storage->getPathsCount();
+        files_to_read = files_iterator->getTotalFilesCount();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
