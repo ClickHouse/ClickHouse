@@ -37,7 +37,7 @@ def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg
     instance.query(
         f"""
         CREATE MATERIALIZED VIEW {mv}
-            REFRESH EVERY 10 YEAR SETTINGS refresh_incremental = 1 APPEND
+            REFRESH EVERY 10 YEAR APPEND INCREMENTAL
             TO {tgt} EMPTY
             AS SELECT k FROM {src}
         """

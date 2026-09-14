@@ -1329,7 +1329,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// A transactional target (e.g. Iceberg) keeps the cursor with its data and provides a store to
             /// read it back; otherwise resume from the cursor persisted in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
-            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(view->getTargetTable().get());
+            StoragePtr target_table = view->getTargetTable();
+            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;
