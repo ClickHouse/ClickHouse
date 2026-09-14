@@ -16,9 +16,9 @@
         </substitution>
     </substitutions>
 
-    <fill_query>SYSTEM ENABLE FAILPOINT local_object_storage_slow_read</fill_query>
-    <fill_query>SYSTEM ENABLE FAILPOINT local_object_storage_slow_metadata</fill_query>
-    <fill_query>SYSTEM ENABLE FAILPOINT local_object_storage_slow_list</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_read</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_metadata</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_list</fill_query>
 
     <!-- point_lookup_warm: single-day predicate prunes to one data file via partition + per-file min/max, metadata from cache. -->
     <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem WHERE l_shipdate = toDate('1994-06-15')</query>
