@@ -41,5 +41,5 @@ SELECT
     arrayReduce('covarPopStableMerge', [covar_empty_state, covar_state]),
     arrayReduce('stddevPopStableForEachMerge', [stddev_foreach_state, stddev_foreach_empty_state]),
     arrayReduce('stddevPopStableForEachMerge', [stddev_foreach_empty_state, stddev_foreach_state]),
-    arrayReduce('corrStableMerge', [corr_state, corr_empty_state]),
-    arrayReduce('corrStableMerge', [corr_empty_state, corr_state]);
+    round(arrayReduce('corrStableMerge', [corr_state, corr_empty_state]), 6),
+    round(arrayReduce('corrStableMerge', [corr_empty_state, corr_state]), 6);
