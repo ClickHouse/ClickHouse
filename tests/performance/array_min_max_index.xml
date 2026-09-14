@@ -1,0 +1,103 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_min_max_index_perf_u64 (case_id UInt8, a Array(UInt64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_min_max_index_perf_float (a Array(Float64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_min_max_index_perf_string (a Array(String)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 1, arrayMap(x -&gt; if(x = number % 8, toUInt64('18446744073709551615'), x), range(8))
+        FROM numbers(20000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 2, arrayMap(x -&gt; if(x = number % 32, toUInt64('18446744073709551615'), x), range(32))
+        FROM numbers(20000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 3, arrayMap(x -&gt; if(x = number % 64, toUInt64('18446744073709551615'), x), range(64))
+        FROM numbers(20000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 4, arrayMap(x -&gt; if(x = number % 128, toUInt64('18446744073709551615'), x), range(128))
+        FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 5, arrayMap(x -&gt; if(x = number % 256, toUInt64('18446744073709551615'), x), range(256))
+        FROM numbers(4000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 6, arrayMap(x -&gt; if(x = number % 512, toUInt64('18446744073709551615'), x), range(512))
+        FROM numbers(2000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 7, arrayMap(x -&gt; if(x = number % 2048, toUInt64('18446744073709551615'), x), range(2048))
+        FROM numbers(400)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 8, arrayMap(x -&gt; if(x = number % 16384, toUInt64('18446744073709551615'), x), range(16384))
+        FROM numbers(40)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 9, arrayMap(x -&gt; if(x = 0, toUInt64('18446744073709551615'), x), range(128))
+        FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 10, arrayMap(x -&gt; if(x = 64, toUInt64('18446744073709551615'), x), range(128))
+        FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_u64
+        SELECT 11, range(128)
+        FROM numbers(10000)</fill_query>
+
+    <fill_query>INSERT INTO array_min_max_index_perf_float
+        SELECT arrayMap(x -&gt; if(x = number % 128, toFloat64('1000000'), toFloat64(x)), range(128))
+        FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO array_min_max_index_perf_float
+        SELECT arrayMap(x -&gt; toFloat64(x) - 2048, range(2048))
+        FROM numbers(400)</fill_query>
+
+    <fill_query>INSERT INTO array_min_max_index_perf_string
+        SELECT arrayMap(x -&gt; concat('item-', toString(x)), range(32))
+        FROM numbers(20000)</fill_query>
+
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 1 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 1 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 2 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 2 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 4 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 4 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 5 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 5 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 7 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 7 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 8 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 8 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 9 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 9 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 10 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 10 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id = 11 FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id = 11 FORMAT Null</query>
+
+    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 4, 6, 8) FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 4, 6, 8) FORMAT Null</query>
+    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id IN (9, 10, 11) FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_u64 WHERE case_id IN (9, 10, 11) FORMAT Null</query>
+
+    <query>SELECT sum(arrayMaxIndex(x -&gt; x % 97, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <query>SELECT sum(indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(x, y -&gt; x + y, a, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+    <query>SELECT sum(indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 6 FORMAT Null</query>
+
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_float FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_float FORMAT Null</query>
+    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_float FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_float FORMAT Null</query>
+
+    <query>SELECT sum(arrayMaxIndex(a)) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <query>SELECT sum(arrayMinIndex(a)) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a))) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <query>SELECT sum(arrayMaxIndex(x -&gt; length(x), a)) FROM array_min_max_index_perf_string FORMAT Null</query>
+    <query>SELECT sum(indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a))) FROM array_min_max_index_perf_string FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
+</test>
