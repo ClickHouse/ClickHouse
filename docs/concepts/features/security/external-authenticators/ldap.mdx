@@ -179,6 +179,7 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 |-----------|---------|-------------|
 | `server` | — | One of LDAP server names defined in the `ldap_servers` config section above. This parameter is mandatory and cannot be empty. |
 | `roles` | — | Section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication. |
+| `exclude_users` | — | Optional section with a list of `<user>` entries. The listed user names are never served by this directory: no LDAP bind or search is performed for them and no user entity is created, whether the login carries a password, arrives through the interserver protocol of a cluster with a `secret`, or is resolved by [`EXECUTE AS`](/reference/statements/execute_as). The name is reported as not found, so the user directories that follow are still consulted. Names are matched exactly (case-sensitive). An empty name is rejected at startup with `BAD_ARGUMENTS`. See [Keeping application users local](#ldap-exclude-users). |
 
 **`role_mapping` sub-parameters**
 
@@ -191,3 +192,32 @@ Section with LDAP search parameters and mapping rules. When a user authenticates
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search. Note that special characters must be escaped properly in XML. |
 | `attribute` | `cn` | Attribute name whose values will be returned by the LDAP search. |
 | `prefix` | empty | Prefix expected in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. |
+
+### Keeping application users local {#ldap-exclude-users}
+
+An LDAP user directory serves every name the LDAP server can authenticate. This is usually what you want for people, but not for application or service accounts that happen to exist in the corporate directory as well: such accounts should authenticate only with the secret that is managed for them in ClickHouse (for example, a password issued from a vault and defined in `users.xml`), and their LDAP password should not open a second door. The `exclude_users` section lists the names that this directory must never serve:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <user_directories>
+        <ldap>
+            <server>my_ldap_server</server>
+            <exclude_users>
+                <user>app_user1</user>
+                <user>app_user2</user>
+            </exclude_users>
+            <role_mapping>
+                <!- ... -->
+            </role_mapping>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+```
+
+For an excluded name the directory reports "user not found" before doing anything else: no candidate user is built, the allowed-hosts check is not run, the LDAP server is not contacted, and nothing is stored in the directory. This holds for every way a user can reach the directory: a login with a password, the interserver authentication used by distributed queries in a cluster configured with a `secret`, and the forced lookup performed by [`EXECUTE AS`](/reference/statements/execute_as) for LDAP-backed users. Because the result is "not found" rather than an error, the user directories that follow in `user_directories` are consulted as usual, so an excluded name can be defined locally in `users.xml`, or created with `CREATE USER ... IDENTIFIED WITH ldap SERVER '...'` in a writable storage, where the [per-user LDAP authentication](#ldap-external-authenticator) is not affected by the exclusion. If no other user directory defines the name, the login fails.
+
+Names are matched exactly and are case-sensitive; patterns are not supported. An empty `<user>` entry is rejected at startup with `BAD_ARGUMENTS`. The configured list is shown in the `params` column of the [`system.user_directories`](/reference/system-tables/user_directories) table as `exclude_users`.
