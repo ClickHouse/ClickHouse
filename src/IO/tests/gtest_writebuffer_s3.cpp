@@ -2802,10 +2802,11 @@ TEST_F(S3PlainRewritableOperationTest, AHardLinkRollbackRemovesAnUntouchedDestin
 /// The endpoint answers the copy without the `ETag` of the object it wrote: a rollback could then only
 /// delete the destination by key, which is the cross-generation loss the pinning exists to prevent, so
 /// the hard link is refused before the file is recorded - with `S3_ERROR` on S3, as the Azure
-/// counterpart is with `AZURE_BLOB_STORAGE_ERROR` - and the rollback removes the blob the copy wrote
-/// by its key, so that `load` does not bring the uncommitted file back on the next start. The store
-/// would name the generation on a `HeadObject`, and the operation does not ask: the response to the
-/// copy is the only thing that names what the copy wrote.
+/// counterpart is with `AZURE_BLOB_STORAGE_ERROR` - and the rollback leaves the blob the copy wrote
+/// at its key rather than deleting by the key alone whatever is there, although `load` brings the
+/// uncommitted file back on the next start. The store would name the generation on a `HeadObject`,
+/// and the operation does not ask: the response to the copy is the only thing that names what the
+/// copy wrote.
 TEST_F(S3PlainRewritableOperationTest, AHardLinkWhoseDestinationGenerationCannotBeNamedIsRefused)
 {
     auto injection = std::make_shared<CopyWithoutETag>(client->store->GetBucketStore(bucket), keyOf("to"));
@@ -2825,8 +2826,9 @@ TEST_F(S3PlainRewritableOperationTest, AHardLinkWhoseDestinationGenerationCannot
 
     operation.undo();
 
-    EXPECT_FALSE(isThere(keyOf("to")));
-    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{String{}});
+    EXPECT_TRUE(isThere(keyOf("to")));
+    EXPECT_EQ(dataAt(keyOf("to")), dataAt(keyOf("from")));
+    EXPECT_TRUE(deleteIfMatchHeaders().empty());
 }
 
 /// Another writer replaces the destination right after the copy, before any request of the operation

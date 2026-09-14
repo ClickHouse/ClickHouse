@@ -3566,7 +3566,8 @@ struct PlainRewritableHardLinkFixture
 /// the bucket. The delete of the rollback is pinned to the generation the copy wrote, so an endpoint
 /// that names no generation leaves the rollback with nothing but a delete by path, which is the
 /// cross-generation loss the pinning exists to prevent. The hard link is refused there, before the
-/// file is recorded, exactly as the move is.
+/// file is recorded, exactly as the move is, and its rollback makes no delete by path either: the
+/// blob the copy wrote is left at the key and logged.
 TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRefused)
 {
     /// The copy itself goes through - the source is named and the endpoint honours the precondition -
@@ -3603,19 +3604,20 @@ TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRef
     /// The one `HEAD` is the one that names the source before the copy.
     ASSERT_EQ(transport->headRequests(), 1u);
 
-    /// The rollback takes the blob the copy wrote back out of the key of the file, by the key alone,
-    /// since the generation could not be named: `load` rebuilds a directory from every blob under
-    /// its key, so a blob left there would come back as the file `to` on the next start, although
-    /// the transaction never committed.
+    /// The rollback does not take the blob the copy wrote back out by the key alone, since the
+    /// generation could not be named and a delete by key could take away a generation another
+    /// writer has put there since: the blob is left at the key (and comes back as the file `to` on
+    /// the next start, which is logged) rather than anything being deleted blind.
     operation.undo();
 
-    ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::first_generation});
-    ASSERT_EQ(transport->deleteIfMatchHeaders(), std::vector<std::string>{std::string{}});
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+    ASSERT_TRUE(transport->deleteIfMatchHeaders().empty());
 }
 
 /// The same for a move: the destination blob whose generation the endpoint will not name is refused
-/// before the source is deleted, and the rollback removes it from the key of `to` by the key alone.
-TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefusedAndRemoved)
+/// before the source is deleted, and the rollback leaves it at the key of `to` rather than deleting
+/// by the key alone; the only delete it makes is of the scratch blob the move had copied aside.
+TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefusedAndLeft)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
@@ -3648,11 +3650,10 @@ TEST(AzurePlainRewritableMove, ADestinationWhoseGenerationCannotBeNamedIsRefused
 
     operation.undo();
 
-    /// The first delete is the one of the destination, by its key alone; the deletes that follow it
-    /// clean up the blob the move had copied aside once the source is confirmed in place.
-    ASSERT_FALSE(transport->deletedGenerations().empty());
-    ASSERT_EQ(transport->deletedGenerations().front(), ETagBehaviour::first_generation);
-    ASSERT_EQ(transport->deleteIfMatchHeaders().front(), std::string{});
+    /// The destination is not deleted by the key alone: the one delete the rollback makes is the
+    /// cleanup of the blob the move had copied aside, under a scratch key that this transaction
+    /// alone writes to (before the fix there were two, and the first was the destination by key).
+    ASSERT_EQ(transport->deletedGenerations().size(), 1u);
 }
 
 /// The same hard link against an endpoint that names the generation of the blob the copy wrote:

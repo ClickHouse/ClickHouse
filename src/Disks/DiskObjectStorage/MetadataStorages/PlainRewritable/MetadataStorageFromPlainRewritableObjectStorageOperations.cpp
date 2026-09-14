@@ -697,7 +697,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
             "Cannot copy '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that the "
             "copy has just written, so a rollback of this copy cannot delete exactly that "
             "generation. The copy is refused here, before the file is recorded, and the rollback "
-            "removes the blob the copy wrote by its key (see `undo`)",
+            "leaves the blob the copy wrote at its key rather than deleting whatever is at the key "
+            "(see `undo`)",
             path_from.string(),
             path_to.string(),
             remote_path_to.string());
@@ -715,23 +716,24 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     if (!destination_generation_is_named)
     {
         /// The generation the copy wrote was never named, so the only delete available here is one
-        /// by key. It is made all the same, because the alternative is worse: `load` rebuilds the
-        /// files of a directory from every blob under the key of the directory, so a blob left at
-        /// the key of `path_to` becomes that file on the next start of the server, although the
-        /// transaction that wrote it never committed. The key was free by the metadata of this
-        /// disk when the copy wrote it, so what is there is the blob this copy wrote, unless
-        /// another writer has taken the key over since the copy - which is the one case this
-        /// delete cannot tell apart, and the reason the pinned delete below is preferred whenever
-        /// the endpoint names the generation.
-        LOG_WARNING(
+        /// by key, and that one is not made: a delete by key cannot tell the blob this copy wrote
+        /// from a generation another writer has put at the key since, and taking away a generation
+        /// this transaction never wrote is the loss the pinned deletes of these operations exist to
+        /// prevent. The blob is left where it is and its path is logged instead. The cost is that
+        /// `load` rebuilds the files of a directory from every blob under the key of the directory,
+        /// so that blob comes back as the file `path_to` on the next start of the server although
+        /// the transaction never committed - a copy of the source at a key that was free by the
+        /// metadata of this disk, which is recoverable by hand, while a deleted generation is not.
+        LOG_ERROR(
             log,
-            "Removing the blob at {} that the copy of '{}' to '{}' wrote, by its key alone: the "
-            "generation it holds could not be named, and a blob left under the key of a file would "
-            "be loaded as that file on the next start",
+            "Leaving the blob at {} that the copy of '{}' to '{}' wrote: the generation it holds "
+            "could not be named, so a delete could only be made by the key alone and could take "
+            "away a blob another writer has put there since. The blob is loaded as the file '{}' on "
+            "the next start unless it is removed by hand",
             remote_path_to.string(),
             path_from,
+            path_to,
             path_to);
-        object_storage->removeObjectIfExists(destination);
         return;
     }
 
@@ -903,7 +905,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
                 "Cannot move '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that "
                 "the copy has just written, so a rollback of this move cannot delete exactly that "
                 "generation. The move is refused here, before the source is deleted, and the "
-                "rollback removes the blob the copy wrote by its key (see `undo`)",
+                "rollback leaves the blob the copy wrote at its key rather than deleting whatever "
+                "is at the key (see `undo`)",
                 path_from.string(),
                 path_to.string(),
                 remote_path_to.string());
@@ -937,22 +940,23 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     if (copied_to_destination && !destination_generation_is_named)
     {
         /// The move was refused because the generation the copy wrote could not be named, so the
-        /// only delete available here is one by key. It is made all the same, for the reason given
-        /// in the copy operation: a blob left under the key of `path_to` is loaded as that file on
-        /// the next start, although the move never committed - and in the replaceable case it would
-        /// stand in for the target this move had set aside, which is then only under a scratch key.
-        /// The key was free (the target was set aside and deleted, pinned to its generation) when
-        /// the copy wrote it, so what is there is the blob this move wrote, unless another writer
-        /// has taken the key over since the copy.
-        LOG_WARNING(
+        /// only delete available here is one by key, and it is not made, for the reason given in
+        /// the copy operation: it could take away a generation another writer has put at the key
+        /// since the copy, which is the loss the pinned deletes exist to prevent. The blob is left
+        /// at the key and logged. It is loaded as the file `path_to` on the next start although the
+        /// move never committed, and in the replaceable case the target this move had set aside is
+        /// not restored over it (see `restoreTheSavedBlobWithoutWritingOver` below) and stays under
+        /// its scratch key, which the restore logs as well.
+        LOG_ERROR(
             log,
-            "Removing the blob at {} that the move of '{}' to '{}' wrote, by its key alone: the "
-            "generation it holds could not be named, and a blob left under the key of a file would "
-            "be loaded as that file on the next start",
+            "Leaving the blob at {} that the move of '{}' to '{}' wrote: the generation it holds "
+            "could not be named, so a delete could only be made by the key alone and could take "
+            "away a blob another writer has put there since. The blob is loaded as the file '{}' on "
+            "the next start unless it is removed by hand",
             remote_path_to.string(),
             path_from,
+            path_to,
             path_to);
-        object_storage->removeObjectIfExists(destination);
     }
     else if (copied_to_destination)
     {
