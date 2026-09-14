@@ -168,8 +168,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    /// Prune disks that cannot match the query's `disk_name` predicate, so we don't traverse every disk
-    /// on the server (which has no pushdown and can be very expensive on instances with many disks).
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
@@ -235,27 +233,38 @@ void ReadFromSystemRemoteDataPaths::applyFilters(ActionDAGNodes added_filter_nod
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
-    if (!filter_actions_dag)
-        return;
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
 
-    const auto * predicate = filter_actions_dag->getOutputs().at(0);
     if (!predicate)
         return;
 
-    /// Build a block with all disk names and apply the query's `disk_name` predicate to it.
+    /// Reading one disk walks its whole `store` and `data` subtree and reads the metadata of every
+    /// file in it, which on a disk with shared metadata (`plain`, `plain_rewritable`) or on a `web`
+    /// disk means listing the object storage. There is no way to narrow that traversal down, so a
+    /// query that names the disks it is interested in must not pay for all the others: on a server
+    /// that holds a large table on some other object-storage disk, the difference is minutes.
     auto disk_name_column = ColumnString::create();
     for (const auto & [disk_name, _] : disks)
         disk_name_column->insertData(disk_name.data(), disk_name.size());
 
-    Block block{{std::move(disk_name_column), std::make_shared<DataTypeString>(), "disk_name"}};
+    Block block{ColumnWithTypeAndName(std::move(disk_name_column), std::make_shared<DataTypeString>(), "disk_name")};
     VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
 
-    std::unordered_set<std::string_view> allowed_disks;
-    const auto & filtered_column = block.getByPosition(0).column;
-    for (size_t i = 0; i < filtered_column->size(); ++i)
-        allowed_disks.insert(filtered_column->getDataAt(i));
+    /// A predicate that says nothing about `disk_name` leaves every row in place.
+    const auto & filtered_column = *block.getByPosition(0).column;
+    NameSet requested_disks;
+    for (size_t i = 0; i < filtered_column.size(); ++i)
+        requested_disks.emplace(filtered_column.getDataAt(i));
 
-    std::erase_if(disks, [&](const auto & disk) { return !allowed_disks.contains(disk.first); });
+    for (auto it = disks.begin(); it != disks.end();)
+    {
+        if (requested_disks.contains(it->first))
+            ++it;
+        else
+            it = disks.erase(it);
+    }
 }
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)

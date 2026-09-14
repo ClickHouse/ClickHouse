@@ -253,8 +253,8 @@ void S3RequestSettings::validateUploadSettings()
             "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
             upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
 
-    /// Only the name is validated: usability depends on the client (`s3_disable_checksum` and `GCS` send no
-    /// checksum at all), so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
+    /// Only the name is validated: usability depends on the client (`GCS` sends no flexible checksum at all),
+    /// so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
