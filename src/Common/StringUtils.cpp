@@ -15,7 +15,7 @@
 
 namespace
 {
-constexpr size_t AVX512_ASCII_THRESHOLD = 512;
+constexpr size_t AVX512_ASCII_THRESHOLD = 16 * 1024;
 }
 
 #if USE_MULTITARGET_CODE || (defined(__AVX512F__) && defined(__AVX512BW__))

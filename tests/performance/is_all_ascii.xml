@@ -3,28 +3,29 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <query>SELECT substringUTF8(materialize(repeat('a', 7)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 8)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 63)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 64)), 2, 5) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 511)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 512)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 513)), 2, 5) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 4096)), 2, 5) FROM numbers(100000) FORMAT Null</query>
-    <query>SELECT substringUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 2, 5) FROM numbers(3000000) FORMAT Null</query>
+    <!-- Keep the input non-constant and control the size of ColumnString::Chars in each block. The one-digit suffix
+         prevents constant folding, and each row contributes one terminating byte. -->
+    <query>SELECT substringUTF8(concat(repeat('a', 14), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 22), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 509), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 511), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 62), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 126), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 254), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 510), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <!-- The 511/512/513 and 16383/16385 queries use one row per block; the matching 16384 query uses 16 rows. -->
+    <query>SELECT substringUTF8(concat(repeat('a', 16381), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 1022), toString(number % 10)), 2, 5) FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 16383), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
 
-    <query>SELECT substringIndexUTF8(materialize(repeat('a', 63) || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT substringIndexUTF8(materialize(repeat('a', 62) || '\xC3\xA9' || '.tail'), '.', 1) FROM numbers(3000000) FORMAT Null</query>
-
-    <query>SELECT reverseUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT reverseUTF8(materialize(repeat('a', 511))) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT reverseUTF8(materialize(repeat('a', 512))) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT reverseUTF8(materialize(repeat('a', 513))) FROM numbers(1000000) FORMAT Null</query>
-    <query>SELECT reverseUTF8(materialize(repeat('a', 4096))) FROM numbers(100000) FORMAT Null</query>
-    <query>SELECT reverseUTF8(materialize(repeat('a', 62) || '\xC3\xA9')) FROM numbers(3000000) FORMAT Null</query>
-
-    <query>SELECT leftPadUTF8(materialize(repeat('a', 63)), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT leftPadUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT rightPadUTF8(materialize(repeat('a', 63)), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT rightPadUTF8(materialize(repeat('a', 62) || '\xC3\xA9'), 80, 'x') FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 508), '\xC3\xA9', toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT reverseUTF8(concat(repeat('a', 1022), toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT reverseUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10))) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringIndexUTF8(concat('.', repeat('a', 1021), toString(number % 10)), '.', 1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT substringIndexUTF8(concat('.', repeat('a', 1019), '\xC3\xA9', toString(number % 10)), '.', 1) FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT leftPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT leftPadUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT rightPadUTF8(concat(repeat('a', 1022), toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
+    <query>SELECT rightPadUTF8(concat(repeat('a', 1020), '\xC3\xA9', toString(number % 10)), 1024, 'x') FROM numbers(16000) FORMAT Null SETTINGS max_block_size = 16</query>
 </test>

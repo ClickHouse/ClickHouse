@@ -8,9 +8,10 @@
 
 namespace
 {
-const std::array<size_t, 28> boundary_sizes = {
+const std::array<size_t, 31> boundary_sizes = {
     0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095, 4096, 4097};
+    255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095, 4096, 4097,
+    16383, 16384, 16385};
 
 std::vector<UInt8> makeASCIIData(size_t size)
 {
