@@ -2,16 +2,9 @@
 
 #include <Common/TargetSpecific.h>
 
-#include "config.h"
-
 #if defined(__AVX2__) || defined(__AVX512F__) || USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
-
-#if USE_SIMDUTF && !defined(__AVX2__)
-#    include <simdutf.h>
-#endif
-
 
 namespace
 {
@@ -86,11 +79,6 @@ bool isAllASCII(const UInt8 * data, size_t size)
 
     mask |= (tail_mask & 0x80);
     return !mask;
-#elif USE_SIMDUTF
-    if (size == 0)
-        return true;
-
-    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), size);
 #else
     UInt8 mask = 0;
     for (size_t i = 0; i < size; ++i)
