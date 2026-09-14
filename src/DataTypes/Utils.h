@@ -19,9 +19,4 @@ namespace DB
   */
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type);
 
-/// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
-/// without an explicit time zone, return a copy of it with the given time zone substituted.
-/// Otherwise return `target` unchanged.
-DataTypePtr substituteTimeZoneInDateTimeType(const DataTypePtr & target, const String & timezone);
-
 }
