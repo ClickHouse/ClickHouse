@@ -47,7 +47,7 @@ const DataTypePtr BlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
 const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
 
 const String ColumnVersionsColumn::name = "_column_versions";
-const DataTypePtr ColumnVersionsColumn::type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
+const DataTypePtr ColumnVersionsColumn::type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt256>());
 
 const String PartDataVersionColumn::name = "_part_data_version";
 const DataTypePtr PartDataVersionColumn::type = std::make_shared<DataTypeUInt64>();

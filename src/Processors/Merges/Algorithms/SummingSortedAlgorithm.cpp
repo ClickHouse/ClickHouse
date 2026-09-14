@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
+#include <bit>
 #include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -65,9 +66,9 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool is_versioned = false;
     /// Versioned coalescing: this is the per-column versions map itself, filled in finishGroup.
     bool is_column_versions = false;
-    /// Single-row copy of the best value seen so far and the raw 64-bit form of its version.
+    /// Single-row copy of the best value seen so far and the normalized form of its version.
     MutableColumnPtr column_value;
-    UInt64 column_version = 0;
+    UInt256 column_version = 0;
 
     String sum_function_map_name;
 
@@ -149,6 +150,46 @@ static bool isColumnOrAncestorInNames(
         if (isInNames(ancestor, names))
             return true;
     return false;
+}
+
+using VersionKind = SummingSortedAlgorithm::VersionKind;
+
+/// The version column accepts the same types as the `ver` parameter of ReplacingMergeTree.
+static VersionKind getVersionKind(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::Date:
+        case TypeIndex::DateTime:
+            return VersionKind::Unsigned;
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Date32:
+        case TypeIndex::DateTime64:
+        case TypeIndex::Time:       /// Int32-backed, allows negative times.
+        case TypeIndex::Time64:
+            return VersionKind::Signed;
+        case TypeIndex::BFloat16:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+            return VersionKind::Float;
+        case TypeIndex::UInt128:
+            return VersionKind::UInt128;
+        case TypeIndex::Int128:
+            return VersionKind::Int128;
+        case TypeIndex::UInt256:
+            return VersionKind::UInt256;
+        case TypeIndex::Int256:
+            return VersionKind::Int256;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The type {} cannot be used as a version column", type.getName());
+    }
 }
 
 using Row = std::vector<Field>;
@@ -306,7 +347,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                             version_column, ColumnVersionsColumn::name, header_flatten.dumpNames());
         def.version_column_number = header_flatten.getPositionByName(version_column);
         def.column_versions_number = header_flatten.getPositionByName(ColumnVersionsColumn::name);
-        def.version_is_signed = !header_flatten.getByPosition(*def.version_column_number).type->isValueRepresentedByUnsignedInteger();
+        def.version_kind = getVersionKind(*recursiveRemoveLowCardinality(header_flatten.getByPosition(*def.version_column_number).type));
     }
 
     /// name of nested structure -> the column numbers that refer to it.
@@ -773,16 +814,41 @@ static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_c
 }
 
 
-static bool versionLess(UInt64 lhs, UInt64 rhs, bool is_signed)
+/// The 256-bit form of the version at the given row, converted in a way that keeps the order,
+/// so that versions of any supported type can be compared and stored as plain UInt256.
+/// The form depends only on the logical value, not on the width of the type: unsigned values are
+/// zero-extended, signed values are sign-extended with the top bit flipped, floats are widened to
+/// Float64 exactly. So the stored versions survive an ALTER that expands the version column type.
+static UInt256 normalizedVersion(const IColumn & column, size_t row, VersionKind kind)
 {
-    if (is_signed)
-        return static_cast<Int64>(lhs) < static_cast<Int64>(rhs);
-    return lhs < rhs;
+    const auto signed_to_unsigned = [](Int256 value) { return static_cast<UInt256>(value) ^ (UInt256(1) << 255); };
+
+    switch (kind)
+    {
+        case VersionKind::Unsigned:
+            return column.getUInt(row);
+        case VersionKind::Signed:
+            /// getInt sign-extends the value; get64 must not be used here, it zero-extends narrow types.
+            return signed_to_unsigned(column.getInt(row));
+        case VersionKind::Float:
+        {
+            const UInt64 bits = std::bit_cast<UInt64>(column.getFloat64(row));
+            return (bits & (1ULL << 63)) ? ~bits : (bits | (1ULL << 63));
+        }
+        case VersionKind::UInt128:
+            return assert_cast<const ColumnUInt128 &>(column).getElement(row);
+        case VersionKind::Int128:
+            return signed_to_unsigned(assert_cast<const ColumnInt128 &>(column).getElement(row));
+        case VersionKind::UInt256:
+            return assert_cast<const ColumnUInt256 &>(column).getElement(row);
+        case VersionKind::Int256:
+            return signed_to_unsigned(assert_cast<const ColumnInt256 &>(column).getElement(row));
+    }
 }
 
 /// The version of the value in the given column: the entry of the hidden _column_versions map
 /// (filled by finishGroup, read back from merged parts), or the row's version column when absent.
-static UInt64 rowColumnVersion(
+static UInt256 rowColumnVersion(
     const SummingSortedAlgorithm::ColumnsDefinition & def, const ColumnRawPtrs & raw_columns, size_t row, const String & column_name)
 {
     if (def.column_versions_number)
@@ -790,14 +856,14 @@ static UInt64 rowColumnVersion(
         const auto & map_column = assert_cast<const ColumnMap &>(*raw_columns[*def.column_versions_number]);
         const auto & entries = map_column.getNestedData();
         const auto & offsets = map_column.getNestedColumn().getOffsets();
-        const auto & values = assert_cast<const ColumnUInt64 &>(entries.getColumn(1));
+        const auto & values = assert_cast<const ColumnUInt256 &>(entries.getColumn(1));
 
         for (size_t i = offsets[row - 1]; i != offsets[row]; ++i)
             if (entries.getColumn(0).getDataAt(i) == column_name)
                 return values.getElement(i);
     }
 
-    return raw_columns[*def.version_column_number]->get64(row);
+    return normalizedVersion(*raw_columns[*def.version_column_number], row, def.version_kind);
 }
 
 SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_)
@@ -898,13 +964,13 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
     Map group_column_versions;
     if (def.column_versions_number)
     {
-        std::optional<UInt64> group_version;
+        std::optional<UInt256> group_version;
         if (def.version_desc_number)
             group_version = def.columns_to_aggregate[*def.version_desc_number].column_version;
 
         for (const auto & desc : def.columns_to_aggregate)
             if (desc.is_versioned && desc.column_value
-                && (!group_version || versionLess(desc.column_version, *group_version, def.version_is_signed)))
+                && (!group_version || desc.column_version < *group_version))
                 group_column_versions.push_back(Tuple{def.column_names[desc.column_numbers[0]], desc.column_version});
     }
 
@@ -1020,8 +1086,8 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
 
             /// Keep the value of the row with the maximum version. On equal versions the later
             /// row wins, the same as in ReplacingMergeTree.
-            UInt64 candidate_version = rowColumnVersion(def, raw_columns, row, def.column_names[desc.column_numbers[0]]);
-            if (desc.column_value && versionLess(candidate_version, desc.column_version, def.version_is_signed))
+            UInt256 candidate_version = rowColumnVersion(def, raw_columns, row, def.column_names[desc.column_numbers[0]]);
+            if (desc.column_value && candidate_version < desc.column_version)
                 continue;
 
             /// Store a single-row copy: the raw columns do not outlive the chunk, while a group

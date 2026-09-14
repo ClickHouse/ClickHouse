@@ -41,6 +41,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -5606,7 +5607,23 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 auto it = old_types.find(command.column_name);
 
                 if (new_type && it != old_types.end())
+                {
                     checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
+
+                    /// VersionedCoalescingMergeTree persists the versions as raw DateTime64/Time64
+                    /// ticks, so a change of the type or of the scale would reinterpret the already
+                    /// stored versions. Only a change of the timezone keeps the ticks intact.
+                    const bool old_has_scale = isDateTime64(*it->second) || isTime64(*it->second);
+                    const bool new_has_scale = isDateTime64(*new_type) || isTime64(*new_type);
+                    if (merging_params.mode == MergingParams::VersionedCoalescing
+                        && (old_has_scale || new_has_scale)
+                        && (it->second->getTypeId() != new_type->getTypeId()
+                            || getDecimalScale(*it->second) != getDecimalScale(*new_type)))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "Cannot alter version column {} from type {} to type {} because the change "
+                                        "would reinterpret the per-column versions persisted in the parts.",
+                                        backQuoteIfNeed(command.column_name), it->second->getName(), new_type->getName());
+                }
 
                 /// No other checks required
                 continue;

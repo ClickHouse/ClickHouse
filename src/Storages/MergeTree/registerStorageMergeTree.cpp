@@ -3427,7 +3427,7 @@ For a description of request parameters, see [request description](/reference/st
 
 #### version {#version}
 
-`version` — The name of the column with the version. Required. The column must be of an integer type or of type `Date`/`DateTime`/`DateTime64`, must not be `Nullable`, and must not be a part of the sorting or partition key.
+`version` — The name of the column with the version. Required. The column accepts the same types as the `ver` parameter of [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree): an integer type (up to 256 bits), `Float32`/`Float64`, or a `Date`/`DateTime` type. It must not be `Nullable` and must not be a part of the sorting or partition key.
 
 For each group of rows with the same sorting key:
 
