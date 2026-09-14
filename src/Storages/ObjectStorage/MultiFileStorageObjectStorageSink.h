@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 
 namespace DB
@@ -12,8 +11,6 @@ namespace DB
 class MultiFileStorageObjectStorageSink : public SinkToStorage
 {
 public:
-    using FileAlreadyExistsPolicy = MergeTreePartExportFileAlreadyExistsPolicy;
-
     MultiFileStorageObjectStorageSink(
         const std::string & base_path_,
         const String & transaction_id_,
@@ -21,7 +18,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         std::size_t max_bytes_per_file_,
         std::size_t max_rows_per_file_,
-        FileAlreadyExistsPolicy file_already_exists_policy_,
+        bool overwrite_existing_data_files_,
         const std::function<void(const std::string &)> & new_file_path_callback_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
@@ -35,9 +32,16 @@ public:
 
     String getName() const override { return "MultiFileStorageObjectStorageSink"; }
 
+    /// The data files a previous export of this part committed at `base_path`, or nothing when no
+    /// export ever committed there. Checked by the caller before it decides to write anything.
+    static std::optional<std::vector<std::string>> tryReadCommittedPaths(
+        const std::string & base_path_,
+        const String & transaction_id_,
+        const ObjectStoragePtr & object_storage_,
+        const ContextPtr & context_);
+
 private:
     const std::string base_path;
-    const String transaction_id;
     /// Written by `commit` only after every data file has been finalized, so its presence --
     /// unlike that of any individual data file -- proves a previous export of this part
     /// produced the whole set.
@@ -46,9 +50,11 @@ private:
     StorageObjectStorageConfigurationPtr configuration;
     std::size_t max_bytes_per_file;
     std::size_t max_rows_per_file;
-    FileAlreadyExistsPolicy file_already_exists_policy;
-    /// Data files left behind by an attempt that never reached `commit` have to be rewritten.
-    bool overwrite_data_files = false;
+    /// Whether a data file already sitting at a target path may be rewritten. The caller builds
+    /// this sink only once it has established that no commit file covers those files, so they
+    /// belong to an attempt that died before finalizing every one of them, and the rows the
+    /// attempt never reached are produced by no later one.
+    const bool overwrite_existing_data_files;
     std::function<void(const std::string &)> new_file_path_callback;
     const std::optional<FormatSettings> format_settings;
     SharedHeader sample_block;
@@ -60,8 +66,6 @@ private:
 
     std::string generateNewFilePath();
     std::shared_ptr<StorageObjectStorageSink> createNewSink();
-    /// The data files a previous export of this part committed, or nothing when it never committed.
-    std::optional<std::vector<std::string>> tryReadCommittedPaths() const;
     void commit();
 };
 

@@ -110,15 +110,16 @@ def test_export_partition_file_already_exists_policy(cluster, source_engine):
         """
     ) == '1\n', "Expected the export to be marked as COMPLETED"
 
-    # last but not least, let's try with the error policy. FILE_ALREADY_EXISTS is a
-    # non-retryable error (retrying always hits the same existing file), so the task
-    # fails fast without needing a retry budget.
+    # last but not least, the error policy. The `overwrite` export above finished every part and
+    # left a per-part commit marker proving it, so there is nothing for this export to write and
+    # it completes by reusing those files. `error` only refuses destination files that no commit
+    # marker covers -- see test_export_partition_error_policy_rejects_incomplete_part.
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_force_export=1, export_merge_tree_part_file_already_exists_policy='error'",
     )
 
     # wait for the export to finish
-    wait_for_export_status(node, mt_table, s3_table, "2020", "FAILED")
+    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED")
 
     # check system.partition_exports for the export
     assert node.query(
@@ -127,9 +128,9 @@ def test_export_partition_file_already_exists_policy(cluster, source_engine):
         WHERE source_table = '{mt_table}'
           AND destination_table = '{s3_table}'
           AND partition_id = '2020'
-          AND status = 'FAILED'
+          AND status = 'COMPLETED'
         """
-    ) == '1\n', "Expected the export to be marked as FAILED"
+    ) == '1\n', "Expected the export to be marked as COMPLETED"
 
 
 def create_split_export_tables(node, mt_table, s3_table, replica_name, engine):
@@ -153,9 +154,10 @@ def create_split_export_tables(node, mt_table, s3_table, replica_name, engine):
 
 
 def export_partition_split_into_files(
-    node, mt_table, s3_table, force=False, policy=None, previous_transaction_id=None
+    node, mt_table, s3_table, force=False, policy=None, previous_transaction_id=None,
+    expected_status="COMPLETED",
 ):
-    """Export partition 2020 with one row per destination file and wait for completion.
+    """Export partition 2020 with one row per destination file and wait for *expected_status*.
 
     Only splits per row for a table built by `create_split_export_tables`.
     """
@@ -173,7 +175,7 @@ def export_partition_split_into_files(
     if previous_transaction_id is not None:
         wait_for_new_export_transaction(node, mt_table, s3_table, "2020", previous_transaction_id)
 
-    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED")
+    wait_for_export_status(node, mt_table, s3_table, "2020", expected_status)
 
 
 def recorded_export_paths(node, mt_table, s3_table):
@@ -332,6 +334,99 @@ def test_export_partition_skip_policy_reexports_incomplete_part(cluster, source_
     assert node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020") == "3\n", \
         "Rows from the split files the interrupted attempt never wrote are missing from the destination"
     assert len(partition_commit_marker_lines(node, mt_table, s3_table)) == 3
+
+
+def test_export_partition_error_policy_adopts_completed_part(cluster, source_engine):
+    """Under `error`, a part an earlier attempt already finished must be adopted, not failed.
+
+    A part export is retried whenever the destination write succeeded but the outcome never
+    became durable: the descriptor write failing, the server going down between the two, or a
+    Keeper hiccup on the replicated path. The per-part commit marker proves the earlier attempt
+    produced the whole file set, so the retry has nothing left to write. Treating that as a
+    conflict makes a transient bookkeeping failure permanent while the exported data is intact.
+    """
+    node = cluster.instances["replica1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"error_adopts_completed_mt_table_{postfix}"
+    s3_table = f"error_adopts_completed_s3_table_{postfix}"
+
+    create_split_export_tables(node, mt_table, s3_table, "replica1", engine=source_engine)
+    # The destination file name is derived from the part name, so part names have to stay stable
+    # across the two exports, otherwise the second one writes to fresh paths and finds no marker.
+    node.query(f"SYSTEM STOP MERGES {mt_table}")
+
+    export_partition_split_into_files(node, mt_table, s3_table)
+    first_transaction_id = export_transaction_id(node, mt_table, s3_table, "2020")
+
+    exported_paths = recorded_export_paths(node, mt_table, s3_table)
+    assert len(exported_paths) == 3, \
+        f"Expected the 3-row partition to split into 3 files, got {exported_paths}"
+
+    # Stands in for the retry of a part whose success was never recorded: same part, same
+    # destination paths, same commit marker, `error` policy.
+    export_partition_split_into_files(
+        node, mt_table, s3_table, force=True, policy="error",
+        previous_transaction_id=first_transaction_id,
+    )
+
+    adopted_paths = recorded_export_paths(node, mt_table, s3_table)
+    assert sorted(adopted_paths) == sorted(exported_paths), (
+        f"Re-export under `error` recorded {adopted_paths} instead of the committed file set "
+        f"{exported_paths}"
+    )
+    assert len(partition_commit_marker_lines(node, mt_table, s3_table)) == 3
+
+    data_files_after, markers_after = list_partition_directory(cluster, exported_paths[0])
+    assert sorted(data_files_after) == sorted(exported_paths), \
+        f"Adopting the committed file set must not write anything new: {data_files_after}"
+    assert len(markers_after) == 1, f"Expected one per-part commit marker, got {markers_after}"
+    assert node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020") == "3\n", \
+        "Adopting the committed file set must not duplicate rows at the destination"
+
+
+def test_export_partition_error_policy_rejects_incomplete_part(cluster, source_engine):
+    """`error` must still refuse destination files that no commit marker covers.
+
+    Only the per-part commit marker, written after the last file is finalized, proves a previous
+    attempt produced the whole set. Files left by an attempt that died mid-part say nothing about
+    how many files the part needs, so adopting them would record a truncated list as the part's
+    export result and publish a fraction of its rows.
+    """
+    node = cluster.instances["replica1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"error_rejects_partial_mt_table_{postfix}"
+    s3_table = f"error_rejects_partial_s3_table_{postfix}"
+
+    create_split_export_tables(node, mt_table, s3_table, "replica1", engine=source_engine)
+    node.query(f"SYSTEM STOP MERGES {mt_table}")
+
+    export_partition_split_into_files(node, mt_table, s3_table)
+    first_transaction_id = export_transaction_id(node, mt_table, s3_table, "2020")
+
+    written_in_order = recorded_export_paths(node, mt_table, s3_table)
+    assert len(written_in_order) == 3, \
+        f"Expected the 3-row partition to split into 3 files, got {written_in_order}"
+
+    _, markers = list_partition_directory(cluster, written_in_order[0])
+    assert len(markers) == 1, f"Expected one per-part commit marker, got {markers}"
+
+    # Roll the destination back to "first file finalized, nothing else".
+    for key in written_in_order[1:] + markers:
+        cluster.minio_client.remove_object(cluster.minio_bucket, key)
+
+    export_partition_split_into_files(
+        node, mt_table, s3_table, force=True, policy="error",
+        previous_transaction_id=first_transaction_id,
+        expected_status="FAILED",
+    )
+
+    data_files_after, markers_after = list_partition_directory(cluster, written_in_order[0])
+    assert data_files_after == [written_in_order[0]], \
+        f"A rejected part must be left untouched, got {data_files_after}"
+    assert markers_after == [], \
+        f"A rejected part must not be marked complete, got {markers_after}"
 
 
 def test_export_partition_feature_is_disabled(cluster, source_engine):

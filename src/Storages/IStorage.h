@@ -459,12 +459,39 @@ public:
       return false;
     }
 
+    /// Outcome of `import`. Either the destination expects the part to be written through `sink`,
+    /// or a previous export already wrote the whole part there and `exported_paths` lists the
+    /// files it produced, in which case there is nothing left to write.
+    struct ImportResult
+    {
+    private:
+        ImportResult(SinkToStoragePtr sink_, bool already_exported_, std::vector<String> exported_paths_)
+            : sink(std::move(sink_)), already_exported(already_exported_), exported_paths(std::move(exported_paths_)) {}
+    public:
+
+        static ImportResult createSink(SinkToStoragePtr sink_)
+        {
+            return ImportResult(std::move(sink_), false, {});
+        }
+
+        static ImportResult createAlreadyExported(std::vector<String> exported_paths_)
+        {
+            return ImportResult(nullptr, true, std::move(exported_paths_));
+        }
+
+        /// Null when `already_exported` is set.
+        SinkToStoragePtr sink;
+        bool already_exported = false;
+        /// The complete set of destination files, set only when `already_exported` is true.
+        std::vector<String> exported_paths;
+    };
+
     /*
 It is currently only implemented in StorageObjectStorage.
       It is meant to be used to import merge tree data parts into object storage. It is similar to the write API,
       but it won't re-partition the data and should allow the filename to be set by the caller.
     */
-    virtual SinkToStoragePtr import(
+    virtual ImportResult import(
         const std::string & /* file_name */,
         Block & /* block_with_partition_values */,
         const std::function<void(const std::string &)> & /* new_file_path_callback */,
