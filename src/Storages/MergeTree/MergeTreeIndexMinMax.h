@@ -62,12 +62,15 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
+    bool alwaysTrueOnHyperrectangle(const Hyperrectangle & hyperrectangle) const override;
+
     std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
     KeyCondition condition;
+    bool condition_has_function_not;
 };
 
 
