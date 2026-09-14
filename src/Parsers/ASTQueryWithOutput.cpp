@@ -79,7 +79,14 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     /// `settings_ast` is parsed by `ParserSetQuery`.
     settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (settings_ast)
+    {
+        const auto & settings = settings_ast->as<const ASTSetQuery &>();
+        if (settings.is_standalone
+            || (settings.changes.empty() && settings.default_settings.empty() && settings.query_parameters.empty()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Output 'settings_ast' must be a non-empty settings clause during AST JSON deserialization");
         children.push_back(settings_ast);
+    }
 
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));

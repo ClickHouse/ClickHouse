@@ -80,9 +80,15 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     switch (kind)
     {
         case ExplainKind::FormattedQuery:
-            if (!getExplainedQuery())
+            if (!getExplainedQuery() || getExplainedQuery()->getQueryKind() == QueryKind::None)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXPLAIN TEXT requires an explained query during AST JSON deserialization");
+            /// `ASTSetQuery` also represents embedded settings clauses, which are not source statements.
+            if (const auto * set_query = getExplainedQuery()->as<ASTSetQuery>();
+                set_query && (!set_query->is_standalone
+                    || (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT requires a non-empty standalone SET query during AST JSON deserialization");
             if (getSettings())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXPLAIN TEXT cannot carry leading kind-specific settings during AST JSON deserialization");
