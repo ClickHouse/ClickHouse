@@ -62,23 +62,18 @@ bool isRuntimeTyped(const IDataType & type)
     return which.isObject() || which.isVariant() || which.isDynamic();
 }
 
-bool isFloatOrRuntimeTyped(const IDataType & type)
-{
-    return WhichDataType(type).isFloat() || isRuntimeTyped(type);
-}
-
 }
 
 bool hasTypeThatCanContainFloat(const DataTypePtr & type)
 {
-    if (isFloatOrRuntimeTyped(*type))
+    if (WhichDataType(*type).isFloat())
         return true;
 
     /// forEachChild recurses on its own, so one call visits the whole type tree.
     bool found = false;
     type->forEachChild([&found](const IDataType & child)
     {
-        found = found || isFloatOrRuntimeTyped(child);
+        found = found || WhichDataType(child).isFloat();
     });
     return found;
 }

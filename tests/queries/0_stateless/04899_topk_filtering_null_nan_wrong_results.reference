@@ -112,6 +112,8 @@ lcn ANF ON 	\N
 lcn ANF OFF	\N
 lcfd ANF ON 	nan
 lcfd ANF OFF	nan
+dflt f64	nan
+dflt lcfd	nan
 ctl arr ANL ON 	[100]	0
 ctl arr ANL ON 	[200]	1000
 ctl arr ANL ON 	[300]	2000
@@ -187,6 +189,8 @@ pres off varlen	0
 pres off master	0
 skipidx f64	0
 skipidx u64	1
+skipidx f64 dflt	0
+skipidx u64 dflt	1
 skipidx lcn	0
 skipidx lcfd	0
 skipidx lcw	1

@@ -2873,13 +2873,14 @@ void ReadFromMergeTree::buildIndexes(
                     return false;
 
                 /// The skip-index top-k path ranks granules via raw Field comparison
-                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-                /// or collation, and orders NaN as the greatest value regardless of the
-                /// ORDER BY direction. Only allow types where raw Field ordering matches
-                /// the ORDER BY semantics.
+                /// (MinMaxGranuleItem::operator<), which does not respect nulls_direction or
+                /// collation and compares Float64 with a hardcoded NaN-last hint. Only allow types
+                /// where raw Field ordering matches the ORDER BY semantics. This check is reached
+                /// even for types tryOptimizeTopK refused a skip index for.
                 /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
                 /// nulls_direction/collator, and record NaN presence in the index itself
-                /// (getExtremes drops NaNs), so this restriction can be lifted.
+                /// (getExtremes reports a NaN extreme only for an all-NaN granule), so this
+                /// restriction can be lifted.
                 if (top_k_filter_info->data_type->isNullable()
                     || hasTypeThatCanContainFloat(top_k_filter_info->data_type)
                     || !top_k_filter_info->data_type->isValueRepresentedByNumber())

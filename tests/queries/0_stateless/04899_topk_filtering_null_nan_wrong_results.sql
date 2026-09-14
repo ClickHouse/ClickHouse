@@ -387,6 +387,12 @@ SELECT 'lcn ANF OFF', v FROM i_lc ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS us
 SELECT 'lcfd ANF ON ', f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
 SELECT 'lcfd ANF OFF', f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
+-- The arms above switch dynamic filtering off, which is what stops the granule ranking before
+-- ReadFromMergeTree::buildIndexes decides anything. At the defaults the ranking is reachable with
+-- no setting set at all, so these two carry the answer a user actually gets.
+SELECT 'dflt f64', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1;
+SELECT 'dflt lcfd', f FROM i_lc ORDER BY f ASC NULLS FIRST LIMIT 1;
+
 -- ==================== controls: these already agreed, and must keep agreeing ====================
 
 -- nulls_direction is 1, which is what the generic comparison already assumes.
@@ -453,6 +459,12 @@ SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 
 -- still does. Without this the results above could be explained by the comparison change alone.
 SELECT 'skipidx f64', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
 SELECT 'skipidx u64', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
+-- The two arms above pin the plan-level refusal in tryOptimizeTopK. buildIndexes decides index
+-- selection independently and is reached at the defaults, where dynamic filtering publishes the
+-- TopKFilterInfo that tryOptimizeTopK refused a skip index for; the integer arm shows this shape
+-- still selects the index when the type is eligible, so the float arm is not passing vacuously.
+SELECT 'skipidx f64 dflt', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain ILIKE '%topk granules%';
+SELECT 'skipidx u64 dflt', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain ILIKE '%topk granules%';
 -- A nullable or float dictionary is rejected while the same wrapper over a plain integer one is not,
 -- so each rejection is attributable to the dictionary and not to LowCardinality. These two are the
 -- only carriers here whose disqualifying property is out of reach of a root-only test.

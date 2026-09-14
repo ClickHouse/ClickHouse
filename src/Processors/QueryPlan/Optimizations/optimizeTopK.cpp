@@ -159,11 +159,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const auto & sort_col_desc = sort_description.front();
 
     /// The skip-index top-k path ranks granules via raw Field comparison
-    /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-    /// or collation, and orders NaN as the greatest value regardless of the
-    /// ORDER BY direction. Restrict it to types where raw Field ordering matches
-    /// ORDER BY semantics. This check mirrors the guard in
-    /// ReadFromMergeTree::buildIndexes for defense-in-depth.
+    /// (MinMaxGranuleItem::operator<), which does not respect nulls_direction or collation and
+    /// compares Float64 with a hardcoded NaN-last hint. Restrict it to types where raw Field
+    /// ordering matches ORDER BY semantics. buildIndexes applies the same conditions
+    /// independently; neither check subsumes the other.
     bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
         && !sort_column.type->isNullable()
         && !hasTypeThatCanContainFloat(sort_column.type)
