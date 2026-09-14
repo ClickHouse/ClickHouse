@@ -11,7 +11,7 @@ include (cmake/compiler_rt_link.cmake)
 # x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
 # which then carries a versioned glibc symbol again (no portability shim).
 option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
-if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
     set(ENABLE_LLVM_LIBC_MATH OFF)
 endif()
 
