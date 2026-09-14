@@ -24,13 +24,27 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
 SELECT byteSize(s)
 FROM t_byte_size_string_subcolumn;
 
+-- MergeTree supports function-to-subcolumn rewrites, so this reaches the
+-- case-insensitive collision guard. StorageFile opts out before the guard.
+DROP TABLE IF EXISTS t_byte_size_case_collision;
+
+CREATE TABLE t_byte_size_case_collision
+(
+    `S.SIZE` UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
 SELECT count() FROM
 (
     EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT byteSize(s)
-    FROM file('nonexistent_05177.tsv', TSV, '`S.SIZE` UInt64, s String')
+    FROM t_byte_size_case_collision
 )
 WHERE explain LIKE '%s.size%';
+
+DROP TABLE t_byte_size_case_collision;
 
 SELECT id, byteSize(s)
 FROM t_byte_size_string_subcolumn
