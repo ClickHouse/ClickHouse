@@ -25,3 +25,17 @@ SELECT count() FROM numbers(1) WHERE arrayExists(x -> x IN (SELECT 1), [1, 2]) A
 -- The value must not depend on being read through a derived table, where the same false constant was
 -- consumed by the projection rather than by a filter.
 SELECT * FROM (SELECT arrayExists(x -> x IN (SELECT 2), [2]));
+
+-- `NOT IN` reaches the same gate as `IN`: 1 and 3 are not in the set, so the filter is true and the
+-- row is returned.
+SELECT number FROM numbers(1) WHERE arrayExists(x -> x NOT IN (SELECT 2), [1, 3]);
+
+-- `GLOBAL IN` builds its set by another route and must be gated the same way, so the row is returned.
+SELECT number FROM numbers(1) WHERE arrayExists(x -> x GLOBAL IN (SELECT 1), [1, 2]);
+
+-- `HAVING` consumes the same constant above the aggregation, so the group must survive.
+SELECT count() FROM numbers(1) GROUP BY number HAVING arrayExists(x -> x IN (SELECT 1), [1, 2]);
+
+-- The `map*` family does not forward the dry-run flag into the lambda, so this spelling aborted with
+-- `Not-ready Set` rather than returning a wrong value. The filter is true, so the row is returned.
+SELECT number FROM numbers(1) WHERE mapExists((k, v) -> k IN (SELECT 1), map(1, 2));
