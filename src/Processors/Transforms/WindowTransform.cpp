@@ -3680,6 +3680,9 @@ Here there are seven rows and four buckets, so the first three buckets contain t
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
+
 **Syntax**
 
 ```sql
@@ -3750,6 +3753,9 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
@@ -3910,6 +3916,8 @@ ORDER BY date DESC
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
 ClickHouse window function `leadInFrame` respects the window frame.
@@ -4047,6 +4055,7 @@ LIMIT 9
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
@@ -4143,6 +4152,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(x)(value, timeunit)";
     FunctionDocumentation::Arguments exponentialTimeDecayedMax_arguments = {
@@ -4239,6 +4249,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the cumulative exponential decay over a time series at the index `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(x)(t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedCount_arguments = {
@@ -4334,6 +4345,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {
