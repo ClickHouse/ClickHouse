@@ -473,12 +473,7 @@ PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(size_t sdk
 namespace
 {
 
-/// Response latencies injected by the `s3_slow_*_response` failpoints: emulate a slow S3
-/// backend when the real endpoint is a fast local server (e.g. the `iceberg_suite_*_slowio`
-/// performance tests against the job-local S3 service). Failpoints carry no payload, so the
-/// durations are fixed here, roughly shaped after typical real-S3 time-to-first-byte per
-/// request class; see `simulateObjectStorageLatency` for how the injected wait is kept
-/// identifiable in profiles.
+/// Fixed per-verb response latencies for the `s3_slow_*_response` failpoints (slow-S3 simulation for the `iceberg_suite_s3_synthio_*` perf tests against the fast job-local endpoint).
 constexpr UInt64 simulated_get_response_latency_ms = 40;
 constexpr UInt64 simulated_head_response_latency_ms = 15;
 constexpr UInt64 simulated_put_response_latency_ms = 50;
@@ -696,11 +691,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
 
-            /// Test-only: the `s3_slow_*_response` failpoints pretend the server needed extra
-            /// time to produce the response. Placed after the request is fully sent and before
-            /// the response is read - exactly where a genuinely slow S3 backend parks this
-            /// thread - so the injected wait lands in the same request-time metrics and the
-            /// same wall-clock profiler frames, and every retry attempt pays it again.
+            /// Test-only slow-S3 simulation: park the thread between send and receive, where a real slow backend would (per attempt).
             injectSimulatedResponseLatency(request);
 
             if (enable_s3_requests_logging)
