@@ -315,6 +315,29 @@ def test_remote_write_v2_metadata():
     ) == "rw2_metadata\tcounter\trequests\tTotal number of remote write v2 requests\n"
 
 
+def test_remote_write_v2_rejects_metadata_only():
+    metric_name = "rw2_metadata_only"
+    protobuf = convert_time_series_to_write_v2_protobuf(
+        [({"__name__": metric_name}, {})]
+    )
+    series_metadata = protobuf.timeseries[0].metadata
+    series_metadata.type = series_metadata.MetricType.Value("METRIC_TYPE_COUNTER")
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        content_type=WRITE_V2_CONTENT_TYPE,
+        headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
+    )
+    assert response.status_code == requests.codes.bad_request
+    assert_remote_write_v2_written_headers(response, 0)
+    assert node.query(
+        "SELECT count() FROM timeSeriesMetrics(prometheus) "
+        f"WHERE metric_family_name = '{metric_name}'"
+    ) == "0\n"
+
+
 def test_remote_write_v2_zstd():
     start_time = 1724118300
     time_series = [({"__name__": "rw2_zstd_data"}, {start_time: 42.0})]
@@ -444,7 +467,7 @@ def test_remote_write_v2_disabled_setting():
         content_type=WRITE_V2_CONTENT_TYPE,
         headers={"X-Prometheus-Remote-Write-Version": "2.0.0"},
     )
-    assert v2_response.status_code != requests.codes.no_content
+    assert v2_response.status_code == requests.codes.bad_request
     assert "enable_prometheus_remote_write_v2" in v2_response.text
     assert_remote_write_v2_written_headers(v2_response, 0)
     assert node.query(

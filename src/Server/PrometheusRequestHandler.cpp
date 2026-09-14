@@ -344,7 +344,7 @@ public:
             set_v2_written_headers(0);
             if (!context->getSettingsRef()[Setting::enable_prometheus_remote_write_v2])
                 throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED, "Setting `enable_prometheus_remote_write_v2` is not enabled");
+                    ErrorCodes::BAD_ARGUMENTS, "Setting `enable_prometheus_remote_write_v2` is not enabled");
         }
 
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);

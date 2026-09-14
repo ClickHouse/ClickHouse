@@ -459,6 +459,8 @@ size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Req
     {
         if (element.exemplars_size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 exemplars are not supported");
+        if (element.samples().empty() && element.histograms().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 time series must contain samples or histograms");
         samples_written += element.samples_size();
     }
 
