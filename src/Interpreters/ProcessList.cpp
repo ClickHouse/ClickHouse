@@ -374,6 +374,7 @@ ProcessList::EntryPtr ProcessList::insert(
             settings,
             watch_start_nanoseconds,
             is_internal);
+        query->is_unlimited = is_unlimited_query;
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -1099,6 +1100,71 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
+{
+    /// A query that the concurrency limits exempt is still counted, because the counters it is
+    /// counted in are the ones these amounts are subtracted from, but it is never refused.
+    const UInt64 limit = status->isUnlimited() ? 0 : max_waiting_queries_amount.load();
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (limit && value >= limit)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
+                            limit, value);
+        if (waiting_queries_amount.compare_exchange_weak(value, value + 1))
+            break;
+    }
+
+    /// WARNING: it is important not to throw below this point, otherwise the matching
+    /// `decreaseWaitingQueryAmount` will never be called.
+
+    if (status->query_kind == IAST::QueryKind::Insert)
+        waiting_insert_queries_amount.fetch_add(1);
+    if (status->query_kind == IAST::QueryKind::Select)
+        waiting_select_queries_amount.fetch_add(1);
+
+    status->getUserProcessList()->waiting_queries_amount.fetch_add(1);
+
+    /// The query gives up its slot in the `max_concurrent_*` limits while it waits, so a query
+    /// parked on `have_space` may have become admissible.
+    have_space.notify_all();
+}
+
+void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr & status)
+{
+    if (status->getUserProcessList()->waiting_queries_amount.fetch_sub(1) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount for user: decrease to negative");
+
+    if (status->query_kind == IAST::QueryKind::Insert && waiting_insert_queries_amount.fetch_sub(1) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong insert waiting query amount: decrease to negative");
+
+    if (status->query_kind == IAST::QueryKind::Select && waiting_select_queries_amount.fetch_sub(1) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong select waiting query amount: decrease to negative");
+
+    if (waiting_queries_amount.fetch_sub(1) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+}
+
+void ProcessList::incrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    /// The check runs before `waiting_threads` moves, so a refused query is left exactly as it was.
+    if (status->waiting_threads == 0)
+        increaseWaitingQueryAmount(status);
+    ++status->waiting_threads;
+}
+
+void ProcessList::decrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
+
+    if (--status->waiting_threads == 0)
+        decreaseWaitingQueryAmount(status);
 }
 
 }

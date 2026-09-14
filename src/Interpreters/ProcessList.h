@@ -144,8 +144,12 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
+    /// Guards this query's transition between waiting for load jobs and not waiting: the first
+    /// blocked thread registers the query in the waiting counters, the last one to wake up
+    /// unregisters it. Taken only by a thread that is about to block in `AsyncLoader::wait()`.
+    std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
-    std::atomic<UInt64> waiting_threads{0};
+    UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
 
     /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -205,6 +209,10 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
+
+    /// `isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port`, as computed
+    /// by `insert()`. Such a query is exempt from the concurrency limits.
+    bool is_unlimited = false;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -295,6 +303,11 @@ public:
         return is_internal;
     }
 
+    bool isUnlimited() const
+    {
+        return is_unlimited;
+    }
+
     /// Manually release all acquired workload resources.
     void releaseWorkloadResources();
 
@@ -348,6 +361,9 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
+
+    /// Number of queries of this user that are waiting for load jobs
+    std::atomic<UInt64> waiting_queries_amount{0};
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
@@ -475,10 +491,20 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
+    /// amounts of queries waiting for load jobs, excludes internal queries
+    std::atomic<UInt64> waiting_queries_amount{0};
+    std::atomic<UInt64> waiting_insert_queries_amount{0};
+    std::atomic<UInt64> waiting_select_queries_amount{0};
+
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
+
+    /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
+    /// is reached, in which case the query does not become a waiter and must not be decreased.
+    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
+    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -566,6 +592,10 @@ public:
     {
         return max_waiting_queries_amount.load();
     }
+
+    /// Register (unregister) `status` as waiting for load jobs.
+    void incrementWaiters(const QueryStatusPtr & status);
+    void decrementWaiters(const QueryStatusPtr & status);
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
