@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Names.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <optional>
 #include <map>
 #include <ctime>
@@ -9,6 +10,21 @@
 
 namespace DB
 {
+
+/// The denominator for byte-weighted mutation progress: the byte weight of the mutation's remaining
+/// scope, counted once per covered block range rather than once per part name.
+struct MutationScopeInitialBytes
+{
+    UInt64 bytes = 0;
+    std::map<MergeTreePartInfo, UInt64> counted_parts;
+
+    /// Still-pending work reappearing under a new name (a merge of pending parts, or an earlier
+    /// mutation's rewrite) replaces the weight of the counted parts it covers instead of adding to it.
+    void account(const MergeTreePartInfo & info, UInt64 part_bytes);
+
+    /// A finished mutation's scope cannot grow again, so only the scalar denominator is kept.
+    void finalize();
+};
 
 /// Postpone reasons for parts that cannot be merged or mutated
 namespace PostponeReasons
@@ -56,6 +72,12 @@ struct MergeTreeMutationStatus
 
     /// FIXME: currently unused, but would be much better to report killed mutations with this flag.
     bool is_killed = false;
+
+    /// The on-disk bytes of `parts_to_do_names`. Derived on read, like `parts_to_do`.
+    UInt64 bytes_to_do = 0;
+    /// Estimated finished fraction, from 0 to 1, byte-weighted against the parts to rewrite.
+    /// Unset while the remaining work is not known yet: see StorageReplicatedMergeTree.
+    std::optional<Float64> progress = {};
 /// NOLINTEND(readability-redundant-string-init)
 };
 
