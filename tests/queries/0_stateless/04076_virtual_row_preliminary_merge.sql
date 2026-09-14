@@ -145,14 +145,14 @@ SET max_threads = 4;
 SELECT '--';
 
 SELECT k FROM t_vrow_prelim ORDER BY k ASC LIMIT 20
-SETTINGS read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+SETTINGS read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          read_in_order_two_level_merge_threshold = 100,
          log_comment = 'vrow_prelim';
 
 SELECT '--';
 
 SELECT k FROM t_vrow_prelim ORDER BY k ASC LIMIT 20
-SETTINGS read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+SETTINGS read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          read_in_order_two_level_merge_threshold = 10000,
          log_comment = 'vrow_single';
 

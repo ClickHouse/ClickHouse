@@ -25,14 +25,14 @@ insert into tab select number + 6 * 100000, 0 from numbers(100000);
 insert into tab select number + 7 * 100000, if(number >= 99990, 1, 0) from numbers(100000);
 
 select x from tab where v = 1 order by x limit 5
-settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          max_threads = 2, use_query_condition_cache = 0, use_statistics_for_part_pruning = 0,
          log_comment = '05042_per_block_scan';
 
 -- Same scan in reverse order: the matches are at the start of the reverse scan,
 -- so only the tail of the last part must be read.
 select x from tab where v = 1 order by x desc limit 5
-settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          max_threads = 2, use_query_condition_cache = 0, use_statistics_for_part_pruning = 0,
          log_comment = '05042_per_block_scan_reverse';
 

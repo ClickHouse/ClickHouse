@@ -24,7 +24,7 @@ SETTINGS read_in_order_use_virtual_row_per_block = 0, log_comment = '05137_initi
 -- Per-block announcements must preserve every chunk in the active queue.
 SELECT groupArray(k) = range(0, 10000, 2)
 FROM (SELECT k FROM vrow_active WHERE probe % 2 = 0 ORDER BY k LIMIT 5000)
-SETTINGS read_in_order_use_virtual_row_per_block = 1, log_comment = '05137_per_block',
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1, log_comment = '05137_per_block',
          prefer_external_sort_block_bytes = 0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -37,20 +37,20 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
 -- stream may stop after its own limit, while the merge applies the global limit.
 SELECT groupArray(k) = arraySlice(range(0, 131072, 16), 1, 5000)
 FROM (SELECT k FROM vrow_active WHERE probe % 16 = 0 ORDER BY k LIMIT 5000)
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT groupArray(k) = arraySlice(range(0, 131072, 16), 1, 5000)
 FROM (SELECT k FROM vrow_active WHERE probe % 16 = 0 ORDER BY k LIMIT 5000)
-SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_prefetch_window = 2;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1, read_in_order_virtual_row_prefetch_window = 2;
 
 -- Removing the limit must drain the complete contents of all stream queues.
 SELECT groupArray(k) = range(0, 131072, 16)
 FROM (SELECT k FROM vrow_active WHERE probe % 16 = 0 ORDER BY k)
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT groupArray(k) = range(0, 131072, 16)
 FROM (SELECT k FROM vrow_active WHERE probe % 16 = 0 ORDER BY k)
-SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_use_buffering = 0,
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1, read_in_order_use_buffering = 0,
          read_in_order_virtual_row_prefetch_window = 2;
 
 DROP TABLE vrow_active;
