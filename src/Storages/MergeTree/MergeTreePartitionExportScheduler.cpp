@@ -472,7 +472,10 @@ void MergeTreePartitionExportScheduler::handlePartCompletion(
         std::lock_guard lock(mutex);
         auto it = findByTransactionId(transaction_id);
         if (it == tasks.end())
+        {
+            LOG_DEBUG(storage.log, "ExportPartition: task {} completed, but manifest not. The task was likely overwritten by a new task or this is a bug", transaction_id);
             return;
+        }
 
         auto & entry = it->second;
 
