@@ -18,9 +18,15 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -31,16 +37,21 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
 }
 
-void expectPipeline(DistinctStep & step, size_t streams, size_t distincts, bool scatters)
+QueryPipelineBuilder makePipeline(const SharedHeader & header, size_t streams)
 {
-    const auto & header = step.getInputHeaders().front();
     Pipes pipes;
-    for (size_t i = 0; i < 4; ++i)
+    for (size_t i = 0; i < streams; ++i)
         pipes.emplace_back(std::make_shared<NullSource>(header));
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
     pipeline.setMaxThreads(4);
+    return pipeline;
+}
+
+void expectPipeline(DistinctStep & step, size_t input_streams, size_t output_streams, size_t distincts, bool scatters)
+{
+    auto pipeline = makePipeline(step.getInputHeaders().front(), input_streams);
     step.transformPipeline(pipeline, BuildQueryPipelineSettings(getContext().context));
 
     size_t distinct_count = 0;
@@ -50,7 +61,7 @@ void expectPipeline(DistinctStep & step, size_t streams, size_t distincts, bool 
         distinct_count += processor->getName() == "DistinctTransform";
         has_scatter |= processor->getName() == "ScatterByPartitionTransform";
     }
-    EXPECT_EQ(pipeline.getNumStreams(), streams);
+    EXPECT_EQ(pipeline.getNumStreams(), output_streams);
     EXPECT_EQ(distinct_count, distincts);
     EXPECT_EQ(has_scatter, scatters);
 }
@@ -98,12 +109,12 @@ TEST(DistinctStepInputOrder, OnlyExplicitOrderRequirementsPreventParallelization
                         step.preserveInputOrder();
                     step.updateLimitHint(updated_hint);
 
-                    const size_t streams = disjoint && !preserve_order ? 4 : 1;
+                    const size_t streams = preserve_order ? 1 : 4;
                     const size_t distincts = preserve_order ? 1 : 4;
                     const bool scatters = !disjoint && !preserve_order;
-                    expectPipeline(step, streams, distincts, scatters);
+                    expectPipeline(step, preserve_order ? 1 : 4, streams, distincts, scatters);
                     auto clone = step.clone();
-                    expectPipeline(static_cast<DistinctStep &>(*clone), streams, distincts, scatters);
+                    expectPipeline(static_cast<DistinctStep &>(*clone), preserve_order ? 1 : 4, streams, distincts, scatters);
                 }
             }
         }
@@ -148,9 +159,39 @@ TEST(DistinctStepInputOrder, DeserializedStepsDeriveOrderFromTheirInput)
                 {
                     distinct->enableParallelDistinct();
                     distinct->skipStreamMerging();
-                    expectPipeline(*distinct, sorted && !preliminary ? 1 : 4, sorted && !preliminary ? 1 : 4, false);
+                    const size_t streams = sorted && !preliminary ? 1 : 4;
+                    expectPipeline(*distinct, streams, streams, streams, false);
                 }
             }
         }
     }
+}
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+TEST(DistinctStepInputOrderDeathTest, GlobalOrderRequiresSingleInputStream)
+#else
+TEST(DistinctStepInputOrder, GlobalOrderRequiresSingleInputStream)
+#endif
+{
+    DistinctStep step(makeHeader(), SizeLimits{}, 0, Names{"k"}, false);
+    step.preserveInputOrder();
+    auto pipeline = makePipeline(step.getInputHeaders().front(), 4);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+        step.transformPipeline(pipeline, BuildQueryPipelineSettings(getContext().context)),
+        "Order-preserving DISTINCT requires a single input stream");
+#else
+    try
+    {
+        step.transformPipeline(pipeline, BuildQueryPipelineSettings(getContext().context));
+        FAIL() << "Expected an exception for globally ordered input with multiple streams";
+    }
+    catch (Exception & e)
+    {
+        e.markAsLogged();
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+    }
+#endif
 }

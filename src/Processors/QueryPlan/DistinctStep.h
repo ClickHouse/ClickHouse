@@ -18,7 +18,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        /// If enabled, execute the `DISTINCT` for separate streams, otherwise for merged streams. The
+        /// If enabled, reduce duplicates within each input stream before final deduplication. This
         /// per-stream deduplication is best-effort: duplicates from different streams pass through it
         /// in any case, so a deduplicating consumer must follow, and on mostly-unique input the
         /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
@@ -65,6 +65,7 @@ public:
     void enableParallelDistinct() { parallel_distinct = true; }
 
     /// Preserve the established global ordering of the input during final deduplication.
+    /// The input pipeline must already have a single stream.
     void preserveInputOrder() { preserve_input_order = true; }
     bool mustPreserveInputOrder() const { return preserve_input_order; }
 

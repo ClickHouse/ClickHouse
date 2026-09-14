@@ -23,9 +23,14 @@ namespace ErrorCodes
 namespace
 {
 
-/// The chunk containing the keys that reached a global `BREAK` limit must be emitted before stopping.
-struct DistinctLimitReached : public ChunkInfoCloneable<DistinctLimitReached>
+/// Retained set bytes added since the previous output chunk. The chunk's rows are the new keys.
+struct DistinctSetSizeDelta : public ChunkInfoCloneable<DistinctSetSizeDelta>
 {
+    explicit DistinctSetSizeDelta(UInt64 bytes_)
+        : bytes(bytes_)
+    {
+    }
+    UInt64 bytes;
 };
 
 /// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
@@ -106,15 +111,15 @@ DistinctTransform::DistinctTransform(
     const Names & columns_,
     bool allow_abandoning_,
     bool skip_null_keys_,
-    DistinctSharedSetSizePtr shared_set_size_)
+    bool report_set_size_)
     : ISimpleTransform(header_, header_, true)
     , key_columns_pos(getNonConstantKeyColumnPositions(*header_, columns_))
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
-    , shared_set_size(std::move(shared_set_size_))
+    , report_set_size(report_set_size_)
     , skip_null_keys(skip_null_keys_)
 {
-    chassert(!shared_set_size || !allow_abandoning_);
+    chassert(!report_set_size || (!allow_abandoning_ && !set_size_limits.hasLimits()));
     if (allow_abandoning_)
         abandon_controller.emplace();
 
@@ -315,6 +320,8 @@ void DistinctTransform::transform(Chunk & chunk)
             column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
+        if (report_set_size)
+            chunk.getChunkInfos().add(std::make_shared<DistinctSetSizeDelta>(0));
         stopReading();
         return;
     }
@@ -418,26 +425,17 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Only retained allocations count towards the byte limit; preliminary deduplication may have
     /// released its set. Parallel final transforms keep disjoint sets whose sizes add up.
     const auto new_set_bytes = data ? data->getTotalByteCount() : 0;
-    UInt64 checked_rows = new_set_size;
-    UInt64 checked_bytes = new_set_bytes;
-    if (shared_set_size)
+    if (report_set_size)
     {
-        chassert(new_set_bytes >= accounted_set_bytes);
-        const UInt64 new_bytes = new_set_bytes - accounted_set_bytes;
-        accounted_set_bytes = new_set_bytes;
-
-        checked_rows = shared_set_size->rows.fetch_add(num_selected, std::memory_order_relaxed) + num_selected;
-        checked_bytes = shared_set_size->bytes.fetch_add(new_bytes, std::memory_order_relaxed) + new_bytes;
+        chassert(new_set_bytes >= reported_set_bytes);
+        chunk.getChunkInfos().add(std::make_shared<DistinctSetSizeDelta>(new_set_bytes - reported_set_bytes));
+        reported_set_bytes = new_set_bytes;
     }
-
-    /// In case of overflow_mode = 'break' `check` returns false instead of throwing.
-    /// Stop reading, but still emit the new rows from the current chunk (their keys are
-    /// already in the set): 'break' means return a partial result as if the source data
-    /// ran out, not discard it.
-    if (!set_size_limits.check(checked_rows, checked_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    else if (!set_size_limits.check(new_set_size, new_set_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
-        if (shared_set_size)
-            chunk.getChunkInfos().add(std::make_shared<DistinctLimitReached>());
+        /// In `BREAK` mode, `SizeLimits::check` returns false instead of throwing. The new keys from this
+        /// chunk are already in the set, so emit their rows before stopping. This returns a partial result
+        /// as if the input had run out, including the chunk that reached the limit.
         stopReading();
     }
 
@@ -459,9 +457,104 @@ void DistinctTransform::transform(Chunk & chunk)
         stopReading();
 }
 
-void DistinctLimitTransform::transform(Chunk & chunk)
+DistinctLimitTransform::DistinctLimitTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams)
+    : IProcessor(InputPorts(num_streams, header), OutputPorts(num_streams, header))
+    , size_limits(size_limits_)
 {
-    if (chunk.getChunkInfos().extract<DistinctLimitReached>())
-        stopReading();
+    port_pairs.reserve(num_streams);
+    port_to_pair.reserve(2 * num_streams);
+    auto output = outputs.begin();
+    for (auto & input : inputs)
+    {
+        auto & pair = port_pairs.emplace_back(input, *output++);
+        port_to_pair.emplace(&pair.input, &pair);
+        port_to_pair.emplace(&pair.output, &pair);
+    }
+}
+
+IProcessor::Status DistinctLimitTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    bool has_full_port = false;
+    auto prepare_ports = [&](const auto & updated_ports)
+    {
+        for (const auto * port : updated_ports)
+        {
+            /// `BREAK` emits the chunk that reaches the limit and stops processing further port updates.
+            if (limit_reached)
+                break;
+
+            auto & pair = *port_to_pair.at(port);
+            const auto status = preparePair(pair);
+            if (status == Status::Finished && !pair.is_finished)
+            {
+                pair.is_finished = true;
+                ++num_finished_port_pairs;
+            }
+            has_full_port |= status == Status::PortFull;
+        }
+    };
+
+    prepare_ports(updated_inputs);
+    prepare_ports(updated_outputs);
+
+    if (limit_reached)
+    {
+        for (auto & input : inputs)
+            input.close();
+        for (auto & output : outputs)
+            output.finish();
+        return Status::Finished;
+    }
+
+    if (num_finished_port_pairs == port_pairs.size())
+        return Status::Finished;
+
+    return has_full_port ? Status::PortFull : Status::NeedData;
+}
+
+IProcessor::Status DistinctLimitTransform::prepare()
+{
+    chassert(port_pairs.size() == 1);
+    return prepare({&port_pairs.front().input}, {&port_pairs.front().output});
+}
+
+IProcessor::Status DistinctLimitTransform::preparePair(PortPair & pair)
+{
+    auto & input = pair.input;
+    auto & output = pair.output;
+
+    if (output.isFinished())
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    if (input.isFinished())
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
+    input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData;
+
+    auto data_chunk = input.pullData(true);
+    if (data_chunk.chunk.hasRows())
+    {
+        auto set_size_delta = data_chunk.chunk.getChunkInfos().extract<DistinctSetSizeDelta>();
+        chassert(set_size_delta);
+        rows += data_chunk.chunk.getNumRows();
+        bytes += set_size_delta->bytes;
+        limit_reached = !size_limits.check(rows, bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
+    output.pushData(std::move(data_chunk));
+    return Status::PortFull;
 }
 }

@@ -24,6 +24,7 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 bool preliminaryDistinctIsUseful(size_t max_threads)
@@ -37,7 +38,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = !pre_distinct,
+            .returns_single_stream = false,
             .preserves_number_of_streams = preserves_number_of_streams,
             .preserves_sorting = preserves_number_of_streams,
         },
@@ -99,25 +100,23 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 {
     /// Final deduplication can keep disjoint streams separate unless a consumer requires their original
     /// order. Preliminary deduplication always processes each stream independently.
+    if (preserve_input_order && pipeline.getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Order-preserving DISTINCT requires a single input stream");
+
     bool scattered = false;
-    if (!pre_distinct && (!skip_stream_merging || preserve_input_order))
+    if (!pre_distinct && !skip_stream_merging)
     {
-        /// Hash partitioning makes the streams disjoint, but changes their order. A sorted transform
-        /// also needs its input order to deduplicate one range of equal values at a time.
-        scattered = parallel_distinct && !preserve_input_order && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
+        /// Hash partitioning makes the streams disjoint, but changes their order. Sorted deduplication
+        /// needs equal prefix values to remain contiguous so it can deduplicate one range at a time.
+        scattered = parallel_distinct && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
         if (!scattered)
             pipeline.resize(1);
     }
 
-    /// Size limits apply to the combined set across all hash partitions.
-    DistinctSharedSetSizePtr shared_set_size;
-    if (scattered && set_size_limits.hasLimits())
-        shared_set_size = std::make_shared<DistinctSharedSetSize>();
-
-    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
-    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
-    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
-    const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+    /// Size limits apply to the combined set across all hash partitions. Each partition reports its new
+    /// keys and retained set bytes to one limit processor, so local size checks are disabled in this case.
+    const bool global_limits = scattered && set_size_limits.hasLimits();
+    const SizeLimits local_limits = global_limits ? SizeLimits{} : set_size_limits;
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -125,31 +124,24 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            /// When the stream is sorted by a prefix of the distinct columns, deduplicate by
-            /// ranges of equal prefix values, hashing only the remaining columns within a range
-            /// (and with no remaining columns, keeping one row per range without hashing at all).
+            /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of
+            /// equal prefix values, hashing only the remaining columns within each range. If no columns
+            /// remain, keep one row per range without hashing.
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
+            /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+            /// mostly-unique input the transform may abandon it and free its hash table. A limit hint
+            /// forbids this: an abandoned transform cannot count distinct rows to stop its input early.
+            const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
             return std::make_shared<DistinctTransform>(
-                header, set_size_limits, limit_hint, columns, allow_abandoning, /*skip_null_keys=*/false, shared_set_size);
+                header, local_limits, limit_hint, columns, allow_abandoning, /*skip_null_keys=*/false, /*report_set_size=*/global_limits);
         });
 
-    if (scattered)
-    {
-        /// The partition outputs are already disjoint, so merging them needs no further deduplication.
-        pipeline.resize(1);
-        if (shared_set_size && set_size_limits.overflow_mode == OverflowMode::BREAK)
-        {
-            pipeline.addSimpleTransform(
-                [](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                {
-                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                        return nullptr;
-                    return std::make_shared<DistinctLimitTransform>(header);
-                });
-        }
-    }
+    /// The scattered outputs are already disjoint, so a later merge needs no further deduplication.
+    /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.
+    if (global_limits)
+        pipeline.addTransform(std::make_shared<DistinctLimitTransform>(pipeline.getSharedHeader(), set_size_limits, pipeline.getNumStreams()));
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const
