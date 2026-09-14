@@ -59,8 +59,9 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
     }
     else
     {
-        /// A `cte_name` subquery prints as a bare identifier but is still built from its body: both query-tree
-        /// builders index `children[0]` unconditionally, so a bodyless one is an out-of-bounds read.
+        /// A `cte_name` subquery prints as a bare identifier but is still built from its body: the query tree
+        /// builder indexes `children[0]` unconditionally in both expression and table position, so a bodyless
+        /// one is an out-of-bounds read.
         if (children.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTSubquery JSON must have exactly one child when 'cte_name' is set, got {}",
