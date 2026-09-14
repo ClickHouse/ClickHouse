@@ -41,7 +41,7 @@ struct StorageSnapshot
     std::shared_ptr<StorageSnapshot> clone(StorageMetadataPtr metadata_, DataPtr data_) const;
 
     /// Returns an equivalent snapshot that additionally owns `holder`, whose referent must be `storage`.
-    /// Ownership is what keeps that storage alive: DatabaseCatalog::getTablesToDrop() treats a dropped
+    /// Ownership is what keeps that storage alive: DatabaseCatalog::getTablesToDrop treats a dropped
     /// table as unused as soon as its only remaining shared_ptr is the catalog's own.
     std::shared_ptr<StorageSnapshot> withStorageHolder(ConstStoragePtr holder) const;
 

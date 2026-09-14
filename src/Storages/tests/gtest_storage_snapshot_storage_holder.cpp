@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <functional>
+
 #include <Databases/DatabaseMemory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -13,8 +15,8 @@
 /// StorageSnapshot refers to its storage without owning it, which is sound only while the caller that
 /// took the snapshot keeps a StoragePtr. StorageAlias breaks that: it hands out a snapshot of the table
 /// it points at, which its own caller neither owns nor locks, so the target could be dropped and
-/// destroyed under a running query (heap-use-after-free in IStorage::getStorageID(), STID 2350-8243).
-/// withStorageHolder() is the opt-in ownership token that closes it. These tests assert the token
+/// destroyed under a running query (heap-use-after-free in IStorage::getStorageID, STID 2350-8243).
+/// withStorageHolder is the opt-in ownership token that closes it. These tests assert the token
 /// mechanism through weak_ptr expiry, which is deterministic and needs no sanitizer.
 
 namespace
@@ -23,7 +25,7 @@ namespace
 using namespace DB;
 
 /// The invariant is a property of StorageSnapshot itself and holds for any engine, so the cheapest
-/// storage that can serve the base getStorageSnapshot() is enough; a real engine would only add a
+/// storage that can serve the base getStorageSnapshot is enough; a real engine would only add a
 /// Context and a disk to the fixture.
 class StorageForSnapshotHolderTest final : public IStorage
 {
@@ -68,7 +70,7 @@ TEST(StorageSnapshotStorageHolder, PinsTheReferentUntilTheLastSnapshotIsGone)
     auto cloned = pinned->clone(nullptr);
     pinned.reset();
 
-    /// clone() has to carry the token, or every projection and metadata re-wrap would silently drop it.
+    /// clone has to carry the token, or every projection and metadata re-wrap would silently drop it.
     ASSERT_FALSE(weak.expired());
     EXPECT_EQ(cloned->storage.getStorageID().getFullTableName(), expected_name);
 
@@ -139,10 +141,40 @@ TEST(StorageSnapshotStorageHolder, AliasChainKeepsTheInnermostReferentPinned)
     EXPECT_TRUE(weak_intermediate.expired());
 }
 
-TEST(StorageSnapshotStorageHolder, StorageAliasPinsTheTargetItHandsOut)
+TEST(StorageSnapshotStorageHolder, CloneWithMetadataCarriesTheToken)
+{
+    auto storage = makeStorage("re_wrapped");
+    std::weak_ptr<const IStorage> weak = storage;
+    const String expected_name = storage->getStorageID().getFullTableName();
+
+    auto pinned = takeSnapshot(storage)->withStorageHolder(storage);
+
+    /// TableNode::updateStorage and TableNode::setTableExpressionModifiers re-wrap a snapshot through
+    /// the two-argument overload, so a table expression carrying `FINAL` or `SAMPLE` reaches it on an
+    /// ordinary read.
+    auto rewrapped = pinned->clone(std::make_shared<StorageInMemoryMetadata>(), pinned->data);
+
+    pinned.reset();
+    storage.reset();
+
+    ASSERT_FALSE(weak.expired());
+    EXPECT_EQ(rewrapped->storage.getStorageID().getFullTableName(), expected_name);
+
+    rewrapped.reset();
+    EXPECT_TRUE(weak.expired());
+}
+
+namespace
+{
+
+/// Both StorageAlias accessors have to pin, so the two arms below differ only in which one they call.
+/// `take_snapshot` receives the alias rather than capturing it, because the alias must be constructed
+/// after the target is attached.
+void assertStorageAliasPinsItsTarget(
+    const String & database_name,
+    const std::function<StorageSnapshotPtr(const StorageAlias &, ContextPtr)> & take_snapshot)
 {
     auto context = getContext().context;
-    const String database_name = "test_storage_alias_holder_db";
 
     auto database = std::make_shared<DatabaseMemory>(database_name, context);
     DatabaseCatalog::instance().attachDatabase(database_name, database);
@@ -156,10 +188,10 @@ TEST(StorageSnapshotStorageHolder, StorageAliasPinsTheTargetItHandsOut)
     /// An alias owns nothing and resolves its target through DatabaseCatalog on every access, so this
     /// is the whole ownership state a query has when it reads through one.
     auto alias = std::make_shared<StorageAlias>(StorageID{database_name, "alias"}, context, database_name, "target");
-    auto snapshot = alias->getStorageSnapshot(std::make_shared<StorageInMemoryMetadata>(), context);
+    auto snapshot = take_snapshot(*alias, context);
 
     /// Detaching releases the catalog's own StoragePtr, which is what DROP does before the background
-    /// worker destroys the table: DatabaseCatalog::getTablesToDrop() frees it as soon as no one else
+    /// worker destroys the table: DatabaseCatalog::getTablesToDrop frees it as soon as no one else
     /// owns it. So from here the snapshot's token is the only thing that can keep the target alive.
     database->detachTable(context, "target");
 
@@ -168,4 +200,22 @@ TEST(StorageSnapshotStorageHolder, StorageAliasPinsTheTargetItHandsOut)
 
     snapshot.reset();
     EXPECT_TRUE(weak_target.expired());
+}
+
+}
+
+TEST(StorageSnapshotStorageHolder, StorageAliasPinsTheTargetItHandsOut)
+{
+    assertStorageAliasPinsItsTarget(
+        "test_storage_alias_holder_db",
+        [](const StorageAlias & alias, ContextPtr context)
+        { return alias.getStorageSnapshot(std::make_shared<StorageInMemoryMetadata>(), context); });
+}
+
+TEST(StorageSnapshotStorageHolder, StorageAliasPinsTheTargetForASnapshotWithoutData)
+{
+    assertStorageAliasPinsItsTarget(
+        "test_storage_alias_holder_without_data_db",
+        [](const StorageAlias & alias, ContextPtr context)
+        { return alias.getStorageSnapshotWithoutData(std::make_shared<StorageInMemoryMetadata>(), context); });
 }
