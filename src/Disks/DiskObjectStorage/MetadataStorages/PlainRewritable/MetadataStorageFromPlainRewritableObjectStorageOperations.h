@@ -39,11 +39,10 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
 
     /// Set after all validation and before the write, so `undo` runs exactly when `execute` may have changed object
-    /// storage; see `blob_move_prepared` of the move operation.
-    bool undo_prepared = false;
+    /// storage; see `blob_move_attempted` of the move operation.
+    bool write_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -53,8 +52,7 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -69,7 +67,6 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
 
@@ -83,8 +80,7 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -98,11 +94,10 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
 
     DirectoryRemoteInfo info;
-    /// Set once `info` is captured and before the removal; see `blob_move_prepared` of the move operation.
-    bool undo_prepared = false;
+    /// Set once `info` is captured and before the removal; see `blob_move_attempted` of the move operation.
+    bool remove_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
@@ -110,8 +105,7 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -149,13 +143,12 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
-    /// Set once both keys are known and before the first write; see `blob_move_prepared` of the move operation.
-    bool blob_removal_prepared = false;
+    /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
+    bool blob_removal_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -165,7 +158,6 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
 
     void execute() override;
@@ -183,12 +175,11 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
-    /// Set once both keys are known and before the copy; see `blob_move_prepared` of the move operation.
-    bool undo_prepared = false;
+    /// Set once both keys are known and before the copy; see `blob_move_attempted` of the move operation.
+    bool copy_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -197,8 +188,7 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -219,7 +209,6 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_path_from;
@@ -229,7 +218,7 @@ private:
     std::optional<FileRemoteInfo> file_from_remote_info;
     /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
     /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
-    bool blob_move_prepared{false};
+    bool blob_move_attempted{false};
     bool had_existing_target{false};
 
 public:
@@ -241,7 +230,6 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
@@ -276,7 +264,6 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoWithRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     const LoggerPtr log;
@@ -293,7 +280,6 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        UndoWithRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
 
     void execute() override;

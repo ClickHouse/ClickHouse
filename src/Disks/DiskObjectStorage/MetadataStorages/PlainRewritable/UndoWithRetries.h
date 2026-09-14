@@ -2,10 +2,7 @@
 
 #include <Common/Logger.h>
 
-#include <condition_variable>
 #include <functional>
-#include <memory>
-#include <mutex>
 #include <string_view>
 
 namespace DB
@@ -29,27 +26,9 @@ namespace DB
   * because a commit holds the metadata lock. This is deliberate. A disk whose metadata cannot be repaired must not
   * accept more metadata.
   *
-  * A shutdown is the only exit. The retries stop, the transaction reports the failure, and the next start loads the
-  * filesystem from object storage.
-  *
   * A stage that throws `LOGICAL_ERROR` is not repeated, because no invariant is repaired by asking again. A stage uses
   * it to report the one state a reversal cannot leave: the blob it has to restore exists nowhere.
   */
-class UndoWithRetries
-{
-public:
-    /// Runs `stage` until it succeeds. Rethrows the last exception when a shutdown stops the retries.
-    void runStage(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage);
-
-    /// Stops the retries of every `undo` in flight.
-    void shutdown();
-
-private:
-    std::mutex mutex;
-    std::condition_variable shutdown_condition;
-    bool shutdown_called = false;
-};
-
-using UndoWithRetriesPtr = std::shared_ptr<UndoWithRetries>;
+void undoWithRetries(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage);
 
 }

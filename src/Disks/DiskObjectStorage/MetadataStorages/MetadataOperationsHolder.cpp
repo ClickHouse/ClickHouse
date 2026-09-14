@@ -31,8 +31,8 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         }
         catch (...)
         {
-            /// The operations below this one keep whatever they have written, so object storage may now describe a
-            /// filesystem this process does not have, until the filesystem is next loaded from object storage.
+            /// This operation and the ones below it keep whatever they have already written, while the transaction is
+            /// reported as failed, so the metadata is left describing a part of a transaction that did not happen.
             ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
 
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
@@ -40,9 +40,8 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
             rollback_reason.addMessage(fmt::format("While rolling back operation #{}", i));
             rollback_reason.addMessage(getExceptionMessage(std::current_exception(), /*with_stacktrace=*/true));
             rollback_reason.addMessage(
-                "Rolling back the metadata transaction did not complete, so object storage may keep a part of it; "
-                "the filesystem in memory does not have that part, and the next start loads the filesystem from "
-                "object storage");
+                "Rolling back the metadata transaction did not complete, so the metadata keeps a part of a transaction "
+                "that is reported as failed");
 
             return;
         }
