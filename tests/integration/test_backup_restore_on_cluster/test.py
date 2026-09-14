@@ -732,6 +732,8 @@ def test_required_privileges():
 
     node1.query("CREATE USER u1")
     node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have the grant BACKUP ON default.tbl"
@@ -759,6 +761,8 @@ def test_required_privileges():
 
     node1.query("DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
+    # REVOKE ALL took the DISK grant too; the RESTORE below still needs the read direction.
+    node1.query("GRANT READ ON DISK TO u1")
 
     expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl"
     assert expected_error in node1.query_and_get_error(
@@ -779,6 +783,8 @@ def test_system_users():
     backup_name = new_backup_name()
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
     node1.query("GRANT CLUSTER ON *.* TO u2")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u2")
 
     expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(

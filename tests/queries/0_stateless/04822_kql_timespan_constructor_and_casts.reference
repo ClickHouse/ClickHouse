@@ -1,0 +1,45 @@
+-- a bare number in timespan()/time() counts days --
+172800000000000
+172800000000000
+43200000000000
+-172800000000000
+-- the unit may be a separate word --
+15000000000
+9000000000000
+100
+-- the printed form may come unquoted --
+45296700000000
+45296000000000
+-- and the literal forms still work --
+86400000000000
+60000000000
+\N
+-- totimespan() takes an expression, not only a literal --
+7200000000000
+7200000000000
+93784500000000
+172800000000000
+129600000000000
+120000000000
+-- an unreadable string casts to null, not an error --
+\N
+\N
+\N
+\N
+-- timespans scale by a number on either side --
+7200000000000
+9000000000000
+12
+-- make_timespan validates its clock fields --
+4320000000000
+86340000000000
+172799500000000
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- constructor mistakes still fail loudly --
