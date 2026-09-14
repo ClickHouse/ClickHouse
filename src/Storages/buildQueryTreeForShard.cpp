@@ -953,6 +953,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
+        /** `PREWHERE` is bound to the broadcast table and is moved into that subquery (below).
+          * Nested `GLOBAL IN` / `GLOBAL JOIN` nodes collected from the original `PREWHERE` then
+          * point at a tree that is no longer attached. Executing them here would materialize the
+          * nested subquery a second time, after `executeSubqueryNode` already ran the moved copy.
+          */
+        if (!isNodePartOfTree(global_in_or_join_node.query_node.get(), query_tree_to_modify.get()))
+            continue;
+
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
             TableExpressionNodePtr join_table_expression;
