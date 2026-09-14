@@ -1,8 +1,7 @@
--- Tags: no-fasttest, zookeeper, no-ordinary-database, no-replicated-database
+-- Tags: no-fasttest, zookeeper, no-ordinary-database
 -- no-fasttest: S3Queue is not built in the fast test.
 -- zookeeper: the queue keeps its metadata in Keeper.
 -- no-ordinary-database: RENAME DATABASE is refused with the same error code there, which would mask this check.
--- no-replicated-database: the DDL worker runs the rename and does not report the storage's error code to the client.
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 

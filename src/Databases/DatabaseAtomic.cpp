@@ -755,7 +755,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
-    /// The renameInMemory loop below only notifies the storages, it does not ask them whether the new
+    /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
     /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
     for (const auto & table : tables)
         table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
