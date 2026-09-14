@@ -21,6 +21,7 @@
 #include <Common/saturatedDuration.h>
 #include <array>
 #include <chrono>
+#include <limits>
 #include <memory>
 
 
@@ -76,6 +77,14 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+}
+
+
+/// The limits are UInt64 settings with no maximum, so adding the waiting discount to one near the
+/// type's maximum would wrap and turn "no more than N" into "refuse everything".
+static UInt64 addWaitingDiscount(UInt64 limit, UInt64 waiting)
+{
+    return limit > std::numeric_limits<UInt64>::max() - waiting ? std::numeric_limits<UInt64>::max() : limit + waiting;
 }
 
 
@@ -185,12 +194,12 @@ ProcessList::EntryPtr ProcessList::insert(
         /// A query blocked on an asynchronously loading table is not executing, so it does not hold a
         /// slot in the limits below.
         UInt64 waiting_queries = waiting_queries_amount.load();
-        if (!is_unlimited_query && max_size && non_internal_processes >= max_size + waiting_queries)
+        if (!is_unlimited_query && max_size && non_internal_processes >= addWaitingDiscount(max_size, waiting_queries))
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                    [&]{ waiting_queries = waiting_queries_amount.load(); return non_internal_processes < max_size + waiting_queries; }))
+                    [&]{ waiting_queries = waiting_queries_amount.load(); return non_internal_processes < addWaitingDiscount(max_size, waiting_queries); }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous queries. Maximum: {}{}",
                                 max_size, waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
@@ -201,12 +210,12 @@ ProcessList::EntryPtr ProcessList::insert(
             QueryAmount amount = getQueryKindAmount(query_kind);
             UInt64 waiting_inserts = waiting_insert_queries_amount.load();
             UInt64 waiting_selects = waiting_select_queries_amount.load();
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount + waiting_inserts)
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= addWaitingDiscount(max_insert_queries_amount, waiting_inserts))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous insert queries. Maximum: {}, current: {}{}",
                                 max_insert_queries_amount, amount,
                                 waiting_inserts == 0 ? "" : fmt::format(", waiting: {}", waiting_inserts));
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount + waiting_selects)
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= addWaitingDiscount(max_select_queries_amount, waiting_selects))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous select queries. Maximum: {}, current: {}{}",
                                 max_select_queries_amount, amount,
@@ -235,7 +244,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
             waiting_queries = waiting_queries_amount.load();
             if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
-                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users] + waiting_queries)
+                && non_internal_processes >= addWaitingDiscount(settings[Setting::max_concurrent_queries_for_all_users], waiting_queries))
                 throw Exception(
                     ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                     "Too many simultaneous queries for all users. "
@@ -262,7 +271,7 @@ ProcessList::EntryPtr ProcessList::insert(
             {
                 UInt64 user_waiting_queries = user_process_list->second.waiting_queries_amount.load();
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user] + user_waiting_queries)
+                    && user_process_list->second.non_internal_queries >= addWaitingDiscount(settings[Setting::max_concurrent_queries_for_user], user_waiting_queries))
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for user {}. "
