@@ -331,6 +331,11 @@ namespace ExportPartitionUtils
         const String & partition_id,
         const ContextPtr & context)
     {
+        if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg writes are experimental. "
+                "To allow its usage, enable the setting `allow_insert_into_iceberg` on the initiator (query, session or profile) - replicas inherit it from the scheduled task.");
+
         auto * object_storage = dynamic_cast<StorageObjectStorage *>(dest_storage.get());
         auto * object_storage_cluster = dynamic_cast<StorageObjectStorageCluster *>(dest_storage.get());
 
@@ -345,11 +350,6 @@ namespace ExportPartitionUtils
             iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_cluster->getExternalMetadata(context));
         if (!iceberg_metadata)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is a data lake but not an iceberg table", dest_storage->getName());
-
-        if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Iceberg writes are experimental. "
-                "To allow its usage, enable the setting `allow_insert_into_iceberg` on the initiator (query, session or profile) - replicas inherit it from the scheduled task.");
 
         const auto metadata_object = iceberg_metadata->getMetadataJSON(context);
 
