@@ -11,6 +11,8 @@ SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET join_algorithm = 'hash';
 SET max_bytes_ratio_before_external_join = 0;
+SET optimize_use_projections = 1;
+SET use_skip_indexes = 1;
 
 DROP TABLE IF EXISTS probe_pk;
 DROP TABLE IF EXISTS probe_skip_index;
@@ -19,6 +21,8 @@ DROP TABLE IF EXISTS build_side;
 DROP TABLE IF EXISTS build_two_keys;
 DROP TABLE IF EXISTS probe_two_skip_indexes;
 DROP TABLE IF EXISTS probe_final;
+DROP TABLE IF EXISTS probe_normal_projection;
+DROP TABLE IF EXISTS probe_aggregate_projection;
 
 CREATE TABLE probe_pk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE probe_skip_index (k UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k;
@@ -29,6 +33,12 @@ CREATE TABLE probe_two_skip_indexes (k UInt64, v UInt64, w UInt64,
     INDEX idx_v v TYPE minmax GRANULARITY 1, INDEX idx_w w TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY k;
 CREATE TABLE probe_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
+-- Small granules, so that reading through the projection is cheaper than reading the table and the
+-- projection is picked; `w` is prunable neither in the table nor in the projection.
+CREATE TABLE probe_normal_projection (k UInt64, v UInt64, w UInt64, PROJECTION proj_by_v (SELECT k, v, w ORDER BY v))
+    ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
+CREATE TABLE probe_aggregate_projection (k UInt64, v UInt64, PROJECTION proj_by_v_agg (SELECT v, count() GROUP BY v))
+    ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
 
 INSERT INTO probe_pk SELECT number, number FROM numbers(1000);
 INSERT INTO probe_skip_index SELECT number, number FROM numbers(1000);
@@ -37,6 +47,8 @@ INSERT INTO build_side SELECT number FROM numbers(10);
 INSERT INTO build_two_keys SELECT number, number FROM numbers(10);
 INSERT INTO probe_two_skip_indexes SELECT number, number, number FROM numbers(1000);
 INSERT INTO probe_final SELECT number, number FROM numbers(1000);
+INSERT INTO probe_normal_projection SELECT number, number, number FROM numbers(10000);
+INSERT INTO probe_aggregate_projection SELECT number, number % 1000 FROM numbers(10000);
 
 -- The join key is the primary key of the probe side: the range is used, so it is tracked.
 SELECT 'primary key';
@@ -165,6 +177,49 @@ SELECT trim(explain) FROM (
     SETTINGS use_skip_indexes_on_data_read = 0
 ) WHERE explain LIKE '%Key range tracking%';
 
+-- A projection rewrite replaces the probe-side read with a fresh read over the projection parts after
+-- the runtime filter was registered on the original read. The projection read has to take the filter
+-- over, re-checked against the projection's own primary key: `v` is not prunable in the table (its
+-- primary key is `k`), but it is the sorting key of `proj_by_v`, so tracking stays on there ...
+SELECT 'normal projection, join key is the projection sorting key';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM probe_normal_projection AS p INNER JOIN build_side AS b ON p.v = b.k WHERE p.v < 5000
+) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%ReadFromMergeTree (proj%';
+
+-- ... and a key that neither the table nor the projection can prune is not tracked through the projection either.
+SELECT 'normal projection, join key prunable nowhere';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM probe_normal_projection AS p INNER JOIN build_side AS b ON p.w = b.k WHERE p.v < 5000
+) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%ReadFromMergeTree (proj%';
+
+-- The same for an aggregate projection: the filter is pushed below the aggregation, and the group key
+-- is the primary key of the projection parts.
+SELECT 'aggregate projection';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT sum(c) FROM (SELECT v, count() AS c FROM probe_aggregate_projection GROUP BY v) AS p INNER JOIN build_side AS b ON p.v = b.k
+) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%ReadFromMergeTree (proj%';
+
+-- The projection reads must really prune with the filter, not only announce it in the plan.
+SELECT count() FROM probe_normal_projection AS p INNER JOIN build_side AS b ON p.v = b.k WHERE p.v < 5000
+    FORMAT Null SETTINGS use_skip_indexes_on_data_read = 1, log_comment = '05175_normal_projection';
+SELECT sum(c) FROM (SELECT v, count() AS c FROM probe_aggregate_projection GROUP BY v) AS p INNER JOIN build_side AS b ON p.v = b.k
+    FORMAT Null SETTINGS use_skip_indexes_on_data_read = 1, log_comment = '05175_aggregate_projection';
+SYSTEM FLUSH LOGS query_log;
+SELECT 'granules pruned through the projection';
+SELECT
+    log_comment,
+    argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time) > 0,
+    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND log_comment IN ('05175_normal_projection', '05175_aggregate_projection')
+    AND type = 'QueryFinish'
+GROUP BY log_comment
+ORDER BY log_comment;
+
 -- The results must not depend on the pruning.
 SELECT 'results';
 SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k;
@@ -175,6 +230,9 @@ SELECT count() FROM probe_two_skip_indexes AS p INNER JOIN build_side AS b ON p.
     SETTINGS ignore_data_skipping_indices = 'idx_v';
 SELECT count() FROM probe_final AS p FINAL INNER JOIN build_side AS b ON p.k = b.k;
 SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT count() FROM probe_normal_projection AS p INNER JOIN build_side AS b ON p.v = b.k WHERE p.v < 5000;
+SELECT count() FROM probe_normal_projection AS p INNER JOIN build_side AS b ON p.w = b.k WHERE p.v < 5000;
+SELECT sum(c) FROM (SELECT v, count() AS c FROM probe_aggregate_projection GROUP BY v) AS p INNER JOIN build_side AS b ON p.v = b.k;
 
 DROP TABLE probe_pk;
 DROP TABLE probe_skip_index;
@@ -183,3 +241,5 @@ DROP TABLE build_side;
 DROP TABLE build_two_keys;
 DROP TABLE probe_two_skip_indexes;
 DROP TABLE probe_final;
+DROP TABLE probe_normal_projection;
+DROP TABLE probe_aggregate_projection;

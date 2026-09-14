@@ -2897,6 +2897,10 @@ bool ReadFromMergeTree::canUseJoinRuntimeFilterIndexAnalysis() const
 
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
 {
+    /// Remembered before any check: a read that replaces this one has to redo the checks below with
+    /// its own metadata, see `inheritJoinRuntimeFiltersForIndexAnalysis`.
+    join_runtime_filter_candidates_for_index_analysis.push_back({filter_id, column_name, column_type});
+
     /// Do not register a descriptor this read will refuse to use anyway: the descriptor set is what
     /// the build side inspects to decide whether tracking the key range is worth anything.
     if (!canUseJoinRuntimeFilterIndexAnalysis())
@@ -2939,6 +2943,16 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
     join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+}
+
+void ReadFromMergeTree::inheritJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step)
+{
+    /// The replaced read validated the keys against its own metadata. This step reads other parts (a
+    /// projection) with a primary key and skip indexes of its own, so every key it was offered is
+    /// re-validated here instead of copying the outcome: a key the base table could not prune may be
+    /// the projection's sorting key, and the other way round.
+    for (const auto & candidate : replaced_step.join_runtime_filter_candidates_for_index_analysis)
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(candidate.filter_id, candidate.key_column_name, candidate.key_column_type);
 }
 
 void ReadFromMergeTree::buildPartitionPruningIndexes(
@@ -3001,6 +3015,22 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
         /* check_index_usage */ false);
 }
 
+/// The skeleton of the key condition without resolved columns: the read-time index reader instantiates it
+/// per part, and the join runtime filter pruning attaches its dynamic predicate to it.
+static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionRpnTemplate(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & query_context,
+    bool skip_constant_folding)
+{
+    auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
+    {
+        ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
+        return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
+    };
+    return std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -3035,14 +3065,7 @@ void ReadFromMergeTree::buildIndexes(
         indexes.emplace(std::move(key_condition_template));
     }
 
-    {
-        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
-        {
-            ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
-        };
-        indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
-    }
+    indexes->key_condition_rpn_template = buildKeyConditionRpnTemplate(filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding);
 
     buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
 
@@ -5173,10 +5196,30 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// registration already applied, so a descriptor only survives here if this read can consume it.
     bool runtime_prune_primary_key = false;
     MergeTreeIndices runtime_skip_indexes;
-    if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+    /// The condition template the runtime filter reader attaches its dynamic predicate to. A read that
+    /// analyzed its own ranges has it in `indexes`. A projection read has no `indexes` at all: it was built
+    /// on the analysis result of the projection candidate (`MergeTreeDataSelectExecutor::estimateNumMarksToRead`),
+    /// which applies every skip index in full instead of deferring them to read time. Building the whole
+    /// `indexes` for it would re-apply those skip indexes on read, so build just the template it needs.
+    ConditionTemplate<KeyCondition>::Ptr runtime_filter_condition_template;
+    const bool join_runtime_filters_wanted = context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         && canUseJoinRuntimeFilterIndexAnalysis()
-        && !join_runtime_filters_for_index_analysis.empty()
-        && indexes.has_value())
+        && !join_runtime_filters_for_index_analysis.empty();
+    if (join_runtime_filters_wanted)
+    {
+        if (indexes)
+        {
+            runtime_filter_condition_template = indexes->key_condition_rpn_template;
+        }
+        else
+        {
+            const bool skip_constant_folding = skip_partition_pruning || !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
+            auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(
+                query_info.filter_actions_dag ? query_info.filter_actions_dag->getOutputs().front() : nullptr, context, /* boolean_context */ true);
+            runtime_filter_condition_template = buildKeyConditionRpnTemplate(filter_dag_ptr, storage_snapshot->metadata, context, skip_constant_folding);
+        }
+    }
+    if (runtime_filter_condition_template)
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
         /// part is gated by use_skip_indexes (buildIndexes builds key_condition_rpn_template regardless).
@@ -5284,7 +5327,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
-            indexes->key_condition_rpn_template,
+            runtime_filter_condition_template,
             /*use_for_disjunctions=*/false,
             context->getIndexMarkCache(),
             context->getIndexUncompressedCache(),
