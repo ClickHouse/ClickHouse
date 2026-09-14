@@ -115,6 +115,57 @@ SELECT 'UInt64 first vector middle',
     has(materialize(range(32)::Array(UInt64)), toUInt64(2)),
     indexOf(materialize(range(32)::Array(UInt64)), toUInt64(2));
 
+SELECT 'UInt8 first vector early',
+    has(materialize(range(64)::Array(UInt8)), toUInt8(1)),
+    indexOf(materialize(range(64)::Array(UInt8)), toUInt8(1));
+
+SELECT 'UInt16 first vector early',
+    has(materialize(range(32)::Array(UInt16)), toUInt16(1)),
+    indexOf(materialize(range(32)::Array(UInt16)), toUInt16(1));
+
+SELECT 'UInt32 first vector early',
+    has(materialize(range(16)::Array(UInt32)), toUInt32(1)),
+    indexOf(materialize(range(16)::Array(UInt32)), toUInt32(1));
+
+SELECT 'UInt64 first vector early',
+    has(materialize(range(32)::Array(UInt64)), toUInt64(1)),
+    indexOf(materialize(range(32)::Array(UInt64)), toUInt64(1));
+
+-- Exercise SIMD searches on rows with non-zero, changing array offsets.
+
+SELECT arraySize(arr),
+    has(arr, toUInt8(32)),
+    indexOf(arr, toUInt8(32)),
+    has(arr, toUInt8(64)),
+    indexOf(arr, toUInt8(64))
+FROM
+(
+    SELECT arrayJoin([
+        range(3)::Array(UInt8),
+        range(64)::Array(UInt8),
+        range(65)::Array(UInt8),
+        range(67)::Array(UInt8)
+    ]) AS arr
+)
+ORDER BY arraySize(arr);
+
+SELECT arraySize(arr),
+    has(arr, toUInt32(8)),
+    indexOf(arr, toUInt32(8)),
+    has(arr, toUInt32(16)),
+    indexOf(arr, toUInt32(16))
+FROM
+(
+    SELECT arrayJoin([
+        range(3)::Array(UInt32),
+        range(16)::Array(UInt32),
+        range(17)::Array(UInt32),
+        range(19)::Array(UInt32),
+        range(33)::Array(UInt32)
+    ]) AS arr
+)
+ORDER BY arraySize(arr);
+
 SELECT 'UInt16 lane equality',
     has(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
     indexOf(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
