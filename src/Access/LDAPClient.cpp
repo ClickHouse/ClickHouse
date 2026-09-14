@@ -149,6 +149,23 @@ namespace
         return dest;
     }
 
+#if defined(LDAP_OPT_X_TLS_PROTOCOL_MIN) || defined(LDAP_OPT_X_TLS_PROTOCOL_MAX)
+    int toLDAPTLSProtocolVersion(LDAPClient::Params::TLSProtocolVersion version)
+    {
+        int value = 0;
+        switch (version)
+        {
+            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
+            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_3: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_3; break;
+        }
+        return value;
+    }
+#endif
+
     auto replacePlaceholders(const String & src, const std::vector<std::pair<String, String>> & pairs)
     {
         String dest = src;
@@ -292,16 +309,18 @@ bool LDAPClient::openConnection(BindMode mode)
 
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_MIN
     {
-        int value = 0;
-        switch (params.tls_minimum_protocol_version)
-        {
-            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
-            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
-        }
+        int value = toLDAPTLSProtocolVersion(params.tls_minimum_protocol_version);
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
+    }
+#endif
+
+    /// Like every other TLS option here, this has to be set before `LDAP_OPT_X_TLS_NEWCTX` below:
+    /// the new TLS context is built from the options accumulated on the handle at that moment.
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_MAX
+    if (params.tls_maximum_protocol_version)
+    {
+        int value = toLDAPTLSProtocolVersion(*params.tls_maximum_protocol_version);
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MAX, &value));
     }
 #endif
 
