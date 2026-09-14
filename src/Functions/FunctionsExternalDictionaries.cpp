@@ -5,30 +5,30 @@ namespace DB
 {
 
 /// Helper to get the description for dictGet<type> functions
-static String getDictGetDescription(const String & type_name)
+String getDictGetDescription(const String & type_name)
 {
     return fmt::format("Converts a dictionary attribute value to `{}` data type regardless of the dictionary configuration.", type_name);
 }
 
-static String getDictGetOrDefaultDescription(const String & type_name)
+String getDictGetOrDefaultDescription(const String & type_name)
 {
     return fmt::format("Converts a dictionary attribute value to `{}` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.", type_name);
 }
 
 /// Helper to get the syntax for dictGet<type> functions
-static String getDictGetSyntax(const String & type_name)
+String getDictGetSyntax(const String & type_name)
 {
     return fmt::format("dictGet{}(dict_name, attr_name, id_expr)", type_name);
 }
 
 /// Helper to get the syntax for dictGet<type>OrDefault functions
-static String getDictGetOrDefaultSyntax(const String & type_name)
+String getDictGetOrDefaultSyntax(const String & type_name)
 {
     return fmt::format("dictGet{}OrDefault(dict_name, attr_name, id_expr, default_value_expr)", type_name);
 }
 
 /// Helper to get the arguments for dictGet<type> functions
-static FunctionDocumentation::Arguments getDictGetArguments()
+FunctionDocumentation::Arguments getDictGetArguments()
 {
     FunctionDocumentation::Arguments args;
     args.emplace_back(FunctionDocumentation::Argument{"dict_name", "Name of the dictionary.", {"String"}});
@@ -38,7 +38,7 @@ static FunctionDocumentation::Arguments getDictGetArguments()
 }
 
 /// Helper to get the arguments for dictGet<type>OrDefault functions
-static FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
+FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
 {
     FunctionDocumentation::Arguments args;
     args.emplace_back(FunctionDocumentation::Argument{"dict_name", "Name of the dictionary.", {"String"}});
@@ -49,7 +49,7 @@ static FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
 }
 
 /// Helper to get the returned value documentation for dictGet<type> functions
-static FunctionDocumentation::ReturnedValue getDictGetReturnedValue()
+FunctionDocumentation::ReturnedValue getDictGetReturnedValue()
 {
     return {R"(
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
@@ -62,7 +62,7 @@ ClickHouse throws an exception if it cannot parse the value of the attribute or 
 }
 
 /// Helper to get the returned value documentation for dictGet<type>OrDefault functions
-static FunctionDocumentation::ReturnedValue getDictGetOrDefaultReturnedValue()
+FunctionDocumentation::ReturnedValue getDictGetOrDefaultReturnedValue()
 {
     return {R"(
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
@@ -85,7 +85,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}}
+            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}}
         };
         FunctionDocumentation::ReturnedValue returned_value =
 {R"(
@@ -95,20 +95,12 @@ If the key is not found, returns the content of the `<null_value>` element speci
         FunctionDocumentation::Examples examples = {
             {
                 "Retrieve a single attribute",
-                R"(
-CREATE TABLE ext_dict_test_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
-INSERT INTO ext_dict_test_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
-SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
-)",
+                "SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val",
                 "1"
             },
             {
                 "Multiple attributes",
 R"(
-CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
-INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT
     dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -143,19 +135,14 @@ R"(
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}},
+            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}},
             {"default_value", "Default value to return if the key is not found. Type must match the attribute's data type.", {}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the value of the dictionary attribute that corresponds to `id_expr` if the key is found.
 If the key is not found, returns the `default_value` provided.
 )"};
-        FunctionDocumentation::Examples examples = {{"Get value with default", R"(
-CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
-INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
-SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
-)", "0"}};
+        FunctionDocumentation::Examples examples = {{"Get value with default", "SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val", "0"}};
         FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
@@ -176,22 +163,17 @@ Returns the value of the dictionary attribute that corresponds to `id_expr` if t
 If the key is not found, returns `NULL`.
 )"};
         FunctionDocumentation::Examples examples = {{"Example using the range key dictionary", R"(
-CREATE TABLE range_key_dictionary_source_table (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) ENGINE = TinyLog();
-INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
-INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
-INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
-CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB currentDatabase())) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
 SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
 FROM system.numbers LIMIT 5 FORMAT TabSeparated;
-)", R"DOCS_MD(
-(0,'2019-05-20')	\N
-(1,'2019-05-20')	First
-(2,'2019-05-20')	Second
-(3,'2019-05-20')	Third
-(4,'2019-05-20')	\N
-)DOCS_MD"}};
+)", R"(
+(0,'2019-05-20')  \N
+(1,'2019-05-20')  First
+(2,'2019-05-20')  Second
+(3,'2019-05-20')  Third
+(4,'2019-05-20')  \N
+)"}};
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
@@ -209,16 +191,11 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
         FunctionDocumentation::Examples examples = {
             {
                 "Usage example",
-                R"(
-CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 100);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
-)",
+                "SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)",
 R"(
-┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
-│                                              100 │
-└──────────────────────────────────────────────────┘
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
 )"
             }
         };
@@ -239,9 +216,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 100);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 
@@ -249,12 +223,12 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
-│                                              100 │
-└──────────────────────────────────────────────────┘
-┌─dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0)─┐
-│                                                              0 │
-└────────────────────────────────────────────────────────────────┘
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
+┌─dictGetUInt8⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -272,16 +246,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 5000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
-)",
+            {"Usage example", "SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)",
 R"(
-┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
-│                                               5000 │
-└────────────────────────────────────────────────────┘
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -301,9 +270,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 5000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 
@@ -311,12 +277,12 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
-│                                               5000 │
-└────────────────────────────────────────────────────┘
-┌─dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0)─┐
-│                                                                0 │
-└──────────────────────────────────────────────────────────────────┘
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
+┌─dictGetUInt1⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -334,16 +300,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
-)",
+            {"Usage example", "SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)",
 R"(
-┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
-│                                            1000000 │
-└────────────────────────────────────────────────────┘
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -363,9 +324,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 
@@ -373,12 +331,12 @@ SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
-│                                            1000000 │
-└────────────────────────────────────────────────────┘
-┌─dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0)─┐
-│                                                                0 │
-└──────────────────────────────────────────────────────────────────┘
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
+┌─dictGetUInt3⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -396,16 +354,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
-)",
+            {"Usage example", "SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)",
 R"(
-┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
-│                                9223372036854775807 │
-└────────────────────────────────────────────────────┘
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -425,9 +378,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
@@ -435,12 +385,12 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
-│                                9223372036854775807 │
-└────────────────────────────────────────────────────┘
-┌─dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0)─┐
-│                                                                0 │
-└──────────────────────────────────────────────────────────────────┘
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
+┌─dictGetUInt6⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -458,16 +408,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -100);
-CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
-)",
+            {"Usage example", "SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)",
 R"(
-┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
-│                                           -100 │
-└────────────────────────────────────────────────┘
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -487,9 +432,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -100);
-CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 
@@ -497,12 +439,12 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 )",
 R"(
-┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
-│                                           -100 │
-└────────────────────────────────────────────────┘
-┌─dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1)─┐
-│                                                            -1 │
-└───────────────────────────────────────────────────────────────┘
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
+┌─dictGetInt8O⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -520,16 +462,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -5000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
-)",
+            {"Usage example", "SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)",
 R"(
-┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
-│                                            -5000 │
-└──────────────────────────────────────────────────┘
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -549,9 +486,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -5000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 
@@ -559,12 +493,12 @@ SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 )",
 R"(
-┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
-│                                            -5000 │
-└──────────────────────────────────────────────────┘
-┌─dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1)─┐
-│                                                              -1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
+┌─dictGetInt16⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -581,16 +515,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
-)",
+            {"Usage example", "SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)",
 R"(
-┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
-│                                         -1000000 │
-└──────────────────────────────────────────────────┘
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -610,9 +539,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 
@@ -620,12 +546,12 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 )",
 R"(
-┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
-│                                         -1000000 │
-└──────────────────────────────────────────────────┘
-┌─dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1)─┐
-│                                                              -1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
+┌─dictGetInt32⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -643,16 +569,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
-)",
+            {"Usage example", "SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)",
 R"(
-┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
-│                             -9223372036854775807 │
-└──────────────────────────────────────────────────┘
+┌─dictGetInt64⋯_value', 1)───┐
+│       -9223372036854775807 │
+└────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -672,9 +593,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -9223372036854775808);
-CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 
@@ -682,12 +600,12 @@ SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 )",
 R"(
-┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
-│                             -9223372036854775808 │
-└──────────────────────────────────────────────────┘
-┌─dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1)─┐
-│                                                              -1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─dictGetInt64⋯_value', 1)─┐
+│     -9223372036854775808 │
+└──────────────────────────┘
+┌─dictGetInt64⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -704,16 +622,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -123.123);
-CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
-)",
+            {"Usage example", "SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)",
 R"(
-┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
-│                                             -123.123 │
-└──────────────────────────────────────────────────────┘
+┌─dictGetFloat⋯_value', 1)─┐
+│               -123.123   │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -733,9 +646,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 123.45);
-CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 
@@ -743,12 +653,12 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 )",
 R"(
-┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
-│                                               123.45 │
-└──────────────────────────────────────────────────────┘
-┌─dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.)─┐
-│                                                                   -1 │
-└──────────────────────────────────────────────────────────────────────┘
+┌─dictGetFloat⋯_value', 1)─┐
+│                   123.45 │
+└──────────────────────────┘
+┌─dictGetFloat⋯e', 999, -1)─┐
+│                       -1  │
+└───────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -765,16 +675,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, -123.123);
-CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
-)",
+            {"Usage example", "SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)",
 R"(
-┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
-│                                             -123.123 │
-└──────────────────────────────────────────────────────┘
+┌─dictGetFloat⋯_value', 1)─┐
+│                 -123.123 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -794,9 +699,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 987654.123456);
-CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 
@@ -804,12 +706,12 @@ SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 )",
 R"(
-┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
-│                                        987654.123456 │
-└──────────────────────────────────────────────────────┘
-┌─dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan)─┐
-│                                                                  nan │
-└──────────────────────────────────────────────────────────────────────┘
+┌─dictGetFloat⋯_value', 1)─┐
+│            987654.123456 │
+└──────────────────────────┘
+┌─dictGetFloat⋯, 999, nan)─┐
+│                      nan │
+└──────────────────────────┘
  )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -827,16 +729,11 @@ R"(
     FunctionDocumentation::Arguments arguments = getDictGetArguments();
     FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
     FunctionDocumentation::Examples examples = {
-        {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2020-01-01');
-CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetDate('all_types_dict', 'Date_value', 1)
-)",
+        {"Usage example", "SELECT dictGetDate('all_types_dict', 'Date_value', 1)",
 R"(
-┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
-│                                     2020-01-01 │
-└────────────────────────────────────────────────┘
+┌─dictGetDate(⋯_value', 1)─┐
+│               2020-01-01 │
+└──────────────────────────┘
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -856,9 +753,6 @@ R"(
     FunctionDocumentation::Examples examples = {
         {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2024-01-15');
-CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 
@@ -866,12 +760,12 @@ SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
 )",
 R"(
-┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
-│                                     2024-01-15 │
-└────────────────────────────────────────────────┘
-┌─dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'))─┐
-│                                                                      1970-01-01 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─dictGetDate(⋯_value', 1)─┐
+│               2024-01-15 │
+└──────────────────────────┘
+┌─dictGetDateO⋯70-01-01'))─┐
+│               1970-01-01 │
+└──────────────────────────┘
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -889,16 +783,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
-CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
-)",
+            {"Usage example", "SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)",
 R"(
-┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
-│                                    2024-01-15 10:30:00 │
-└────────────────────────────────────────────────────────┘
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -918,9 +807,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
-CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 
@@ -928,12 +814,12 @@ SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
 )",
 R"(
-┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
-│                                    2024-01-15 10:30:00 │
-└────────────────────────────────────────────────────────┘
-┌─dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'))─┐
-│                                                                                  1970-01-01 00:00:00 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
+┌─dictGetDateT⋯0:00:00'))──┐
+│      1970-01-01 00:00:00 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -951,16 +837,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
-CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
-)",
+            {"Usage example", "SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)",
 R"(
-┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
-│ 123e4567-e89b-12d3-a456-426614174000           │
-└────────────────────────────────────────────────┘
+┌─dictGetUUID(⋯_value', 1)─────────────┐
+│ 123e4567-e89b-12d3-a456-426614174000 │
+└──────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -980,9 +861,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
-CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 
@@ -990,12 +868,12 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
 )",
 R"(
-┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
-│ 550e8400-e29b-41d4-a716-446655440000           │
-└────────────────────────────────────────────────┘
-┌─dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID'))─┐
-│ 00000000-0000-0000-0000-000000000000                                                                            │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000 │
+└──────────────────────────────────────┘
+┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
+│ 00000000-0000-0000-0000-000000000000   │
+└────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1013,16 +891,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '192.168.0.1');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
-)",
+            {"Usage example", "SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)",
 R"(
-┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
-│ 192.168.0.1                                    │
-└────────────────────────────────────────────────┘
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1042,9 +915,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '192.168.0.1');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 
@@ -1052,12 +922,12 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
 )",
 R"(
-┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
-│ 192.168.0.1                                    │
-└────────────────────────────────────────────────┘
-┌─dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'))─┐
-│ 0.0.0.0                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
+┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
+│ 0.0.0.0                      │
+└──────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1075,16 +945,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
-)",
+            {"Usage example", "SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)",
 R"(
-┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334                   │
-└────────────────────────────────────────────────┘
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1104,9 +969,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 
@@ -1114,12 +976,12 @@ SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 )",
 R"(
-┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334                   │
-└────────────────────────────────────────────────┘
-┌─dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, CAST('::1', 'IPv6'))─┐
-│ ::1                                                                            │
-└────────────────────────────────────────────────────────────────────────────────┘
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
+┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
+│ ::1                          │
+└──────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1137,16 +999,11 @@ R"(
         FunctionDocumentation::Arguments arguments = getDictGetArguments();
         FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
-            {"Usage example", R"(
-CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 'test string');
-CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetString('all_types_dict', 'String_value', 1)
-)",
+            {"Usage example", "SELECT dictGetString('all_types_dict', 'String_value', 1)",
 R"(
-┌─dictGetString('all_types_dict', 'String_value', 1)─┐
-│ test string                                        │
-└────────────────────────────────────────────────────┘
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1166,9 +1023,6 @@ R"(
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO all_types_test VALUES (1, 'test string');
-CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetString('all_types_dict', 'String_value', 1);
 
@@ -1176,12 +1030,12 @@ SELECT dictGetString('all_types_dict', 'String_value', 1);
 SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 )",
 R"(
-┌─dictGetString('all_types_dict', 'String_value', 1)─┐
-│ test string                                        │
-└────────────────────────────────────────────────────┘
-┌─dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default')─┐
-│ default                                                                  │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
+┌─dictGetStringO⋯ 999, 'default')─┐
+│ default                         │
+└─────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1192,36 +1046,15 @@ R"(
 
     /// dictGetAll
     {
-        FunctionDocumentation::Description description = R"(
-Retrieves the attribute values of all the nodes that matched each key in a [regular expression tree dictionary](/reference/statements/create/dictionary/layouts/regexp-tree).
+        const String type_name = "All";
 
-Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictGet).
-)";
-        FunctionDocumentation::Syntax syntax = "dictGetAll(dict_name, attr_names, id_expr[, limit])";
-        FunctionDocumentation::Arguments arguments = {
-            {"dict_name", "Name of the dictionary.", {"String"}},
-            {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. An expression returning a dictionary key-type value or tuple value (dictionary configuration dependent).", {"Expression", "Tuple(T)"}},
-            {"limit", "Optional. Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, the array length is unlimited.", {"UInt*"}}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = {R"(
-Returns an array of the dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
-If there is no key corresponding to `id_expr` in the dictionary, an empty array is returned.
-
-:::note
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
-)", {"Array(T)"}};
+        FunctionDocumentation::Description description = getDictGetDescription(type_name);
+        FunctionDocumentation::Syntax syntax = getDictGetSyntax(type_name);
+        FunctionDocumentation::Arguments arguments = getDictGetArguments();
+        FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(
-CREATE TABLE regexp_os (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = Memory;
-INSERT INTO regexp_os VALUES
-    (1, 0, 'Linux',      ['os_replacement'], ['Linux']),
-    (2, 1, 'Android',    ['os_replacement'], ['Android']),
-    (3, 2, 'Android 1',  ['os_replacement'], ['Android']),
-    (4, 3, 'Android 12', ['os_replacement'], ['Android']);
-CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB currentDatabase())) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
 SELECT
     'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
 
@@ -1247,7 +1080,7 @@ R"(
     {
         FunctionDocumentation::Description description =
 R"(
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 )";
         FunctionDocumentation::Syntax syntax = "dictGetHierarchy(dict_name, key)";
         FunctionDocumentation::Arguments arguments = {
@@ -1258,57 +1091,18 @@ Creates an array, containing all the parents of a key in the [hierarchical dicti
         FunctionDocumentation::Examples examples = {
             {"Get hierarchy for a key",
 R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 )",
 R"(
-┌─dictGetHierarchy('hierarchical_dictionary', 5)─┐
-│ [5,2,1]                                        │
-└────────────────────────────────────────────────┘
+┌─dictGetHiera⋯ionary', 5)─┐
+│ [5,2,1]                  │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetHierarchy>(documentation);
-    }
-
-    /// dictGetRoot
-    {
-        FunctionDocumentation::Description description =
-R"(
-Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
-
-This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictGetHierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
-
-If the key is itself a top-level node of the hierarchy, the key is returned. If the key is absent from the dictionary, `0` is returned.
-)";
-        FunctionDocumentation::Syntax syntax = "dictGetRoot(dict_name, key)";
-        FunctionDocumentation::Arguments arguments = {
-            {"dict_name", "Name of the dictionary.", {"String"}},
-            {"key", "Key value.", {"UInt64"}}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the topmost ancestor (the root) for the key.", {"UInt64"}};
-        FunctionDocumentation::Examples examples = {
-            {"Get the root for a key",
-R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
-SELECT dictGetRoot('hierarchical_dictionary', 5)
-)",
-R"(
-┌─dictGetRoot('hierarchical_dictionary', 5)─┐
-│                                         1 │
-└───────────────────────────────────────────┘
-)"}
-        };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
-        FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
-
-        factory.registerFunction<FunctionDictGetRoot>(documentation);
     }
 
     /// dictIsIn
@@ -1329,22 +1123,19 @@ Checks the ancestor of a key through the whole hierarchical chain in the diction
         {
             {"Check hierarchical relationship",
 R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- valid hierarchy
-SELECT dictIsIn('hierarchical_dictionary', 6, 3);
+SELECT dictIsIn('hierarchical_dictionary', 6, 3)
 
 -- invalid hierarchy
-SELECT dictIsIn('hierarchical_dictionary', 3, 5);
+SELECT dictIsIn('hierarchical_dictionary', 3, 5)
 )",
 R"(
-┌─dictIsIn('hierarchical_dictionary', 6, 3)─┐
-│                                         1 │
-└───────────────────────────────────────────┘
-┌─dictIsIn('hierarchical_dictionary', 3, 5)─┐
-│                                         0 │
-└───────────────────────────────────────────┘
+┌─dictIsIn('hi⋯ary', 6, 3)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictIsIn('hi⋯ary', 3, 5)─┐
+│                        0 │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_dictIsIn = {1, 1};
@@ -1381,15 +1172,12 @@ Returns first-level children as an array of indexes. It is the inverse transform
         {
             {"Get the first-level children of a dictionary",
 R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 )",
 R"(
-┌─dictGetChildren('hierarchical_dictionary', 2)─┐
-│ [4,5]                                         │
-└───────────────────────────────────────────────┘
+┌─dictGetChild⋯ionary', 2)─┐
+│ [4,5]                    │
+└──────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_dictGetChildren = {21, 4};
@@ -1427,9 +1215,6 @@ Returns all descendants as if the [`dictGetChildren`](#dictGetChildren) function
             {
                 "Get the first-level children of a dictionary",
 R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)
@@ -1442,9 +1227,9 @@ CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHI
 SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 )",
 R"(
-┌─dictGetDescendants('hierarchical_dictionary', 0, 2)─┐
-│ [3,2]                                               │
-└─────────────────────────────────────────────────────┘
+┌─dictGetDesce⋯ary', 0, 2)─┐
+│ [3,2]                    │
+└──────────────────────────┘
 )"
             }
         };
@@ -1480,9 +1265,6 @@ R"(
             {
                 "Check for the existence of a key in a dictionary",
 R"(
-CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
-INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)
@@ -1496,12 +1278,12 @@ SELECT dictHas('hierarchical_dictionary', 2);
 SELECT dictHas('hierarchical_dictionary', 7);
 )",
 R"(
-┌─dictHas('hierarchical_dictionary', 2)─┐
-│                                     1 │
-└───────────────────────────────────────┘
-┌─dictHas('hierarchical_dictionary', 7)─┐
-│                                     0 │
-└───────────────────────────────────────┘
+┌─dictHas('hie⋯ionary', 2)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictHas('hie⋯ionary', 7)─┐
+│                        0 │
+└──────────────────────────┘
 )"
             }
         };

@@ -9,7 +9,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -34,7 +33,7 @@ namespace DB
 class ArrayJoinNode;
 using ArrayJoinNodePtr = std::shared_ptr<ArrayJoinNode>;
 
-class ArrayJoinNode final : public ITableExpressionNode
+class ArrayJoinNode final : public IQueryTreeNode
 {
 public:
     /** Construct array join node with table expression.
@@ -45,27 +44,15 @@ public:
     ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_);
 
     /// Get table expression
-    const ITableExpressionNode & getTableExpression() const
-    {
-        return children[table_expression_child_index]->assertTableExpression();
-    }
-
-    /// Get table expression
-    QueryTreeNodePtr & getTableExpressionNode()
+    const QueryTreeNodePtr & getTableExpression() const
     {
         return children[table_expression_child_index];
     }
 
     /// Get table expression
-    const QueryTreeNodePtr & getTableExpressionNode() const
+    QueryTreeNodePtr & getTableExpression()
     {
         return children[table_expression_child_index];
-    }
-
-    TableExpressionNodePtr getTableExpressionNodeTyped() const
-    {
-        assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[table_expression_child_index]);
     }
 
     /// Get join expressions

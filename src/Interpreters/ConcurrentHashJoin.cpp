@@ -10,9 +10,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
-#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -23,7 +21,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -33,13 +30,9 @@
 #include <base/types.h>
 
 #include <algorithm>
-#include <mutex>
 #include <numeric>
 #include <deque>
 #include <iterator>
-#include <thread>
-#include <tuple>
-#include <utility>
 
 using namespace DB;
 
@@ -77,17 +70,9 @@ namespace
 
 using BlockHashes = std::vector<UInt64>;
 
-void updateStatistics(
-    const auto & hash_joins,
-    const DB::StatsCollectingParams & build_params,
-    const DB::StatsCollectingParams & match_params,
-    bool probe_phase_finished,
-    size_t hash_table_matches)
+void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
-    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
-        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_params);
-
-    if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
+    if (!params.isCollectionAndUseEnabled())
         return;
 
     const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
@@ -100,7 +85,7 @@ void updateStatistics(
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
     if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, build_params);
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -115,29 +100,16 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
-void reserveSpaceInHashMaps(
-    HashJoin & hash_join,
-    size_t ind,
-    const StatsCollectingParams & build_stats_collecting_params,
-    size_t slots,
-    size_t external_join_threshold)
+void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
 {
-    if (auto hint = getSizeHint(build_stats_collecting_params))
+    if (auto hint = getSizeHint(stats_collecting_params))
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
         const size_t reserve_size = hint->ht_size;
 
-        /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
-        /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
-        /// query, blowing past that cap before `SpillingHashJoin` ever runs its threshold check. We still
-        /// want preallocation - just bounded by the memory budget. We aim for about half of the threshold
-        /// so that the cap itself plus the live data plus the conversion peak still fit under it. When
-        /// running standalone (`external_join_threshold == 0`), the original full reserve is used.
-
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
-        size_t actual_reserve_size = reserve_size;
         auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
         {
             APPLY_TO_MAP(
@@ -146,30 +118,14 @@ void reserveSpaceInHashMaps(
                 maps,
                 [&](auto & map)
                 {
-                    using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
-                    constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
-
-                    if (external_join_threshold > 0)
-                    {
-                        /// Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`), so each
-                        /// stored entry consumes 2 cells of capacity, and `bufSize` is then rounded up to
-                        /// the next power of two - a factor of up to 4x in the worst case. So each reserved
-                        /// entry occupies up to 4 × cell_size bytes of buffer. We keep total preallocated
-                        /// bytes (summed across all slots and buckets) under `threshold / 2`, leaving
-                        /// headroom for the eventual SpillingHashJoin trigger (also at `threshold / 2`)
-                        /// and for the conversion peak when handing data over to GraceHashJoin.
-                        const size_t budget_entries = external_join_threshold / (8 * cell_size);
-                        actual_reserve_size = std::min(reserve_size, budget_entries);
-                    }
-
                     for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
+                        map.impls[j].reserve(reserve_size / map.NUM_BUCKETS);
                 })
         };
 
         const auto & right_data = hash_join.getJoinedData();
         std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
     }
 }
 
@@ -193,9 +149,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
     SharedHeader right_sample_block,
-    const HashJoinStatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_,
-    size_t external_join_threshold_)
+    const StatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , any_take_last_row(any_take_last_row_)
@@ -207,7 +162,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*max_free_threads_*/ 0,
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
-    , external_join_threshold(external_join_threshold_)
 {
     hash_joins.resize(slots);
 
@@ -230,25 +184,13 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         any_take_last_row_,
                         reserve_size,
                         fmt::format("concurrent{}", i),
-                        /*is_concurrent_hash_join*/ true);
+                        /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
-                    inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
-                    global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
         pool->wait();
-
-        /// Share one StoredColumnsIndex across all slots so that RowRef::block_no is globally
-        /// unique: cells built by any slot end up in the shared two-level map after the build
-        /// phase, and per-row used flags are merged into a common structure keyed by block_no.
-        auto shared_index = getData(hash_joins[0])->stored_columns_index;
-        for (size_t i = 1; i < slots; ++i)
-            getData(hash_joins[i])->stored_columns_index = shared_index;
-
-        /// Decision must be done on the materialized block.
-        use_zero_copy_right = useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
     }
     catch (...)
     {
@@ -262,14 +204,11 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
-        if (!build_phase_finished)
-            return;
-
-        updateStatistics(
-            hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished, hash_table_matches);
-
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
+
+        if (build_phase_finished)
+            updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -311,21 +250,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    /// Initialize the row store layout based on the first block. The layout is derived once from the first slot
-    /// and given to the other slots.
-    std::call_once(row_store_init_flag, [&]
-    {
-        const auto layout_with_access_indexes = hash_joins[0]->data->initRowStore(right_block);
-        for (size_t i = 1; i < slots; ++i)
-            hash_joins[i]->data->initRowStore(layout_with_access_indexes);
-    });
-
-    /// We also build the row store here to avoid building it multiple times on different threads.
-    RowDataStorePtr block_row_store = nullptr;
-    if (use_zero_copy_right)
-        block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
-
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy_right);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -335,13 +260,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         }
     }
 
-    size_t post_join_total_rows = 0;
-    size_t post_join_total_bytes = 0;
-
     while (blocks_left > 0)
     {
-        bool made_progress = false;
-
         /// insert blocks into corresponding HashJoin instances
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
@@ -355,18 +275,14 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 if (!lock.owns_lock())
                     continue;
 
-                made_progress = true;
-
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params.build, slots, external_join_threshold);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots);
                     hash_join->space_was_preallocated = true;
                 }
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
-
-                std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -375,15 +291,10 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     return false;
             }
         }
-
-        /// If no slot was available in this pass, yield to avoid burning CPU while waiting
-        /// for other threads to finish inserting into their respective hash join slots
-        if (!made_progress)
-            std::this_thread::yield();
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
-        return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
@@ -426,7 +337,6 @@ class ConcurrentHashJoinResult : public IJoinResult
     ScatteredBlocks dispatched_blocks;
     size_t next_block = 0;
     JoinResultPtr current_result;
-    size_t matched_right_rows = 0;
 public:
     explicit ConcurrentHashJoinResult(
         const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_,
@@ -439,11 +349,6 @@ public:
     {
         if (!current_result)
         {
-            /// Skip empty dispatched blocks to avoid running the full join machinery for nothing,
-            /// keep the last block so joinScatteredBlock produces the correct output header
-            while (next_block + 1 < dispatched_blocks.size() && dispatched_blocks[next_block].rows() == 0)
-                ++next_block;
-
             if (next_block >= dispatched_blocks.size())
                 return {Block(), nullptr, true};
 
@@ -453,7 +358,6 @@ public:
         auto data = current_result->next();
         if (data.is_last)
         {
-            matched_right_rows += current_result->getMatchedRightRows();
             if (data.next_block)
                 dispatched_blocks[next_block] = std::move(*data.next_block);
             else
@@ -464,8 +368,6 @@ public:
         bool is_last = next_block >= dispatched_blocks.size() && data.is_last;
         return {std::move(data.block), nullptr, is_last};
     }
-
-    size_t getMatchedRightRows() const override { return matched_right_rows; }
 };
 
 JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
@@ -476,21 +378,11 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
     if (hash_joins[0]->data->twoLevelMapIsUsed())
         dispatched_blocks.emplace_back(std::move(block));
     else
-    {
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), use_zero_copy_left);
-    }
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
     return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
-}
-
-void ConcurrentHashJoin::initialize(const Block & left_sample_block)
-{
-    /// Decision must be done on the materialized block.
-    Block sample = left_sample_block;
-    hash_joins[0]->data->materializeColumnsFromLeftBlock(sample);
-    use_zero_copy_left = useZeroCopyApproach(sample);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
@@ -514,72 +406,24 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    return global_total_rows.load(std::memory_order_relaxed);
+    size_t res = 0;
+    for (const auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        res += hash_join->data->getTotalRowCount();
+    }
+    return res;
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    return global_total_bytes.load(std::memory_order_relaxed);
-}
-
-size_t ConcurrentHashJoin::getRightTableRowCount() const
-{
-    /// We don't check for two level map, because in case of two level in
-    /// the end of the build we add all the right table rows to 0th hash table
-    /// and zero the rows_to_join in other hash tables
     size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->data->getRightTableRowCount();
-    return res;
-}
-
-size_t ConcurrentHashJoin::getUniqueKeys() const
-{
-    /// A two-level map needs a special case: in the end of the build we move all buckets into
-    /// slot 0 and then hands that map back to every slot, so each one reports the full key count
-    /// and summing would multiply it by `slots`. One-level maps stay disjoint per slot.
-    if (hash_joins[0]->data->twoLevelMapIsUsed())
-        return hash_joins[0]->data->getTotalRowCount();
-
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->data->getTotalRowCount();
-    return res;
-}
-
-JoinAnalysisCounters ConcurrentHashJoin::collectMatchedRowsCounters() const
-{
-    JoinAnalysisCounters counters;
-    counters.right_rows = getRightTableRowCount();
-
-    MatchedRowsAccumulator matched_left;
-    MatchedRowsAccumulator matched_right;
     for (const auto & hash_join : hash_joins)
     {
-        const auto * stats = hash_join->data->getMatchStats();
-
-        UInt64 right_table_rows = hash_join->data->getRightTableRowCount();
-        counters.left_rows += stats->getInputLeft();
-        matched_left.add(stats->getMatchedLeft());
-        matched_right.add(stats->getMatchedRight(right_table_rows));
+        std::lock_guard lock(hash_join->mutex);
+        res += hash_join->data->getTotalByteCount();
     }
-    counters.matched_left = matched_left.get();
-    counters.matched_right = matched_right.get();
-
-    return counters;
-}
-
-StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
-{
-    auto counters = collectMatchedRowsCounters();
-    StepAnalysisReport report = buildMatchedRowsReport(counters);
-
-    MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getUniqueKeys());
-    hash_table_metrics.emplace_back(MetricKey::Memory, getPeakBuildBytes());
-    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
-
-    return report;
+    return res;
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
@@ -603,12 +447,12 @@ bool ConcurrentHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     return table_join->allowParallelNonJoinedRowsProcessing()
         && JoinCommon::hasNonJoinedBlocks(*table_join)
-        && !table_join->getOnlyClause().key_names_right.empty();
+        && hash_joins[0]->data->twoLevelMapIsUsed();
 }
 
 ///   1) always-false condition (no keys): stream 0 returns all right rows
 ///   2) two-level maps - each stream scans buckets where (bucket % num_streams == stream_idx)
-///   3) single-level maps - each stream scans slots where (slot % num_streams == stream_idx)
+///   3) single-level maps - stream 0 concatenates per-slot streams sequentially
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
     size_t stream_idx, size_t num_streams) const
@@ -636,12 +480,14 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, stream_idx, num_streams);
     }
 
-    /// single-level maps - each slot has its own HashJoin; distribute the slots across
-    /// streams so stream stream_idx scans slots where (slot % num_streams == stream_idx)
+    /// single-level maps - each slot has its own HashJoin, only stream 0 collects them
+    if (stream_idx != 0)
+        return {};
+
     std::vector<IBlocksStreamPtr> streams;
-    for (size_t i = stream_idx; i < slots; i += num_streams)
+    streams.reserve(slots);
+    for (const auto & hash_join : hash_joins)
     {
-        const auto & hash_join = hash_joins[i];
         std::lock_guard lock(hash_join->mutex);
         if (hash_join->data->hasNonJoinedRows())
         {
@@ -659,7 +505,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 template <typename HashTable>
 static IColumn::Selector hashToSelector(const HashTable & hash_table, const BlockHashes & hashes, size_t num_shards)
 {
-    chassert(isPowerOf2(num_shards));
+    assert(isPowerOf2(num_shards));
     const size_t num_rows = hashes.size();
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
@@ -684,59 +530,20 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
     return hash;
 }
 
-/// Shape of the equality-key prefix used when computing the per-partition
-/// scatter selector in `selectDispatchBlock`. For non-ASOF joins this is
-/// identity over the full key list. For ASOF, the trailing key in
-/// `key_columns_names` is the asof inequality column and must NOT participate
-/// in scatter hashing: the per-partition HashJoin's bucket key is the
-/// equality-only prefix (see HashJoin::HashJoin where `key_columns.pop_back()`
-/// is called for ASOF before chooseMethod() picks a hash key getter). If we
-/// hashed by the full key list, rows with the same equality keys but
-/// different asof values would be scattered to different partitions and
-/// never meet.
-///
-/// For multi-column equality keys this slicing is load-bearing (the chosen
-/// key getter is HashMethodKeysFixed / HashMethodHashed, which read
-/// `key_sizes.size()` columns). For single-column equality keys the chosen
-/// getter is HashMethodOneNumber, which only reads column[0] and would
-/// harmlessly ignore the extra column anyway — but slicing the inputs to
-/// match the per-partition bucket-key shape is the correct invariant
-/// regardless.
-struct DispatchKeyShape
+IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
-    size_t num_key_columns;
-    Sizes key_sizes;
-};
-
-static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_key_columns)
-{
-    DispatchKeyShape shape{total_key_columns, join.getKeySizes().at(0)};
-    if (join.getTableJoin().strictness() == JoinStrictness::Asof)
-    {
-        if (shape.num_key_columns > 0)
-            --shape.num_key_columns;
-        if (!shape.key_sizes.empty())
-            shape.key_sizes.pop_back();
-    }
-    return shape;
-}
-
-static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
-{
-    const auto shape = getDispatchKeyShape(join, key_columns_names.size());
-
     std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
-    key_columns.reserve(shape.num_key_columns);
-    for (size_t i = 0; i < shape.num_key_columns; ++i)
+    key_columns.reserve(key_columns_names.size());
+    for (const auto & key_name : key_columns_names)
     {
-        const auto & key_col = from_block.getByName(key_columns_names[i]).column->convertToFullColumnIfConst();
+        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_col));
         key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     auto calculate_selector = [&](auto & maps)
     {
@@ -747,13 +554,15 @@ static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_s
         #define M(TYPE)                                                                                                                       \
             case HashJoin::Type::TYPE:                                                                                                        \
         hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                    *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
+                    *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
         return hashToSelector(*maps.TYPE, hash, num_shards);
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
+
+            default:
+                UNREACHABLE();
         }
-        UNREACHABLE();
     };
 
     /// CHJ supports only one join clause for now
@@ -762,7 +571,7 @@ static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_s
     return std::visit([&](auto & maps) { return calculate_selector(maps); }, join.getJoinedData()->maps.at(0));
 }
 
-static ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
 {
     Blocks blocks(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -785,7 +594,7 @@ static ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::
     return result;
 }
 
-static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
 {
     std::vector<ScatteredBlock::IndexesPtr> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -805,22 +614,7 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
     return result;
 }
 
-/// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
-/// This is not beneficial when the whole set of columns is e.g. a single small column.
-bool ConcurrentHashJoin::useZeroCopyApproach(const Block & from_block)
-{
-    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
-    const auto & data_types = from_block.getDataTypes();
-    return std::accumulate(
-              data_types.begin(),
-              data_types.end(),
-              0u,
-              [](size_t sum, const DataTypePtr & type)
-              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
-        > threshold;
-}
-
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy)
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
@@ -831,61 +625,59 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
     }
 
     IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
-    return use_zero_copy ? scatterBlocksWithSelector(num_shards, selector, from_block)
+
+    /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
+    /// This is not beneficial when the whole set of columns is e.g. a single small column.
+    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
+    const auto & data_types = from_block.getDataTypes();
+    const bool use_zero_copy_approach
+        = std::accumulate(
+              data_types.begin(),
+              data_types.end(),
+              0u,
+              [](size_t sum, const DataTypePtr & type)
+              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
+        > threshold;
+
+    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
-std::pair<size_t, size_t> ConcurrentHashJoin::updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
 {
-    /// Update total rows for the current hash join instance and for the overall concurrent hash join
-    const size_t rows_delta = hash_join->data->getTotalRowCount() - hash_join->local_total_rows;
-    const size_t updated_global_rows = global_total_rows.fetch_add(rows_delta, std::memory_order_relaxed) + rows_delta;
-    hash_join->local_total_rows += rows_delta;
+    IQueryTreeNode::HashState hash;
 
-    /// Update total bytes for the current hash join instance and for the overall concurrent hash join, taking
-    /// into account that bytes could shrink
-    const size_t updated_local_bytes = hash_join->data->getTotalByteCount();
-    size_t updated_global_bytes = 0;
-    if (updated_local_bytes >= hash_join->local_total_bytes)
-    {
-        const size_t bytes_delta = updated_local_bytes - hash_join->local_total_bytes;
-        updated_global_bytes = global_total_bytes.fetch_add(bytes_delta, std::memory_order_relaxed) + bytes_delta;
-    }
-    else
-    {
-        const size_t bytes_delta = hash_join->local_total_bytes - updated_local_bytes;
-        updated_global_bytes = global_total_bytes.fetch_sub(bytes_delta, std::memory_order_relaxed) - bytes_delta;
-    }
-    hash_join->local_total_bytes = updated_local_bytes;
-    return {updated_global_rows, updated_global_bytes};
+    const auto * select = select_query_info.query->as<DB::ASTSelectQuery>();
+    if (!select)
+        return hash;
+
+    if (const auto prewhere = select->prewhere())
+        hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto where = select->where())
+        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
+
+    chassert(right_table_expression);
+    hash.update(right_table_expression->getTreeHash());
+    return hash;
 }
 
-void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    /// Reset global and local total rows and bytes
-    global_total_rows.fetch_sub(hash_join->local_total_rows, std::memory_order_relaxed);
-    global_total_bytes.fetch_sub(hash_join->local_total_bytes, std::memory_order_relaxed);
-    hash_join->local_total_rows = 0;
-    hash_join->local_total_bytes = 0;
-}
+    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
+    // but this method is called from generic code.
+    if (!table_join || !table_join->oneDisjunct())
+        return 0;
 
-BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
-{
-    chassert(slot_idx < hash_joins.size());
-    auto & hash_join = hash_joins[slot_idx];
-    std::lock_guard lock(hash_join->mutex);
-    if (!hash_join->data || !hash_join->data->getJoinedData())
-        return {};
-    resetTotalRowsAndBytesUnlocked(hash_join);
-    return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
+    const auto keys
+        = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
+    for (const auto & name : keys)
+        hash.update(name);
+
+    return hash.get64();
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
-    /// Capture the build peak now, while each slot still holds only its own disjoint data
-    for (const auto & hash_join : hash_joins)
-        peak_build_bytes += hash_join->data->getPeakBuildBytes();
-
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
@@ -931,20 +723,85 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         }
         getData(hash_joins[0])->sorted = false;
 
-        /// Move per-slot right-side nullmaps into slot 0, which emits all non-joined rows saved
-        /// due to NULL keys or ON-filtered rows. The holders can be moved as-is: emission iterates
-        /// only the rows of each holder's selector so every row is emitted exactly once.
-        for (size_t i = 1; i < slots; ++i)
+        /// rebuild per-slot right-side nullmaps into slot 0 so that
+        /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
+        if (std::any_of(hash_joins.begin(), hash_joins.end(),
+                        [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
-            auto src = getData(hash_joins[i]);
-            if (src->nullmaps.empty())
-                continue;
+            /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
+            /// in their respective slots
+            HashJoin::NullmapList combined;
+            size_t combined_allocated = 0;
+
+            auto filter_holder_by_selector = [&](const HashJoin::NullMapHolder & holder)
+            {
+                const auto * sc = holder.columns;
+                if (!sc)
+                    return;
+                // matches the original right block rows referenced by this slot's ScatteredColumns
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
+                // apply a contiguous [start, end) range from the source mask into the destination mask
+                // fill with 1s if NULLs only
+                auto apply_range = [&](size_t start, size_t end)
+                {
+                    if (holder.column)
+                    {
+                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                        for (size_t r = start; r < end; ++r)
+                            filtered->getData()[r] = src_mask[r];
+                    }
+                    else
+                    {
+                        for (size_t r = start; r < end; ++r)
+                            filtered->getData()[r] = 1;
+                    }
+                };
+
+                if (sc->selector.isContinuousRange())
+                {
+                    // Fast path: the slot's ScatteredColumns cover a single continuous range in the original right block
+                    const auto range = sc->selector.getRange();
+                    apply_range(range.first, range.second);
+                }
+                else
+                {
+                    // General path: the slot holds arbitrary indexes into the original right block
+                    const auto & idxs = sc->selector.getIndexes().getData();
+                    if (holder.column)
+                    {
+                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                        for (size_t idx : idxs)
+                        {
+                            if (idx < src_mask.size())
+                                filtered->getData()[idx] = src_mask[idx];
+                        }
+                    }
+                    else
+                    {
+                        for (size_t idx : idxs)
+                            filtered->getData()[idx] = 1;
+                    }
+                }
+                combined.emplace_back(sc, std::move(filtered));
+                combined.back().selector_rows = sc->selector.size();
+                combined_allocated += combined.back().allocatedBytes();
+            };
+
+            for (size_t i = 0; i < slots; ++i)
+            {
+                auto src = getData(hash_joins[i]);
+                for (const auto & holder : src->nullmaps)
+                    filter_holder_by_selector(holder);
+                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
+                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                src->nullmaps.clear();
+                src->nullmaps_allocated_size = 0;
+            }
 
             auto dst = getData(hash_joins[0]);
-            std::move(src->nullmaps.begin(), src->nullmaps.end(), std::back_inserter(dst->nullmaps));
-            dst->nullmaps_allocated_size += src->nullmaps_allocated_size;
-            src->nullmaps.clear();
-            src->nullmaps_allocated_size = 0;
+            // install the list into slot 0, it will be used later to emit non-joined rows
+            dst->nullmaps = std::move(combined);
+            dst->nullmaps_allocated_size = combined_allocated;
         }
     }
 
@@ -965,15 +822,27 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     {
         auto common_used_flags = hash_joins[0]->data->getUsedFlags();
 
-        /// Move every slot's pending per-row flags into one dense vector indexed by block_no.
-        const size_t num_blocks = getData(hash_joins[0])->stored_columns_index->size();
-        for (const auto & hash_join : hash_joins)
-            common_used_flags->finalizePerRowFlags(*hash_join->data->getUsedFlags(), num_blocks);
+        bool use_per_row_flags = std::ranges::any_of(
+            hash_joins,
+            [&](const auto & hash_join)
+            {
+                auto used_flags = hash_join->data->getUsedFlags();
+                return !used_flags->per_row_flags.empty();
+            });
 
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+
+            if (use_per_row_flags)
+            {
+                /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
+                auto current_used_flags = hash_joins[i]->data->getUsedFlags();
+                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
+                if (!current_used_flags->per_row_flags.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
+            }
             hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
     }

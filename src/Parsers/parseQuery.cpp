@@ -32,7 +32,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl = nullptr;
+    const char * nl;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
@@ -79,8 +79,8 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        chassert(current_position_to_hilite <= end);
-        chassert(current_position_to_hilite >= begin);
+        assert(current_position_to_hilite <= end);
+        assert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
 
@@ -264,20 +264,8 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant,
-    ParserDiagnostics * diagnostics)
+    bool skip_insignificant)
 {
-    /// The caller owns `diagnostics` and may reuse it across queries, so start from a clean slate:
-    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting
-    /// and the literal token map - are kept.
-    if (diagnostics)
-    {
-        diagnostics->expected.variants.clear();
-        diagnostics->expected.max_parsed_pos = nullptr;
-        diagnostics->expected.highlights.clear();
-        diagnostics->error_token = Token{};
-    }
-
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
@@ -286,51 +274,20 @@ ASTPtr tryParseQuery(
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
+        out_error_message = "Empty query";
         // Token iterator skips over comments, so we'll get this error for queries
         // like this:
         // "
         // -- just a comment
         // ;
         //"
-        out_error_message = "Empty query";
-
-        /// Name what was empty, the same way the syntax errors below do. The text is not always a query
-        /// the user has sent: it can be a fragment parsed on its own, such as the value of a setting
-        /// (`parallel_replicas_custom_key`, `additional_result_filter`) or a stored expression, and a
-        /// bare `Empty query` gives nothing to look for in that case.
-        if (!query_description.empty())
-            out_error_message += " (" + query_description + ")";
-
-        if (diagnostics)
-            diagnostics->error_token = *token_iterator;
-
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
         _out_query_end = token_iterator->begin;
         return nullptr;
     }
 
-    /// End of the current statement (next `;` or end of input), used to scope error
-    /// messages in multi-statement input (issue #101509). Walks a fresh iterator
-    /// (the parser's may have backtracked). `ErrorMaxQuerySizeExceeded` is terminal:
-    /// once `pos` is past `max_query_size`, `nextToken` forces that type on every
-    /// call (including the natural `EndOfStream`), so we must stop on it or loop
-    /// forever. Other lexer errors are recoverable - `pos` keeps advancing.
-    /// `min_end` clamps against `size_t` underflow in `writeQueryAroundTheError`.
-    auto current_statement_end = [&](const char * min_end) -> const char *
-    {
-        IParser::Pos iter(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-        while (!iter->isEnd()
-            && iter->type != TokenType::ErrorMaxQuerySizeExceeded
-            && iter->type != TokenType::Semicolon)
-            ++iter;
-        return std::max(iter->end, min_end);
-    };
-
-    /// The parse reports into the caller's `Expected` when one is supplied (it may have
-    /// highlighting enabled, and it carries the expected-token variants back to the caller).
-    Expected local_expected;
-    Expected & expected = diagnostics ? diagnostics->expected : local_expected;
+    Expected expected;
 
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
@@ -347,30 +304,9 @@ ASTPtr tryParseQuery(
         {
             if (lookahead->isError())
             {
+                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
                 // Advance the position for further processing of possible test hint.
-                // Capture max() BEFORE current_statement_end, which walks fresh tokens
-                // and would otherwise inflate the max-visited position.
                 _out_query_end = token_iterator.max().end;
-                if (diagnostics)
-                    diagnostics->error_token = *lookahead;
-
-                /// A caller that asked for highlighting expects them for the prefix that is fine even
-                /// when the query as a whole is not - an editor keeps coloring while the user types -
-                /// and only a parse produces them, so the shortcut cannot skip it. The result of that
-                /// parse is thrown away: the lexical error below is the better message, and it is the
-                /// one this position has always reported. What the shortcut existed to avoid is paid
-                /// here instead, which is why only a caller that asked for highlighting pays it: the
-                /// parse of an obviously erroneous query can backtrack up to `max_parser_backtracks`
-                /// and, on reaching it, report by throwing rather than by returning.
-                if (diagnostics && diagnostics->expected.enable_highlighting)
-                {
-                    ASTPtr discarded;
-                    IParser::Pos highlighting_iterator(token_iterator);
-                    parser.parse(highlighting_iterator, discarded, expected);
-                }
-
-                out_error_message = getLexicalErrorMessage(
-                    query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;
             }
 
@@ -400,10 +336,8 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (last_token.isError())
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
-        out_error_message = getLexicalErrorMessage(
-            query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
+        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end,
+            last_token, hilite, query_description);
         return nullptr;
     }
 
@@ -411,31 +345,9 @@ ASTPtr tryParseQuery(
     UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
-        /// report parens that live in later statements. Restrict to parens inside
-        /// the current statement; otherwise the highlight loop in
-        /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
-        const char * statement_end = current_statement_end(last_token.end);
-        UnmatchedParentheses scoped_parens;
-        for (const auto & paren : unmatched_parens)
-        {
-            if (paren.begin >= query_begin && paren.begin < statement_end)
-            {
-                scoped_parens.push_back(paren);
-                /// Extend `statement_end` to cover the paren itself: a multi-byte token
-                /// at the very boundary must not underflow `size_t` in the formatter.
-                statement_end = std::max(paren.end, statement_end);
-            }
-        }
-
-        if (!scoped_parens.empty())
-        {
-            if (diagnostics)
-                diagnostics->error_token = scoped_parens[0];
-            out_error_message = getUnmatchedParenthesesErrorMessage(
-                query_begin, statement_end, scoped_parens, hilite, query_description);
-            return nullptr;
-        }
+        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
+            all_queries_end, unmatched_parens, hilite, query_description);
+        return nullptr;
     }
 
     IParser::Pos this_query_end_pos = token_iterator;
@@ -446,8 +358,6 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Generic parse error.
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
@@ -457,8 +367,6 @@ ASTPtr tryParseQuery(
     if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon)
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         expected.add(last_token.begin, "end of query");
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
@@ -476,8 +384,6 @@ ASTPtr tryParseQuery(
     if (!allow_multi_statements
         && !token_iterator->isEnd())
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". "))
@@ -572,7 +478,6 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        bool is_insert_with_data = false;
         if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)
         {
             /// Data for INSERT is broken on the new line
@@ -580,33 +485,12 @@ std::pair<const char *, bool> splitMultipartQuery(
             while (*pos && *pos != '\n')
                 ++pos;
             insert->end = pos;
-            is_insert_with_data = true;
         }
 
-        /// `pos` now points at the end of the current query. For an INSERT with inline data this is the
-        /// boundary of the data line and must not be extended further, otherwise a trailing comment would
-        /// be handed to the format reader as input data.
-        const char * query_end = pos;
+        queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
 
-        /// Skip trailing whitespace and semicolons before the next query.
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
-
-        /// If only whitespace and/or comments remain, there is no further query to parse. Consume the rest
-        /// so the trailing comment is not handed to the parser as a separate, comment-only `Empty query`.
-        Tokens tokens(pos, end, max_query_size, true);
-        IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-
-        if (token_iterator->isEnd())
-        {
-            pos = end;
-            /// For a non-INSERT query fold the trailing comment into the returned fragment (it is harmless);
-            /// for an INSERT keep the boundary at the data line so the tail is dropped rather than parsed as data.
-            if (!is_insert_with_data)
-                query_end = end;
-        }
-
-        queries_list.emplace_back(queries.substr(begin - queries.data(), query_end - begin));
     }
 
     return std::make_pair(begin, pos == end);
