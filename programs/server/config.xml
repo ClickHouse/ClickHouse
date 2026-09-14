@@ -812,7 +812,9 @@
                          directory: the LDAP server is not contacted for them (not even by the interserver authentication of a
                          cluster with a 'secret' or by EXECUTE AS), and they are reported as not found, so the user directories that
                          follow are consulted instead. Use it for application accounts that must authenticate only with the secret
-                         defined for them locally. Names are matched exactly; an empty name is rejected at startup.
+                         defined for them locally. Names are matched exactly; an empty name, or any element other than 'user' inside
+                         'exclude_users', is rejected at startup. Like the other parameters of this section, the list is read at
+                         server startup only and changes require a restart.
                 role_mapping - section with LDAP search parameters and mapping rules.
                         When a user authenticates, while still bound to LDAP, an LDAP search is performed using search_filter and the
                          name of the logged in user. For each entry found during that search, the value of the specified attribute is
