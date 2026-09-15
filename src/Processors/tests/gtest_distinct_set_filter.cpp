@@ -789,6 +789,76 @@ TEST(DistinctSetFilterGrowth, FixedTablesNeedNoGrowthMemory)
     }
 }
 
+TEST(DistinctSetFilterGrowth, LowCardinalityBitmapGrowth)
+{
+    for (const auto & nested_type : DataTypes{
+             std::make_shared<DataTypeString>(),
+             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())})
+    {
+        const auto type = std::make_shared<DataTypeLowCardinality>(nested_type);
+        const Block header = {ColumnWithTypeAndName(type, "k")};
+        for (const size_t dictionary_size : {3, 200000})
+        {
+            SCOPED_TRACE(type->getName());
+            SCOPED_TRACE(dictionary_size);
+            DistinctSetFilter filter(header, {}, SizeLimits{});
+            const auto column = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+            Chunk input({column}, 3);
+            filter.prepareForInsert(input);
+
+            const size_t bytes_before = filter.getTotalByteCount();
+            const size_t estimated_growth = filter.estimateGrowthMemory(input);
+            EXPECT_EQ(filter.estimateGrowthMemory(input), estimated_growth);
+            EXPECT_EQ(filter.getTotalByteCount(), bytes_before);
+            EXPECT_EQ(filter.getTotalRowCount(), 0);
+            EXPECT_EQ(filter.estimateGrowthMemory(Chunk({column->cut(0, 0)}, 0)), 0);
+
+            ASSERT_EQ(filter.filter(std::move(input)).getNumRows(), 3);
+            EXPECT_EQ(estimated_growth, filter.getTotalByteCount() - bytes_before);
+            EXPECT_GE(estimated_growth, dictionary_size);
+            EXPECT_EQ(filter.estimateGrowthMemory(Chunk({column}, 3)), 0);
+
+            const auto same_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+            EXPECT_EQ(filter.estimateGrowthMemory(Chunk({same_dictionary}, 3)), 0);
+
+            const auto new_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size + 1, 3);
+            Chunk duplicates({new_dictionary}, 3);
+            const size_t bytes_with_first_dictionary = filter.getTotalByteCount();
+            const size_t next_growth = filter.estimateGrowthMemory(duplicates);
+            EXPECT_GE(next_growth, dictionary_size + 1);
+            EXPECT_EQ(filter.filter(std::move(duplicates)).getNumRows(), 0);
+            EXPECT_EQ(next_growth, filter.getTotalByteCount() - bytes_with_first_dictionary);
+        }
+    }
+}
+
+TEST(DistinctSetFilterGrowth, DisabledLowCardinalityBitmapNeedsNoGrowth)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+    const auto column = makeLowCardinalityColumnWithLargeDictionary(type, 5, 5);
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    for (size_t row = 0; row < 5; ++row)
+        ASSERT_EQ(filter.filter(Chunk({column->cut(row, 1)}, 1)).getNumRows(), 1);
+
+    Chunk input({makeLowCardinalityColumnWithLargeDictionary(type, 200000, 3)}, 3);
+    EXPECT_EQ(filter.estimateGrowthMemory(input), 0);
+    EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), 0);
+}
+
+TEST(DistinctSetFilterGrowth, MultipleKeysNeedNoLowCardinalityBitmap)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {
+        ColumnWithTypeAndName(type, "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "other")};
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    Chunk input({makeLowCardinalityColumnWithLargeDictionary(type, 200000, 3), makeColumn({1, 2, 3})}, 3);
+    filter.prepareForInsert(input);
+    EXPECT_EQ(filter.estimateGrowthMemory(input), 0);
+    EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), 3);
+}
+
 TEST(DistinctSetFilterGrowth, PreparationMaterializesEveryInput)
 {
     constexpr size_t num_rows = 1024;

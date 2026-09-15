@@ -70,6 +70,10 @@ public:
     /// `LowCardinality` column, or the optimization has disabled itself).
     std::optional<IColumn::Filter> buildMaskIfApplicable(const IColumn & column, size_t num_rows);
 
+    /// Estimates additional bitmap storage without creating dictionary state. Each new dictionary needs
+    /// one byte per entry. Empty input, reused dictionaries, and an inapplicable optimization need none.
+    size_t estimateGrowthMemory(const IColumn & column) const;
+
     /// The memory occupied by the per-dictionary bitmaps of the seen indices. A bitmap is as large as its
     /// dictionary, whatever the number of rows seen, so it can dominate the memory of a `DISTINCT` over a
     /// few rows of a large dictionary.
@@ -149,8 +153,8 @@ public:
     /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
     void prepareForInsert(Chunk & chunk);
 
-    /// Estimates peak additional key-storage memory assuming every row in the prepared chunk is new.
-    /// Includes hash-table buffers and arena allocations for retained string values. Requires an
+    /// Estimates peak additional retained memory assuming every row in the prepared chunk is new.
+    /// Includes hash-table buffers, string arenas, and `LowCardinality` dictionary bitmaps. Requires an
     /// initialized set and columns normalized by `prepareForInsert`. Saturates at the maximum of `size_t`
     /// when the bound is not representable.
     size_t estimateGrowthMemory(const Chunk & chunk) const;

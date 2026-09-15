@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <numeric>
+#include <thread>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,6 +14,10 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -182,4 +188,37 @@ TEST(DistinctTransformSkipNullKeys, DropsLowCardinalityNullableNullRows)
     /// `NULL` entry; with the skipping they are dropped entirely, without it `NULL` is one distinct value.
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 2u);
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 3u);
+}
+
+TEST(DistinctTransformMemory, PassThroughBeforeLowCardinalityBitmapAllocation)
+{
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    MemoryTracker query{&user, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        const auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type, "k")});
+        constexpr size_t dictionary_size = 200000;
+        auto dictionary = type->createColumn();
+        for (size_t i = 0; i < dictionary_size; ++i)
+            dictionary->insert(Field(std::to_string(i)));
+        auto column = dictionary->cut(0, 3);
+        dictionary.reset();
+        ASSERT_GE(assert_cast<const ColumnLowCardinality &>(*column).getDictionary().size(), dictionary_size);
+        DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
+            /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, /*max_bytes_before_pass_through_=*/ 1ULL << 30);
+
+        /// The hash table can hold the three keys, but the dictionary bitmap exceeds the remaining budget.
+        user.setHardLimit(user.get() + 128 * 1024);
+        SCOPE_EXIT({ user.setHardLimit(0); });
+        for (size_t i = 0; i < 2; ++i)
+        {
+            Chunk input({column}, 3);
+            ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(input));
+            EXPECT_EQ(input.getNumRows(), 3);
+        }
+    }).join();
 }

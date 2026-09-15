@@ -5,7 +5,10 @@
 #include <initializer_list>
 #include <thread>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
@@ -15,7 +18,9 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -289,3 +294,49 @@ TEST_F(ExternalDistinctTransformTest, CompletionPortRejectsData)
 }
 
 #endif
+
+TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation)
+{
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    MemoryTracker query{&user, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        const auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type, "k")});
+        constexpr size_t dictionary_size = 200000;
+        auto column = type->createColumn();
+        for (size_t i = 0; i < dictionary_size; ++i)
+            column->insert(Field(std::to_string(i)));
+        auto input = column->cut(0, 3);
+        column.reset();
+        ASSERT_GE(assert_cast<const ColumnLowCardinality &>(*input).getDictionary().size(), dictionary_size);
+        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
+            /*max_bytes_before_external_distinct_=*/ 1ULL << 30, tmp_data, /*min_free_disk_space_=*/ 0,
+            /*max_block_size_rows_=*/ 3, /*preserve_input_order_=*/ false);
+        OutputPort upstream{header};
+        InputPort downstream{header};
+        connect(upstream, transform.getInputs().front());
+        connect(transform.getOutputs().front(), downstream);
+        downstream.setNeeded();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        upstream.push(Chunk({std::move(input)}, 3));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+
+        {
+            /// Spilling must start before allocating a bitmap for the dictionary retained by these
+            /// three rows.
+            user.setHardLimit(user.get() + 128 * 1024);
+            SCOPE_EXIT({ user.setHardLimit(0); });
+            ASSERT_NO_THROW(transform.work());
+            EXPECT_FALSE(downstream.hasData());
+            EXPECT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        }
+
+        /// The unconsumed input is collected into an ordinary run without constructing the LC bitmap.
+        ASSERT_NO_THROW(transform.work());
+        EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+    }).join();
+}

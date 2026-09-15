@@ -8,7 +8,9 @@
 #include <DataTypes/NullableUtils.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
+#include <limits>
 #include <unordered_map>
 
 namespace DB
@@ -108,6 +110,23 @@ std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicab
     }
 
     return std::optional<IColumn::Filter>(std::move(mask));
+}
+
+size_t DistinctLowCardinalityFilter::estimateGrowthMemory(const IColumn & column) const
+{
+    if (!lc_optimization_controller.isEnabled() || column.empty())
+        return 0;
+
+    const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column);
+    if (!lc)
+        return 0;
+
+    const auto & dictionary = lc->getDictionary();
+    const DictionariesState::LCDictionaryKey dict_key{dictionary.getHash(), dictionary.size()};
+    if (dictionaries_state->lc_dict_states.contains(dict_key))
+        return 0;
+
+    return dictionary.size();
 }
 
 std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const ColumnLowCardinality & column, size_t num_rows)
@@ -445,7 +464,14 @@ void DistinctSetFilter::prepareForInsert(Chunk & chunk)
 
 size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
 {
-    return data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), chunk.getNumRows());
+    size_t growth_memory = data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), chunk.getNumRows());
+    if (key_columns_pos.size() == 1)
+    {
+        const size_t bitmap_growth = lc_filter.estimateGrowthMemory(*chunk.getColumns()[key_columns_pos.front()]);
+        if (common::addOverflow(growth_memory, bitmap_growth, growth_memory))
+            return std::numeric_limits<size_t>::max();
+    }
+    return growth_memory;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
