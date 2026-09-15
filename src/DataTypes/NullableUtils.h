@@ -8,9 +8,13 @@
 namespace DB
 {
 
-/** Replace Nullable key_columns to corresponding nested columns.
-  * In 'null_map' return a map of positions where at least one column was NULL.
-  * @returns ownership column of null_map.
+/// Combine two `ColumnUInt8` null maps of equal size. A null pointer represents a map with no NULLs.
+/// Reuse the first column when it is exclusively owned, or share the other column when one map is absent.
+ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs);
+
+/** Replace `Nullable` key columns with their nested columns and combine their outer null maps.
+  * A NULL field inside a non-null tuple is part of the key value and does not make the key NULL.
+  * Set `null_map` to the combined map and return the column that owns it.
   */
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map);
 

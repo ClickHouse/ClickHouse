@@ -1,0 +1,231 @@
+0, 0 -> 9, scalar	0	0
+0, 0 -> 9, nullable scalar	0	0
+0, 0 -> 9, tuple	0	0
+0, 0 -> 9, nullable tuple	0	0
+0, 0 -> 9, nullable field	0	0
+0, 0 -> 9, nested tuple	0	0
+0, 0 -> 9, array field	0	0
+0, 0 -> 9, map field	0	0
+0, 0 -> 9, array to map	0	0
+0, 0 -> 9, tuple to map	0	0
+0, 0 -> 9, named tuple	0	0
+0, 3 -> 0, scalar	0	0
+0, 3 -> 0, nullable scalar	0	0
+0, 3 -> 0, tuple	0	0
+0, 3 -> 0, nullable tuple	0	0
+0, 3 -> 0, nullable field	0	0
+0, 3 -> 0, nested tuple	0	0
+0, 3 -> 0, array field	0	0
+0, 3 -> 0, map field	0	0
+0, 3 -> 0, array to map	0	0
+0, 3 -> 0, tuple to map	0	0
+0, 3 -> 0, named tuple	0	0
+0, 6 -> 0, scalar	0	0
+0, 6 -> 0, nullable scalar	0	0
+0, 6 -> 0, tuple	0	0
+0, 6 -> 0, nullable tuple	0	0
+0, 6 -> 0, nullable field	0	0
+0, 6 -> 0, nested tuple	0	0
+0, 6 -> 0, array field	0	0
+0, 6 -> 0, map field	0	0
+0, 6 -> 0, array to map	0	0
+0, 6 -> 0, tuple to map	0	0
+0, 6 -> 0, named tuple	0	0
+0, 6 -> 3, scalar	0	0
+0, 6 -> 3, nullable scalar	0	0
+0, 6 -> 3, tuple	0	0
+0, 6 -> 3, nullable tuple	0	0
+0, 6 -> 3, nullable field	0	0
+0, 6 -> 3, nested tuple	0	0
+0, 6 -> 3, array field	0	0
+0, 6 -> 3, map field	0	0
+0, 6 -> 3, array to map	0	0
+0, 6 -> 3, tuple to map	0	0
+0, 6 -> 3, named tuple	0	0
+0, 9 -> 0, scalar	0	0
+0, 9 -> 0, nullable scalar	0	0
+0, 9 -> 0, tuple	0	0
+0, 9 -> 0, nullable tuple	0	0
+0, 9 -> 0, nullable field	0	0
+0, 9 -> 0, nested tuple	0	0
+0, 9 -> 0, array field	0	0
+0, 9 -> 0, map field	0	0
+0, 9 -> 0, array to map	0	0
+0, 9 -> 0, tuple to map	0	0
+0, 9 -> 0, named tuple	0	0
+0, 9 -> 3, scalar	0	0
+0, 9 -> 3, nullable scalar	0	0
+0, 9 -> 3, tuple	0	0
+0, 9 -> 3, nullable tuple	0	0
+0, 9 -> 3, nullable field	0	0
+0, 9 -> 3, nested tuple	0	0
+0, 9 -> 3, array field	0	0
+0, 9 -> 3, map field	0	0
+0, 9 -> 3, array to map	0	0
+0, 9 -> 3, tuple to map	0	0
+0, 9 -> 3, named tuple	0	0
+0, 9 -> 6, scalar	0	0
+0, 9 -> 6, nullable scalar	0	0
+0, 9 -> 6, tuple	0	0
+0, 9 -> 6, nullable tuple	0	0
+0, 9 -> 6, nullable field	0	0
+0, 9 -> 6, nested tuple	0	0
+0, 9 -> 6, array field	0	0
+0, 9 -> 6, map field	0	0
+0, 9 -> 6, array to map	0	0
+0, 9 -> 6, tuple to map	0	0
+0, 9 -> 6, named tuple	0	0
+0, 9 -> 9, scalar	0	0
+0, 9 -> 9, nullable scalar	0	0
+0, 9 -> 9, tuple	0	0
+0, 9 -> 9, nullable tuple	0	0
+0, 9 -> 9, nullable field	0	0
+0, 9 -> 9, nested tuple	0	0
+0, 9 -> 9, array field	0	0
+0, 9 -> 9, map field	0	0
+0, 9 -> 9, array to map	0	0
+0, 9 -> 9, tuple to map	0	0
+0, 9 -> 9, named tuple	0	0
+1, 0 -> 9, scalar	0	0
+1, 0 -> 9, nullable scalar	0	0
+1, 0 -> 9, tuple	0	0
+1, 0 -> 9, nullable tuple	0	0
+1, 0 -> 9, nullable field	0	0
+1, 0 -> 9, nested tuple	0	0
+1, 0 -> 9, array field	0	0
+1, 0 -> 9, map field	0	0
+1, 0 -> 9, array to map	0	0
+1, 0 -> 9, tuple to map	0	0
+1, 0 -> 9, named tuple	0	0
+1, 3 -> 0, scalar	0	0
+1, 3 -> 0, nullable scalar	0	0
+1, 3 -> 0, tuple	0	0
+1, 3 -> 0, nullable tuple	0	0
+1, 3 -> 0, nullable field	0	0
+1, 3 -> 0, nested tuple	0	0
+1, 3 -> 0, array field	0	0
+1, 3 -> 0, map field	0	0
+1, 3 -> 0, array to map	0	0
+1, 3 -> 0, tuple to map	0	0
+1, 3 -> 0, named tuple	0	0
+1, 6 -> 0, scalar	0	0
+1, 6 -> 0, nullable scalar	0	0
+1, 6 -> 0, tuple	0	0
+1, 6 -> 0, nullable tuple	0	0
+1, 6 -> 0, nullable field	0	0
+1, 6 -> 0, nested tuple	0	0
+1, 6 -> 0, array field	0	0
+1, 6 -> 0, map field	0	0
+1, 6 -> 0, array to map	0	0
+1, 6 -> 0, tuple to map	0	0
+1, 6 -> 0, named tuple	0	0
+1, 6 -> 3, scalar	0	0
+1, 6 -> 3, nullable scalar	0	0
+1, 6 -> 3, tuple	0	0
+1, 6 -> 3, nullable tuple	0	0
+1, 6 -> 3, nullable field	0	0
+1, 6 -> 3, nested tuple	0	0
+1, 6 -> 3, array field	0	0
+1, 6 -> 3, map field	0	0
+1, 6 -> 3, array to map	0	0
+1, 6 -> 3, tuple to map	0	0
+1, 6 -> 3, named tuple	0	0
+1, 9 -> 0, scalar	0	0
+1, 9 -> 0, nullable scalar	0	0
+1, 9 -> 0, tuple	0	0
+1, 9 -> 0, nullable tuple	0	0
+1, 9 -> 0, nullable field	0	0
+1, 9 -> 0, nested tuple	0	0
+1, 9 -> 0, array field	0	0
+1, 9 -> 0, map field	0	0
+1, 9 -> 0, array to map	0	0
+1, 9 -> 0, tuple to map	0	0
+1, 9 -> 0, named tuple	0	0
+1, 9 -> 3, scalar	0	0
+1, 9 -> 3, nullable scalar	0	0
+1, 9 -> 3, tuple	0	0
+1, 9 -> 3, nullable tuple	0	0
+1, 9 -> 3, nullable field	0	0
+1, 9 -> 3, nested tuple	0	0
+1, 9 -> 3, array field	0	0
+1, 9 -> 3, map field	0	0
+1, 9 -> 3, array to map	0	0
+1, 9 -> 3, tuple to map	0	0
+1, 9 -> 3, named tuple	0	0
+1, 9 -> 6, scalar	0	0
+1, 9 -> 6, nullable scalar	0	0
+1, 9 -> 6, tuple	0	0
+1, 9 -> 6, nullable tuple	0	0
+1, 9 -> 6, nullable field	0	0
+1, 9 -> 6, nested tuple	0	0
+1, 9 -> 6, array field	0	0
+1, 9 -> 6, map field	0	0
+1, 9 -> 6, array to map	0	0
+1, 9 -> 6, tuple to map	0	0
+1, 9 -> 6, named tuple	0	0
+1, 9 -> 9, scalar	0	0
+1, 9 -> 9, nullable scalar	0	0
+1, 9 -> 9, tuple	0	0
+1, 9 -> 9, nullable tuple	0	0
+1, 9 -> 9, nullable field	0	0
+1, 9 -> 9, nested tuple	0	0
+1, 9 -> 9, array field	0	0
+1, 9 -> 9, map field	0	0
+1, 9 -> 9, array to map	0	0
+1, 9 -> 9, tuple to map	0	0
+1, 9 -> 9, named tuple	0	0
+0	0	0	1
+0	1	0	1
+0	2	0	1
+0	3	1	0
+0	4	0	1
+0	5	0	1
+0	6	1	0
+0	7	0	1
+0	8	0	1
+0	9	0	1
+0	1	0
+0	0	1
+0	1	1	1	1	1
+1	0	0	1
+1	1	0	1
+1	2	0	1
+1	3	1	0
+1	4	0	1
+1	5	0	1
+1	6	1	0
+1	7	0	1
+1	8	0	1
+1	9	0	1
+1	1	0
+1	0	1
+1	1	1	1	1	1
+0, Int64	0	0
+0, Date	0	0
+0, Date32	0	0
+0, Time	0	0
+0, Time64(2)	0	0
+0, Decimal32(2)	0	0
+0, Decimal64(2)	0	0
+0, Decimal128(2)	0	0
+0, Decimal256(2)	0	0
+1, Int64	0	0
+1, Date	0	0
+1, Date32	0	0
+1, Time	0	0
+1, Time64(2)	0	0
+1, Decimal32(2)	0	0
+1, Decimal64(2)	0	0
+1, Decimal128(2)	0	0
+1, Decimal256(2)	0	0
+1120	1
+1	0
+0	1
+0	1	0	1
+0	1
+0	1	1	0
+1	0
+0	1
+0	1	0	1
+0	1
+0	1	1	0
