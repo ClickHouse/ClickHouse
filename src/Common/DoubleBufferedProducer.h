@@ -71,7 +71,8 @@ public:
     /// `next` would return `std::nullopt` at once because the previous run had finished, and after a
     /// `stop` the new thread would exit before its first callback. Restarting is not what any caller
     /// wants and not what this coordinates, so it is rejected rather than made to half-work; take a
-    /// fresh object for a fresh run.
+    /// fresh object for a fresh run. A `stop` before the start, on the other hand, is a no-op (see
+    /// there): there is no run for it to be the state of, and the object is still one to start.
     void start(ThreadGroupPtr thread_group, ThreadName thread_name, ProducerFn producer)
     {
         if (started)
@@ -153,8 +154,17 @@ public:
     /// Requests the producer to stop and joins it. Idempotent; also called by the destructor. Waits
     /// for a callback that is already running - see `isStopRequested`: a callback that can block
     /// indefinitely is the caller's to make interruptible.
+    ///
+    /// Before `start` it is a no-op: an owner that never got to start its producer still stops it
+    /// on the way out, and there is nothing to stop. It must not leave a stop request behind
+    /// either - a run started under one would end before its first callback, with `next`
+    /// answering `std::nullopt` at once: a producer that silently produces nothing. `started` is
+    /// the owner's, set and read on the owner's thread only, like `start` and `stop` themselves.
     void stop() noexcept
     {
+        if (!started)
+            return;
+
         {
             std::lock_guard lock(mutex);
             stop_requested = true;

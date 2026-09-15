@@ -905,7 +905,35 @@
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>72</shared_memory_size>
         <shared_memory_max_size>1835008</shared_memory_max_size>
-        <command>shm_udf_alloc_beyond_eof.py 1572864 64</command>
+        <command>shm_udf_alloc_beyond_eof.py 1572864 262144</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_sparse_to_the_cap_and_pages_past_it_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>88</shared_memory_size>
+        <shared_memory_max_size>2097152</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py 2097152 2093056 2097152</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_alloc_far_during_request_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>4096</shared_memory_size>
+        <shared_memory_max_size>1048576</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py 1048576 512000</command>
     </function>
     <function>
         <type>executable_pool</type>
@@ -958,7 +986,7 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>65536</shared_memory_size>
-        <shared_memory_max_size>131072</shared_memory_max_size>
+        <shared_memory_max_size>262144</shared_memory_max_size>
         <command>shm_udf_peek_extended.py --extend-to 131072 --peek-at 65536</command>
     </function>
     <function>

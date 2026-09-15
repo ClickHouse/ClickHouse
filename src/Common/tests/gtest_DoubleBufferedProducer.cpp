@@ -308,6 +308,33 @@ TEST(DoubleBufferedProducer, RethrowIfFailedSurfacesErrorAfterConsumerStopsTakin
 }
 
 /// A producer that finished normally leaves nothing to rethrow.
+/// `stop` before `start` is a no-op: an owner that never got to start its producer still stops it
+/// on the way out, and that must not leave a stop request behind for a run that starts later - it
+/// would end before its first callback and produce nothing, silently.
+TEST(DoubleBufferedProducer, StopBeforeStartIsANoOp)
+{
+    DoubleBufferedProducer producer;
+    producer.stop();
+    producer.stop();
+
+    size_t next_value = 0;
+    producer.start(nullptr, kName, [&](size_t) -> std::optional<size_t>
+    {
+        if (next_value >= 3)
+            return std::nullopt;
+        return next_value++;
+    });
+
+    std::vector<size_t> seen;
+    while (auto item = producer.next())
+    {
+        seen.push_back(item->size);
+        producer.release(item->index);
+    }
+    EXPECT_EQ(seen, (std::vector<size_t>{0, 1, 2}));
+    producer.stop();
+}
+
 TEST(DoubleBufferedProducer, RethrowIfFailedIsNoOpOnSuccess)
 {
     DoubleBufferedProducer producer;

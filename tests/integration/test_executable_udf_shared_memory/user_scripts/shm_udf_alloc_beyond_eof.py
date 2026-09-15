@@ -6,10 +6,13 @@
 # that measured its regions by their length alone would never see those pages. Otherwise identical
 # to shm_udf.py. What the server does about it is the test's business.
 #
-# With an argument, the pages go somewhere else: three of them (or as many as the second
-# argument says) at that absolute offset, far past the end of the file, the same ones on every
-# call. A growth of the file that stops short of them commits its own pages on top of them, not
-# instead of them.
+# With an argument, the pages go somewhere else: three of them (or as many as fit in the number
+# of bytes the second argument gives - bytes, so that a configuration means the same on every
+# page size) at that absolute offset, far past the end of the file, the same ones on every call.
+# A growth of the file that stops short of them commits its own pages on top of them, not instead
+# of them. A third argument stretches the file to that length first, without committing a page
+# (`ftruncate`): length without pages, next to pages without length. The pages are committed
+# before the request is answered, whatever the answer - including a request for a larger region.
 #
 # Protocol (all control values use the ClickHouse native binary encoding):
 #   server -> stdin : varint version, varint path length + path bytes, varint input offset,
@@ -92,16 +95,20 @@ def process(input_data, region, region_size):
 FALLOC_FL_KEEP_SIZE = 0x01
 
 
-def allocate_beyond_eof(fd, far_offset, far_pages):
+def allocate_beyond_eof(fd, far_offset, far_bytes, sparse_length):
     # Commits twice the file's length of pages past its end - at least three pages, for a file
     # shorter than a page - without moving the end: `st_size` stays what it was, `st_blocks` grows.
-    # Or, given `far_offset`, `far_pages` pages there: the same ones every time, so that repeating
-    # this commits nothing more.
+    # Or, given `far_offset`, the whole pages of `far_bytes` there (three pages by default): the
+    # same ones every time, so that repeating this commits nothing more - after stretching the
+    # file to `sparse_length`, if given.
+    if sparse_length is not None and os.fstat(fd).st_size < sparse_length:
+        os.ftruncate(fd, sparse_length)
     if far_offset is None:
         size = os.fstat(fd).st_size
         offset, length = size, max(2 * size, 3 * mmap.PAGESIZE)
     else:
-        offset, length = far_offset, far_pages * mmap.PAGESIZE
+        offset = far_offset
+        length = 3 * mmap.PAGESIZE if far_bytes is None else far_bytes // mmap.PAGESIZE * mmap.PAGESIZE
     libc = ctypes.CDLL(None, use_errno=True)
     libc.fallocate.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int64, ctypes.c_int64]
     if libc.fallocate(fd, FALLOC_FL_KEEP_SIZE, offset, length) != 0:
@@ -112,7 +119,8 @@ def main():
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
     far_offset = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    far_pages = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    far_bytes = int(sys.argv[2]) if len(sys.argv) > 2 else None
+    sparse_length = int(sys.argv[3]) if len(sys.argv) > 3 else None
 
     while True:
         version = read_varint(stdin)
@@ -129,6 +137,14 @@ def main():
             if version != PROTOCOL_VERSION:
                 raise ValueError(f"unsupported protocol version {version}")
 
+            # Before any response goes out - the answer, or a request for a larger region - so
+            # that the pages are there by the time the server acts on it.
+            alloc_fd = os.open(path, os.O_RDWR)
+            try:
+                allocate_beyond_eof(alloc_fd, far_offset, far_bytes, sparse_length)
+            finally:
+                os.close(alloc_fd)
+
             fd = os.open(path, os.O_RDWR)
             try:
                 region = mmap.mmap(fd, 0)
@@ -140,14 +156,6 @@ def main():
                     region.close()
             finally:
                 os.close(fd)
-
-            # Before the response goes out, so that the pages are there by the time the server
-            # decides what to do with this worker.
-            alloc_fd = os.open(path, os.O_RDWR)
-            try:
-                allocate_beyond_eof(alloc_fd, far_offset, far_pages)
-            finally:
-                os.close(alloc_fd)
 
             write_varint(stdout, request_id)
             write_varint(stdout, STATUS_OK)

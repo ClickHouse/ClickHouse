@@ -209,8 +209,10 @@ void SharedMemoryRegion::checkSupported()
 
 SharedMemoryRegion::SharedMemoryRegion(size_t size)
 {
-    checkSupported();
-
+    /// No `checkSupported` here: the loader ran the probe once, when the function was loaded, and
+    /// running it again on every region would report a transient failure of the real creation
+    /// below - out of descriptors, out of memory - as the transport being unavailable. What
+    /// fails below reports as what it is.
     if (size == 0)
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "SharedMemoryRegion: size must be greater than zero");
 
@@ -264,6 +266,8 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
     region_fd = fd;
     region_size = size;
     backing_size = size;
+    reserved_size = size;
+    committed_size = roundUpToPages(size);
     footprint_size = roundUpToPages(size);
 }
 
@@ -286,6 +290,8 @@ void SharedMemoryRegion::grow(size_t new_size)
     /// `posix_fallocate` over committed pages costs a walk, not a copy.
     reserveBackingStorage(region_fd, new_size, "grow");
     backing_size = std::max(backing_size, new_size);
+    reserved_size = std::max(reserved_size, new_size);
+    committed_size = std::max(committed_size, roundUpToPages(new_size));
     footprint_size = std::max(footprint_size, roundUpToPages(new_size));
 
     /// Map the enlarged file into a fresh mapping first; only on success is the old one dropped, so
@@ -338,7 +344,8 @@ size_t SharedMemoryRegion::refreshFootprint()
     /// Never less than what was seen before: pages come and go (a hole the command punched), but
     /// a charge that went down with them would have to be taken again when they come back, on the
     /// hot path, uncounted; the footprint is a high-water mark, like the length.
-    footprint_size = std::max({footprint_size, roundUpToPages(backing_size), static_cast<size_t>(st.st_blocks) * 512});
+    committed_size = static_cast<size_t>(st.st_blocks) * 512;
+    footprint_size = std::max({footprint_size, roundUpToPages(backing_size), committed_size});
     return footprint_size;
 }
 

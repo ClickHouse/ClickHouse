@@ -623,6 +623,26 @@ def test_executable_function_pooled_worker_with_unreadable_exit_code_fails_the_q
     assert node.query("SELECT test_function_pool_lingers_ignore_python(2)") == "Key 2\n"
 
 
+def test_executable_function_discarded_pooled_worker_sees_the_end_of_its_stdin(started_cluster):
+    """A pooled worker that is not going back to the pool gets EOF on its stdin before its exit is waited for."""
+    skip_test_msan(node)
+
+    # The command answers one row of three, closes its stdout and reads its stdin to the end
+    # before exiting - which is how a pooled command exits. It answered short, so it is not going
+    # back to the pool and its exit status is read; a pooled worker's stdin is kept open across
+    # borrows, and a server that waited for the exit with it still open would sit out the whole
+    # `command_termination_timeout` (20 s here) on a command that is only waiting to be let go,
+    # then fail the query for an exit code it never got to see. The stdin is closed first, the
+    # command exits on the EOF within a moment, and the query fails for the short answer.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_pool_short_answer_python(number) FROM numbers(3)")
+    elapsed = time.monotonic() - started
+
+    assert "did not exit within command_termination_timeout" not in str(exc.value), str(exc.value)
+    assert elapsed < 10, f"the query took {elapsed:.1f}s: the worker sat out its termination timeout"
+
+
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''

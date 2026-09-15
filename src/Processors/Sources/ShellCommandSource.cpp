@@ -1,6 +1,7 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
 #include <poll.h>
+#include <sys/ioctl.h>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
@@ -817,32 +818,25 @@ private:
 /// query is over and the process is about to be replaced. It is reported against the process
 /// (logged by the caller) rather than dropped - a diagnostic written on the way out is the one a
 /// person debugging the command most wants to see. Capped for the log line; the pipe is read to
-/// its end regardless, and only when there is something to read, so a grandchild that inherited
-/// the descriptor cannot block the borrow.
+/// what it holds at this moment (`FIONREAD`) regardless, and no further: the process is dead, so
+/// nothing more of its can arrive, and a grandchild that inherited the write end and keeps
+/// writing must be able neither to block the borrow (a read is only ever asked for bytes that
+/// are there) nor to hold it here for as long as it keeps the pipe non-empty.
 static String readLeftoverStderrOfExitedProcess(const ShellCommand & process)
 {
     static constexpr size_t max_reported = 4_KiB;
     String result;
     char buffer[4_KiB];
 
-    while (true)
+    const int fd = process.err.getFD();
+    int available = 0;
+    if (0 != ::ioctl(fd, FIONREAD, &available) || available <= 0)
+        return result;
+
+    size_t remaining = static_cast<size_t>(available);
+    while (remaining > 0)
     {
-        pollfd pfd{};
-        pfd.fd = process.err.getFD();
-        pfd.events = POLLIN;
-
-        int res = 0;
-        do
-        {
-            pfd.revents = 0;
-            res = ::poll(&pfd, 1, 0);
-        }
-        while (res < 0 && errno == EINTR);
-
-        if (res <= 0 || (pfd.revents & POLLIN) == 0)
-            return result;
-
-        const ssize_t bytes = ::read(pfd.fd, buffer, sizeof(buffer));
+        const ssize_t bytes = ::read(fd, buffer, std::min(remaining, sizeof(buffer)));
         if (bytes <= 0)
         {
             if (bytes < 0 && errno == EINTR)
@@ -850,9 +844,11 @@ static String readLeftoverStderrOfExitedProcess(const ShellCommand & process)
             return result;
         }
 
+        remaining -= static_cast<size_t>(bytes);
         if (result.size() < max_reported)
             result.append(buffer, std::min(static_cast<size_t>(bytes), max_reported - result.size()));
     }
+    return result;
 }
 
 static bool pooledProcessHasExitedCleanly(const ShellCommand & process)
@@ -1056,7 +1052,7 @@ public:
     ///
     /// Never throws: this runs on a cleanup path, and it is an accounting hand-back rather than an
     /// allocation — the memory is already mapped, refusing the charge would not free anything. A
-    /// failed re-read falls back to the size last seen, which is a lower bound.
+    /// failed re-read falls back to the footprint last seen, which is a lower bound.
     ///
     /// Never more than `cap` per region, whatever the file says. The borrower has just checked the
     /// files against `shared_memory_max_size` and discarded a worker over it, but the command is
@@ -1077,8 +1073,8 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the size last seen");
-                bytes += std::min(region->backingSize(), cap);
+                tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the footprint last seen");
+                bytes += std::min(region->footprint(), cap);
             }
         }
 
@@ -1480,6 +1476,18 @@ namespace
 
                 if (wait_for_command && (check_exit_code || timeout_command_out.stderrIsObserved()))
                 {
+                    /// A pooled worker keeps its stdin open across borrows - the send task leaves
+                    /// it so, for the next request - and this one is not going back: it answered
+                    /// short, or the query finished with it early. The wait below is bounded by
+                    /// `command_termination_timeout`, but a live worker that still has its stdin
+                    /// would sit out the whole of it waiting for a request, hold the pool's slot
+                    /// for that long, and then be signalled instead of exiting on its own. Closed
+                    /// here, so that it sees EOF and exits the way it is written to; the send
+                    /// threads are joined above, so nothing is writing into it. (A non-pooled
+                    /// command had its stdin closed by the send task.)
+                    if (process_pool)
+                        command->in.close();
+
                     /// Stop reading the child's stdout before this wait touches the same descriptor.
                     /// The source can be finished from above - a `LIMIT` downstream closes the
                     /// output port - while `ParallelParsingInputFormat` still has a segmentator
@@ -2037,13 +2045,13 @@ namespace
                 {
                     if (const auto * over = command_holder->sharedMemoryRegionOverTheCap(shared_memory_max_size))
                     {
-                        const size_t largest = std::max(over->backingSize(), over->footprint());
                         LOG_WARNING(
                             getLogger("ShellCommandSharedMemorySource"),
                             "The process of an executable UDF has grown its shared-memory region to {} bytes "
-                            "(its length, or the pages it committed), past shared_memory_max_size ({} bytes); the "
-                            "process and its regions are discarded and this borrow starts a fresh one",
-                            largest, shared_memory_max_size);
+                            "(its length, the pages it committed, or what it would hold once mapped whole), past "
+                            "shared_memory_max_size ({} bytes); the process and its regions are discarded and this "
+                            "borrow starts a fresh one",
+                            std::max(over->backingSize(), over->costOnceMappedWhole()), shared_memory_max_size);
                         command_holder->discardWorkerAndRegions();
                     }
                 }
@@ -2775,19 +2783,26 @@ namespace
             /// most it can commit is charged and checked first, the footprint is re-read after,
             /// and what the growth turned out not to need is given back - a moment of double
             /// counting for the pages the command committed just past the end, and only those.
-            /// The end of the file rather than the mapped size: a growth that committed its pages
-            /// and could not map them has left the file longer than the mapping, and those pages
-            /// are committed and charged. Whole pages, like the footprint.
+            /// The length the server itself committed the file up to (`reservedSize`) rather than
+            /// the mapped size or the length of the file: a growth that committed its pages and
+            /// could not map them has left the file longer than the mapping, and those pages are
+            /// committed and charged; and a file the command extended is longer than what was
+            /// committed, and the growth commits the difference. Whole pages, like the footprint.
             ///
             /// The one thing this bound does not cover is a page the command freed inside the file
             /// (`FALLOC_FL_PUNCH_HOLE`): the growth commits it again, and the re-read finds the
             /// footprint higher than it charged for. That is charged then, after the fact - the
             /// command that punched the hole is the command that pays for it, and it pays with its
             /// own query's limit.
-            const size_t footprint_before = region.footprint();
-            const size_t backing_before = SharedMemoryRegion::roundUpToPages(region.backingSize());
-            const size_t new_footprint = SharedMemoryRegion::roundUpToPages(new_size);
-            const size_t expected = new_footprint > backing_before ? new_footprint - backing_before : 0;
+            ///
+            /// Re-read now, not taken from the last hand-over: the command is alive, and a request
+            /// that comes back asking for a larger region (`NEED_MORE_SPACE`) comes back from a
+            /// command that had the region to itself in between - pages it committed past the end
+            /// during that request are what this growth would commit on top of, and a bound that
+            /// did not know of them would let the growth take the footprint past the cap and find
+            /// out afterwards. One `fstat` per growth, and growths are amortized.
+            const size_t footprint_before = region.refreshFootprint();
+            const size_t expected = region.fillCostUpTo(new_size);
 
             /// Never past the cap, in pages like the footprint: the server's own growth is what
             /// the cap is a promise about (the command's own commits are checked where the worker
@@ -2826,15 +2841,7 @@ namespace
             }
             catch (...)
             {
-                try
-                {
-                    added = region.refreshFootprint() - footprint_before;
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region after a failed growth; charging the size last seen");
-                    added = region.footprint() - footprint_before;
-                }
+                added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
                 if (expected > added)
                     unchargeQueryMemory(expected - added);
                 if (added)
@@ -2842,7 +2849,7 @@ namespace
                 throw;
             }
 
-            added = region.refreshFootprint() - footprint_before;
+            added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
             if (added < expected)
                 unchargeQueryMemory(expected - added);
             else if (added > expected)
@@ -2891,14 +2898,24 @@ namespace
             const size_t footprint = region.refreshFootprint();
             const size_t backing = region.backingSize();
             if (region.isOverTheCap(shared_memory_max_size))
-                failBorrowOnRegionOverTheCap(std::max(backing, footprint));
+                failBorrowOnRegionOverTheCap(std::max(backing, region.costOnceMappedWhole()));
 
             /// The query was charged for the footprint read a moment earlier; a region that grew
             /// in between - within the cap - is charged for the rest before it is mapped, so that
             /// what this borrow holds is what it is charged for. May throw the memory limit, in
             /// which case nothing has been touched yet and the worker keeps its regions.
-            if (footprint > charged_size)
-                chargeQueryMemory(footprint - charged_size);
+            ///
+            /// And for what mapping the file whole is about to commit, at most: the growth below
+            /// `posix_fallocate`s the file up to its length, and the pages between the length the
+            /// server itself last committed and that length may all be missing - a command can
+            /// extend the file without committing a page - while the footprint may consist of pages
+            /// the command committed past the end, which the fill adds to rather than uses (that
+            /// is what `isOverTheCap` has just ruled out going past the cap). Charged before the
+            /// fill, like every growth (`ensureRegionFits`), and settled against the footprint
+            /// re-read after it: what the fill turned out not to need is given back.
+            const size_t fill = region.fillCostUpTo(backing);
+            if (footprint + fill > charged_size)
+                chargeQueryMemory(footprint + fill - charged_size);
 
             if (backing > region.size())
             {
@@ -2911,8 +2928,36 @@ namespace
                     dropRegionsAndWorker();
                     throw;
                 }
-            }
 
+                /// Settled both ways, like a growth (`ensureRegionFits`): what the fill did not need
+                /// is given back, and pages the command freed under the length and replaced past it
+                /// - which the bound cannot see, the count being the same - are charged now that
+                /// the re-read sees them.
+                const size_t footprint_after = refreshFootprintKeepingTheChargeOnFailure(region, footprint + fill);
+                if (footprint_after < footprint + fill)
+                    unchargeQueryMemory(footprint + fill - footprint_after);
+                else if (footprint_after > footprint + fill)
+                    chargeQueryMemory(footprint_after - footprint - fill);
+            }
+        }
+
+        /// The footprint re-read after a growth, to settle the charge made before it. A re-read
+        /// that fails answers with the figure the charge was made for, `charged`: the pages may
+        /// be there, and a charge for pages that are there is the safe side, while the cached
+        /// figure - raised to the length of the file, never to the pages the command committed
+        /// past it - could be lower than what the growth committed and give back a charge for
+        /// pages that stay.
+        static size_t refreshFootprintKeepingTheChargeOnFailure(SharedMemoryRegion & region, size_t charged)
+        {
+            try
+            {
+                return region.refreshFootprint();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region after a growth; keeping the charge made for it");
+                return std::max(region.footprint(), charged);
+            }
         }
 
         /// Drops this borrow's view of the regions together with the holder's worker and regions:
@@ -2982,10 +3027,9 @@ namespace
                 if (!region)
                     continue;
 
-                size_t footprint = 0;
                 try
                 {
-                    footprint = region->refreshFootprint();
+                    region->refreshFootprint();
                 }
                 catch (...)
                 {
@@ -2998,9 +3042,9 @@ namespace
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF has grown its shared-memory region to {} bytes "
-                        "(its length, or the pages it committed), past shared_memory_max_size ({} bytes); the "
-                        "process will not be reused",
-                        std::max(region->backingSize(), footprint), shared_memory_max_size);
+                        "(its length, the pages it committed, or what it would hold once mapped whole), past "
+                        "shared_memory_max_size ({} bytes); the process will not be reused",
+                        std::max(region->backingSize(), region->costOnceMappedWhole()), shared_memory_max_size);
                     return false;
                 }
             }

@@ -121,6 +121,37 @@ public:
     /// region costs, so memory accounting goes by this figure and by its changes.
     size_t footprint() const { return footprint_size; }
 
+    /// The length up to which the server itself has committed the file's pages: at creation and
+    /// at every growth of its own (`posix_fallocate` over the whole length). Never raised by what
+    /// the command did to the file - it can extend the file without committing a page
+    /// (`ftruncate`), and a length only observed says nothing about the pages under it. So this
+    /// is the one baseline from which the cost of the server's next `posix_fallocate` can be
+    /// bounded: the pages between here and the new length, at most, whatever the command did
+    /// past here.
+    size_t reservedSize() const { return reserved_size; }
+
+    /// What committing the file's pages up to `length` - a growth to it, or mapping it whole -
+    /// could add to the footprint, in whole pages. The footprint says how many pages the file
+    /// holds, not where: the pages between what the server itself committed (`reservedSize`) and
+    /// `length` may all be missing (a command can extend the file without committing a page),
+    /// while pages the command committed past the end are in the footprint too, and the fill adds
+    /// to them rather than uses them. How many of those there are at least is what the file holds
+    /// beyond what the server committed - as if none of the server's own pages had been freed by
+    /// the command - so the footprint after the fill is at least `length` plus those, and that
+    /// is the figure. Pages the command freed and replaced with pages past the end hide from this
+    /// (the count is the same), and by at most what the server committed - which the region was
+    /// charged for; the next re-read after the fill finds them.
+    size_t fillCostUpTo(size_t length) const
+    {
+        const size_t reserved = roundUpToPages(reserved_size);
+        const size_t target = roundUpToPages(length);
+        if (target <= reserved)
+            return 0;
+        const size_t past_the_end_at_least = committed_size > reserved ? committed_size - reserved : 0;
+        const size_t footprint_after = target + past_the_end_at_least;
+        return footprint_after > footprint_size ? footprint_after - footprint_size : 0;
+    }
+
     /** Re-reads the length of the file and returns it, updating `backingSize`.
       *
       * The seals stop the command from shrinking the file; nothing stops it from extending it,
@@ -152,15 +183,25 @@ public:
     /// is not over a cap of 16 bytes for holding the page it cannot help holding.
     static size_t roundUpToPages(size_t size);
 
+    /// What the region would cost once mapped whole, as last read: the footprint plus the fill up
+    /// to the length of the file (`fillCostUpTo`). The figure a cap is compared with, and the one
+    /// to report when a region is over it - its length and its footprint can both be within the
+    /// cap while this is not.
+    size_t costOnceMappedWhole() const { return footprint_size + fillCostUpTo(backing_size); }
+
     /// Whether the region, as last read (`refreshFootprint`), is over a cap of `max_size` bytes.
-    /// Two comparisons, one per unit. The length of the file in bytes against the cap in bytes:
-    /// the length is exact, and the command's to change, so it is held to the exact figure - a
-    /// 24-byte file stretched to a page is a file stretched past a cap of 24 bytes, whatever the
-    /// page count says. And the footprint against the cap rounded up to pages, because a file
-    /// holds whole pages: a 24-byte region holds one, and is not over its cap for it.
+    /// Three comparisons. The length of the file in bytes against the cap in bytes: the length is
+    /// exact, and the command's to change, so it is held to the exact figure - a 24-byte file
+    /// stretched to a page is a file stretched past a cap of 24 bytes, whatever the page count
+    /// says. The footprint against the cap rounded up to pages, because a file holds whole pages:
+    /// a 24-byte region holds one, and is not over its cap for it. And what the footprint would be
+    /// once the server has committed the file's pages up to its length (`fillCostUpTo`), which
+    /// mapping it whole entails: a file the command stretched to the cap without committing a page
+    /// and then filled with as many pages past its end holds a cap's worth of pages and would hold
+    /// two - and the server must not be the one to commit the second.
     bool isOverTheCap(size_t max_size) const
     {
-        return backing_size > max_size || footprint_size > roundUpToPages(max_size);
+        return backing_size > max_size || costOnceMappedWhole() > roundUpToPages(max_size);
     }
 
     /// The descriptor, for handing to the command's process at `exec`. Close-on-exec in this
@@ -175,6 +216,12 @@ private:
     char * region_data = nullptr;
     size_t region_size = 0;
     size_t backing_size = 0;
+    size_t reserved_size = 0;
+    /// The pages the file holds (`st_blocks`), as last read. Can be less than what the server
+    /// itself committed: the command can free pages under the length it reserved
+    /// (`FALLOC_FL_PUNCH_HOLE`), and if it commits as many past the end instead, the count is the
+    /// same and `fillCostUpTo` takes them for the server's - see there.
+    size_t committed_size = 0;
     size_t footprint_size = 0;
 };
 
