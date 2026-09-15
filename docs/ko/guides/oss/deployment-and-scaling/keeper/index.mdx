@@ -218,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time`, `zk_cnt_election_time`는 누적 리더 전용 메트릭입니다. 이는 서버별 관측값이며 클러스터 전체의 가용성 측정값이 아닙니다. 해당 서버에서 활성 리더가 관측되지 않는 시점부터 추적이 시작됩니다. 네트워크 파티션이 발생하면 이전 리더가 다른 파티션에서 활성 상태로 유지되는 시간도 포함될 수 있습니다. 선출 메트릭은 이렇게 로컬에서 관측된 리더 부재 윈도우 뒤에 성공적으로 완료된 선출만 기록합니다. 샘플링된 리더 부재 상태가 나타나지 않는 리더십 이전은 의도적으로 집계하지 않습니다.
+
+Keeper는 `heart_beat_interval_ms`마다 로컬 NuRaft 리더 상태를 샘플링하지만, 100밀리초보다 더 자주 샘플링하지는 않습니다. 각 경계는 로컬 상태 전환 시점과 유효 인터벌만큼 차이 날 수 있으며, 해당 인터벌보다 짧은 윈도우는 누락될 수 있습니다. Keeper는 NuRaft `BecomeLeader`에서 로컬 선출 완료를 기록합니다. `srst`는 네 값을 모두 재설정합니다.
+
+각 종류에서 가장 최근에 로컬로 관측된 윈도우의 기간도 `system.asynchronous_metrics`에 `KeeperLastLeaderElectionTime` 및 `KeeperLastLeaderUnavailableTime`으로 밀리초 단위로 내보냅니다. `KeeperLastLeaderElectionTime`은 `zk_sum_election_time`과 동일한 리더 부재 윈도우 정의를 따릅니다. 둘 다 리더 전용입니다. 활성 리더가 아니거나 아직 윈도우를 완료하지 않은 노드는 `0`을 보고합니다. `srst`는 누적 카운터와 함께 이 값들도 재설정합니다.
 
 * `srvr`: 서버의 모든 세부 정보를 표시합니다.
 
@@ -236,7 +247,7 @@ Mode: leader
 Node count: 4
 ```
 
-* `stat`: server 및 연결된 클라이언트의 간략한 정보를 나열합니다.
+* `stat`: 서버 및 연결된 클라이언트의 간략한 정보를 나열합니다.
 
 ```response
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
@@ -253,13 +264,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst`: server 통계를 재설정합니다. 이 명령은 `srvr`, `mntr`, `stat` 명령의 결과에 영향을 줍니다.
+* `srst`: 서버 통계를 재설정합니다. 이 명령은 `srvr`, `mntr`, `stat`의 결과에 영향을 줍니다.
 
 ```response
 Server stats reset.
 ```
 
-* `conf`: 현재 사용 중인 구성의 세부 정보를 출력합니다.
+* `conf`: 제공 중인 구성의 세부 정보를 출력합니다.
 
 ```response
 server_id=1
@@ -328,7 +339,7 @@ snapshot_dir_size: 0
 log_dir_size: 3875
 ```
 
-* `isro`: server가 읽기 전용 모드로 실행 중인지 확인합니다. 읽기 전용 모드이면 `ro`로, 아니면 `rw`로 응답합니다.
+* `isro`: 서버가 읽기 전용 모드로 실행 중인지 확인합니다. 읽기 전용 모드이면 `ro`로, 아니면 `rw`로 응답합니다.
 
 ```response
 rw
@@ -348,7 +359,7 @@ Total watches:1
     /clickhouse/task_queue/ddl
 ```
 
-* `wchp`: server의 watch에 대한 상세 정보를 경로별로 나열합니다. 관련 session이 연결된 경로(znode) 목록을 출력합니다. watch 수에 따라 이 작업은 비용이 많이 들 수 있으므로(즉, server 성능에 영향을 줄 수 있으므로) 주의해서 사용하십시오.
+* `wchp`: 서버의 watch에 대한 상세 정보를 경로별로 나열합니다. 관련 세션이 연결된 경로(znode) 목록을 출력합니다. watch 수에 따라 이 작업은 비용이 많이 들 수 있으므로(즉, 서버 성능에 영향을 줄 수 있으므로) 주의해서 사용하십시오.
 
 ```response
 /clickhouse/task_queue/ddl
@@ -372,7 +383,7 @@ Sessions with Ephemerals (1):
 100
 ```
 
-* `lgif`: Keeper 로그 정보입니다. `first_log_idx` : 로그 저장소의 첫 번째 로그 인덱스, `first_log_term` : 첫 번째 로그 term, `last_log_idx` : 로그 저장소의 마지막 로그 인덱스, `last_log_term` : 마지막 로그 term, `last_committed_log_idx` : 상태 머신의 마지막 커밋된 로그 인덱스, `leader_committed_log_idx` : 현재 기준으로 본 leader의 커밋된 로그 인덱스, `target_committed_log_idx` : 커밋되어야 하는 대상 로그 인덱스, `last_snapshot_idx` : 마지막 스냅샷에서 가장 큰 커밋된 로그 인덱스.
+* `lgif`: Keeper 로그 정보입니다. `first_log_idx` : 로그 저장소의 첫 번째 로그 인덱스, `first_log_term` : 첫 번째 로그 term, `last_log_idx` : 로그 저장소의 마지막 로그 인덱스, `last_log_term` : 마지막 로그 term, `last_committed_log_idx` : 상태 머신의 마지막 커밋된 로그 인덱스, `leader_committed_log_idx` : 현재 기준으로 본 리더의 커밋된 로그 인덱스, `target_committed_log_idx` : 커밋되어야 하는 대상 로그 인덱스, `last_snapshot_idx` : 마지막 스냅샷에서 가장 큰 커밋된 로그 인덱스.
 
 ```response
 first_log_idx   1
@@ -385,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`: 새로운 리더가 되도록 요청합니다. 요청이 전송되면 `Sent leadership request to leader.`를 반환하고, 전송되지 않으면 `Failed to send leadership request to leader.`를 반환합니다. 노드가 이미 리더인 경우에도 결과는 요청이 전송된 경우와 같습니다.
+* `rqld`: 새 리더가 되도록 요청합니다. 요청이 전송되면 `Sent leadership request to leader.`를 반환하고, 전송되지 않으면 `Failed to send leadership request to leader.`를 반환합니다. 노드가 이미 리더인 경우에도 요청이 전송된 경우와 동일한 결과를 반환합니다.
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`: 모든 기능 플래그 목록과 Keeper 인스턴스에서 각 플래그의 활성화 여부를 표시합니다.
+* `ftfl`: 모든 기능 플래그와 각 플래그가 Keeper 인스턴스에서 활성화되어 있는지 여부를 나열합니다.
 
 ```response
 filtered_list   1
@@ -399,13 +410,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: 리더 역할을 넘기고 팔로어가 되도록 요청합니다. 요청을 받은 서버가 리더인 경우, 먼저 쓰기 작업을 일시 중지하고 후임자(현재 리더는 후임자가 될 수 없음)가 최신 로그를 모두 따라잡을 때까지 기다린 다음 리더 자리에서 물러납니다. 후임자는 자동으로 선택됩니다. 요청이 전송되면 `Sent yield leadership request to leader.`를, 요청이 전송되지 않으면 `Failed to send yield leadership request to leader.`를 반환합니다. 노드가 이미 팔로어인 경우에도 결과는 요청이 전송되었을 때와 동일합니다.
+* `ydld`: 리더십을 양도하고 팔로워가 되도록 요청합니다. 요청을 받는 서버가 리더인 경우 먼저 쓰기 작업을 일시 중지하고, 후임(현재 리더는 후임이 될 수 없음)이 최신 로그를 catch-up할 때까지 기다린 후 리더 역할에서 물러납니다. 후임은 자동으로 선택됩니다. 요청이 전송되면 `Sent yield leadership request to leader.`를 반환하고, 전송되지 않으면 `Failed to send yield leadership request to leader.`를 반환합니다. 노드가 이미 팔로워인 경우에도 요청이 전송된 경우와 동일한 결과를 반환합니다.
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: 수집된 모든 이벤트의 값을 반환합니다. 각 이벤트에 대해 이벤트 이름, 이벤트 값, 그리고 이벤트 설명을 반환합니다.
+* `pfev`: 수집된 모든 이벤트의 값을 반환합니다. 각 이벤트의 이름, 값 및 설명을 반환합니다.
 
 ```response
 FileOpen        62      Number of files opened.

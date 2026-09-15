@@ -27,8 +27,31 @@ O ClickHouse não exclui dados da tabela automaticamente. Consulte a [Introduç�
 
 A tabela `system.query_log` registra dois tipos de consultas:
 
-1. Consultas iniciais executadas diretamente pelo cliente.
-2. Consultas secundárias iniciadas por outras consultas (para execução distribuída de consultas). Para esses tipos de consultas, as informações sobre as consultas pai são exibidas nas colunas `initial_*`.
+1. Consultas iniciais (de nível superior).
+2. Consultas secundárias iniciadas por outras consultas, incluindo consultas para execução distribuída e subconsultas internas, como a avaliação de views. Para essas consultas, as informações sobre a consulta inicial original são exibidas nas colunas `initial_*`.
+
+<Tip>
+  **Filtre consultas iniciais por padrão**
+
+  Em geral, adicione `is_initial_query = 1` sempre que consultar `system.query_log`. Isso exclui consultas secundárias para que etapas individuais de processamento não sejam contabilizadas separadamente da consulta inicial. Esse filtro não implica que uma consulta foi enviada por um cliente, porque o trabalho interno do servidor também pode ser uma consulta inicial.
+
+  Use `initial_query_id` em vez disso quando precisar rastrear uma consulta inicial junto com consultas secundárias que preservam seu ID. A consulta inicial tem o mesmo valor para `initial_query_id` e `query_id`, enquanto as consultas secundárias na mesma cadeia mantêm o `initial_query_id` da consulta inicial e têm seu próprio `query_id`. Nem todo trabalho iniciado por uma consulta inicial é correlacionado dessa forma: o trabalho encaminhado pelo servidor pode iniciar uma nova cadeia de consultas iniciais com um novo `initial_query_id`, como nos encaminhamentos remotos do [`QueryRunner`](/pt-BR/reference/engines/table-engines/special/query-runner#cluster-mode).
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  Se consultas secundárias correlacionadas puderem ser executadas em outros nós, consulte `system.query_log` em cada nó, por exemplo, com [`clusterAllReplicas`](/pt-BR/reference/functions/table-functions/cluster).
+</Tip>
 
 Cada consulta cria uma ou duas linhas na tabela `query_log`, dependendo do status (consulte a coluna `type`) da consulta:
 
@@ -75,19 +98,19 @@ Você pode usar a configuração [log&#95;formatted&#95;queries](/pt-BR/referenc
 * `exception_code` ([Int32](/pt-BR/reference/data-types/int-uint)) — Código da exceção.
 * `exception` ([String](/pt-BR/reference/data-types/string)) — Mensagem da exceção.
 * `stack_trace` ([String](/pt-BR/reference/data-types/string)) — Stack trace. Uma string vazia, se a consulta tiver sido concluída com sucesso.
-* `is_initial_query` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Tipo de consulta. Valores possíveis: 1 — a consulta foi iniciada pelo cliente, 0 — a consulta foi iniciada por outra consulta como parte da execução de uma consulta distribuída.
+* `is_initial_query` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Indica se a consulta é inicial. Valores possíveis: 1 — uma consulta inicial (de nível superior), 0 — uma consulta filha iniciada por outra consulta, incluindo consultas para execução distribuída e subconsultas internas.
 * `connection_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — O endereço IP do cliente a partir do qual a conexão foi feita. Quando a conexão é feita por meio de um proxy, este será o endereço do proxy.
 * `connection_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — A porta do cliente a partir da qual a conexão foi estabelecida. Quando a conexão é feita por meio de um proxy, esta será a porta do proxy.
 * `user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do usuário que iniciou a consulta em execução.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — identificador da consulta.
 * `address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP usado para fazer a consulta. Quando a conexão é feita por meio de um proxy e `auth_use_forwarded_address` está definido, este será o endereço do cliente em vez do endereço do proxy.
 * `port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — A porta do cliente usada para fazer a consulta. Quando a conexão é feita por meio de um proxy e `auth_use_forwarded_address` está definido, esta será a porta do cliente em vez da porta do proxy.
-* `initial_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do usuário que executou a consulta inicial (para a execução de consultas distribuídas).
-* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial (para execução de consultas distribuídas).
-* `initial_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — endereço IP a partir do qual a consulta principal foi iniciada.
-* `initial_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — A porta do cliente usada para fazer a consulta principal.
-* `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Hora de início da consulta inicial (para execução de consultas distribuídas).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário inicial da consulta, com precisão de microssegundos (para execução de consultas distribuídas).
+* `initial_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do usuário que executou a consulta inicial na mesma cadeia de consultas.
+* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial na mesma cadeia de consultas.
+* `initial_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP a partir do qual a consulta inicial na mesma cadeia de consultas foi iniciada.
+* `initial_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — Porta do cliente a partir da qual a consulta inicial na mesma cadeia de consultas foi iniciada.
+* `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Hora de início da consulta inicial na mesma cadeia de consultas.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Hora de início da consulta inicial na mesma cadeia de consultas, com precisão de microssegundos.
 * `authenticated_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do usuário autenticado na sessão.
 * `interface` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Interface pela qual a consulta foi iniciada. Valores possíveis: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/pt-BR/reference/data-types/int-uint)) — O indicador de se uma consulta foi executada por meio de uma interface segura
@@ -150,7 +173,13 @@ Você pode usar a configuração [log&#95;formatted&#95;queries](/pt-BR/referenc
 **Exemplo básico**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text

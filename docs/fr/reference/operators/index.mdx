@@ -13,6 +13,10 @@ ClickHouse transforme les opérateurs en fonctions correspondantes lors de l’a
 </div>
 
 `a[N]` – Accès à un élément d’un tableau. Fonction `arrayElement(a, N)`.
+`N` peut également être un tableau d’entiers, auquel cas les éléments situés à toutes ces positions sont renvoyés sous forme de tableau,
+comme avec `arrayMap(i -> a[i], N)`. Les positions peuvent être nullables. Une position `NULL` produit `NULL` lorsque le type d’élément
+peut être encapsulé dans `Nullable` ; pour les types d’éléments qui ne peuvent pas être contenus dans `Nullable` (comme `Array`, `Map`), elle produit
+la valeur par défaut du type d’élément, comme pour un index `NULL` scalaire.
 
 `a.N` – Accès à un élément d’un tuple. Fonction `tupleElement(a, N)`.
 
@@ -111,6 +115,32 @@ Pour la soustraction de tuples : [tupleMinus](/fr/reference/functions/regular-f
 </div>
 
 `a ILIKE b` – La fonction `ilike(a, b)`.
+
+<div id="match-function">
+  ### fonction match
+</div>
+
+`a REGEXP b` – Fonction `match(a, b)`.
+
+`a ~ b` – Fonction `match(a, b)` (correspondance d’expression régulière de type PostgreSQL).
+
+<div id="notmatch-function">
+  ### Fonction notMatch
+</div>
+
+`a !~ b` – Fonction `notMatch(a, b)` (vérifie que `a` ne correspond pas à l’expression régulière `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### Fonction matchCaseInsensitive
+</div>
+
+`a ~* b` – Fonction `matchCaseInsensitive(a, b)` (correspondance d’expression régulière insensible à la casse).
+
+<div id="notmatchcaseinsensitive-function">
+  ### Fonction notMatchCaseInsensitive
+</div>
+
+`a !~* b` – La fonction `notMatchCaseInsensitive(a, b)` (vérifie que `a` ne correspond pas à l’expression régulière `b`, sans distinction entre majuscules et minuscules).
 
 <div id="between-function">
   ### Fonction BETWEEN

@@ -6,7 +6,7 @@
 SET explain_query_plan_default = 'legacy';
 
 SET log_queries = 1;
-SET enable_analyzer = 0; -- Consistent EXPLAIN output
+SET enable_analyzer = 1; -- Consistent EXPLAIN output
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_direct_read_from_text_index = 1;

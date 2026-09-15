@@ -95,6 +95,8 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
+    bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
@@ -158,6 +160,10 @@ private:
     bool resumePacketReceiver(const ReplicaLocation & replica_location);
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
+
+    /// Stops the factory and retracts pending replica replacements: after the factory is
+    /// stopped no replacement can arrive, so a pending flag would never be cleared.
+    void stopChoosingReplicasAndRetractPending();
 
     void startNewReplica();
 

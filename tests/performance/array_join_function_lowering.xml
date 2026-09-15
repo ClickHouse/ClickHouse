@@ -1,0 +1,37 @@
+<test>
+    <!-- #112241: the arrayJoin() FUNCTION form (unlike the ARRAY JOIN clause) expands inside the projection
+         Expression, building the whole |A|*|B|*|C| cross product before anything filters it.
+         query_plan_lower_array_join_function lowers each arrayJoin function into a real ArrayJoinStep so the
+         expansion streams through the ArrayJoin pipeline instead. The setting is off by default, so we toggle
+         it explicitly and compare the two values (0 vs 1) on the same binary. -->
+    <substitutions>
+        <substitution>
+            <name>lower</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE array_join_function_cross (A Array(UInt32), B Array(UInt32), C Array(UInt32))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+    <!-- row-dependent arrays so the cross product is not constant-folded away -->
+    <fill_query>
+        INSERT INTO array_join_function_cross
+        SELECT arrayMap(x -> x + (number % 7),  range(50)),
+               arrayMap(x -> x + (number % 11), range(50)),
+               arrayMap(x -> x + (number % 13), range(50))
+        FROM numbers(600)
+    </fill_query>
+
+    <!-- the whole cross product is materialized (sum forces every row through); lowering streams it instead -->
+    <query>SELECT sum(a + b + c) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM array_join_function_cross) SETTINGS query_plan_lower_array_join_function = {lower}</query>
+    <!-- a cross-column predicate cannot be pushed into a single array, so the cross product is built either way
+         unless it is lowered into streaming ArrayJoin steps -->
+    <query>SELECT sum(a + b + c) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM array_join_function_cross WHERE a + b + c > 100) SETTINGS query_plan_lower_array_join_function = {lower}</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_function_cross</drop_query>
+</test>

@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <algorithm>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -716,7 +717,10 @@ template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTimeNode(const DataTypeDateTime & datetime_type) : TimezoneMixin(datetime_type) { }
+    explicit DateTimeNode(const DataTypeDateTime & datetime_type)
+        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
+    {
+    }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -808,6 +812,10 @@ public:
 
         return false;
     }
+
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
 };
 
 template <typename JSONParser>
@@ -943,7 +951,8 @@ template <typename JSONParser>
 class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale())
+    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
+        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
     {
     }
 
@@ -1057,6 +1066,9 @@ public:
     }
 
 private:
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime64` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
 
@@ -1915,15 +1927,29 @@ public:
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : path_regexps_to_skip_)
             path_regexps_to_skip.emplace_back(regexp);
+
+        all_typed_paths_have_trivial_defaults = std::all_of(
+            typed_paths_types_.begin(), typed_paths_types_.end(),
+            [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
     {
+        SerializationObject::updateMaxDynamicPathsLimitIfNeeded(column, format_settings);
+
         if (element.isNull() && format_settings.null_as_default)
         {
             auto & column_object = assert_cast<ColumnObject &>(column);
-            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            if (all_typed_paths_have_trivial_defaults)
+            {
+                for (auto * col : column_object.getSortedTypedPathColumns())
+                    col->insertDefault();
+            }
+            else
+            {
+                for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            }
             for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
                 dynamic_column->insertDefault();
             column_object.getSharedDataColumn().insertDefault();
@@ -1996,10 +2022,21 @@ public:
         column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         /// Fill remaining typed and dynamic paths.
-        for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+        if (all_typed_paths_have_trivial_defaults)
         {
-            if (typed_column->size() == prev_size)
-                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            for (auto * col : column_object.getSortedTypedPathColumns())
+            {
+                if (col->size() == prev_size)
+                    col->insertDefault();
+            }
+        }
+        else
+        {
+            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+            {
+                if (typed_column->size() == prev_size)
+                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            }
         }
 
         for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
@@ -2497,6 +2534,7 @@ private:
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+    bool all_typed_paths_have_trivial_defaults = true;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;

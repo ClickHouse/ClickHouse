@@ -72,7 +72,7 @@ Se recomienda revisar la siguiente documentación de ClickHouse antes de realiza
 * [Cómo almacena datos ClickHouse: partes y gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) - Guía más avanzada sobre cómo se estructuran y consultan los datos en ClickHouse, con explicaciones detalladas de los gránulos y las claves primarias.
 * [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree)- Guía avanzada de referencia de MergeTree útil para comandos y detalles internos.
 
-Todas las optimizaciones descritas a continuación pueden aplicarse directamente sobre las tablas subyacentes mediante ClickHouse SQL estándar, ya sea a través de la [consola SQL de ClickHouse Cloud](/es/integrations/connectors/sql-clients/sql-console) o del [cliente de ClickHouse](/es/concepts/features/interfaces/cli).
+Todas las optimizaciones descritas a continuación pueden aplicarse directamente sobre las tablas subyacentes mediante ClickHouse SQL estándar, ya sea a través de la [consola SQL de ClickHouse Cloud](/es/integrations/connectors/sql-clients/sql-console) o del [cliente de ClickHouse](/es/concepts/features/interfaces/client).
 
 <div id="materialize-frequently-queried-attributes">
   ## Optimización 1. Materializar atributos consultados con frecuencia
@@ -596,20 +596,40 @@ hacen referencia a `LogAttributes['key']` se benefician de esta mejora de veloci
 La reescritura de consultas requiere una versión de ClickHouse que admita la
 poda directa a nivel de token en columnas de arrays indexadas por texto. ClickStack detecta la
 versión del servidor conectado (`SELECT version()`, almacenada en caché por conexión) y solo
-emite la forma reescrita cuando el servidor alcanza o supera el umbral. Los
-servidores más antiguos vuelven automáticamente a la forma original de subíndice de Map.
+emite la forma reescrita cuando el servidor alcanza el umbral correspondiente
+que se indica a continuación. Las versiones más antiguas vuelven a la forma original de subíndice de Map
+automáticamente.
 
-| Rama de ClickHouse | Versión mínima      |
-| ------------------ | ------------------- |
-| 26.2               | 26.2.19.43          |
-| 26.3               | 26.3.12.3           |
-| 26.4               | 26.4.3.37           |
-| 26.5+              | Todas las versiones |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    Las compilaciones de ClickHouse Cloud y las versiones de código abierto usan líneas de versión independientes.
+    Use las versiones mínimas de Cloud indicadas a continuación.
+
+    | Rama de ClickHouse | Versión mínima de Cloud |
+    | ------------------ | ----------------------- |
+    | 26.2               | `26.2.1.307`            |
+    | 26.3               | `26.3.0.0`              |
+    | 26.4               | `26.4.1.1740`           |
+    | 26.5+              | Todas las versiones     |
+
+    El mínimo `26.3.0.0` es la base de la rama, por lo que todas las compilaciones `26.3` son
+    compatibles.
+  </Tab>
+
+  <Tab title="Código abierto">
+    | Rama de ClickHouse | Versión mínima de código abierto |
+    | ------------------ | -------------------------------- |
+    | 26.2               | `26.2.19.43`                     |
+    | 26.3               | `26.3.12.3`                      |
+    | 26.4               | `26.4.3.37`                      |
+    | 26.5+              | Todas las versiones              |
+  </Tab>
+</Tabs>
 
 <Info>
   **Por qué ALIAS y no MATERIALIZED**
 
-  El array `items` es una vista de datos que ya están en la columna Map.
+  El array items es una vista de datos que ya están en la columna Map.
   Almacenarlo dos veces —una vez en el Map y otra en el array— duplicaría la E/S de escritura
   sin aportar nuevos patrones de consulta. El índice de texto de la columna `ALIAS` se
   construye en el momento de la inserción a partir de los mismos datos de origen, por lo que la optimización solo añade

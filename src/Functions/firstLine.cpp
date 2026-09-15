@@ -42,9 +42,9 @@ Returns the first line of a multi-line string.
         "Usage example",
         R"(SELECT firstLine('foo\\nbar\\nbaz'))",
         R"(
-┌─firstLine('foo\nbar\nbaz')─┐
-│ foo                        │
-└────────────────────────────┘
+┌─firstLine('foo\\nbar\\nbaz')─┐
+│ foo\nbar\nbaz                │
+└──────────────────────────────┘
         )"
     }
     };
