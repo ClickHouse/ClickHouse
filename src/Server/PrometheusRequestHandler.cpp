@@ -34,6 +34,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Core/Settings.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
@@ -47,6 +48,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
@@ -57,6 +59,13 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace
+{
+constexpr UInt32 PROMETHEUS_TIMEOUT_SCALE = 6;
+constexpr Float64 MICROSECONDS_PER_SECOND = 1'000'000.0;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -203,6 +212,7 @@ protected:
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
+        max_execution_time_before_query_settings = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -286,6 +296,7 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
+    Int64 max_execution_time_before_query_settings = 0;
 };
 
 
@@ -447,7 +458,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "timeout", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -465,6 +476,46 @@ public:
                             "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                             limit_param);
         return static_cast<UInt64>(parsed_limit);
+    }
+
+    void applyTimeout()
+    {
+        const String timeout = params->get("timeout", "");
+        if (timeout.empty())
+            return;
+
+        /// Prometheus accepts signed numeric seconds, but duration strings must be unsigned.
+        if (timeout.find_first_of("ywdhms") != String::npos
+            && (timeout.starts_with('+') || timeout.starts_with('-')))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'timeout' query parameter is not a valid Prometheus duration");
+
+        const auto timeout_value = parseTimeSeriesDuration(timeout, PROMETHEUS_TIMEOUT_SCALE);
+        if (timeout_value <= 0)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Prometheus query timeout exceeded");
+
+        const auto current_max_execution_time = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+        Int64 effective_max_execution_time = current_max_execution_time;
+
+        /// A timeout must not loosen the limit inherited from the user's profile, even if the request
+        /// also supplies a less restrictive `max_execution_time` setting.
+        if (max_execution_time_before_query_settings > 0
+            && (effective_max_execution_time <= 0 || max_execution_time_before_query_settings < effective_max_execution_time))
+            effective_max_execution_time = max_execution_time_before_query_settings;
+
+        if (effective_max_execution_time <= 0 || timeout_value.value < effective_max_execution_time)
+            effective_max_execution_time = timeout_value.value;
+
+        if (effective_max_execution_time != current_max_execution_time)
+        {
+            context->setSetting(
+                "max_execution_time",
+                Field(static_cast<Float64>(effective_max_execution_time) / MICROSECONDS_PER_SECOND));
+        }
+
+        /// A Prometheus timeout must never become a successful partial result because of a
+        /// request-level ClickHouse overflow setting.
+        context->setSetting("timeout_overflow_mode", Field("throw"));
+        context->setSetting("timeout_overflow_mode_leaf", Field("throw"));
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -500,6 +551,8 @@ public:
                 getOutputStream(response).finalize();
             };
 
+            if (uri_path.ends_with("/query_range") || uri_path.ends_with("/query"))
+                applyTimeout();
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
@@ -508,9 +561,7 @@ public:
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
-                /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
+                /// TODO: Support limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -531,7 +582,7 @@ public:
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
-                /// TODO: Support optional parameters same as for the range query.
+                /// TODO: Support limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -605,16 +656,24 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
-            /// not with the query: report it as an internal error so that clients don't attribute it
-            /// to the PromQL expression.
-            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
-            response.setStatusAndReason(
-                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                writeString(R"({"status":"error","errorType":"timeout","error":)", error_buf);
+            }
+            else
+            {
+                /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+                /// not with the query: report it as an internal error so that clients don't attribute it
+                /// to the PromQL expression.
+                bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+                response.setStatusAndReason(
+                    server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
+                                              : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            }
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();
