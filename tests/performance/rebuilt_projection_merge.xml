@@ -1,0 +1,96 @@
+<test>
+    <!--
+      Keep twelve unmaterialized source parts outside the timed operation. Each
+      shell-query iteration clones them into the target, then rebuilds a normal
+      and an aggregate projection while merging them into one part.
+    -->
+    <create_query>
+        CREATE TABLE rebuilt_projection_merge_source
+        (
+            k UInt64,
+            v UInt64,
+            PROJECTION p_normal (SELECT k, v ORDER BY k),
+            PROJECTION p_aggregate (SELECT k, sum(v) AS sum_v GROUP BY k)
+        )
+        ENGINE = MergeTree
+        ORDER BY (k, v)
+        SETTINGS
+            enable_vertical_merge_algorithm = 0,
+            materialize_projections_on_insert = 0,
+            materialize_projections_on_merge = 1,
+            merge_max_block_size = 65536,
+            merge_selector_algorithm = 'Manual'
+    </create_query>
+    <create_query>
+        CREATE TABLE rebuilt_projection_merge_target
+        (
+            k UInt64,
+            v UInt64,
+            PROJECTION p_normal (SELECT k, v ORDER BY k),
+            PROJECTION p_aggregate (SELECT k, sum(v) AS sum_v GROUP BY k)
+        )
+        ENGINE = MergeTree
+        ORDER BY (k, v)
+        SETTINGS
+            enable_vertical_merge_algorithm = 0,
+            materialize_projections_on_insert = 0,
+            materialize_projections_on_merge = 1,
+            merge_max_block_size = 65536,
+            merge_selector_algorithm = 'Manual'
+    </create_query>
+    <create_query>SYSTEM STOP MERGES rebuilt_projection_merge_source</create_query>
+    <create_query>SYSTEM STOP MERGES rebuilt_projection_merge_target</create_query>
+    <create_query>CREATE TABLE rebuilt_projection_merge_expected (total UInt64) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 0) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 250000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 500000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 750000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 1000000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 1250000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 1500000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 1750000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 2000000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 2250000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 2500000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_source SELECT number % 65536, cityHash64(number + 2750000) FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO rebuilt_projection_merge_expected SELECT sum(v) FROM rebuilt_projection_merge_source</fill_query>
+
+    <query type="shell"><![CDATA[
+        set -euo pipefail
+
+        source_table=rebuilt_projection_merge_source
+        target_table=rebuilt_projection_merge_target
+        expected_table=rebuilt_projection_merge_expected
+
+        cleanup() {
+            $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES $target_table" > /dev/null 2>&1 ||:
+        }
+        trap cleanup EXIT
+
+        result=$($CLICKHOUSE_CLIENT --multiquery --query "
+            SYSTEM STOP MERGES $target_table;
+            TRUNCATE TABLE $target_table;
+            ALTER TABLE $target_table ATTACH PARTITION ALL FROM $source_table;
+            SYSTEM START MERGES $target_table;
+            SET min_insert_block_size_rows = 65536, min_insert_block_size_bytes = 0;
+            OPTIMIZE TABLE $target_table FINAL;
+            SELECT count() = 3000000 AND sum(v) = (SELECT total FROM $expected_table)
+            FROM mergeTreeProjection(currentDatabase(), $target_table, p_normal);
+            SELECT count() = 65536 AND sumMerge(\`sum(v)\`) = (SELECT total FROM $expected_table)
+            FROM mergeTreeProjection(currentDatabase(), $target_table, p_aggregate);
+            SELECT count()
+            FROM system.projection_parts
+            WHERE database = currentDatabase() AND table = '$target_table' AND active;
+        ")
+
+        if [[ "$result" != $'1\n1\n2' ]]; then
+            printf 'unexpected rebuilt projection result:\n%s\n' "$result" >&2
+            exit 1
+        fi
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS rebuilt_projection_merge_target</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rebuilt_projection_merge_source</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rebuilt_projection_merge_expected</drop_query>
+</test>

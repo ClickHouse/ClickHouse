@@ -21,13 +21,13 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 
@@ -319,11 +319,6 @@ private:
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
-        /// For projections to rebuild
-        using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
-        ProjectionNameToItsBlocks projection_parts;
-        std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
-
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
         /// Shared across all projections since they all consume the same source blocks.
         /// Only the columns required by at least one projection (plus _row_exists when
@@ -335,9 +330,10 @@ private:
 
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
         std::vector<Squashing> projection_squashes;
-        size_t projection_block_num = 0;
+        /// Each rebuilt projection retains one final writer. It writes parent-order-compatible
+        /// blocks directly and otherwise spills bounded sorted runs before its final write.
+        std::vector<std::unique_ptr<MergeTreeProjectionPartWriter>> rebuild_projection_writers;
         std::map<String, UInt64> projections_rebuild_elapsed_ns;
-        ExecutableTaskPtr merge_projection_parts_task_ptr;
         BuildStatisticsTransformMap build_statistics_transforms;
 
         size_t initial_reservation{0};
@@ -371,13 +367,12 @@ private:
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 2>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
-            &ExecuteAndFinalizeHorizontalPart::executeImpl,
-            &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
+            &ExecuteAndFinalizeHorizontalPart::executeImpl
         };
 
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
@@ -386,8 +381,6 @@ private:
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
         void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
-        void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
