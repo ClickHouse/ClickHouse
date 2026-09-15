@@ -81,11 +81,11 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
-    /// `object_metadata` with `write_token` merged in when the write is conditional.
-    std::optional<ObjectAttributes> metadataWithWriteToken() const;
+    /// `object_metadata` with `idempotency_id` merged in.
+    ObjectAttributes metadataWithIdempotencyId() const;
 
-    /// True only if the object stored under `key` carries this buffer's `write_token`, i.e. this
-    /// buffer wrote it. Absent object, absent or foreign token, or a failed HEAD all give false.
+    /// True only if the object stored under `key` carries this buffer's `idempotency_id`, i.e. this
+    /// buffer wrote it. Absent object, foreign id, or a failed HEAD all give false.
     bool isObjectWrittenByThisBuffer() const;
 
     /// Returns true if not a single byte was written to the buffer
@@ -97,9 +97,9 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Identifies this buffer's conditional create-if-absent write; empty when the write is not
-    /// conditional. Sent as custom object metadata so a replayed PUT can recognise its own object.
-    const String write_token;
+    /// Identifies this buffer among all writers to `key`: stamped on the object it writes, handed to
+    /// the multipart completion to tell a lost response from an aborted upload.
+    const String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 

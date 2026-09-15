@@ -18,6 +18,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/getObjectInfo.h>
 
 
 namespace DB
@@ -48,6 +49,27 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
     return error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY
         || error.GetExceptionName() == "InvalidPart"
         || error.GetExceptionName() == "InvalidPartOrder";
+}
+
+bool isObjectWrittenWithIdempotencyId(
+    const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log)
+{
+    /// Not reachable from the writers, which always mint one, but an empty id proves nothing.
+    if (idempotency_id.empty())
+        return false;
+
+    try
+    {
+        auto info = S3::getObjectInfoIfExists(client, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
+        auto it = info.metadata.find(S3::IDEMPOTENCY_ID_METADATA_KEY);
+        return it != info.metadata.end() && it->second == idempotency_id;
+    }
+    catch (...)
+    {
+        /// Report the original write error rather than a confusing read error.
+        tryLogCurrentException(log, "Failed to verify the idempotency id of " + key);
+        return false;
+    }
 }
 
 }
