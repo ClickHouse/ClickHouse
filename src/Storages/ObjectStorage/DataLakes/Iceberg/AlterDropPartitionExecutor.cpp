@@ -34,6 +34,8 @@
 
 #include <Poco/JSON/Array.h>
 
+#include <fmt/ranges.h>
+
 #include <limits>
 #include <memory>
 #include <set>
@@ -407,8 +409,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Manifest file entry partition value ({}) is different from target ({})",
-                    parsed_entry.partition_key_value,
-                    target_partition);
+                    fmt::join(parsed_entry.partition_key_value, ", "),
+                    fmt::join(target_partition, ", "));
 
             ++entries_to_remove;
             unprocessed_target_file_paths.erase(storage_path);
@@ -659,7 +661,7 @@ void AlterDropPartitionExecutor::run()
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_drop_partition_pause_after_discovery);
         }
 
-        auto plan = buildDropPlan(state, targets);
+        auto plan = buildDropPlan(state, targets, target_partition);
         if (!plan.target_manifests.partially_matched.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
