@@ -1,3 +1,4 @@
+#include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 
 #include <Parsers/ParserExplainQuery.h>
@@ -6,6 +7,7 @@
 #include <Parsers/ASTExplainTextAction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainTextActions.h>
@@ -19,6 +21,10 @@
 
 #include <algorithm>
 
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+    #include <Parsers/Access/ASTExecuteAsQuery.h>
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -28,9 +34,37 @@ namespace ErrorCodes
 
 namespace
 {
+ASTInsertQuery * findTrailingInsertQuery(const ASTPtr & query)
+{
+    IAST * node = query.get();
+
+    while (node)
+    {
+        #if !defined (CLICKHOUSE_PARSER_NO_DCL)
+            if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+            {
+                node = execute_as->subquery.get();
+                continue;
+            }
+        #endif
+
+        if (auto * parallel = node->as<ASTParallelWithQuery>())
+        {
+            /// only the final statement of `PARALLEL WITH` can own the trailing format
+            if (parallel->children.empty())
+                return nullptr;
+
+            node = parallel->children.back().get();
+            continue;
+        }
+        return node->as<ASTInsertQuery>();
+    }
+    return nullptr;
+}
+
 ASTPtr extractExplainOutputFormatFromInsert(const ASTPtr & query, IParser::Pos & pos, Expected & expected)
 {
-    auto * insert_query = query->as<ASTInsertQuery>();
+    auto * insert_query = findTrailingInsertQuery(query);
     if (!insert_query || !insert_query->select || insert_query->format.empty())
         return {};
 
@@ -60,9 +94,14 @@ ASTPtr extractExplainOutputFormatFromInsert(const ASTPtr & query, IParser::Pos &
 
 void rejectExplainTextInlineData(const ASTPtr & query)
 {
+    checkStackSize();
+
     if (const auto * insert_query = query->as<ASTInsertQuery>();
         insert_query && insert_query->hasInlinedData())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
+
+    for (const auto & child : query->children)
+        rejectExplainTextInlineData(child);
 }
 
 }
