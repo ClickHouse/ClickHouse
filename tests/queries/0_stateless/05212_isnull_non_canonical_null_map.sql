@@ -24,6 +24,12 @@ SELECT arraySort(groupUniqArray(isNull(e) = 1)), sum(isNull(e) = 1) FROM (SELECT
 SELECT sum(e IS NULL) FROM (SELECT if(number % 3, NULL, 'x') AS e FROM numbers(30));
 -- An element of Array(Nullable(T)) is an ordinary Nullable by the time it reaches the function.
 SELECT sum(isNull(x)) FROM (SELECT arrayJoin(a) AS x FROM (SELECT [if(number % 3, NULL, 'x')] AS a FROM numbers(30)));
+-- A condition is a predicate too, and `if` turns it into the result's NULL map. Reading it as a
+-- value negates it arithmetically, so byte 2 becomes 3 and marks a row the condition leaves
+-- present. An ordinary stored UInt8 column holding 2 is enough to reach this.
+SELECT if(materialize(toUInt8(2)), CAST('x', 'Nullable(String)'), NULL) AS v, isNull(v);
+SELECT if(materialize(toUInt8(2)), 'x', NULL) AS v, isNull(v);
+SELECT sum(isNull(v)) FROM (SELECT if(toUInt8(number % 3 * 2), CAST('x', 'Nullable(String)'), NULL) AS v FROM numbers(30));
 -- Such a null map survives a write and a read back. `optimize_functions_to_subcolumns` is on by
 -- default and reads the null map stream instead of calling the function, so both values of the
 -- setting and both part types must answer alike.

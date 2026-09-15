@@ -120,7 +120,7 @@ tryAsColumnRef(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_
 /// Matches a bare `<base>.null` UInt8 `ColumnNode`, the subcolumn holding the stored
 /// null map of `<base>` (any non-zero byte means NULL). That is what a user writes
 /// directly, what `isNotNull` arrives wrapped in one `not`, and what `isNull` arrives
-/// wrapped in two. The rewrite uses the simple `NameAndTypePair(name, type)`
+/// compared against 0. The rewrite uses the simple `NameAndTypePair(name, type)`
 /// constructor and does not set `subcolumn_delimiter_position`, so `isSubcolumn()` is
 /// false here. Match by name suffix and type, confirm the base column is Nullable in
 /// storage, and bail out when a literal top level column named `<base>.null` exists
@@ -229,14 +229,6 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
                 return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesNonDefault};
             if (auto name_ref = tryAsTruthyIntegerColumn(args[0], table_expression_node))
                 return RecognisedSparsityPredicate{*name_ref, SparsityPredicateClass::MatchesDefault};
-            /// `not(not(<null map>))` is a truthiness test of the map, so it selects exactly the
-            /// NULL rows that `num_defaults` counts.
-            if (const auto * inner = args[0]->as<FunctionNode>();
-                inner && inner->getFunctionName() == "not" && inner->getArguments().getNodes().size() == 1)
-            {
-                if (auto base = tryAsNullSubcolumnOf(inner->getArguments().getNodes()[0], table_expression_node))
-                    return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesDefault};
-            }
             return std::nullopt;
         }
 
@@ -273,6 +265,23 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
 
     if (args.size() != 2)
         return std::nullopt;
+
+    /// `n.null != 0` is what the analyzer leaves behind for `n IS NULL`: a truthiness test of the
+    /// stored null map, so it selects exactly the NULL rows that `num_defaults` counts, and `= 0`
+    /// selects the complement. Only 0 qualifies, because a map byte only has to be non-zero to mean
+    /// NULL. `tryAsColumnRef` below rejects a subcolumn, so this has to come first.
+    if (name == "equals" || name == "notEquals")
+    {
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto * zero = tryAsConstantNode(args[1 - i]);
+            if (!zero || !isZero(zero->getValue()))
+                continue;
+            if (auto base = tryAsNullSubcolumnOf(args[i], table_expression_node))
+                return RecognisedSparsityPredicate{*base,
+                    name == "notEquals" ? SparsityPredicateClass::MatchesDefault : SparsityPredicateClass::MatchesNonDefault};
+        }
+    }
 
     /// For symmetric operators we also try the (const, col) ordering.
     auto col_opt = tryAsColumnRef(args[0], table_expression_node);

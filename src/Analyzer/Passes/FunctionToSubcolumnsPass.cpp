@@ -641,22 +641,20 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Nullable, "isNull"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `isNull(nullable_argument)` with `not(not(nullable_argument.null))`. A null map
-            /// byte only has to be non-zero to mean NULL, and null-count statistics and the sparsity
-            /// trivial count match a `.null` reference under `not` but not inside a comparison.
+            /// Replace `isNull(nullable_argument)` with `nullable_argument.null != 0`. The subcolumn
+            /// cannot stand in for the function on its own, because a null map byte only has to be
+            /// non-zero to mean NULL while `isNull` returns 0 or 1.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
-            auto inner_not_node = std::make_shared<FunctionNode>("not");
-            inner_not_node->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
-            resolveOrdinaryFunctionNodeByName(*inner_not_node, "not", ctx.context);
-
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
-            function_arguments_nodes = {std::move(inner_not_node)};
-            resolveOrdinaryFunctionNodeByName(function_node, "not", ctx.context);
+            function_arguments_nodes = {
+                std::make_shared<ColumnNode>(column, ctx.column_source),
+                std::make_shared<ConstantNode>(static_cast<UInt64>(0))};
+            resolveOrdinaryFunctionNodeByName(function_node, "notEquals", ctx.context);
         },
     },
     {
