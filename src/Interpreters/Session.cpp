@@ -611,7 +611,7 @@ ContextMutablePtr Session::makeSessionContext()
 
     // Use QUERY source as for SET query for a session
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
+    session_context->applySettingsChangesAndResets(settings_from_auth_server, {}, SettingSource::QUERY);
 
     recordLoginSuccess(session_context);
 

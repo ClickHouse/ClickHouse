@@ -1,0 +1,33 @@
+the plan moves the probe off the value the constraints below require
+0
+1
+assigning the probe that value is refused
+SETTING_CONSTRAINT_VIOLATION
+1
+so enabling the plan is refused as well
+SETTING_CONSTRAINT_VIOLATION
+1
+0
+1
+and the same setting carried by the URL is refused too
+SETTING_CONSTRAINT_VIOLATION
+1
+and in a query-level SETTINGS clause
+SETTING_CONSTRAINT_VIOLATION
+1
+a profile switch is refused when its constraint forbids a value the plan already wrote
+SETTING_CONSTRAINT_VIOLATION
+0
+0
+a value assigned earlier is not exempt, and an alias-declared constraint applies
+1
+SETTING_CONSTRAINT_VIOLATION
+1
+0
+control: a constraint that allows the value the plan writes accepts it
+0
+1
+control: a login profile that enables the plan and constrains what it moves stays usable
+0
+0
+1

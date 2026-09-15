@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class SettingsChanges;
 struct Settings;
 
 /// A read buffer never needs to be larger than this. An out-of-range value would be passed
@@ -32,6 +33,12 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 /// query plans do not support yet. Applied whenever settings changes are applied to a context, so
 /// that every context driving analysis, planning or task execution sees the adjusted values.
 void adjustSettingsForMakeDistributedPlan(Settings & settings);
+
+/// Whether applying `changes` to `settings` can make `adjustSettingsForMakeDistributedPlan` write a
+/// setting the changes do not name: it overrides its list even when something has assigned those
+/// settings. `applySettingsQuirks` only replaces an effective default with another one, which is the
+/// value a login is given as well, so it is not one of these.
+bool postProcessorsCanDeriveValues(const Settings & settings, const SettingsChanges & changes);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not
 void doSettingsSanityCheckClamp(Settings & settings, LoggerPtr log);

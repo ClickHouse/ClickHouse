@@ -1173,3 +1173,84 @@ def test_transaction_id_rejected_for_create_prepared_statement():
     action = flight.Action("CreatePreparedStatement", req.SerializeToString())
     with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
         list(client.client.do_action(action, client._flight_call_options()))
+
+
+def test_reset_session_option_respects_compatibility():
+    """A reset lands on the value an active `compatibility` implies, not the declared default."""
+    compatibility_session_id = 'compatibility_' + ''.join(
+        random.choices(string.ascii_letters + string.digits, k=16)
+    )
+    client = get_client(compatibility_session_id)
+    setting = "input_format_read_datetime_number_as_raw_value"
+
+    result = client.set_session_options({"compatibility": "26.7"})
+    assert len(result.errors) == 0
+    # The 26.8 history row makes the era value the opposite of the declared default. Without this
+    # read a reset landing on the declared default would be indistinguishable from a correct one.
+    assert _query_setting(client, setting) == "1"
+
+    result = client.set_session_options({setting: "0"})
+    assert len(result.errors) == 0
+    assert _query_setting(client, setting) == "0"
+
+    result = client.set_session_options({setting: None})
+    assert len(result.errors) == 0
+    assert _query_setting(client, setting) == "1"
+
+
+def _constrained_client(user, password):
+    return FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        username=user,
+        password=password,
+        metadata={
+            'x-clickhouse-session-id': 'batch_' + ''.join(
+                random.choices(string.ascii_letters + string.digits, k=16)
+            )
+        },
+        features={'metadata-reflection': 'true'},
+    )
+
+
+def test_set_session_options_judged_by_the_state_it_asks_for():
+    """A request carrying several options is one transaction, so which of them the map is iterated
+    first does not decide whether the request is allowed."""
+    # 26.7 derives 0 for this setting, which the profile forbids, and the option that overrides that 0
+    # sorts after `compatibility`: applied one at a time, the request is refused before reaching it.
+    setting = "merge_tree_min_bytes_per_read_stream"
+    user = "u_flight_batch"
+    profile = "p_flight_batch"
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
+    node.query(f"CREATE SETTINGS PROFILE {profile} SETTINGS {setting} MIN 1")
+    node.query(
+        f"CREATE USER {user} IDENTIFIED WITH plaintext_password BY 'pw' SETTINGS PROFILE '{profile}'"
+    )
+    node.query(f"GRANT SELECT ON system.settings TO {user}")
+    try:
+        client = _constrained_client(user, "pw")
+        result = client.set_session_options({"compatibility": "26.7", setting: "65536"})
+        assert len(result.errors) == 0
+        assert _query_setting(client, setting) == "65536"
+        assert _query_setting(client, "compatibility") == "26.7"
+
+        # The same request without that override asks for the derived 0, which the profile forbids. So
+        # the acceptance above is the state the request asks for being allowed, not the constraint
+        # going unchecked, and a refused request leaves nothing it carried behind.
+        other = _constrained_client(user, "pw")
+        result = other.set_session_options({"compatibility": "26.7"})
+        assert len(result.errors) == 1
+        assert _query_setting(other, "compatibility") == ""
+        assert _query_setting(other, setting) == "65536"
+
+        # What only one option can be wrong about stays reported against that option, and the rest of
+        # the request is applied: a batch is not a way to lose the answer to which name was unknown.
+        result = other.set_session_options({"no_such_setting_here": "1", "max_threads": "3"})
+        assert list(result.errors) == ["no_such_setting_here"]
+        assert _query_setting(other, "max_threads") == "3"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
