@@ -1885,9 +1885,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
     prefetched: Set[str] = set()
     if not prefetch_images(images_to_prefetch, fetched_out=prefetched):
         prefetch_failure_result().complete_job()
-    # Read by tests/integration/helpers/cluster.py below. The instance image is interpolated into
-    # the generated per-instance compose file, so a batch's compose files need not name it, and a
-    # batch whose instances all use a custom image does not need it: this pull's result is ignored.
+    # A batch's compose files need not yield the default server image, but a project's own
+    # enumeration can: it is the default instance image and Keeper's. So prefetch it separately, and
+    # ignore the result: a failed fetch only leaves it out of the export, which turns the skip off.
     server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
     if server_image not in prefetched:
         prefetch_images([server_image], fetched_out=prefetched)
