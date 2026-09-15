@@ -35,7 +35,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="BYOC 可以使用现有 VPC 吗？共享 VPC 呢？">
-  在 AWS 和 GCP 上，您可以部署到与 BYOC 基础设施位于**同一**账户或项目中的现有 VPC。请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。在 GCP 上，还支持来自独立宿主项目的**共享 VPC**：[引导模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)可直接接受宿主项目和子网——有关设置和前置条件，请参阅其“共享 VPC”部分。Azure 的自带 VNet 支持即将推出。
+  在 AWS 和 GCP 上，您可以部署到与 BYOC 基础设施位于**同一**账户或项目中的现有 VPC。请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。在 GCP 上，还支持来自独立宿主项目的**共享 VPC**——有关前置条件、需要在控制台中填写的字段，以及引导模块添加到您宿主项目的授权，请参阅[来自宿主项目的共享 VPC](/zh/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project)。Azure 的自带 VNet 支持即将推出。
 
   在 AWS 上，也支持通过 AWS Resource Access Manager (RAM) 从其他账户共享的子网，因此您可以将网络集中保留在中心账户中，而在分支账户中运行 BYOC 基础设施。此方案有一项特定的前置条件：RAM 共享资源的标签视图是按账户隔离的，因此**分支**账户必须自行应用所需的 VPC 和子网标签——从中心账户应用的标签对分支账户不可见，缺少这些标签将导致预配失败。路由表仍归中心账户所有，该账户继续负责共享子网上的 NAT 和出口路由。有关标签和其他要求，请参阅 [AWS 自定义指南](/zh/products/bring-your-own-cloud/onboarding/customization-aws)。
 

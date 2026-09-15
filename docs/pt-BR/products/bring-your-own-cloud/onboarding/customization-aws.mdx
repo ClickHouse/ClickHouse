@@ -35,7 +35,12 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
 
   <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
     **Acesso de saída à internet**
-    Sua VPC deve permitir pelo menos acesso de saída à internet para que os componentes do ClickHouse BYOC possam se comunicar com o plano de controle do Tailscale. O Tailscale é usado para fornecer uma rede segura de confiança zero para operações privadas de gerenciamento. O registro inicial e a configuração com o Tailscale exigem conectividade com a internet pública, que pode ser obtida diretamente ou por meio de um NAT gateway. Essa conectividade é necessária para manter a privacidade e a segurança da sua implantação BYOC.
+    Sua VPC deve permitir pelo menos acesso de saída à internet, diretamente ou por meio de um NAT gateway. Duas coisas dependem disso:
+
+    * **Tailscale.** Os componentes do ClickHouse BYOC se registram no plano de controle do Tailscale, que fornece uma rede segura de confiança zero para operações privadas de gerenciamento sem exigir acesso público de entrada. O registro inicial e a configuração exigem conectividade com a internet pública.
+    * **Imagens de contêiner.** Algumas imagens executadas pela implantação não são espelhadas no registry do BYOC, incluindo imagens da comunidade, e são obtidas de seus registries upstream.
+
+    Uma VPC sem caminho de saída não concluirá o provisionamento. Não há uma lista única de endpoints publicada; se sua network policy exigir um inventário explícito, entre em contato com o suporte para revisar sua configuração.
 
     **Resolução de DNS**
     Certifique-se de que sua VPC tenha resolução de DNS funcional e não bloqueie, interfira nem sobrescreva nomes DNS padrão. O ClickHouse BYOC depende de DNS para resolver os servidores de controle do Tailscale e os endpoints de serviço do ClickHouse. Se o DNS não estiver disponível ou estiver configurado incorretamente, os serviços BYOC poderão falhar ao se conectar ou operar corretamente.

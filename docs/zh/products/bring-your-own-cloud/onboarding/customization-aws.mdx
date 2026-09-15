@@ -35,7 +35,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   <Step title="确保网络连通性" id="ensure-network-connectivity">
     **出站互联网访问**
-    您的 VPC 至少必须允许出站互联网访问，以便 ClickHouse BYOC 组件能够与 Tailscale 控制平面通信。Tailscale 用于为私有管理操作提供安全的零信任网络。通过 Tailscale 完成初始注册和设置需要公共互联网连通性，可通过直接访问或经由 NAT gateway 实现。此连通性对于保障 BYOC 部署的隐私性和安全性都是必需的。
+    您的 VPC 至少必须允许出站互联网访问，可通过直接访问或经由 NAT gateway 实现。有两项内容依赖于此：
+
+    * **Tailscale。** ClickHouse BYOC 组件会向 Tailscale 控制平面注册，该控制平面为私有管理操作提供安全的零信任网络，且无需开放入站公网访问。初始注册和设置需要公共互联网连通性。
+    * **容器镜像。** 部署运行的部分镜像并未镜像到 BYOC registry 中 (包括社区镜像) ，而是从其上游 registry 拉取。
+
+    没有出站路径的 VPC 将无法完成预配。目前没有统一公布的端点清单；如果您的网络策略要求提供明确的清单，请联系支持团队以审阅您的设置。
 
     **DNS 解析**
     确保您的 VPC 具备正常工作的 DNS 解析能力，且不会阻止、干扰或覆盖标准 DNS 名称。ClickHouse BYOC 依赖 DNS 来解析 Tailscale 控制服务器和 ClickHouse 服务端点。如果 DNS 不可用或配置不正确，BYOC 服务可能无法正常连接或运行。

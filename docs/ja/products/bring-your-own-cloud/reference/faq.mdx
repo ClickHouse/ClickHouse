@@ -35,7 +35,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="BYOC で既存の VPC を使用できますか？共有 VPC はどうですか？">
-  AWS および GCP では、BYOC インフラストラクチャと**同じ**アカウントまたはプロジェクトにある既存の VPC にデプロイできます。[AWS](/ja/products/bring-your-own-cloud/onboarding/customization-aws) および [GCP](/ja/products/bring-your-own-cloud/onboarding/customization-gcp) のカスタマイズガイドを参照してください。GCP では、別のホストプロジェクトの **Shared VPC** もサポートされています。[オンボーディングモジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)ではホストプロジェクトとサブネットを直接指定できます。セットアップと前提条件については、その「Shared VPC」セクションを参照してください。Azure で独自の VNet を使用する機能は近日提供予定です。
+  AWS および GCP では、BYOC インフラストラクチャと**同じ**アカウントまたはプロジェクトにある既存の VPC にデプロイできます。[AWS](/ja/products/bring-your-own-cloud/onboarding/customization-aws) および [GCP](/ja/products/bring-your-own-cloud/onboarding/customization-gcp) のカスタマイズガイドを参照してください。GCP では、別のホストプロジェクトの **Shared VPC** もサポートされています。前提条件、コンソールで入力するフィールド、オンボーディングモジュールがホストプロジェクトに追加する権限付与については、[ホストプロジェクトの Shared VPC](/ja/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project)を参照してください。Azure で独自の VNet を使用する機能は近日提供予定です。
 
   AWS では、AWS Resource Access Manager (RAM) を使用して別のアカウントから共有されたサブネットもサポートされているため、ネットワークをハブアカウントに集約したまま、BYOC インフラストラクチャをスポークアカウントで実行できます。この構成に固有の前提条件が 1 つあります。RAM で共有されたリソースはアカウントごとにタグのビューが分かれているため、**スポーク**アカウント自身が必要な VPC およびサブネットのタグを適用する必要があります。ハブアカウントから適用されたタグはスポークからは見えず、タグがないとプロビジョニングは失敗します。ルートテーブルはハブアカウントの所有のままであり、共有サブネット上の NAT および egress ルーティングについてはハブアカウントが引き続き責任を負います。タグやその他の要件については、[AWS カスタマイズガイド](/ja/products/bring-your-own-cloud/onboarding/customization-aws)を参照してください。
 

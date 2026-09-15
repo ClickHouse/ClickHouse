@@ -35,7 +35,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="BYOC에서 기존 VPC를 사용할 수 있나요? 공유 VPC는 어떤가요?">
-  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. [온보딩 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)은 호스트 프로젝트와 서브넷을 직접 지정할 수 있도록 지원합니다. 설정 및 사전 요구 사항은 해당 모듈의 &quot;Shared VPC&quot; 섹션을 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
+  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. 사전 요구 사항, 콘솔에서 입력해야 할 필드, 온보딩 모듈이 호스트 프로젝트에 추가하는 권한 부여 내용은 [호스트 프로젝트의 Shared VPC](/ko/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project)를 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
 
   AWS에서는 AWS Resource Access Manager(RAM)를 통해 다른 계정에서 공유된 서브넷도 지원하므로, 네트워킹을 허브 계정에 중앙화하고 BYOC 인프라는 스포크 계정에서 실행할 수 있습니다. 이 구성에 특화된 사전 요구 사항이 하나 있습니다. RAM으로 공유된 리소스는 계정별 태그 뷰를 가지므로 **스포크** 계정이 직접 필요한 VPC 및 서브넷 태그를 적용해야 합니다. 허브 계정에서 적용한 태그는 스포크에서 보이지 않으며, 태그가 없으면 프로비저닝이 실패합니다. 라우트 테이블은 계속 허브 계정이 소유하며, 허브 계정이 공유 서브넷의 NAT 및 이그레스 라우팅을 계속 담당합니다. 태그 및 기타 요구 사항은 [AWS 사용자 지정 가이드](/ko/products/bring-your-own-cloud/onboarding/customization-aws)를 참조하십시오.
 

@@ -28,7 +28,12 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
 
   <Step title="Garantiza la conectividad de red" id="ensure-network-connectivity">
     **Gateway NAT de Cloud**
-    Asegúrate de que haya un [gateway NAT de Cloud](https://cloud.google.com/nat/docs/overview) desplegado para la VPC. Los componentes de ClickHouse BYOC requieren acceso a Internet saliente para comunicarse con el plano de control de Tailscale. Tailscale se utiliza para proporcionar una red segura de confianza cero para las operaciones privadas de administración. El gateway NAT de Cloud proporciona esta conectividad saliente a las instancias que no tienen direcciones IP externas.
+    Asegúrate de que haya un [gateway NAT de Cloud](https://cloud.google.com/nat/docs/overview) desplegado para la VPC. Proporciona conectividad saliente a las instancias que no tienen direcciones IP externas, y de él dependen dos cosas:
+
+    * **Tailscale.** Los componentes de ClickHouse BYOC se registran en el plano de control de Tailscale, que proporciona una red segura de confianza cero para las operaciones privadas de administración sin necesidad de acceso público entrante.
+    * **Imágenes de contenedor.** Algunas imágenes que ejecuta el despliegue no están replicadas en el registro de BYOC, como las imágenes de la comunidad, y se descargan de sus registros originales.
+
+    Una VPC sin ninguna ruta saliente no completará el aprovisionamiento; la validación previa comprueba que un gateway NAT de Cloud cubra la red. No existe una única lista publicada de endpoints; si tu política de red exige un inventario explícito, ponte en contacto con el soporte para revisar tu configuración.
 
     **Resolución DNS**
     Asegúrate de que tu VPC tenga una resolución DNS funcional y de que no bloquee, interfiera ni sobrescriba los nombres DNS estándar. ClickHouse BYOC depende de DNS para resolver los servidores de control de Tailscale y los endpoints del servicio de ClickHouse. Si DNS no está disponible o está mal configurado, es posible que los servicios de BYOC no puedan conectarse o funcionar correctamente.

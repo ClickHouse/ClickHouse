@@ -28,7 +28,12 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
 
   <Step title="네트워크 연결 확인" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
-    VPC에 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)가 배포되어 있는지 확인하십시오. ClickHouse BYOC 구성 요소는 Tailscale 컨트롤 플레인과 통신하기 위해 아웃바운드 인터넷 액세스가 필요합니다. Tailscale은 비공개 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공하는 데 사용됩니다. Cloud NAT gateway는 외부 IP 주소가 없는 인스턴스에 이러한 아웃바운드 연결을 제공합니다.
+    VPC에 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)가 배포되어 있는지 확인하십시오. Cloud NAT gateway는 외부 IP 주소가 없는 인스턴스에 아웃바운드 연결을 제공하며, 다음 두 가지가 이에 의존합니다.
+
+    * **Tailscale.** ClickHouse BYOC 구성 요소는 Tailscale 컨트롤 플레인에 등록됩니다. Tailscale은 인바운드 공개 액세스 없이도 비공개 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공합니다.
+    * **컨테이너 이미지.** 배포에서 실행하는 일부 이미지는 커뮤니티 이미지를 포함하여 BYOC 레지스트리에 미러링되지 않으며, 업스트림 레지스트리에서 가져옵니다.
+
+    아웃바운드 경로가 없는 VPC는 프로비저닝을 완료하지 못합니다. 사전 유효성 검사에서 Cloud NAT gateway가 해당 네트워크를 포함하는지 확인합니다. 공개된 단일 엔드포인트 목록은 없으며, 네트워크 정책상 명시적인 목록이 필요한 경우 지원팀에 문의하여 설정을 검토받으십시오.
 
     **DNS Resolution**
     VPC에서 DNS 해석이 정상적으로 작동하고 있으며, 표준 DNS 이름을 차단하거나 방해하거나 덮어쓰지 않는지 확인하십시오. ClickHouse BYOC는 DNS를 사용해 Tailscale 컨트롤 서버와 ClickHouse 서비스 엔드포인트를 확인합니다. DNS를 사용할 수 없거나 구성이 잘못된 경우 BYOC 서비스가 연결되지 않거나 제대로 작동하지 않을 수 있습니다.
@@ -45,10 +50,10 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     2. **VPC network name**을 입력하십시오.
     3. ClickHouse용으로 할당한 **Subnet name**을 입력하십시오.
     4. 필요에 따라 **Secondary range names**를 입력하여 GKE가 파드에 사용할 서브넷 보조 범위를 지정할 수 있습니다. 비워 두면 모든 보조 범위가 사용되며, 입력하는 이름은 모두 해당 서브넷에 이미 존재해야 합니다.
-    5. VPC가 공유 VPC 호스트 프로젝트에 있는 경우 **공유 VPC host project ID**를 입력하십시오. VPC가 인프라와 동일한 프로젝트에 있다면 비워 두십시오. 아래 [호스트 프로젝트의 공유 VPC](#shared-vpc-host-project)를 참조하십시오.
+    5. VPC가 공유 VPC 호스트 프로젝트에 있는 경우 **Shared VPC host project ID**를 입력하십시오. VPC가 인프라와 동일한 프로젝트에 있다면 비워 두십시오. 아래 [호스트 프로젝트의 공유 VPC](#shared-vpc-host-project)를 참조하십시오.
     6. 프로비저닝을 시작하려면 **Set up Infrastructure**를 클릭하십시오.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP용으로 Use existing VPC가 선택되어 VPC network name, subnet name, secondary range names, 공유 VPC host project ID 필드를 보여주는 ClickHouse Cloud BYOC 설정 UI" />
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP용으로 Use existing VPC가 선택되어 VPC network name, subnet name, secondary range names, Shared VPC host project ID 필드를 보여주는 ClickHouse Cloud BYOC 설정 UI" />
   </Step>
 </Steps>
 

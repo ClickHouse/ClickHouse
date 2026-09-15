@@ -28,7 +28,12 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
 
   <Step title="Assurez la connectivité réseau" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
-    Assurez-vous qu’une [passerelle Cloud NAT](https://cloud.google.com/nat/docs/overview) est déployée pour le VPC. Les composants ClickHouse BYOC nécessitent un accès Internet sortant pour communiquer avec le plan de contrôle Tailscale. Tailscale est utilisé pour fournir un réseau sécurisé de type zero-trust pour les opérations de gestion privées. La passerelle Cloud NAT fournit cette connectivité sortante aux instances sans adresses IP externes.
+    Assurez-vous qu’une [passerelle Cloud NAT](https://cloud.google.com/nat/docs/overview) est déployée pour le VPC. Elle fournit la connectivité sortante aux instances sans adresses IP externes, et deux éléments en dépendent :
+
+    * **Tailscale.** Les composants ClickHouse BYOC s’enregistrent auprès du plan de contrôle Tailscale, qui fournit un réseau sécurisé de type zero-trust pour les opérations de gestion privées, sans nécessiter d’accès public entrant.
+    * **Images de conteneurs.** Certaines images exécutées par le déploiement ne sont pas répliquées dans le registre BYOC, notamment les images communautaires, et sont récupérées depuis leurs registres d’origine.
+
+    Un VPC dépourvu de chemin sortant ne terminera pas son provisionnement ; la validation préalable vérifie qu’une passerelle Cloud NAT couvre le réseau. Il n’existe pas de liste publiée unique de points de terminaison ; si votre politique réseau exige un inventaire explicite, contactez le support pour examiner votre configuration.
 
     **Résolution DNS**
     Assurez-vous que votre VPC dispose d’une résolution DNS fonctionnelle et ne bloque pas, ne perturbe pas ou ne remplace pas les noms DNS standard. ClickHouse BYOC s’appuie sur le DNS pour résoudre les serveurs de contrôle Tailscale et les points de terminaison de service ClickHouse. Si le DNS n’est pas disponible ou est mal configuré, les services BYOC risquent de ne pas pouvoir se connecter ou fonctionner correctement.
