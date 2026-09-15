@@ -700,6 +700,14 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
     for (const auto & [entity_name, create_query] : raw_new_entities)
         local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
 
+    // The implicit root workload name is reserved (see storeEntity). Enforce it here too so
+    // config/Keeper/disk-loaded workloads cannot use it — the invariant must hold on every entry
+    // point, not just the SQL path.
+    for (const auto & [entity_name, entity] : local_new_entities)
+        if (entity_name == IMPLICIT_ROOT_WORKLOAD_NAME && typeid_cast<ASTCreateWorkloadQuery *>(entity.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Workload name '{}' is reserved for the implicit root workload and cannot be used", entity_name);
+
     std::unique_lock lock(mutex);
 
     // Merge `local_new_entities` with existing `other_entities`
