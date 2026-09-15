@@ -1,5 +1,10 @@
--- Tags: no-asan, no-msan, no-tsan
--- Those three builds disable jemalloc implicitly (contrib/jemalloc-cmake/CMakeLists.txt), and the
+-- Tags: long, no-asan, no-msan, no-tsan
+-- `long` because every CI server enables jemalloc's global profiler
+-- (tests/config/config.d/jemalloc_enable_global_profiler.yaml), which samples the one block-sized
+-- allocation the fixed path makes per run: an idle release build takes 52.4 s for the file with that
+-- config against 4.9 s without it, and the fast test, which kills a test at 60 s, measured 17.4 s,
+-- 17.7 s and 12.5 s for the first three guards alone on a runner shared with 24 test workers.
+-- The asan, msan and tsan builds disable jemalloc implicitly (contrib/jemalloc-cmake/CMakeLists.txt), and the
 -- guards below only separate fixed from broken on an allocator that leaves untouched pages of an
 -- allocation alone: the fixed path asks for one array sized to the run's last row per run and writes
 -- only the run. Measured on a release build under `MALLOC_CONF=junk:true` (every allocated byte
@@ -19,13 +24,16 @@
 -- How every timed guard below is sized, stated once for all of them:
 --
 -- 1. `max_execution_time = 120` guards against the quadratic blowup, not the linear runtime, and the
---    two are orders of magnitude apart: each guarded query measured under 1.5 s fixed against 480 s or
---    more broken, so 120 s keeps over 4x of margin on both sides. It is also what
+--    two are orders of magnitude apart: each guarded query measured 8.3-10.8 s fixed on a
+--    profiler-enabled server, under 1.5 s without one, against 480 s or more broken, so 120 s keeps
+--    over 4x of margin on both sides. It is also what
 --    `04537_aggregation_in_order_serialized_keys` settled on for this class of guard after 20 s flaked
 --    there, which is the reason not to tighten it for the slow builds this test still runs on.
--- 2. The limit is only evaluated when the reader hands over the next block, while a transform packs
---    every run of a block inside one call, so a broken query has to exceed the limit with blocks to
---    spare. `max_block_size` is therefore sized by the limit rather than by the packing.
+-- 2. The aggregation and merge guards observe the limit between key intervals, where
+--    `AggregatingInOrderTransform::consume` checks `isCancelled()`. `DistinctSortedStreamTransform`
+--    packs every range of a block inside one `transform()` call and is cancelled only between calls,
+--    so that guard has to exceed the limit with blocks to spare, and its `max_block_size` is sized by
+--    the limit rather than by the packing.
 -- 3. Three settings otherwise cap the reader's block, which is what carries the quadratic term, below
 --    `max_block_size`: adaptive granularity aligns it to a few granules (measured 11264 rows at
 --    `index_granularity = 1024`) and `preferred_block_size_bytes` caps it at ~65k rows for these row
