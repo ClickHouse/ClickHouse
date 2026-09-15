@@ -1,15 +1,23 @@
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTLiteral.h>
@@ -24,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 }
@@ -224,12 +233,6 @@ std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() 
     return Tuple{Float64(0), Float64(0), decay_length};
 }
 
-void DataTypeCustomExponentialTimeDecayingFloat64::validateColumn(
-    const IColumn & column, const String & operation) const
-{
-    validateExponentialTimeDecayingFloat64Column(column, decay_length, operation);
-}
-
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
     auto [storage_type, customization] = create(decay_length);
@@ -290,16 +293,152 @@ bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type)
     return type && containsExponentialTimeDecayingFloat64(*type);
 }
 
+namespace
+{
+
+DataTypePtr removeExponentialTimeDecayingTransparentWrappers(DataTypePtr type)
+{
+    while (type)
+    {
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        {
+            type = low_cardinality_type->getDictionaryType();
+            continue;
+        }
+
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            type = nullable_type->getNestedType();
+            continue;
+        }
+
+        break;
+    }
+
+    return type;
+}
+
+void assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+    DataTypePtr left_type, DataTypePtr right_type, const String & operation)
+{
+    left_type = removeExponentialTimeDecayingTransparentWrappers(std::move(left_type));
+    right_type = removeExponentialTimeDecayingTransparentWrappers(std::move(right_type));
+
+    const bool left_contains = containsExponentialTimeDecayingFloat64(left_type);
+    const bool right_contains = containsExponentialTimeDecayingFloat64(right_type);
+    if (!left_contains && !right_contains)
+        return;
+
+    if (!left_contains || !right_contains)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "{} cannot combine incompatible types {} and {} containing ExponentialTimeDecayingFloat64",
+            operation,
+            left_type->getName(),
+            right_type->getName());
+
+    const auto left_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(left_type);
+    const auto right_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(right_type);
+    if (left_decay_length || right_decay_length)
+    {
+        if (!left_decay_length || !right_decay_length)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{} cannot combine ExponentialTimeDecayingFloat64 with {}",
+                operation,
+                left_decay_length ? right_type->getName() : left_type->getName());
+
+        if (*left_decay_length != *right_decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} cannot combine ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
+                operation,
+                *left_decay_length,
+                *right_decay_length);
+        return;
+    }
+
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_type.get()))
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right_type.get());
+        if (right_array)
+        {
+            assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                left_array->getNestedType(), right_array->getNestedType(), operation);
+            return;
+        }
+    }
+    else if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get()))
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+        if (right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                    left_tuple->getElements()[i], right_tuple->getElements()[i], operation);
+            return;
+        }
+    }
+    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_type.get()))
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right_type.get());
+        if (right_map)
+        {
+            assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                left_map->getNestedType(), right_map->getNestedType(), operation);
+            return;
+        }
+    }
+    else if (const auto * left_variant = typeid_cast<const DataTypeVariant *>(left_type.get()))
+    {
+        const auto * right_variant = typeid_cast<const DataTypeVariant *>(right_type.get());
+        if (right_variant && left_variant->getVariants().size() == right_variant->getVariants().size())
+        {
+            for (size_t i = 0; i < left_variant->getVariants().size(); ++i)
+                assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                    left_variant->getVariant(i), right_variant->getVariant(i), operation);
+            return;
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "{} cannot combine incompatible types {} and {} containing ExponentialTimeDecayingFloat64",
+        operation,
+        left_type->getName(),
+        right_type->getName());
+}
+
+}
+
 void assertExponentialTimeDecayingFloat64TypesCompatible(
     const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation)
 {
-    assertCustomDataTypesCompatible(left_type, right_type, operation);
+    assertExponentialTimeDecayingFloat64TypesCompatibleImpl(left_type, right_type, operation);
 }
 
 void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type)
 {
-    assertCustomDataTypeSetKeyTypesCompatible(probe_type, set_type);
+    if (!containsExponentialTimeDecayingFloat64(probe_type) && !containsExponentialTimeDecayingFloat64(set_type))
+        return;
+
+    const auto nested_probe_type = removeExponentialTimeDecayingTransparentWrappers(probe_type);
+    const auto nested_set_type = removeExponentialTimeDecayingTransparentWrappers(set_type);
+
+    /// The default `Variant` adaptor probes each alternative separately, while the set
+    /// retains its `Variant` type. Permit wrapping an exact alternative, including its
+    /// custom type name: tuple layout equality alone would also admit a wrong decay length.
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(nested_set_type.get()))
+    {
+        for (const auto & alternative : variant->getVariants())
+        {
+            if (nested_probe_type->getName() == alternative->getName())
+                return;
+        }
+    }
+
+    assertExponentialTimeDecayingFloat64TypesCompatible(probe_type, set_type, "IN");
 }
 
 void validateExponentialTimeDecayingFloat64Column(
@@ -345,10 +484,79 @@ void validateExponentialTimeDecayingFloat64Column(
     }
 }
 
+namespace
+{
+
+void validateExponentialTimeDecayingFloat64ColumnImpl(
+    const IColumn & column, const DataTypePtr & type, const String & operation)
+{
+    if (!type || !containsExponentialTimeDecayingFloat64(type))
+        return;
+
+    ColumnPtr full_column = column.convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        validateExponentialTimeDecayingFloat64ColumnImpl(
+            *full_column, low_cardinality_type->getDictionaryType(), operation);
+        return;
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(*full_column);
+        validateExponentialTimeDecayingFloat64ColumnImpl(
+            nullable_column.getNestedColumn(), nullable_type->getNestedType(), operation);
+        return;
+    }
+
+    if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(type))
+    {
+        validateExponentialTimeDecayingFloat64Column(*full_column, *decay_length, operation);
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto & array_column = assert_cast<const ColumnArray &>(*full_column);
+        validateExponentialTimeDecayingFloat64ColumnImpl(
+            array_column.getData(), array_type->getNestedType(), operation);
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*full_column);
+        const auto & element_types = tuple_type->getElements();
+        for (size_t i = 0; i < element_types.size(); ++i)
+            validateExponentialTimeDecayingFloat64ColumnImpl(
+                tuple_column.getColumn(i), element_types[i], operation);
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto & map_column = assert_cast<const ColumnMap &>(*full_column);
+        validateExponentialTimeDecayingFloat64ColumnImpl(
+            map_column.getNestedColumn(), map_type->getNestedType(), operation);
+        return;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        const auto & variant_column = assert_cast<const ColumnVariant &>(*full_column);
+        for (size_t i = 0; i < variant_type->getVariants().size(); ++i)
+            validateExponentialTimeDecayingFloat64ColumnImpl(
+                variant_column.getVariantByGlobalDiscriminator(i), variant_type->getVariant(i), operation);
+    }
+}
+
+}
+
 void validateExponentialTimeDecayingFloat64Column(
     const IColumn & column, const DataTypePtr & type, const String & operation)
 {
-    validateCustomDataTypeColumn(column, type, operation);
+    validateExponentialTimeDecayingFloat64ColumnImpl(column, type, operation);
 }
 
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)

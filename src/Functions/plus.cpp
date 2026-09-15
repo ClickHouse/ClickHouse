@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <Interpreters/Context.h>
 #include <base/arithmeticOverflow.h>
 
@@ -82,7 +81,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() == 2)
-            assertCustomDataTypesCompatible(arguments[0].type, arguments[1].type, "plus");
+            assertExponentialTimeDecayingFloat64TypesCompatible(arguments[0].type, arguments[1].type, "plus");
         return delegate.buildImpl(arguments, return_type);
     }
 
@@ -94,7 +93,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() == 2)
-            assertCustomDataTypesCompatible(arguments[0], arguments[1], "plus");
+            assertExponentialTimeDecayingFloat64TypesCompatible(arguments[0], arguments[1], "plus");
         return delegate.getReturnTypeImpl(arguments);
     }
 
