@@ -19,6 +19,7 @@
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
+#include <parquet/size_statistics.h>
 #include <parquet/statistics.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <DataTypes/NestedUtils.h>
@@ -94,8 +95,14 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
                              std::make_shared<DataTypeInt64>(),
+                             std::make_shared<DataTypeTuple>(
+                                 DataTypes{
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+                                 Names{"unencoded_byte_array_data_bytes", "repetition_level_histogram", "definition_level_histogram"}),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "size_statistics"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -356,8 +363,40 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         else
             tuple_column.getColumn(5).insertDefault();
         assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
+        fillColumnSizeStatistics(column_chunk_metadata->size_statistics(), tuple_column.getColumn(7));
     }
     array_column.getOffsets().push_back(tuple_column.size());
+}
+
+void ParquetMetadataInputFormat::fillColumnSizeStatistics(
+    const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column)
+{
+    auto & size_statistics_column = assert_cast<ColumnTuple &>(column);
+
+    auto & unencoded_bytes = assert_cast<ColumnNullable &>(size_statistics_column.getColumn(0));
+    if (size_statistics && size_statistics->unencoded_byte_array_data_bytes.has_value())
+    {
+        assert_cast<ColumnUInt64 &>(unencoded_bytes.getNestedColumn())
+            .insertValue(static_cast<UInt64>(*size_statistics->unencoded_byte_array_data_bytes));
+        unencoded_bytes.getNullMapData().push_back(false);
+    }
+    else
+    {
+        unencoded_bytes.insertDefault();
+    }
+
+    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
+    {
+        auto & array_column = assert_cast<ColumnArray &>(histogram_column);
+        auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
+        for (const auto level_count : histogram)
+            data_column.insertValue(static_cast<UInt64>(level_count));
+        array_column.getOffsets().push_back(data_column.size());
+    };
+
+    static const std::vector<int64_t> empty_histogram;
+    insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
+    insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
 }
 
 template <typename T>
@@ -554,6 +593,10 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
       - `distinct_count` - the number of distinct values in the column chunk
       - `min` - the minimum value of the column chunk
       - `max` - the maximum column of the column chunk
+    - `size_statistics` - column chunk size statistics with the next structure:
+      - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values, NULL for other physical types
+      - `repetition_level_histogram` - the number of values at each repetition level, empty when the column has no repetition levels
+      - `definition_level_histogram` - the number of values at each definition level, empty when the column has no definition levels
 
 ## Example usage {#example-usage}
 
