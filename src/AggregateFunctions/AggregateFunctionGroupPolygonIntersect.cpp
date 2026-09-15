@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <boost/geometry.hpp>
+#include <boost/geometry/index/rtree.hpp>
 
 #include <vector>
 
@@ -42,9 +43,78 @@ enum class IntersectMode : UInt8
 
 struct GroupPolygonIntersectData
 {
+    using Box = boost::geometry::model::box<CartesianPoint>;
+    using HoleIndex = boost::geometry::index::rtree<
+        Box,
+        boost::geometry::index::quadratic<16>,
+        boost::geometry::index::indexable<Box>,
+        boost::geometry::index::equal_to<Box>,
+        AllocatorWithMemoryTracking<Box>>;
+
     IntersectMode mode = IntersectMode::Uninitialized;
     std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t total_points = 0;
+    std::unique_ptr<HoleIndex> hole_index;
+
+    /// For a common exterior, intersection adds the incoming holes to the existing holes.
+    /// Strictly disjoint bounding boxes prove that no old/new hole boundaries interact.
+    /// Each operand has already passed full validation, so this preserves topology and a
+    /// nonempty result without revisiting the entire growing boundary. No input is deferred.
+    bool appendDisjointHoles(const CartesianMultiPolygon & incoming, const char * function_name)
+    {
+        if (chunks.size() != 1 || chunks[0].size() != 1 || incoming.size() != 1)
+            return false;
+
+        auto & current = chunks[0][0];
+        const auto & next = incoming[0];
+        if (current.outer().size() != next.outer().size())
+            return false;
+        for (size_t i = 0; i < current.outer().size(); ++i)
+        {
+            if (current.outer()[i].get<0>() != next.outer()[i].get<0>() || current.outer()[i].get<1>() != next.outer()[i].get<1>())
+                return false;
+            /// R-tree splitting uses box areas. Keep those products within `Float64`;
+            /// geometries outside this range use the existing wide overlay path.
+            if (std::abs(current.outer()[i].get<0>()) > 0x1p128 || std::abs(current.outer()[i].get<1>()) > 0x1p128)
+                return false;
+        }
+
+        if (next.inners().empty())
+            return true;
+
+        if (!hole_index)
+        {
+            hole_index = std::make_unique<HoleIndex>();
+            for (const auto & ring : current.inners())
+                hole_index->insert(boost::geometry::return_envelope<Box>(ring));
+        }
+
+        size_t added_points = 0;
+        std::vector<Box, AllocatorWithMemoryTracking<Box>> boxes;
+        boxes.reserve(next.inners().size());
+        for (const auto & ring : next.inners())
+        {
+            auto box = boost::geometry::return_envelope<Box>(ring);
+            if (hole_index->qbegin(boost::geometry::index::intersects(box)) != hole_index->qend())
+                return false;
+            boxes.push_back(box);
+            added_points += ring.size();
+        }
+
+        if (added_points > MAX_POINTS_IN_POLYGONAL_STATE - total_points)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after reduction: {} (limit {})",
+                function_name,
+                total_points + added_points,
+                MAX_POINTS_IN_POLYGONAL_STATE);
+
+        current.inners().insert(current.inners().end(), next.inners().begin(), next.inners().end());
+        for (const auto & box : boxes)
+            hole_index->insert(box);
+        total_points += added_points;
+        return true;
+    }
 
     void add(CartesianMultiPolygon && mp, const char * function_name)
     {
@@ -55,9 +125,13 @@ struct GroupPolygonIntersectData
         {
             mode = IntersectMode::Empty;
             chunks.clear();
+            hole_index.reset();
             total_points = 0;
             return;
         }
+
+        if (mode == IntersectMode::NonEmpty && appendDisjointHoles(mp, function_name))
+            return;
 
         total_points += countMultiPolygonPoints(mp);
         chunks.push_back(std::move(mp));
@@ -81,6 +155,7 @@ struct GroupPolygonIntersectData
         {
             mode = IntersectMode::Empty;
             chunks.clear();
+            hole_index.reset();
             total_points = 0;
             return;
         }
@@ -98,6 +173,9 @@ struct GroupPolygonIntersectData
             return;
         }
 
+        if (other.chunks.size() == 1 && appendDisjointHoles(other.chunks[0], function_name))
+            return;
+
         total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
 
@@ -113,6 +191,8 @@ struct GroupPolygonIntersectData
             recountPoints(function_name);
             return;
         }
+
+        hole_index.reset();
 
         while (chunks.size() > 1)
         {
