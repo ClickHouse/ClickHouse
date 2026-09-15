@@ -1196,6 +1196,9 @@ try
 
         /// Without this the round count proves nothing: it is also low when the injection is never reached.
         EXPECT_GT(errors, 0u);
+        /// Pins that the wait itself ran a round: the loop's first iteration triggers a fresh round and
+        /// blocks until it finishes, so a build that does not wait at all measures zero.
+        EXPECT_GE(rounds, 1u);
         /// One failed round ends the wait; the slack covers a background round landing in the same window.
         EXPECT_LT(rounds, 8u);
 
