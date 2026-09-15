@@ -1654,6 +1654,19 @@ void writeFileFooter(FileWriteState & file,
         }
     }
 
+    /// Says that a null Nullable(Tuple(...)) group in this file is encoded at the group's own
+    /// definition level, so its null map can be read from any leaf below it. Our reader refuses a
+    /// ClickHouse file without this key unless it reads the group through a leaf whose path under it
+    /// is entirely REQUIRED and non-repeated. Unconditional: column preparation, the only place an
+    /// ambiguous group could be seen, has no access to this state and is skipped for zero rows.
+    {
+        parquet::format::KeyValue key_value;
+        key_value.__set_key("clickhouse.nullable_group_def_levels");
+        key_value.__set_value("1");
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
+    }
+
     size_t footer_size = serializeThriftStruct(meta, out);
 
     if (footer_size > INT32_MAX)
