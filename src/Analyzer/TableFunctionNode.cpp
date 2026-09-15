@@ -168,12 +168,18 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// database, so qualify it from `storage_id`. Only a 2-part result is resolvable as a
     /// parameterized view, so a dotted database name is left alone.
     if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
-        storage_view && storage_view->isParameterizedView() && storage_id.hasDatabase()
-        && Identifier{table_function_name}.getPartsSize() == 1)
+        storage_view && storage_view->isParameterizedView())
     {
-        const auto database_name = storage_id.getDatabaseName();
-        if (Identifier{database_name}.getPartsSize() == 1)
-            table_function_ast->name = database_name + "." + storage_id.getTableName();
+        if (storage_id.hasDatabase() && Identifier{table_function_name}.getPartsSize() == 1)
+        {
+            const auto database_name = storage_id.getDatabaseName();
+            if (Identifier{database_name}.getPartsSize() == 1)
+                table_function_ast->name = database_name + "." + storage_id.getTableName();
+        }
+
+        /// Keep the qualification parseable: one quoted `db.view` token re-parses as a single name.
+        if (Identifier{table_function_ast->name}.getPartsSize() == 2)
+            table_function_ast->setIsCompoundName(true);
     }
 
     const auto & arguments = getArguments();
