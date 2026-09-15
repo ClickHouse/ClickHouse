@@ -691,6 +691,7 @@ void RefreshTask::wait(const ContextPtr & context)
 
     const auto & znode = coordination.root_znode;
     const bool disabled = state == RefreshState::Disabled;
+    const bool consider_last_attempt = !disabled || znode.last_attempt_out_of_schedule;
 
     if (znode.refresh_running)
     {
@@ -698,12 +699,11 @@ void RefreshTask::wait(const ContextPtr & context)
             throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed: {}", znode.previous_attempt_error);
     }
     /// Report a genuinely failed refresh, but never an interrupted one (error "cancelled", from
-    /// SYSTEM STOP / CANCEL VIEW or shutdown). On a stopped view report only a failed SYSTEM REFRESH
-    /// VIEW, not a scheduled-refresh failure from before the view was stopped.
+    /// SYSTEM STOP / CANCEL VIEW or shutdown).
     else if (!znode.last_attempt_succeeded
         && znode.last_attempt_time.time_since_epoch().count() != 0
         && znode.last_attempt_error != "cancelled"
-        && (!disabled || znode.last_attempt_out_of_schedule))
+        && consider_last_attempt)
     {
         throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed{}: {}",
             coordination.coordinated ? " (on replica " + znode.last_attempt_replica + ")" : "",
@@ -712,7 +712,7 @@ void RefreshTask::wait(const ContextPtr & context)
 
     lock.unlock();
 
-    if (!disabled && coordination.coordinated && !isAppend())
+    if (consider_last_attempt && coordination.coordinated && !isAppend())
         waitForLatestTargetTable(context);
 }
 

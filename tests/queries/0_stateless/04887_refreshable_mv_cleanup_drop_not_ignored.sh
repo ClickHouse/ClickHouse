@@ -103,6 +103,46 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 'user_drop'"
 
+echo '-- a refresh requested while stopped: SYSTEM WAIT VIEW checks the target table'
+
+# Placed here because this is the only stateless refreshable-view test with a `Replicated`
+# database, which the check below needs.
+#
+# A non-APPEND refresh publishes its target table through replicated DDL, so `SYSTEM WAIT VIEW`
+# ends by checking that the target visible here is the one the last refresh produced.
+# `SYSTEM REFRESH VIEW` runs even while the view is stopped, so that check has to run for it too.
+#
+# A replica whose target is not the refreshed one is a replica that has not replayed the refresh's
+# `EXCHANGE` yet, which a single-replica test cannot produce, so the target is exchanged away
+# behind the stopped view's back instead.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
+    CREATE TABLE ${db_repl}.tgt (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE TABLE ${db_repl}.decoy (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW ${db_repl}.wv
+        REFRESH EVERY 1 YEAR TO ${db_repl}.tgt EMPTY AS SELECT 1 AS x;
+
+    SYSTEM STOP VIEW ${db_repl}.wv;
+    SYSTEM REFRESH VIEW ${db_repl}.wv;
+    SYSTEM WAIT VIEW ${db_repl}.wv;
+"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${db_repl}.tgt"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "EXCHANGE TABLES ${db_repl}.tgt AND ${db_repl}.decoy"
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW ${db_repl}.wv" 2>&1 | grep -q 'TABLE_UUID_MISMATCH' && echo 'stale_target_reported'
+
+echo '-- a scheduled refresh from before the stop: the wait returns as it always did'
+
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
+    CREATE TABLE ${db_repl}.tgt_sched (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE TABLE ${db_repl}.decoy_sched (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW ${db_repl}.wv_sched
+        REFRESH EVERY 1 YEAR TO ${db_repl}.tgt_sched AS SELECT 1 AS x;
+
+    SYSTEM WAIT VIEW ${db_repl}.wv_sched;
+    SYSTEM STOP VIEW ${db_repl}.wv_sched;
+    EXCHANGE TABLES ${db_repl}.tgt_sched AND ${db_repl}.decoy_sched;
+"
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW ${db_repl}.wv_sched; SELECT 'wait_returned'"
+
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${db}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${db_fail}"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE ${db_repl}"
