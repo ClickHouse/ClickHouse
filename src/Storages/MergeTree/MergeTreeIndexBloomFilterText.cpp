@@ -8,6 +8,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -468,6 +469,34 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_exists;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
+    if (!key_index)
+    {
+        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        {
+            auto & [map_column_name, serialized_key] = *parsed;
+
+            /// Same as arrayElement: skip when comparing with default value because
+            /// the subcolumn returns default for keys that don't exist in the map.
+            if (value_field == value_type->getDefault())
+                return false;
+
+            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            {
+                key_index = map_keys_index;
+                const_value = serialized_key;
+            }
+            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            {
+                key_index = map_values_idx;
             }
             else
             {

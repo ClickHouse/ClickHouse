@@ -175,12 +175,16 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                 scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
+            /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+            /// before resolution, so that later references to them can be resolved. This must be done for
+            /// a single expression node too, not only for a list: otherwise an alias defined and later
+            /// referenced within a standalone expression (such as a column DEFAULT expression checked
+            /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            visitor.visit(node);
+
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -231,6 +235,14 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
         scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
+
+    /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+    /// before resolution, so that later references to them can be resolved. This mirrors `resolve`
+    /// above and is needed for a single expression node too, not only for a list: otherwise an alias
+    /// defined and later referenced within a standalone constant expression (such as a user predicate
+    /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -2162,7 +2174,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2923,6 +2935,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
 
+
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
@@ -3139,12 +3152,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            auto it = scope_ptr->nullable_group_by_keys.find(node);
-            if (it != scope_ptr->nullable_group_by_keys.end())
+            if (!scope_ptr->nullable_group_by_keys.empty())
             {
-                node = it->node->clone();
-                node->convertToNullable();
-                break;
+                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                if (it != scope_ptr->nullable_group_by_keys.end())
+                {
+                    node = it->node->clone();
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// Check parent scopes until find current query scope.
@@ -4065,16 +4081,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
             {
-                /** If resolution failed, the argument's subexpressions (e.g. scalar subqueries)
-                  * may be in an unresolved state. Mark the argument as unresolved so that
-                  * query tree passes (via traverseQueryTree) do not traverse into it and
-                  * encounter unresolved nodes like IDENTIFIER in join trees.
-                  *
-                  * Example: SELECT * FROM remote('localhost', view(SELECT 2 AS x), concat(x, (SELECT 1)))
-                  * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
-                  * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
-                  */
-                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
@@ -4532,80 +4538,6 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
     return true;
 }
 
-/// Get ordered column names from a table expression, preserving left-to-right order.
-/// Returns false if the table expression type is not supported.
-static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, Names & result_columns)
-{
-    std::vector<const IQueryTreeNode *> nodes_to_process;
-    nodes_to_process.push_back(root_table_expression.get());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * table_expression = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        switch (table_expression->getNodeType())
-        {
-            case QueryTreeNodeType::TABLE:
-            {
-                const auto * table_node = table_expression->as<TableNode>();
-                chassert(table_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
-                break;
-            }
-            case QueryTreeNodeType::TABLE_FUNCTION:
-            {
-                const auto * table_function_node = table_expression->as<TableFunctionNode>();
-                chassert(table_function_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
-                break;
-            }
-            case QueryTreeNodeType::QUERY:
-            {
-                const auto * query_node = table_expression->as<QueryNode>();
-                chassert(query_node);
-                for (const auto & column : query_node->getProjectionColumns())
-                    result_columns.push_back(column.name);
-                break;
-            }
-            case QueryTreeNodeType::UNION:
-            {
-                const auto * union_node = table_expression->as<UnionNode>();
-                chassert(union_node);
-                for (const auto & column : union_node->computeProjectionColumns())
-                    result_columns.push_back(column.name);
-                break;
-            }
-            case QueryTreeNodeType::JOIN:
-            {
-                const auto * join_node = table_expression->as<JoinNode>();
-                chassert(join_node);
-                nodes_to_process.push_back(join_node->getRightTableExpression().get());
-                nodes_to_process.push_back(join_node->getLeftTableExpression().get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
-                chassert(cross_join_node);
-                const auto & exprs = cross_join_node->getTableExpressions();
-                for (auto it = exprs.rbegin(); it != exprs.rend(); ++it)
-                    nodes_to_process.push_back(it->get());
-                break;
-            }
-            default:
-            {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -4629,48 +4561,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
-
-    if (join_node_typed.isNaturalJoin())
-    {
-        /// Synthesize a USING expression from the intersection of left and right column names.
-        Names left_cols;
-        NameSet right_cols;
-
-        if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpression(), left_cols))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "NATURAL JOIN: cannot determine columns of left table expression in {}",
-                join_node_typed.formatASTForErrorMessage());
-
-        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "NATURAL JOIN: cannot determine columns of right table expression in {}",
-                join_node_typed.formatASTForErrorMessage());
-
-        QueryTreeNodes using_nodes;
-        NameSet seen;
-        for (const auto & col_name : left_cols)
-        {
-            /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-            if (col_name.find('.') != std::string::npos)
-                continue;
-
-            if (right_cols.contains(col_name) && !seen.contains(col_name))
-            {
-                seen.insert(col_name);
-                using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
-            }
-        }
-
-        if (using_nodes.empty())
-        {
-            /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
-            join_node_typed.setKind(JoinKind::Cross);
-            return;
-        }
-
-        join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
-        join_node_typed.setUsingJoinExpression();
-    }
 
     if (join_node_typed.isOnJoinExpression())
     {

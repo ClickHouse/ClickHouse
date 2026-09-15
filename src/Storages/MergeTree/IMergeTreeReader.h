@@ -60,7 +60,11 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
+    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
+    void fillMissingColumns(
+        Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+        const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -85,6 +89,12 @@ public:
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
     virtual bool canSkipMark(size_t, size_t) { return false; }
+
+    /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
+    /// Independent of any particular mark index. Used by callers that need to know upfront whether
+    /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
+    /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
+    virtual bool canSkipAnyMark() const { return false; }
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 

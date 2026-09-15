@@ -73,6 +73,12 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
+void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+}
+
+template <typename T>
 WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();

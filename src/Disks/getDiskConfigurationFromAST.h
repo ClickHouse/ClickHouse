@@ -26,7 +26,11 @@ using DiskConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context);
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context);
+/// When `is_loading_from_existing_metadata` is true (loading from existing metadata — server restart,
+/// force-restore, or `UNDROP TABLE`), security checks are skipped because the disk configuration
+/// was already validated when the object was originally created. User-initiated `ATTACH TABLE`
+/// / `ATTACH DATABASE` queries pass false so the `dynamic_disk_allow_*` restrictions apply.
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false);
 
 /*
  * A reverse function.

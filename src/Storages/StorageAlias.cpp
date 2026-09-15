@@ -9,6 +9,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -236,7 +237,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -327,8 +341,8 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 1)
         {
             // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
-            auto evaluated_arg = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String table_arg = checkAndGetLiteralArgument<String>(evaluated_arg, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            String table_arg = checkAndGetLiteralArgument<String>(args.engine_args[0], "table_name");
 
             auto dot_pos = table_arg.find('.');
             if (dot_pos != String::npos)
@@ -345,10 +359,10 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 2)
         {
             // Syntax: ENGINE = Alias(database_name, table_name)
-            auto evaluated_db = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            auto evaluated_table = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
-            target_database = checkAndGetLiteralArgument<String>(evaluated_db, "database_name");
-            target_table = checkAndGetLiteralArgument<String>(evaluated_table, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            args.engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
+            target_database = checkAndGetLiteralArgument<String>(args.engine_args[0], "database_name");
+            target_table = checkAndGetLiteralArgument<String>(args.engine_args[1], "table_name");
         }
         else
         {

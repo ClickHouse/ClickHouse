@@ -76,7 +76,7 @@ private:
 void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
 {
     std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
-    DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>(std::move(cluster_registry));
+    DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("disk", std::move(cluster_registry));
     auto blobs_to_remove = metadata->getBlobsToRemove(cluster, 10000);
 
     std::set<std::string> remote_paths;

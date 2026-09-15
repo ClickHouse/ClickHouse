@@ -21,12 +21,21 @@ namespace DB
 
 struct Settings;
 
+/// Statistics of a successfully flushed async insert entry,
+/// communicated back to the waiting client via the future.
+struct AsyncInsertProgress
+{
+    size_t rows = 0;
+    size_t bytes = 0;
+};
+
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
 class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
+    using ResultProgress = AsyncInsertProgress;
 
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
@@ -42,7 +51,8 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future{};
+        /// On success, returns the number of rows/bytes actually written.
+        std::future<ResultProgress> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
@@ -71,7 +81,8 @@ public:
     {
     public:
         ASTPtr query;
-        String query_str;
+        /// Never log it, use `serializeQuery` on `query` instead.
+        String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
         std::unique_ptr<Settings> settings;
@@ -92,7 +103,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -156,13 +167,14 @@ private:
                 MemoryTracker * user_memory_tracker_);
 
             void resetChunk();
-            void finish(std::exception_ptr exception_ = nullptr);
+            void finish(ResultProgress result = {});
+            void finish(std::exception_ptr exception_);
 
-            std::future<void> getFuture() { return promise.get_future(); }
+            std::future<ResultProgress> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
         private:
-            std::promise<void> promise;
+            std::promise<ResultProgress> promise;
             std::atomic_bool finished = false;
         };
 
@@ -210,7 +222,8 @@ private:
     /// Ordered container
     /// Key is a timestamp of the first insert into batch.
     /// Used to detect for how long the batch is active, so we can dump it by timer.
-    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    /// Must be a multimap: two queries with different keys may theoretically compute the same deadline.
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 

@@ -1,0 +1,17 @@
+src level	1
+clone level	0
+clone final	1
+clone after optimize	1
+attach level	0
+attach final	1
+summing final	1	30
+aggregating level	0
+aggregating final	1	30
+move level	0
+move final	1
+same engine level preserved	1
+same engine final	1
+summing diff columns_to_sum level	0
+summing diff columns_to_sum rows	1	5	7
+replacing diff is_deleted level	0
+replacing diff is_deleted final	0

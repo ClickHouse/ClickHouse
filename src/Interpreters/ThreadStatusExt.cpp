@@ -532,6 +532,8 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
+    progress_in.reset();
+    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
@@ -564,7 +566,17 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        (*taskstats).reset();
+    {
+        try
+        {
+            (*taskstats).reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
+            taskstats = nullptr;
+        }
+    }
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -623,7 +635,17 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        (*taskstats).reset();
+    {
+        try
+        {
+            (*taskstats).reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
+            taskstats = nullptr;
+        }
+    }
 }
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)

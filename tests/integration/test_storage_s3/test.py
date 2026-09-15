@@ -58,7 +58,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "restricted_dummy",
-            main_configs=["configs/config_for_test_remote_host_filter.xml"],
+            main_configs=[
+                "configs/config_for_test_remote_host_filter.xml",
+                "configs/remote_servers.xml",
+            ],
             with_minio=True,
         )
         cluster.add_instance(
@@ -690,21 +693,21 @@ def test_multipart(started_cluster, maybe_auth, positive):
 def test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
-
-    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
-        "invalid_host",
-        MINIO_INTERNAL_PORT,
-        started_cluster.minio_bucket,
-        format,
-        other_values,
+    blocked_url = f"http://invalid_host:{MINIO_INTERNAL_PORT}/{started_cluster.minio_bucket}"
+    queries = (
+        f"DESCRIBE TABLE s3('{blocked_url}/test.csv', 'CSV')",
+        f"SELECT count() FROM s3Cluster('cluster', '{blocked_url}/test.csv', 'CSV')",
+        f"DESCRIBE TABLE icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3Cluster('cluster', '{blocked_url}/')",
+        f"CREATE TABLE remote_host_filter_iceberg (x UInt32) ENGINE = IcebergS3('{blocked_url}/')",
+        f"SELECT *, column1 * column2 * column3 FROM s3('{blocked_url}/test.csv', 'CSV', '{format}')",
+        f"INSERT INTO TABLE FUNCTION s3('{blocked_url}/test.csv', 'CSV', '{format}') VALUES {other_values}",
     )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    for query in queries:
+        assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
 
 
 def test_wrong_s3_syntax(started_cluster):
@@ -884,6 +887,7 @@ def run_s3_mocks(started_cluster):
             ("unstable_server.py", "resolver", "8081"),
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
+            ("gcs_transcode_mock.py", "resolver", "8084"),
         ],
     )
 
@@ -3236,3 +3240,21 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_gcs_decompressive_transcoding(started_cluster):
+    """Mock at resolver:8084 omits Content-Length on HEAD and GET
+    Without the fix, s3() would silently return 0 rows"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'

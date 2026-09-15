@@ -10,3 +10,6 @@ ORDER BY
 Equality, LHS
 1	a
 3	c
+Equality, LHS, opt off
+1	a
+3	c

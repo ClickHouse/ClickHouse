@@ -1,9 +1,10 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
-
+#include <map>
 #include <time.h>
+#include <base/types.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 namespace Poco::Net
 {
@@ -53,7 +54,7 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
     };
 
     ClientInfo();
@@ -111,7 +112,7 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    std::unordered_map<String, String> http_headers;
+    std::map<String, String, HTTPFieldLess> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;

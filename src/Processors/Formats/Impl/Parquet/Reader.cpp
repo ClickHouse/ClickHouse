@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -44,6 +45,25 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
+
+/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
+/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
+/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
+/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
+template <typename E>
+static int thriftEnumToInt(const E & e)
+{
+    std::underlying_type_t<E> v;
+    memcpy(&v, &e, sizeof(v));
+    return static_cast<int>(v);
+}
+
+template <typename E>
+static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what)
+{
+    if (!valid_values.contains(thriftEnumToInt(e)))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
+}
 
 static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
 {
@@ -560,6 +580,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -645,6 +666,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -781,6 +803,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -842,9 +871,12 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
         throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
     data = data.subspan(0, size_t(header.compressed_page_size));
 
+    checkThriftEnum(column.meta->meta_data.codec, parq::_CompressionCodec_VALUES_TO_NAMES, "compression codec");
     auto codec = column.meta->meta_data.codec;
     if (codec != parq::CompressionCodec::UNCOMPRESSED)
     {
+        if (header.uncompressed_page_size < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative uncompressed dictionary page size");
         size_t uncompressed_size = size_t(header.uncompressed_page_size);
         auto & buf = column.dictionary.decompressed_buf;
         buf.resize(uncompressed_size);
@@ -852,6 +884,10 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
         data = std::span(buf.data(), buf.size());
     }
 
+    /// Signed i32 from the thrift header; a negative count would sign-extend to a huge size_t and
+    /// drive a huge `reserve`/`resize` inside Dictionary::decode.
+    if (header.dictionary_page_header.num_values < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
 }
 
@@ -1334,11 +1370,20 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
     /// those reset handles. Only use this optimization when reading the whole column chunk
     /// sequentially (no offset index, i.e. data_pages is empty).
+    ///
+    /// Also disabled for nullable columns (need_null_map): the filter-in-decoder path processes
+    /// ALL rows (passing + non-passing) through processDefLevelsForInnermostColumn, so the
+    /// null_map ends up with entries for all rows rather than just filtered rows. Additionally,
+    /// the decoder applies the filter at consecutive encoded-value indices, but with nulls the
+    /// encoded values don't correspond 1:1 to rows (null rows have no encoded values), causing
+    /// the filter to be applied at wrong positions. The standard row-range iteration path
+    /// correctly handles both issues by only reading rows in passing filter ranges.
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
         !column.page.is_dictionary_encoded &&
-        column.data_pages.empty();
+        column.data_pages.empty() &&
+        !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)
@@ -1417,7 +1462,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
+        /// Check if any values are null — those can't be inserted into a non-Nullable column.
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
         subchunk.null_map = nullptr;
     }
@@ -1516,6 +1563,27 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
 {
     parq::PageHeader header;
     data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+
+    /// Validate enum fields before anything loads them (a malformed file can carry out-of-range
+    /// values, and loading an unscoped enum out of range is undefined behavior).
+    checkThriftEnum(header.type, parq::_PageType_VALUES_TO_NAMES, "page type");
+    switch (header.type)
+    {
+        case parq::PageType::DATA_PAGE:
+            checkThriftEnum(header.data_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            checkThriftEnum(header.data_page_header.definition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "definition level encoding");
+            checkThriftEnum(header.data_page_header.repetition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "repetition level encoding");
+            break;
+        case parq::PageType::DATA_PAGE_V2:
+            checkThriftEnum(header.data_page_header_v2.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            break;
+        case parq::PageType::DICTIONARY_PAGE:
+            checkThriftEnum(header.dictionary_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            break;
+        default:
+            break;
+    }
+
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
@@ -1554,12 +1622,24 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     /// Check if all rows of the page are filtered out, if we have enough information.
 
+    /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
+    /// row-skip shortcut returns before the later num_values check). A negative value would
+    /// sign-extend to a huge size_t and wrap `next_row_idx + num_rows`, moving the row cursor
+    /// backwards or skipping the page instead of failing, so reject it here.
     std::optional<size_t> num_rows_in_page;
     if (header.type == parq::PageType::DATA_PAGE_V2)
+    {
+        if (header.data_page_header_v2.num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of rows in DataPageV2");
         num_rows_in_page = header.data_page_header_v2.num_rows;
+    }
     else if (header.type == parq::PageType::DATA_PAGE &&
              column_info.levels.back().rep == 0) // no arrays => num_values == num_rows
+    {
+        if (header.data_page_header.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
         num_rows_in_page = header.data_page_header.num_values;
+    }
 
     if (num_rows_in_page.has_value())
     {
@@ -1577,8 +1657,13 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     /// Get information about page layout and encoding out of page header.
 
+    checkThriftEnum(column.meta->meta_data.codec, parq::_CompressionCodec_VALUES_TO_NAMES, "compression codec");
     page.codec = column.meta->meta_data.codec;
-    page.values_uncompressed_size = header.uncompressed_page_size;
+    /// Signed i32 from the thrift header; a negative value would sign-extend to a huge size_t and
+    /// later cause a huge allocation in decompressPageIfCompressed.
+    if (header.uncompressed_page_size < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative uncompressed page size");
+    page.values_uncompressed_size = size_t(header.uncompressed_page_size);
 
     if (page.codec == parq::CompressionCodec::UNCOMPRESSED && header.uncompressed_page_size != header.compressed_page_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compression, but compressed and uncompressed page size are different");
@@ -1592,7 +1677,9 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     if (header.type == parq::PageType::DATA_PAGE)
     {
-        page.num_values = header.data_page_header.num_values;
+        if (header.data_page_header.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
+        page.num_values = size_t(header.data_page_header.num_values);
         page.encoding = header.data_page_header.encoding;
         def_encoding = header.data_page_header.definition_level_encoding;
         rep_encoding = header.data_page_header.repetition_level_encoding;
@@ -1633,10 +1720,20 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     }
     else if (header.type == parq::PageType::DATA_PAGE_V2)
     {
-        page.num_values = header.data_page_header_v2.num_values;
+        if (header.data_page_header_v2.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
+        page.num_values = size_t(header.data_page_header_v2.num_values);
         page.encoding = header.data_page_header_v2.encoding;
-        encoded_def_size = header.data_page_header_v2.definition_levels_byte_length;
-        encoded_rep_size = header.data_page_header_v2.repetition_levels_byte_length;
+
+        /// These come from the thrift header as signed i32. A negative value would sign-extend to a
+        /// huge size_t, so reject it before assigning to the size_t fields. Otherwise the bounds
+        /// check below could be bypassed by integer overflow, and a huge std::span would reach the
+        /// rep/def level decoder, reading far past the page buffer (heap out-of-bounds read).
+        if (header.data_page_header_v2.definition_levels_byte_length < 0 ||
+            header.data_page_header_v2.repetition_levels_byte_length < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative definition/repetition levels byte length in DataPageV2");
+        encoded_def_size = size_t(header.data_page_header_v2.definition_levels_byte_length);
+        encoded_rep_size = size_t(header.data_page_header_v2.repetition_levels_byte_length);
 
         if (header.data_page_header_v2.__isset.is_compressed &&
             !header.data_page_header_v2.is_compressed)
@@ -1644,12 +1741,15 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
 
-        if (encoded_def_size + encoded_rep_size > page.data.size())
+        /// Non-wrapping bounds check: `encoded_def_size + encoded_rep_size` could overflow.
+        if (encoded_rep_size > page.data.size() || encoded_def_size > page.data.size() - encoded_rep_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
         encoded_rep = page.data.data();
         encoded_def = page.data.data() + encoded_rep_size;
         size_t uncompressed_part = encoded_def_size + encoded_rep_size;
         page.data = page.data.subspan(uncompressed_part);
+        if (page.values_uncompressed_size < uncompressed_part)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DataPageV2 uncompressed page size is smaller than the rep/def levels");
         page.values_uncompressed_size -= uncompressed_part;
     }
     else if (header.type == parq::PageType::DICTIONARY_PAGE)
@@ -2023,6 +2123,10 @@ void Reader::decompressPageIfCompressed(PageState & page)
 
 MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
+    /// Recurses over the nested output column tree, whose depth is bounded by SchemaConverter's
+    /// recursion limit; guard the native stack here too as defense in depth.
+    checkStackSize();
+
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 

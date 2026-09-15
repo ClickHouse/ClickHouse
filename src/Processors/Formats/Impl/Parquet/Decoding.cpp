@@ -625,6 +625,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     {
         if (total_values_remaining < num_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Trying to read past total number of values in DELTA_BINARY_PACKED encoding");
+        /// Nothing to write. Returning early is important: the output buffer may have zero size,
+        /// and the first-value special case below would write through it.
+        if (num_values == 0)
+            return;
         total_values_remaining -= num_values;
 
         T * out_values = reinterpret_cast<T *>(out_bytes);
@@ -855,7 +859,20 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 return;
             }
             bool direct = string_converter->isTrivial();
-            ColumnString * col_str = assert_cast<ColumnString *>(&col);
+            ColumnString * col_str = nullptr;
+            if (direct)
+                col_str = assert_cast<ColumnString *>(&col);
+            else
+            {
+                /// The destination column is not a ColumnString in this case (e.g. it is a
+                /// ColumnDecimal for a BYTE_ARRAY Decimal), so decode into a temporary string
+                /// column and convert, the same way the unfiltered path above does it.
+                if (!temp_column)
+                    temp_column = ColumnString::create();
+                col_str = assert_cast<ColumnString *>(temp_column.get());
+                col_str->getOffsets().clear();
+                col_str->getChars().clear();
+            }
             col_str->reserve(col_str->size() + pass_count);
             decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset);
             if (!direct)
@@ -1471,43 +1488,6 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
         memcpy(&x, data.data() + i * 2, 2);
         out_data.push_back(convertFloat16ToFloat32(x));
     }
-}
-
-static inline UUID decodeParquetUUID(const char * data)
-{
-    UUID res;
-    std::memcpy(&res, data, 16);
-    auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-    // Parquet demands Big-Endian (network byte order) for UUIDs
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        std::reverse(bytes, bytes + 8);
-        std::reverse(bytes + 8, bytes + 16);
-    }
-    else
-    {
-        std::swap_ranges(bytes, bytes + 8, bytes + 8);
-    }
-
-    return res;
-}
-
-void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
-{
-    auto & col_data = assert_cast<ColumnVector<UUID> &>(col).getData();
-    size_t old_size = col_data.size();
-    col_data.resize(old_size + num_values);
-
-    for (size_t i = 0; i < num_values; ++i)
-    {
-        col_data[old_size + i] = decodeParquetUUID(data.data() + i * 16);
-    }
-}
-
-void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
-{
-    out = decodeParquetUUID(data.data());
 }
 
 void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const

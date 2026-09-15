@@ -28,6 +28,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -49,6 +50,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageS3Threads;
     extern const Metric ObjectStorageS3ThreadsActive;
     extern const Metric ObjectStorageS3ThreadsScheduled;
+}
+
+namespace DB::FailPoints
+{
+    extern const char object_storage_force_refresh_callback_success[];
 }
 
 
@@ -174,7 +180,13 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}, {}};
+                ObjectMetadata metadata{
+                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    .etag = object.GetETag(),
+                    .tags = {},
+                    .attributes = {},
+                };
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
@@ -321,18 +333,20 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
 
-        if (objects.empty())
-            break;
-
+        /// A page can carry no objects while objects still remain: the scan may stop early
+        /// inside a partition and report `IsTruncated` together with a continuation token.
+        /// `IsTruncated` is the only thing that ends the listing - stopping on an empty page
+        /// would silently drop every object after it.
         for (const auto & object : objects)
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 object.GetKey(),
                 ObjectMetadata{
-                    static_cast<uint64_t>(object.GetSize()),
-                    Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    object.GetETag(),
-                    {},
-                    {}}));
+                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    .etag = object.GetETag(),
+                    .tags = {},
+                    .attributes = {},
+                }));
 
         if (max_keys)
         {
@@ -475,6 +489,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
+    result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = object_info.tags;
@@ -513,6 +528,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
+    result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = std::move(object_info.tags);
@@ -681,6 +697,19 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
+}
+
+bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    fiu_do_on(FailPoints::object_storage_force_refresh_callback_success, { return true; });
+
+    if (!credentials_refresh_callback)
+        return false;
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+    client.set(std::move(new_client));
+    return true;
 }
 }
 

@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace DB
@@ -82,7 +83,7 @@ private:
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
     ExternalQueryBuilderPtr query_builder;
     Block sample_block;
     ContextMutablePtr context;

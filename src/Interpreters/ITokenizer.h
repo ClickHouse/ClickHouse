@@ -8,6 +8,8 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <absl/container/flat_hash_set.h>
+
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -372,20 +374,20 @@ private:
 ///   * `_a` -> token
 ///   * `__` -> ignored (no alphanumeric)
 ///
-/// 2. Connectors (ASCII only)
+/// 2. Connectors
 ///
-/// * ASCII `:` (U+003A) connects **letters only**, not digits.
-/// * ASCII `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * `:` connects **letters only**, not digits.
+/// * `.` and `'` connect **letters-letters** or **digits-digits**.
 /// * If the connector cannot connect both sides, it is treated as a **token boundary**.
 ///
-/// 3. Unicode / CJK
+/// 3. Unicode / Chinese
 ///
-/// * Non-ASCII Unicode characters are **always single-character tokens** (including CJK).
+/// * Chinese characters are **always single-character tokens**.
+/// * Certain Unicode punctuation (Chinese punctuation) are **stop characters** and **break tokens**.
 ///
 /// 4. Token Validity
 ///
-/// * ASCII tokens must contain at least **one ASCII letter or digit** to be valid.
-/// * Non-ASCII Unicode characters are valid single-character tokens on their own.
+/// * Tokens must contain at least **one ASCII letter or digit** to be valid.
 /// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
 /// * `_` can start or end the token but must **not be the only character**.
 ///
@@ -408,12 +410,13 @@ private:
 /// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
 struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer>
 {
-    explicit UnicodeWordTokenizer()
+    explicit UnicodeWordTokenizer(const std::vector<String> & stop_words_)
         : ITokenizerHelper(Type::UnicodeWord)
+        , stop_words(stop_words_.begin(), stop_words_.end())
     {
     }
 
-    static const char * getName() { return "unicodeWord"; }
+    static const char * getName() { return "unicode_word"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
@@ -431,6 +434,9 @@ struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer
     void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
+
+private:
+    absl::flat_hash_set<String> stop_words;
 };
 
 namespace detail

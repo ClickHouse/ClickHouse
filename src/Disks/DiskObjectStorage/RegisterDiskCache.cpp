@@ -112,9 +112,9 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     return std::pair(cache, file_cache_settings);
 }
 
-void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check */)
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
+    auto creator = [global_skip_access_check](const String & name,
                     const Poco::Util::AbstractConfiguration & config,
                     const String & config_prefix,
                     ContextPtr context,
@@ -122,6 +122,8 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
                     bool attach,
                     bool custom_disk) -> DiskPtr
     {
+        const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+
         auto disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk Cache requires `disk` field in config");
@@ -143,7 +145,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
                 disk_name, name);
 
         auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name);
-        cached_disk_object_storage->startupImpl();
+        cached_disk_object_storage->startup(skip_access_check);
 
         LOG_INFO(
             getLogger("DiskCache"),

@@ -251,7 +251,13 @@ void HTTPHandler::processQuery(
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+    /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+    /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+    std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+    context->setCurrentQueryId(query_id);
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 

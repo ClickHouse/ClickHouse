@@ -312,7 +312,8 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(table_path) / path;
+                auto full_path = resolvePathInsideTable(table_path, path);
+
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -357,7 +358,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(table_path) / path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -499,7 +500,7 @@ struct DeltaLakeMetadataImpl
         std::atomic<int> is_stopped{0};
 
         auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
         THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
@@ -562,7 +563,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -594,7 +595,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }

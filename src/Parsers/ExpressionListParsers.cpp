@@ -1527,10 +1527,7 @@ public:
     {
         /// extract(haystack, pattern) or EXTRACT(DAY FROM Date)
         ///
-        /// Supports both standard interval kinds (YEAR, MONTH, DAY, etc.)
-        /// and PostgreSQL-compatible extract-only units (EPOCH, DOW, DOY, ISODOW, ISOYEAR, CENTURY, DECADE, MILLENNIUM).
-        ///
-        /// 0. If we parse an extract unit and 'FROM' keyword (-> 2), otherwise (-> 1)
+        /// 0. If we parse interval_kind and 'FROM' keyword (-> 2), otherwise (-> 1)
         /// 1. Basic parser
         /// 2. Parse closing bracket (finished)
 
@@ -1539,8 +1536,7 @@ public:
             IParser::Pos begin = pos;
             ParserKeyword s_from(Keyword::FROM);
 
-            if ((parseIntervalKind(pos, expected, interval_kind) || parseExtractOnlyUnit(pos, expected))
-                && s_from.ignore(pos, expected))
+            if (parseIntervalKind(pos, expected, interval_kind) && s_from.ignore(pos, expected))
             {
                 state = 2;
                 return true;
@@ -1578,7 +1574,7 @@ protected:
             if (elements.empty())
                 return false;
 
-            node = buildExtractResult(elements[0]);
+            node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
         }
         else
         {
@@ -1588,89 +1584,9 @@ protected:
         return true;
     }
 
+
 private:
-    enum class ExtractUnit : uint8_t
-    {
-        None,
-        Epoch,
-        Dow,
-        Doy,
-        Isodow,
-        Isoyear,
-        Century,
-        Decade,
-        Millennium,
-    };
-
     IntervalKind interval_kind;
-    ExtractUnit extract_unit = ExtractUnit::None;
-
-    bool parseExtractOnlyUnit(IParser::Pos & pos, Expected & expected)
-    {
-        if (ParserKeyword(Keyword::EPOCH).ignore(pos, expected))
-            extract_unit = ExtractUnit::Epoch;
-        else if (ParserKeyword(Keyword::DOW).ignore(pos, expected))
-            extract_unit = ExtractUnit::Dow;
-        else if (ParserKeyword(Keyword::DOY).ignore(pos, expected))
-            extract_unit = ExtractUnit::Doy;
-        else if (ParserKeyword(Keyword::ISODOW).ignore(pos, expected))
-            extract_unit = ExtractUnit::Isodow;
-        else if (ParserKeyword(Keyword::ISOYEAR).ignore(pos, expected))
-            extract_unit = ExtractUnit::Isoyear;
-        else if (ParserKeyword(Keyword::CENTURY).ignore(pos, expected))
-            extract_unit = ExtractUnit::Century;
-        else if (ParserKeyword(Keyword::DECADE).ignore(pos, expected))
-            extract_unit = ExtractUnit::Decade;
-        else if (ParserKeyword(Keyword::MILLENNIUM).ignore(pos, expected))
-            extract_unit = ExtractUnit::Millennium;
-        else
-            return false;
-
-        return true;
-    }
-
-    ASTPtr buildExtractResult(const ASTPtr & expr) const
-    {
-        if (extract_unit == ExtractUnit::None)
-            return makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
-
-        switch (extract_unit)
-        {
-            case ExtractUnit::Epoch:
-                return makeASTFunction("toUnixTimestamp", expr);
-            case ExtractUnit::Dow:
-                /// PostgreSQL DOW: 0 = Sunday, 6 = Saturday (toDayOfWeek mode 2)
-                return makeASTFunction("toDayOfWeek", expr, make_intrusive<ASTLiteral>(UInt64(2)));
-            case ExtractUnit::Doy:
-                return makeASTFunction("toDayOfYear", expr);
-            case ExtractUnit::Isodow:
-                /// ISO day of week: 1 = Monday, 7 = Sunday
-                return makeASTFunction("toDayOfWeek", expr);
-            case ExtractUnit::Isoyear:
-                return makeASTFunction("toISOYear", expr);
-            case ExtractUnit::Century:
-                /// century = (year - 1) / 100 + 1
-                return makeASTFunction("plus",
-                    makeASTFunction("intDiv",
-                        makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
-                        make_intrusive<ASTLiteral>(UInt64(100))),
-                    make_intrusive<ASTLiteral>(UInt64(1)));
-            case ExtractUnit::Decade:
-                /// decade = year / 10
-                return makeASTFunction("intDiv",
-                    makeASTFunction("toYear", expr),
-                    make_intrusive<ASTLiteral>(UInt64(10)));
-            case ExtractUnit::Millennium:
-                /// millennium = (year - 1) / 1000 + 1
-                return makeASTFunction("plus",
-                    makeASTFunction("intDiv",
-                        makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
-                        make_intrusive<ASTLiteral>(UInt64(1000))),
-                    make_intrusive<ASTLiteral>(UInt64(1)));
-            case ExtractUnit::None:
-                UNREACHABLE();
-        }
-    }
 };
 
 class SubstringLayer : public Layer
@@ -1897,17 +1813,8 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Trimming an empty string is a no-op. (shortcut that works when we supply an empty string as the first argument)
-                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
-                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
-                {
-                    noop = true;
-                }
-                else
-                {
-                    to_remove = std::move(elements[0]);
-                    elements.clear();
-                }
+                to_remove = std::move(elements[0]);
+                elements.clear();
 
                 state = 2;
             }
@@ -1926,10 +1833,6 @@ public:
                 if (!mergeElement())
                     return false;
 
-                if (noop)
-                {
-                    /// The operation does nothing.
-                }
                 if (trim_left && trim_right)
                     function_name = "trimBoth";
                 else if (trim_left)
@@ -1951,10 +1854,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (noop)
-            node = std::move(elements.at(1));
-        else
-            node = makeASTFunction(function_name, std::move(elements));
+        node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -1962,7 +1862,6 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
-    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;
@@ -2600,6 +2499,7 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Callers downcast the result without checking, so a layer must build a function, never reduce to an operand.
     ASTPtr identifier;
 
     if (ParserFunctionName().parse(pos, identifier, expected)

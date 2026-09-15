@@ -146,9 +146,13 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     ///
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
-    if (index->isVectorSimilarityIndex())
+    /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
+    /// Such parts will be removed soon and caching them is wasteful.
+    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
+    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
+    if (index->isVectorSimilarityIndex() && part->getState() == MergeTreeDataPartState::Active)
     {
-        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getDiskName() + ":" + part->getDataPartStorage().getFullPath(),
+        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getDiskName() + ":" + part->getRelativePathOfActivePart(),
                                           index->getFileName(),
                                           mark};
 

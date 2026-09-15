@@ -823,6 +823,7 @@ Number of buckets `N` is controlled by MergeTree settings [object_shared_data_bu
 ../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_compact_part) (8 by default)
 and [object_shared_data_buckets_for_wide_part](
 ../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_wide_part) (32 by default).
+The maximum allowed value for both settings is 256.
 
 #### Advanced {#shared-data-advanced}
 

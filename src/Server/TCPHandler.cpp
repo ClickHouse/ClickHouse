@@ -10,6 +10,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -48,6 +49,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -126,6 +128,7 @@ namespace ServerSetting
     extern const ServerSettingsBool process_query_plan_packet;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 namespace FailPoints
@@ -354,6 +357,11 @@ void TCPHandler::runImpl()
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
 
+    /// Limit the total wall-clock time for the handshake phase to prevent
+    /// slowloris-style attacks from holding a thread indefinitely.
+    UInt64 handshake_timeout_ms = server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds];
+    in->setHandshakeTimeout(handshake_timeout_ms);
+
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
         return;
@@ -382,6 +390,8 @@ void TCPHandler::runImpl()
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
+
+        in->clearHandshakeTimeout();
 
         {
             /// Server side of chunked protocol negotiation.
@@ -1096,7 +1106,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            processUnexpectedData();
+            /// The payload is deliberately left unread: nothing consumes it here (the connection
+            /// closes with no reply), and in interserver mode the connection is not authenticated
+            /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::Ping:
@@ -1372,13 +1390,25 @@ void TCPHandler::processInsertQuery(QueryState & state)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
 
-                result.future.get();
+                auto progress_result = result.future.get();
+
+                /// Report the written rows/bytes as progress so that the client
+                /// and query_log reflect the actual insert stats.
+                if (auto process_list_elem = state.query_context->getProcessListElement())
+                {
+                    process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
+                    process_list_elem->updateProgressIn(Progress(ReadProgress(progress_result.rows, progress_result.bytes)));
+                }
             }
 
-            std::lock_guard lock(*callback_mutex);
-            sendInsertProfileEvents(state);
+            {
+                std::lock_guard lock(*callback_mutex);
+                if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
+                    sendProgress(state);
+                sendInsertProfileEvents(state);
+            }
             return;
         }
         if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
@@ -1433,14 +1463,12 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
-                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (stop_read_return_partial_result)
+                if (state.stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1592,7 +1620,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1602,7 +1630,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1849,6 +1877,11 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 }
 
 
+/// Maximum size of a string field during the Hello handshake.
+/// Applied before authentication to prevent unauthenticated clients
+/// from consuming excessive memory. See #52501.
+static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -1875,16 +1908,16 @@ void TCPHandler::receiveHello()
                                "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
-    readStringBinary(client_name, *in);
+    readStringBinary(client_name, *in, MAX_HELLO_STRING_SIZE);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_db, *in);
+    readStringBinary(default_db, *in, MAX_HELLO_STRING_SIZE);
     if (!default_db.empty())
         default_database = default_db;
-    readStringBinary(user, *in);
-    readStringBinary(password, *in);
+    readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
     if (user.empty())
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
@@ -1984,7 +2017,7 @@ void TCPHandler::receiveHello()
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeResponse)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
-        readStringBinary(signature, *in);
+        readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
 
         auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
         {
@@ -2009,15 +2042,15 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
-        readStringBinary(quota_key, *in);
+        readStringBinary(quota_key, *in, MAX_HELLO_STRING_SIZE);
 
     if (!is_interserver_mode)
         session->setQuotaClientKey(quota_key);
 
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
     {
-        readStringBinary(proto_send_chunked_cl, *in);
-        readStringBinary(proto_recv_chunked_cl, *in);
+        readStringBinary(proto_send_chunked_cl, *in, MAX_HELLO_STRING_SIZE);
+        readStringBinary(proto_recv_chunked_cl, *in, MAX_HELLO_STRING_SIZE);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
@@ -2030,13 +2063,13 @@ void TCPHandler::processUnexpectedHello()
     UInt64 skip_uint_64;
     String skip_string;
 
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
-    readStringBinary(skip_string, *in);
-    readStringBinary(skip_string, *in);
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
@@ -2171,7 +2204,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 
 void TCPHandler::processClusterNameAndSalt()
 {
-    readStringBinary(cluster, *in);
+    readStringBinary(cluster, *in, MAX_HELLO_STRING_SIZE);
     readStringBinary(salt, *in, 32);
 }
 
@@ -2187,7 +2220,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (part_uuids_to_ignore.has_value())
         state->part_uuids_to_ignore = std::move(part_uuids_to_ignore);
 
-    readStringBinary(state->query_id, *in);
+    readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
     /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
@@ -2277,7 +2310,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        std::string data(salt);
+        /// `StringWithMemoryTracking` so the duplicate of the (potentially
+        /// large) query body that the hash needs goes through the throwing
+        /// memory-tracker path. With a plain `std::string` the append below
+        /// would allocate through `allocNoThrow` and could push the server
+        /// past `max_server_memory_usage` without throwing.
+        StringWithMemoryTracking data(salt);
         // For backward compatibility
         if (nonce.has_value())
             data += std::to_string(nonce.value());
@@ -2523,6 +2561,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+
+        /// The block is self-describing and comes from the client, while the schema of an external table
+        /// is bound once, by its first block (see the branch above). Every block after that one must match
+        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// and `MemorySink::consume` labels them with the table header again. A block declaring other
+        /// types would therefore not be rejected anywhere, and its data would later be read as the type
+        /// the header names - a type confusion on data the client controls, not a data error.
+        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Structure of the block for external table {} does not match the structure of the table. "
+                "Received:\n{}\nExpected:\n{}",
+                backQuoteIfNeed(temporary_id.table_name),
+                block.dumpStructure(),
+                metadata_snapshot->getSampleBlock().dumpStructure());
+
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);

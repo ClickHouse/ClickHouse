@@ -15,6 +15,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
@@ -41,6 +42,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -196,7 +198,13 @@ protected:
         context->applySettingsChanges(settings_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-        context->setCurrentQueryId(params->get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+        String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+        /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+        /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+        std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+        context->setCurrentQueryId(query_id);
     }
 
     void onException() override
@@ -314,7 +322,8 @@ public:
         response.set("Content-Encoding", "snappy");
 
         ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+        if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
         zero_copy_output_stream.finalize();
 
 #else

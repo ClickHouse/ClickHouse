@@ -681,44 +681,6 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
     return false;
 }
 
-/// Resolve NATURAL JOIN by computing the intersection of column names from both sides
-/// and populating `using_expression_list` in the AST. Must be called before translateQualifiedNames
-/// so that SELECT * column deduplication works correctly.
-void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tables)
-{
-    if (!table_join.is_natural)
-        return;
-
-    chassert(tables.size() >= 2);
-
-    NameSet right_col_names;
-    for (const auto & col : tables[1].columns)
-        right_col_names.insert(col.name);
-
-    auto using_list = make_intrusive<ASTExpressionList>();
-    NameSet seen;
-    for (const auto & col : tables[0].columns)
-    {
-        /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-        if (col.name.find('.') != std::string::npos)
-            continue;
-        if (right_col_names.contains(col.name) && seen.insert(col.name).second)
-            using_list->children.push_back(make_intrusive<ASTIdentifier>(col.name));
-    }
-
-    if (using_list->children.empty())
-    {
-        /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
-        table_join.kind = JoinKind::Cross;
-        table_join.is_natural = false;
-        return;
-    }
-
-    table_join.using_expression_list = std::move(using_list);
-    table_join.children.push_back(table_join.using_expression_list);
-    table_join.is_natural = false; /// Clear flag so re-formatted AST outputs standard USING, not NATURAL JOIN
-}
-
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
@@ -842,7 +804,11 @@ void expandGroupByAll(ASTSelectQuery * select_query)
 
 void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
 {
-    auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+    const auto & order_by = select_query->orderBy();
+    if (!order_by || order_by->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
+
+    auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
     if (!all_elem)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
 
@@ -1402,16 +1368,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix(), columns_from_left_table);
     }
 
-    /// Resolve NATURAL JOIN to USING before column name qualification and SELECT * expansion.
-    if (tables_with_columns.size() >= 2)
-    {
-        if (const auto * join_element = select_query->join())
-        {
-            if (auto * natural_join_ast = join_element->table_join->as<ASTTableJoin>())
-                resolveNaturalJoin(*natural_join_ast, tables_with_columns);
-        }
-    }
-
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
     /// Optimizes logical expressions.
@@ -1444,7 +1400,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             /// back to an ordinary ORDER BY with `all` as a column reference.
             /// Replace the child with a fresh identifier AFTER normalization so that it
             /// refers to the table column named "all", not to any alias.
-            auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+            const auto & order_by = select_query->orderBy();
+            if (!order_by || order_by->children.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
+
+            auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
             all_elem->children[0] = make_intrusive<ASTIdentifier>("all");
             select_query->order_by_all = false;
         }

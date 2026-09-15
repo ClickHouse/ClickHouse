@@ -202,8 +202,8 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     {
         if (target.is_inner_table && DatabaseCatalog::instance().tryGetTable(target.table_id, getContext()))
         {
-            /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
-            /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
+            /// DDLGuards must be locked in order of increasing table name, so the inner guard
+            /// may be requested only when this table's name sorts first.
             bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target.table_id.getQualifiedName();
             InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target.table_id,
                                                 sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);

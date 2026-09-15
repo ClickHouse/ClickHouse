@@ -21,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -191,6 +191,10 @@ private:
 using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
+
+
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
 
 
 /// Class for checkInRange function.

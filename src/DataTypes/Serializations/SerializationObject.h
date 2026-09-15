@@ -121,6 +121,8 @@ public:
     const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
     const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
 
+    static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
+
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
@@ -130,7 +132,7 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         SerializationVersion serialization_version;
-        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
         SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
         size_t shared_data_buckets = 1;
@@ -169,8 +171,6 @@ private:
 
 protected:
     bool shouldSkipPath(const String & path) const;
-
-    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;

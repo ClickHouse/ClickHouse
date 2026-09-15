@@ -18,6 +18,7 @@
 #include <Common/PODArray.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -151,6 +152,38 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
+{
+    /// An empty selector means the block was not split (single partition); with dedup off or a
+    /// single token there is nothing to attribute. Every token then belongs to this partition.
+    if (disabled || row_to_partition.empty() || getCount() <= 1)
+        return cloneSelf();
+
+    /// Keep only tokens that have at least one row in this partition.
+    std::set<size_t> absent_offsets;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        bool present = false;
+        for (size_t row = getTokenBegin(i); row < getTokenEnd(i); ++row)
+        {
+            if (row_to_partition[row] == partition_index)
+            {
+                present = true;
+                break;
+            }
+        }
+        if (!present)
+            absent_offsets.insert(i);
+    }
+
+    if (absent_offsets.empty())
+        return cloneSelf();
+
+    /// filterImpl drops the absent tokens and keeps the block/offsets consistent.
+    return filterImpl(absent_offsets).deduplication_info;
+}
+
+
 DeduplicationInfo::FilterResult DeduplicationInfo::recalculateBlock(DeduplicationInfo::FilterResult && filtered, const std::string & partition_id, ContextPtr context) const
 {
     if (filtered.removed_rows == 0)
@@ -176,12 +209,10 @@ std::set<size_t> DeduplicationInfo::filterSelf(const String & partition_id) cons
     if (getCount() <= 1)
         return {};
 
-    auto block_id_to_offsets = buildBlockIdToOffsetsMap(partition_id);
-
     std::set<size_t> fitered_offsets;
     /// fitered_offsets will contain all but first offsets for each block id
     /// so that only first occurrence of each block id will remain
-    for (auto & [_, block_offsets] : block_id_to_offsets)
+    for (const auto & [_, block_offsets] : buildOffsetsMapImpl(partition_id))
     {
         if (block_offsets.size() > 1)
             fitered_offsets.insert(block_offsets.begin() + 1, block_offsets.end());
@@ -335,7 +366,7 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
 }
 
 
-UInt128 DeduplicationInfo::calculateDataHash(size_t offset, const Block & block) const
+UInt128 DeduplicationInfo::calculateDataHashRowWise(size_t offset, const Block & block) const
 {
     chassert(offset < offsets.size());
 
@@ -358,6 +389,27 @@ UInt128 DeduplicationInfo::calculateDataHash(size_t offset, const Block & block)
     return tokens[offset].data_hash.value();
 }
 
+UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Block & block) const
+{
+    chassert(offset < offsets.size());
+
+    if (tokens[offset].data_hash_batch.has_value())
+        return tokens[offset].data_hash_batch.value();
+
+    chassert(block.rows() == getRows());
+
+    auto cols = block.getColumns();
+
+    SipHash hash;
+    size_t begin = getTokenBegin(offset);
+    size_t end = getTokenEnd(offset);
+    for (const auto & col : cols)
+        col->updateHashWithValueRange(begin, end, hash);
+
+    tokens[offset].data_hash_batch = hash.get128();
+    return tokens[offset].data_hash_batch.value();
+}
+
 
 DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const std::string & partition_id) const
 {
@@ -373,7 +425,7 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
     }
     else
     {
-        auto data_hash = calculateDataHash(offset, *original_block);
+        auto data_hash = calculateDataHashColumnWise(offset, *original_block);
         extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
     }
 
@@ -399,6 +451,26 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
 }
 
 
+std::vector<std::pair<UInt128, std::vector<size_t>>> DeduplicationInfo::buildOffsetsMapImpl(const std::string & partition_id) const
+{
+    /// (hash, offset) pairs sorted by hash, then offset; runs of equal hashes are the groups.
+    std::vector<std::pair<UInt128, size_t>> sorted;
+    sorted.reserve(offsets.size());
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+        sorted.emplace_back(getBlockUnifiedHash(offset, partition_id).hash, offset);
+    std::sort(sorted.begin(), sorted.end());
+
+    std::vector<std::pair<UInt128, std::vector<size_t>>> result;
+    for (const auto & [hash, offset] : sorted)
+    {
+        if (result.empty() || result.back().first != hash)
+            result.emplace_back(hash, std::vector<size_t>{});
+        result.back().second.push_back(offset);
+    }
+    return result;
+}
+
+
 DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::string & partition_id) const
 {
     // if user token is empty we calculate by_data_hash
@@ -406,7 +478,7 @@ DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::stri
     if (token.empty())
     {
         chassert(level == Level::SOURCE);
-        token.by_part_writer = calculateDataHash(offset, *original_block);
+        token.by_part_writer = calculateDataHashRowWise(offset, *original_block);
     }
 
     if (token.by_part_writer.has_value() && level == Level::SOURCE)
@@ -504,7 +576,27 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
             result.push_back(std::move(block_hash));
     }
 
+    /// Release block columns now that all hashes are cached.
+    /// The block data is no longer needed — hashes are stored in tokens.
+    /// This restores the memory optimization that was previously done eagerly in updateOriginalBlock.
+    if (!is_async_insert && getCount() == 1 && original_block && original_block->rows() > 0)
+        original_block = std::make_shared<Block>(original_block->cloneEmpty());
+
     return result;
+}
+
+
+void DeduplicationInfo::prewarmDataHashes() const
+{
+    if (!original_block || !original_block->rows())
+        return;
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (!tokens[i].by_user.empty())
+            continue;
+        calculateDataHashColumnWise(i, *original_block);
+    }
 }
 
 
@@ -664,7 +756,7 @@ void DeduplicationInfo::setPartWriterHashes(const std::vector<UInt128> & partiti
 /// It is to define data hash for the chunk if it was not defined before by user token or part writer token
 /// that happens in the case when target table has storage null and dependent views have storage with non-null,
 /// so we cannot use part writer token as user token for dependent views, we have to calculate data hash
-void DeduplicationInfo::redefineTokensWithDataHash(const Block & block)
+void DeduplicationInfo::redefineTokensWithDataHash(const Block & /*block*/)
 {
     LOG_TEST(logger, "redefineTokensWithDataHash, debug: {}", debug());
 
@@ -673,26 +765,13 @@ void DeduplicationInfo::redefineTokensWithDataHash(const Block & block)
 
     chassert(original_block);
 
-    if (!is_async_insert && getCount() == 1)
-    {
-        chassert(original_block->rows() == 0);
-        /// we have optimized case for one token, empty block are stored in original_block
-        /// but we have columns in the chunk to calculate hash, so we can calculate data hash for the token if it is not set before
-        if (tokens[0].empty())
-        {
-            // when migration has been started, data_hash is set in `updateOriginalBlock` method
-            chassert(unification_stage == InsertDeduplicationVersions::OLD_SEPARATE_HASHES || tokens[0].data_hash.has_value());
-            [[maybe_unused]] auto unused = calculateDataHash(0, block);
-        }
-    }
-
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         auto & token = tokens[i];
         if (token.empty())
         {
             /// calculate tokens from data
-            token.by_part_writer = calculateDataHash(i, *original_block);
+            token.by_part_writer = calculateDataHashRowWise(i, *original_block);
         }
     }
 }
@@ -902,33 +981,10 @@ void DeduplicationInfo::updateOriginalBlock(const Chunk & chunk, SharedHeader he
         return;
     }
 
-    if (!is_async_insert && getCount() == 1)
-    {
-        /// In this case we can omit original block rows to save memory
-        /// if there is a duplicate is found in the original block then we tottaly filter out all rows in the block and original block will be not used at all
-
-        /// but we still need the original blocks data hash, lets calculate it here when we have all information about the block,
-        /// so we can use it for deduplication later in the pipeline
-
-        if (unification_stage != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
-        {
-            auto block = header->cloneWithColumns(chunk.getColumns());
-            /// it is enough to call calculateDataHash for one of tokens, the hash would be saved for this token in `data_hash` field and used later for deduplication
-            [[maybe_unused]] auto unused = calculateDataHash(0, block);
-            LOG_TEST(
-                logger,
-                "Calculated data hash for the original block with cols/rows: {}/{} in updateOriginalBlock and omit the original block, debug: {}",
-                block.columns(),
-                block.rows(),
-                debug());
-        }
-
-        // still we still need the header of the original block for correct work of some functions like filter
-        original_block = std::make_shared<Block>(header->cloneEmpty());
-
-        return;
-    }
-
+    /// Store the block with columns for lazy hash computation.
+    /// The data hash will be calculated on demand when getBlockHash/getBlockUnifiedHash
+    /// is called (e.g. in the sink), avoiding redundant recomputation during squashing.
+    /// The columns are COW-shared with the chunk, so this does not increase memory usage.
     original_block = std::make_shared<Block>(header->cloneWithColumns(chunk.getColumns()));
 
 }
@@ -1303,6 +1359,7 @@ void DeduplicationInfo::TokenDefinition::doExtend(const TokenDefinition & right)
         return;
 
     data_hash.reset(); // invalidate data hash as token is changed
+    data_hash_batch.reset();
 
     // type is equal but values are different
     switch (left_last_extra.type)

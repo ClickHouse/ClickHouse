@@ -29,7 +29,7 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
+    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
@@ -297,11 +297,12 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
     AMD_BINARY = "amd_binary"
-    AMD_ASAN_UBSAN = "amd_asan_ubsan"
+    AMD_ASAN = "amd_asan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
+    AMD_UBSAN = "amd_ubsan"
     ARM_RELEASE = "arm_release"
-    ARM_ASAN_UBSAN = "arm_asan_ubsan"
+    ARM_ASAN = "arm_asan"
     ARM_TSAN = "arm_tsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
     AMD_COVERAGE = "amd_coverage"
@@ -378,12 +379,13 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
-    CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
+    CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
+    CH_AMD_UBSAN = "CH_AMD_UBSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
-    CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
+    CH_ARM_ASAN = "CH_ARM_ASAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
@@ -401,18 +403,20 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
-    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
+    UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
+    UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
+    DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAN = "DEB_AMD_MSAM"
+    DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
+    DEB_ARM_ASAN = "DEB_ARM_ASAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -430,6 +434,26 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 5
+# Batch count of the two ASan integration-test flavors, which run the whole integration suite
+# on `AMD_MEDIUM` with three xdist workers against a two-hour pytest `--session-timeout`.
+#
+# Eight, not six: the suite measures about 112000 test-seconds, so six batches put the heaviest
+# shard at 119.7 of the 120 available minutes - no margin at all, however well they are
+# balanced - and `amd_asan_ubsan, db disk, old analyzer` timed out 133 times in the three weeks
+# after it went to six. Eight brings the heaviest shard to 82 minutes, 68% of the budget.
+#
+# Batches are the right lever rather than a longer timeout: the aggregate compute is unchanged,
+# since the work is the same and only the parallelism differs, so the only cost is one more
+# per-batch setup - and the job gets its answer 25% sooner.
+#
+# Both flavors must keep the same count: they run the same suite with the same worker count
+# against the same budget, so a count that does not fit one does not fit the other.
+#
+# To re-measure, score the packing of `get_optimal_test_batch` against per-module
+# `sum(test_duration_ms)` from CIDB rather than against its own `TEST_DURATIONS` table - that
+# table currently sums to 97000 test-seconds against a measured 112000, so it reports every
+# shard as evenly packed while the measured spread across six is 1.24.
+ASAN_IT_NUM_BATCHES = 8
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -461,12 +485,13 @@ LLVM_ARTIFACTS_LIST = (
 BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_AMD_DEBUG,
     ArtifactNames.CH_AMD_RELEASE,
-    ArtifactNames.CH_AMD_ASAN_UBSAN,
+    ArtifactNames.CH_AMD_ASAN,
     ArtifactNames.CH_AMD_TSAN,
     ArtifactNames.CH_AMD_MSAN,
+    ArtifactNames.CH_AMD_UBSAN,
     ArtifactNames.CH_AMD_BINARY,
     ArtifactNames.CH_ARM_RELEASE,
-    ArtifactNames.CH_ARM_ASAN_UBSAN,
+    ArtifactNames.CH_ARM_ASAN,
     ArtifactNames.CH_ARM_TSAN,
 ]
 
@@ -481,12 +506,13 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_DEBUG,
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
-            ArtifactNames.CH_AMD_ASAN_UBSAN,
+            ArtifactNames.CH_AMD_ASAN,
             ArtifactNames.CH_AMD_TSAN,
             ArtifactNames.CH_AMD_MSAN,
+            ArtifactNames.CH_AMD_UBSAN,
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
-            ArtifactNames.CH_ARM_ASAN_UBSAN,
+            ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
@@ -524,11 +550,12 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
             ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN_UBSAN,
+            ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAN,
+            ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_ASAN_UBSAN,
+            ArtifactNames.DEB_ARM_ASAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(
@@ -558,9 +585,10 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
+            ArtifactNames.UNITTEST_AMD_ASAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_AMD_UBSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )

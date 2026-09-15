@@ -1,6 +1,5 @@
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
-SET optimize_group_by_function_keys = 1;
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=Memory;
 
@@ -11,16 +10,12 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 SELECT
     REGEXP_REPLACE(
         REGEXP_REPLACE(
-            REGEXP_REPLACE(
-                explain,
-                '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
-                '_temporary_and_external_tables._tmp_UNIQ_ID'
-            ),
-            '_materialized_cte_\\w+\\_\\w+',
-            '_materialized_cte_UNIQ_ID'
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
         ),
-        '(\\bid|source_id): \\d+',
-        '\\1: N'
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
     )
 FROM
 (
@@ -34,16 +29,12 @@ FROM
 SELECT
     REGEXP_REPLACE(
         REGEXP_REPLACE(
-            REGEXP_REPLACE(
-                explain,
-                '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
-                '_temporary_and_external_tables._tmp_UNIQ_ID'
-            ),
-            '_materialized_cte_\\w+\\_\\w+',
-            '_materialized_cte_UNIQ_ID'
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
         ),
-        '(\\bid|source_id): \\d+',
-        '\\1: N'
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
     )
 FROM
 (
@@ -56,16 +47,12 @@ FROM
 SELECT
     REGEXP_REPLACE(
         REGEXP_REPLACE(
-            REGEXP_REPLACE(
-                explain,
-                '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
-                '_temporary_and_external_tables._tmp_UNIQ_ID'
-            ),
-            '_materialized_cte_\\w+\\_\\w+',
-            '_materialized_cte_UNIQ_ID'
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
         ),
-        '(\\bid|source_id): \\d+',
-        '\\1: N'
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
     )
 FROM
 (

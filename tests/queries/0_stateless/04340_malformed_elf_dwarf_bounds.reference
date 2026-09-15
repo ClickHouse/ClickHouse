@@ -1,0 +1,4 @@
+overflow_shoff: rejected
+overflow_phoff: rejected
+too_small: rejected
+no_sections: rejected

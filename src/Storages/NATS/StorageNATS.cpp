@@ -280,11 +280,40 @@ void StorageNATS::initializeConsumersFunc()
 
 void StorageNATS::createConsumersConnection()
 {
+    /// The NATS client library closes a connection for good once the server has rejected the same
+    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
+    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
+    /// the table would stay silently idle until it is detached and attached again.
+    if (consumers_connection && consumers_connection->isClosed())
+    {
+        /// The table name is in the logger. The error handler of the client library reports the
+        /// rejected credentials too, but it knows only the connection, so this is the line which
+        /// tells an operator which table lost its connection and why.
+        LOG_WARNING(
+            log,
+            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
+            consumers_connection->connectionInfoForLog(),
+            consumers_connection->lastErrorForLog());
+
+        dropConsumers();
+        consumers_connection.reset();
+    }
+
     if (consumers_connection)
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
+}
+
+void StorageNATS::dropConsumers()
+{
+    unsubscribeConsumers();
+
+    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
+    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
+    for (size_t i = 0; i < num_consumers_to_drop; ++i)
+        popConsumer();
 }
 
 void StorageNATS::createConsumers()
@@ -479,8 +508,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-            unsubscribeConsumers();
+        unsubscribeConsumers();
 
         if (consumers_connection)
         {
@@ -601,12 +629,52 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
-    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
+    // Check if all dependencies are attached
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
+        return false;
+
+    // Check the dependencies are ready?
+    for (const auto & view_id : view_ids)
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+    }
+
+    return true;
 }
 
 void StorageNATS::streamingToViewsFunc()
 {
     auto table_id = getStorageID();
+
+    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
+    /// so build a new connection and new consumers here. Only the connection and the consumers:
+    /// the new consumers subscribe below, once the connection is up, the same way as for any other
+    /// cycle whose consumers are not subscribed.
+    ///
+    /// No connection at all means a previous attempt dropped the closed one and then failed to
+    /// connect, so try again.
+    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
+    {
+        try
+        {
+            createConsumersConnection();
+            createConsumers();
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
+    }
 
     bool consumers_queues_are_empty = false;
 
@@ -614,6 +682,17 @@ void StorageNATS::streamingToViewsFunc()
     {
         if (consumers_connection && consumers_connection->isConnected())
         {
+            /// The consumers which replaced the ones of a closed connection are not subscribed:
+            /// `initializeConsumersFunc` subscribes only once, on the way to the first cycle.
+            /// Without a standing subscription every cycle would subscribe through `NATSSource`
+            /// and unsubscribe at its end, a window too short for the broker to deliver anything.
+            if (!consumers_ready && !subscribeConsumers())
+            {
+                unsubscribeConsumers();
+                streaming_task->scheduleAfter(RESCHEDULE_MS);
+                return;
+            }
+
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);

@@ -11,6 +11,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
@@ -149,6 +150,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     std::lock_guard lock(mutex);
 
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+
+    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
+    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
+    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+        return;
+
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
@@ -241,10 +248,6 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
-    if (type_name == f_timestamp_ns)
-        return std::make_shared<DataTypeDateTime64>(9);
-    if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_uuid)
@@ -271,6 +274,9 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
+    /// The schema comes from the table metadata and can be nested arbitrarily deeply.
+    checkStackSize();
+
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {

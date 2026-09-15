@@ -96,8 +96,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
@@ -216,6 +214,28 @@ private:
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
+
+    /// Result of `prepareMutationEntry`. Holds the block-number reservation
+    /// that must outlive the call to `addPreparedMutationEntry`.
+    struct PreparedMutationEntry
+    {
+        MergeTreeMutationEntry entry;
+        Int64 version;
+        String mutation_id;
+        String additional_info;
+        std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+    };
+
+    /// Allocate a block number, build the mutation entry, and commit it to disk.
+    /// Touches no state guarded by `currently_processing_in_background_mutex`, so
+    /// it is safe to call without that lock. The result must subsequently be
+    /// passed to `addPreparedMutationEntry` under the mutex.
+    PreparedMutationEntry prepareMutationEntry(const MutationCommands & commands, ContextPtr query_context);
+
+    /// Register a prepared mutation in `current_mutations_by_version` and
+    /// increment `mutation_counters`. Caller must hold
+    /// `currently_processing_in_background_mutex`.
+    void addPreparedMutationEntry(PreparedMutationEntry prepared);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -297,7 +317,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

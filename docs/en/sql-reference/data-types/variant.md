@@ -558,3 +558,32 @@ The result type depends on what the function returns for each variant:
 TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like 
 division by zero or out of memory are raised normally to prevent silently hiding real problems.
 :::
+
+### Type mismatch behavior {#variant-type-mismatch-behavior}
+
+The setting `variant_throw_on_type_mismatch` controls what happens when a function is applied to a `Variant` column and the actual stored type of a row is incompatible with the function:
+
+- `true` (default) — throw an exception (`ILLEGAL_TYPE_OF_ARGUMENT`) on the first incompatible row.
+- `false` — return `NULL` for incompatible rows and keep the result for compatible rows.
+
+**Example:**
+
+```sql
+CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO test VALUES ('hello'), (42), ('foo');
+
+-- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
+SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+
+-- With throw disabled: incompatible rows return NULL.
+SET variant_throw_on_type_mismatch = false;
+SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
+```
+
+```text
+┌─v─────┬─length(v)─┐
+│ foo   │         3 │
+│ hello │         5 │
+│ 42    │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
+```

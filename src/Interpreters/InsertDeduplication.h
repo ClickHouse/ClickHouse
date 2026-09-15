@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Core/Block_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 #include <Common/Logger.h>
 #include <base/defines.h>
@@ -67,6 +68,8 @@ protected:
     friend class InsertDependenciesBuilder;
     /// src/Storages/MergeTree/tests/gtest_async_inserts.cpp
     friend std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes);
+    friend std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes);
+    friend std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<size_t> offsets);
 
 public:
     using Ptr = std::shared_ptr<DeduplicationInfo>;
@@ -94,7 +97,11 @@ public:
     FilterResult deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const;
     FilterResult deduplicateBlock(const std::vector<std::string> & existing_block_ids, const std::string & partition_id, ContextPtr context) const;
 
+    Ptr filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const;
+
     std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
+
+    void prewarmDataHashes() const;
 
     size_t getCount() const;
     size_t getRows() const;
@@ -126,7 +133,11 @@ public:
 private:
     DeduplicationInfo(bool async_insert_, InsertDeduplicationVersions unification_stage_);
 
-    UInt128 calculateDataHash(size_t offset, const Block & block) const;
+    /// Row-major hash: for each row, hash all columns. Used by the old compatibility path.
+    UInt128 calculateDataHashRowWise(size_t offset, const Block & block) const;
+    /// Column-major hash: for each column, hash the row range. Used by the unified path.
+    /// Produces a different hash than row-wise for the same data.
+    UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
     // the old one hash
     DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
     // the new unified hash
@@ -149,6 +160,7 @@ private:
     size_t getTokenEnd(size_t pos) const;
     size_t getTokenRows(size_t pos) const;
 
+    std::vector<std::pair<UInt128, std::vector<size_t>>> buildOffsetsMapImpl(const std::string & partition_id) const;
     std::unordered_map<std::string, std::vector<size_t>> buildBlockIdToOffsetsMap(const std::string & partition_id) const;
 
     enum class Level
@@ -180,6 +192,7 @@ private:
         std::optional<UInt128> by_part_writer;
 
         std::optional<UInt128> data_hash;
+        std::optional<UInt128> data_hash_batch;
 
         struct Extra
         {
@@ -226,7 +239,8 @@ private:
     mutable std::vector<TokenDefinition> tokens;
     std::vector<size_t> offsets; // points to the last row for each offset
 
-    std::shared_ptr<Block> original_block;
+    /// Mutable because getDeduplicationHashes releases columns after caching all hashes.
+    mutable std::shared_ptr<Block> original_block;
     StorageIDMaybeEmpty original_block_view_id;
 
     std::vector<StorageIDMaybeEmpty> visited_views;

@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import json
-import os
 import time
 import urllib
 from typing import List, Optional
@@ -272,7 +271,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data="\n".join(jsons),
+                    data=",".join(jsons),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

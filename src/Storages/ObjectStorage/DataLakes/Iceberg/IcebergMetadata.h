@@ -44,8 +44,8 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        Iceberg::PersistentTableComponents && persistent_components_,
-        ContextPtr context_);
+        const ContextPtr & context_,
+        IcebergMetadataFilesCachePtr cache_ptr);
 
     ~IcebergMetadata() override;
 
@@ -78,9 +78,7 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        Iceberg::IcebergSchemaProcessor & schema_processor,
-        LoggerPtr metadata_logger);
+        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -147,12 +145,8 @@ public:
     void drop(ContextPtr context) override;
 
 private:
-    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        IcebergMetadataFilesCachePtr cache_ptr,
-        ContextPtr context_,
-        LoggerPtr log);
+    Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -168,7 +162,7 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    const DB::Iceberg::PersistentTableComponents persistent_components;
+    DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

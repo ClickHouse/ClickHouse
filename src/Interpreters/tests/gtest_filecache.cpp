@@ -22,6 +22,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -68,6 +69,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 void printRanges(const auto & segments)
@@ -355,14 +357,19 @@ public:
             fs::remove_all(cache_base_path);
         if (fs::exists(cache_base_path2))
             fs::remove_all(cache_base_path2);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
         fs::create_directories(cache_base_path);
         fs::create_directories(cache_base_path2);
+        fs::create_directories(cache_base_path3);
     }
 
     void TearDown() override
     {
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
     }
 
     pcg64 rng;
@@ -1442,6 +1449,98 @@ TEST_F(FileCacheTest, SLRUPolicy)
     }
 }
 
+TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
+{
+    /// Test that SLRU dynamic resize correctly evicts from both sub-queues
+    /// after the per-queue stat fix.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    auto write_file = [](const std::string & filename, const std::string & s)
+    {
+        std::string file_path = fs::current_path() / filename;
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(s.data(), s.size());
+        wb->next();
+        wb->finalize();
+        return file_path;
+    };
+
+    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5
+    /// So protected = 15 bytes / 3 elements, probationary = 15 bytes / 3 elements.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_resize", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
+    {
+        auto read_buffer_creator = [&]()
+        {
+            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
+        };
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file, key, cache, user, read_buffer_creator, read_settings,
+            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), expect_result);
+    };
+
+    /// Read file1 twice -> 15 bytes in protected (3 segs x 5)
+    std::string data1(15, '*');
+    auto file1 = write_file("test_resize1", data1);
+    auto key1 = DB::FileCacheKey::fromPath(file1);
+    read_and_check(file1, key1, data1);
+    read_and_check(file1, key1, data1);
+
+    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Read file2 once -> 10 bytes in probationary (2 segs x 5)
+    std::string data2(10, '+');
+    auto file2 = write_file("test_resize2", data2);
+    auto key2 = DB::FileCacheKey::fromPath(file2);
+    read_and_check(file2, key2, data2);
+
+    assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
+    ASSERT_EQ(cache->getUsedCacheSize(), 25);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 5);
+
+    /// Resize to max_size=8, max_elements=6.
+    /// Protected limit = 4, probationary limit = 4.
+    /// Both queues need eviction. Without the fix, the protected pass
+    /// would short-circuit and modifySizeLimits would throw LOGICAL_ERROR.
+    DB::FileCacheSettings new_settings = settings;
+    new_settings[FileCacheSetting::max_size] = 8;
+    DB::FileCacheSettings actual_settings = settings;
+
+    /// Must not throw -- this is the core regression test for the bug.
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+    /// Verify limits were applied.
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 8);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_elements].value, 6);
+
+    /// Verify cache usage is within new limits.
+    ASSERT_LE(cache->getUsedCacheSize(), 8);
+    ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
 TEST_F(FileCacheTest, FileCacheGetOrSet)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1623,4 +1722,134 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     priority.resetEvictionPos();
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
+    /// releases its query context, but a concurrent holder for the same query_id revives the
+    /// context first. The release must then be a no-op: the revived context must survive (so the
+    /// per-query download limit keeps being enforced for the rest of the query) and a later release
+    /// of the revived context must not fail with "Attempt to release query context that does not exist".
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    ReadSettings read_settings;
+    read_settings.filesystem_cache_max_download_size = 1024;
+
+    /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    /// holder2 revives the same context before holder1 releases (getOrSetQueryContext returns the
+    /// existing entry). Now query_map, holder1 and holder2 all reference it (use_count == 3).
+    auto context2 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// holder1 releases. The map still maps query_id to the live context and another holder is
+    /// alive, so the entry must be kept (no erase, no throw) and nothing is handed back for
+    /// destruction.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    context1.reset();
+
+    /// Enforcement is preserved: the revived context is still discoverable.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), context2.get());
+    }
+
+    /// holder2 is now the last holder; releasing it actually removes the entry, once, and hands the
+    /// orphaned context back so it is destroyed by the caller outside the cache lock.
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    context2.reset();
+
+    /// After full release the context is gone.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    /// Regression for #109508: two holders for the same query_id release "at the same time".
+    /// A query with parallel read streams has several holders (each CachedOnDiskReadBufferFromFile
+    /// creates its own), so use_count is > 2. If the last-holder decision reads use_count before this
+    /// holder drops its own reference (or drops it outside the lock), both releasers observe the shared
+    /// count, both skip the erase, and after both drop their reference only the map entry remains and is
+    /// never removed. That orphans query_map[query_id] for the lifetime of the cache and lets a later
+    /// query reusing the same query_id pick up stale per-query limit state. The fix drops each holder's
+    /// reference under the lock and erases once the map entry is the sole owner.
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    ReadSettings read_settings;
+    read_settings.filesystem_cache_max_download_size = 1024;
+
+    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// Keep a raw pointer to assert which release actually surrenders the context for destruction.
+    const auto * context_raw = context1.get();
+
+    /// Both holders decide to release while both are still alive (the interleaving that leaks): each
+    /// removeQueryContext drops that holder's reference under the lock. The first keeps the entry (one
+    /// holder still alive) and returns nullptr; the second erases it and returns the now-orphaned
+    /// context so the caller destroys it after the cache lock is released. Neither throws.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    /// removeQueryContext resets each passed reference, so both are already null here.
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+
+    /// Only the last release hands the context back for out-of-lock destruction; the earlier one
+    /// returns nullptr because another holder was still alive.
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+
+    /// The entry must be gone: with the pre-fix logic both releases skipped the erase and the entry
+    /// leaked, so tryGetQueryContext would still find it.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
 }

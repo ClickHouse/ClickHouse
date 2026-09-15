@@ -122,7 +122,7 @@ void freeImpl(void * buf)
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (size >= 0x8000000000000000ULL) [[unlikely]]
+    if (size >= MAX_ALLOCATION_SIZE) [[unlikely]]
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 
@@ -141,7 +141,7 @@ void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 
 
 template <bool clear_memory_, bool populate>
-void Allocator<clear_memory_, populate>::free(void * buf, size_t size)
+void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /* alignment */)
 {
     try
     {

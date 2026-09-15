@@ -132,6 +132,11 @@ private:
         bool if_exists,
         BlobStorageLogWriterPtr blob_storage_log);
 
+    void removeObjectsBatchIfExists(
+        const StoredObjects & objects,
+        const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+        BlobStorageLogWriterPtr blob_storage_log);
+
     const String name;
     AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud

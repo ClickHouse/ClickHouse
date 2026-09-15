@@ -127,8 +127,7 @@ public:
 
     DownloaderId getDownloader() const;
 
-    /// Wait for the change of state from DOWNLOADING to any other.
-    State wait(size_t offset);
+    State wait(size_t offset, size_t timeout_ms = 60000);
 
     bool isDownloaded() const;
 
@@ -230,6 +229,11 @@ public:
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void setDownloadFailed();
+
+    /// Mark that no more data will be written to this segment (e.g. the remote object turned out
+    /// to be smaller than expected), without treating it as a failure.
+    /// The segment will be shrunk to the actually downloaded size during completion.
+    void setDownloadFinishedWithoutContinuation();
 
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 

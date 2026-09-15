@@ -825,10 +825,16 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             && action.node->children.size() >= 2
             && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
+            /// A curve is only usable here through its key column position, so a curve that is
+            /// an intermediate value of the key expression rather than a key column is skipped.
+            auto it = key_columns.find(action.node->result_name);
+            if (it == key_columns.end())
+                continue;
+
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
             curve.type = space_filling_curve_name_to_type.at(curve.function_name);
-            curve.key_column_pos = key_columns.at(action.node->result_name);
+            curve.key_column_pos = it->second;
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -1424,23 +1430,32 @@ bool applyDeterministicDagToColumn(
             return true;
         }
 
-        if (!target_type->isNullable() && !target_type->canBeInsideNullable())
+        /// `castColumnAccurateOrNull` needs a target that can represent NULLs so a lossy cast is
+        /// observable. `LowCardinality` is only an encoding and is not itself nullable-able, so run
+        /// the accuracy probe against the `LowCardinality`-stripped target; otherwise a key column of
+        /// type `LowCardinality(FixedString)` (and similar) is wrongly rejected here, which silently
+        /// disables partition/key pruning. The requested `target_type` is re-applied afterwards so the
+        /// transform DAG still receives the type it was built against.
+        const DataTypePtr probe_type = removeLowCardinality(target_type);
+
+        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
         }
 
-        column = castColumnAccurateOrNull({column, type, ""}, target_type);
-        const auto & n = assert_cast<const ColumnNullable &>(*column);
+        ColumnPtr probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+        const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
         /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
         for (char8_t b : n.getNullMapData())
             if (b)
                 return false;
 
-        if (!target_type->isNullable())
-            column = n.getNestedColumnPtr();
-
+        /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
+        /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
+        /// here because the probe above already proved every value fits.
+        column = castColumnAccurate({column, type, ""}, target_type);
         type = target_type;
         return true;
     };
@@ -1795,7 +1810,11 @@ bool tryPrepareSetColumnsForIndex(
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
-        const auto & key_column_type = data_types[indexes_mapping_index];
+        /// Recursively strip LowCardinality from the key column type (including inside Tuples).
+        /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
+        /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
+        /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
+        auto key_column_type = recursiveRemoveLowCardinality(data_types[indexes_mapping_index]);
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
@@ -4140,6 +4159,68 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+namespace
+{
+
+/// Whether the analysed range of a key column may hold a NULL value. A NULL key value is analysed as
+/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one.
+bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_types, size_t key_position)
+{
+    return key_range.right.isPositiveInfinity() && key_position < key_types.size() && key_types[key_position]
+        && isNullableOrLowCardinalityNullable(key_types[key_position]);
+}
+
+/// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
+/// answering true or false as `IS NULL` and `IS NOT NULL` do.
+bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
+{
+    switch (function)
+    {
+        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
+        case KeyCondition::RPNElement::FUNCTION_IN_SET:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
+        case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+        case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
+            return true;
+        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+        case KeyCondition::RPNElement::FUNCTION_NOT:
+        case KeyCondition::RPNElement::FUNCTION_AND:
+        case KeyCondition::RPNElement::FUNCTION_OR:
+        case KeyCondition::RPNElement::ALWAYS_FALSE:
+        case KeyCondition::RPNElement::ALWAYS_TRUE:
+            return false;
+    }
+}
+
+}
+
+/// `WHERE` rejects a row whose comparison is NULL, so a NULL key value satisfies neither a comparison
+/// nor its negation. The two-valued range algebra of `checkInHyperrectangle` cannot express that: "no
+/// NULL row lies inside the range" turns, under negation, into "every row lies outside it", which
+/// reports a granule of NULLs as wholly matching a negated comparison - and the exact-count
+/// optimization then counts the very rows the `WHERE` throws away. So the exactness of the whole
+/// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
+/// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
+/// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
+/// every pruning decision, is left alone.
+bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
+{
+    for (const auto & element : rpn)
+    {
+        if (!atomIsNullForNullArgument(element.function))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(hyperrectangle[key_column], key_types, key_column))
+                return true;
+    }
+
+    return false;
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -4540,6 +4621,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(hyperrectangle, data_types)))
+        rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }

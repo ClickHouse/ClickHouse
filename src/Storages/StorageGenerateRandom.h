@@ -8,10 +8,8 @@
 namespace DB
 {
 
-/// If `fuzzy` is true, tries to generate more "interesting" values. E.g. small numbers are more
-/// likely, and strings sometimes are in datetime format.
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy = false);
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, ContextPtr context);
 
 /* Generates random data for given schema.
  */

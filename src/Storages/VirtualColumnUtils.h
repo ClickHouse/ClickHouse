@@ -45,6 +45,11 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
@@ -135,9 +140,6 @@ struct VirtualsForFileLikeStorage
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
-    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
-    /// Used by Iceberg position deletes to reference data files in the metadata path format.
-    const String * iceberg_metadata_file_path { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

@@ -292,6 +292,7 @@ public:
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
+    virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
 
     struct BlobsReplication
     {

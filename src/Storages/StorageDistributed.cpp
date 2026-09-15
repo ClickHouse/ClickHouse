@@ -417,6 +417,8 @@ StorageDistributed::StorageDistributed(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
+    /// Only a definition loaded from validated metadata reaches here with no columns; the creators
+    /// infer an omitted structure themselves, under the user's context.
     if (columns_.empty())
     {
         StorageID id = StorageID::createEmpty();
@@ -1199,7 +1201,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
-                = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context);
+                = std::make_shared<RemoteQueryExecutor>(
+                    std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context,
+                    /*throttler=*/nullptr, Scalars{}, Tables{}, QueryProcessingStage::Complete,
+                    /*query_plan=*/nullptr, /*extension=*/std::nullopt, shard_info.pool);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
@@ -1330,7 +1335,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
+                replicas.pool);
 
             Pipe pipe{std::make_shared<RemoteSource>(
                 remote_query_executor,
@@ -1367,7 +1373,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         {
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
@@ -2119,9 +2125,25 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
                 = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 
+        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
+        /// local shard is not made against the global context the constructor holds. Skipped when the
+        /// definition comes from already-validated metadata, which has no user to check against.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
+            /// database's implicit cluster is found by the expanded name only.
+            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
+            columns = getStructureOfRemoteTable(
+                *local_context->getCluster(expanded_cluster_name),
+                StorageID{remote_database, remote_table},
+                local_context,
+                /* table_func_ptr = */ nullptr);
+        }
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,

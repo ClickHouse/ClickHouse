@@ -1,0 +1,3 @@
+<clickhouse>
+    <handshake_timeout_milliseconds>3000</handshake_timeout_milliseconds>
+</clickhouse>

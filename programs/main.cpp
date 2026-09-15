@@ -38,21 +38,6 @@ const char * __lsan_default_options()
 {
     return "max_allocation_size_mb=32768";
 }
-const char * __lsan_default_suppressions()
-{
-    /// OpenSSL intentionally does not free all global state at exit.
-    /// These are known false positives from OpenSSL provider and EVP initialization.
-    return "leak:ossl_provider_new\n"
-           "leak:OSSL_PROVIDER_try_load_ex\n"
-           "leak:ossl_rand_ctx_new\n"
-           "leak:OSSL_LIB_CTX_new\n"
-           "leak:ossl_legacy_provider_init\n"
-           /// OpenSSL EVP method objects are cached globally and never freed at exit.
-           /// Triggered when S3 client initializes HMAC (AWS SDK -> OpenSSL HMAC_Init_ex).
-           "leak:evp_md_new\n"
-           "leak:construct_evp_method\n"
-           "leak:CRYPTO_THREAD_lock_new\n";
-}
 #endif
 
 #ifdef MEMORY_SANITIZER
@@ -86,6 +71,7 @@ int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
 int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
 int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
@@ -166,6 +152,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"check-marks", mainEntryClickHouseCheckMarks},
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
