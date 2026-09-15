@@ -1,0 +1,67 @@
+-- The returned columns keep the types of the table
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime(\'UTC\')					
+value	Float64					
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	UInt32					
+value	Float32					
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(1, \'UTC\')					
+value	Float64					
+-- [1000.5, 1002.5] selects the samples at 1001 and 1002 (and 1001.5 in DateTime64(1))
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
+1001	2
+1002	3
+1970-01-01 00:16:41.5	2
+1970-01-01 00:16:42.0	3
+-- The bounds are inclusive at millisecond precision
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
+-- DateTime64 and String arguments
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
+1001	2
+1002	3
+-- A scale greater than 3 in the arguments is kept
+1970-01-01 00:16:41.5	2
+-- Arguments with a smaller scale than the table are widened to the scale of the table
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(6, \'UTC\')					
+value	Float64					
+1970-01-01 00:16:41.000001	2
+1970-01-01 00:16:42.000000	3
+1970-01-01 00:16:41.000001	2
+-- The range is checked before the conversion to the scale of the table
+0
+-- The time range lies between two consecutive timestamps of a DateTime64(1) table
+0
+1
+-- The time range is before 1970
+0
+0
+0
+-- The time range starts before 1970 and reaches the samples at 0 and 1000
+1970-01-01 00:00:00	0
+1970-01-01 00:16:40	1
+0	0
+1000	1
+-- The time range is after 2106
+0
+0
+0
+-- The time range ends after 2106 and reaches the samples at 1003 and 4294967295
+1970-01-01 00:16:43	4
+2106-02-07 06:28:15	5
+1003	4
+4294967295	5
+-- The time range covers the whole range of the type
+6
+6
+-- Arguments with a scale greater than 9 on a table with a recent samples table: the range is compared with the TTL without overflow
+4
+2

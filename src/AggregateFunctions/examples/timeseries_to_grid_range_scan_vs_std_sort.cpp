@@ -55,14 +55,20 @@ constexpr size_t NUM_SERIES = 64;
 constexpr Int64 STEP = 10;
 constexpr int REPEATS = 5;  /// timing iterations per measurement; the minimum over them is used
 
-using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
+/// Timestamp of grid point `grid_index`.
+DateTime64 gridPoint(size_t grid_index)
+{
+    return DateTime64(static_cast<Int64>(grid_index) * STEP);
+}
+
+using Bucket = AggregateFunctionTimeseriesSamples<DateTime64, Float64>;
 using Buckets = TimeSeriesBucketsMap<Bucket>;  /// the production bucket map type
 using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// One populated bucket and its index, for the collect-and-sort strategy. Sorted by `index`.
 struct IndexedBucket
 {
-    UInt32 index;
+    size_t index;
     const Bucket * bucket;
 };
 
@@ -70,7 +76,7 @@ struct IndexedBucket
 Float64 processBucket(const Bucket & bucket)
 {
     Float64 sum = 0;
-    bucket.forEachSample([&sum](UInt32, Float64 value) { sum += value; });
+    bucket.forEachSample([&sum](DateTime64, Float64 value) { sum += value; });
     return sum;
 }
 
@@ -99,7 +105,7 @@ Dataset buildDataset(Float64 density)
             const size_t candidate = static_cast<size_t>(rng() % (i + 1));
             const size_t k = buckets.has(candidate) ? i : candidate;
             /// Insert as production does: `operator[]` default-constructs the bucket, then samples are added.
-            buckets[k].add(static_cast<UInt32>(static_cast<Int64>(k) * STEP), static_cast<Float64>((k * 7 + series * 3) % 101));
+            buckets[k].add(gridPoint(k), static_cast<Float64>((k * 7 + series * 3) % 101));
         }
     }
     return dataset;
@@ -131,7 +137,7 @@ Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const Dataset
                 VectorWithMemoryTracking<IndexedBucket> ordered;
                 ordered.reserve(buckets.size());
                 for (const auto & entry : buckets)
-                    ordered.push_back({static_cast<UInt32>(entry.getKey()), &entry.getMapped()});
+                    ordered.push_back({entry.getKey(), &entry.getMapped()});
                 ::sort(ordered.begin(), ordered.end(),
                     [](const IndexedBucket & lhs, const IndexedBucket & rhs) { return lhs.index < rhs.index; });
                 for (const auto & indexed_bucket : ordered)
