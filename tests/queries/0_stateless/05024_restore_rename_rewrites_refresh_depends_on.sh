@@ -131,6 +131,13 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$STOPPED\`.src VALUES (1)"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$STOPPED\`.mv REFRESH EVERY 1 SECOND
     (x Int64) ENGINE = MergeTree ORDER BY x EMPTY AS SELECT x FROM \`$STOPPED\`.src"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
+# Unlike the views above, this one has to refresh every second, and `SYSTEM STOP VIEW` interrupts a
+# running refresh without waiting for it to unwind. Wait until the view is idle, so that the
+# EXCHANGE and DROP of its target cannot race the backup scan and warn on stderr.
+while [ "$(${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'")" != 'Disabled' ]
+do
+    sleep 0.1
+done
 ${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE \`$STOPPED\` TO Disk('backups', '$BACKUP_STOPPED')" | grep -o "BACKUP_CREATED"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE \`$STOPPED\` SYNC"
 
