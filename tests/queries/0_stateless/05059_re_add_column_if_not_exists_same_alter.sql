@@ -285,6 +285,31 @@ SELECT 'compact clear after pending rename', k, b FROM compact_clear_after_pendi
 CHECK TABLE compact_clear_after_pending_rename;
 DROP TABLE compact_clear_after_pending_rename;
 
+-- The opposite order: `DROP a, RENAME b TO a` must drop a's files and keep b's
+-- values under a. The finished `AlterConversions` map would resolve a to b and
+-- make this a `DROP b` that also suppresses the rename.
+DROP TABLE IF EXISTS drop_then_rename_wide;
+CREATE TABLE drop_then_rename_wide (k UInt64, a UInt64, b UInt64)
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO drop_then_rename_wide VALUES (1, 10, 20);
+
+ALTER TABLE drop_then_rename_wide (DROP COLUMN a), (RENAME COLUMN b TO a);
+SELECT 'wide drop then rename', k, a FROM drop_then_rename_wide;
+CHECK TABLE drop_then_rename_wide;
+DROP TABLE drop_then_rename_wide;
+
+DROP TABLE IF EXISTS drop_then_rename_compact;
+CREATE TABLE drop_then_rename_compact (k UInt64, a UInt64, b UInt64)
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO drop_then_rename_compact VALUES (1, 10, 20);
+
+ALTER TABLE drop_then_rename_compact (DROP COLUMN a), (RENAME COLUMN b TO a);
+SELECT 'compact drop then rename', k, a FROM drop_then_rename_compact;
+CHECK TABLE drop_then_rename_compact;
+DROP TABLE drop_then_rename_compact;
+
 -- Implicit minmax indices follow the column: a prefix-range DROP removes the indices of all
 -- flattened members, and a RENAME replaces a stale implicit index at the target name. Nested
 -- members never get implicit indices, but a scalar dotted-name column does.

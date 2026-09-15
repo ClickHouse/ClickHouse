@@ -277,13 +277,19 @@ static void splitAndModifyMutationCommands(
             name = alter_conversions->getColumnOldName(name);
         return name;
     };
-    /// Same-batch `DROP` after `RENAME` cannot use `nameInPart` alone: `AlterConversions`
-    /// records the drop under the source-part name and erases the mapping. Both storage
-    /// layouts resolve through this helper so a later `DROP`/`CLEAR` still finds the files.
+    /// Same-batch `DROP`/`CLEAR` after `RENAME` cannot use `nameInPart` alone:
+    /// `AlterConversions` records the drop under the source-part name and erases
+    /// the mapping. Walk `renamed_in_batch` first so both storage layouts still
+    /// find the files. Do not fall back to `nameInPart` while the part still has
+    /// this name: that map is the finished batch, and a later `RENAME other TO
+    /// name` would make `DROP name` (as in `DROP a, RENAME b TO a`) address
+    /// `other`'s files instead of the column being dropped.
     auto nameStoredInPart = [&](const String & name, const NameToNameMap & renamed_in_batch) -> String
     {
         if (auto it = renamed_in_batch.find(name); it != renamed_in_batch.end())
             return it->second;
+        if (part_columns.has(name) || part_columns.hasNested(name))
+            return name;
         return nameInPart(name);
     };
 
