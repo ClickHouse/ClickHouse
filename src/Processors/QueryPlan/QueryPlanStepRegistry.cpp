@@ -21,17 +21,25 @@ QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
 {
-    registerStep(name, std::move(create_function), Versions{});
+    registerStep(name, std::move(create_function), StepVersions{{0, 0}});
 }
 
-void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, Versions versions)
+void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, StepVersions versions)
 {
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
+    if (versions.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' must declare at least one serialization version", name);
 
-    /// The writer scans `write` for the highest plan version not above the one it serializes with, so
-    /// keep the entries ordered by plan version regardless of how they were declared.
-    std::sort(versions.write.begin(), versions.write.end());
+    /// `versionToWrite` takes the last entry whose release the peer knows, so order the entries by the
+    /// release that introduced them. Two versions introduced in the same release (a backported fix)
+    /// resolve to the newer one.
+    std::sort(versions.begin(), versions.end(), [](const StepVersion & lhs, const StepVersion & rhs)
+    {
+        if (lhs.since_plan_version != rhs.since_plan_version)
+            return lhs.since_plan_version < rhs.since_plan_version;
+        return lhs.version < rhs.version;
+    });
 
     steps[name] = Entry{std::move(create_function), std::move(versions)};
 }
@@ -51,34 +59,34 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
     return getEntry(name).create_function(ctx);
 }
 
-UInt64 QueryPlanStepRegistry::writeStepVersion(const std::string & name, UInt64 plan_version) const
+UInt64 QueryPlanStepRegistry::versionToWrite(const std::string & name, UInt64 plan_version) const
 {
-    const Versions & versions = getEntry(name).versions;
+    const StepVersions & versions = getEntry(name).versions;
 
-    UInt64 step_version = 0;
-    bool found = false;
-    for (const auto & [at_plan_version, at_step_version] : versions.write)
+    const StepVersion * chosen = nullptr;
+    for (const auto & candidate : versions)
     {
-        if (at_plan_version > plan_version)
+        if (candidate.since_plan_version > plan_version)
             break;
-        step_version = at_step_version;
-        found = true;
+        chosen = &candidate;
     }
 
-    if (!found)
+    if (!chosen)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Query plan step '{}' has no serialization version for plan version {}", name, plan_version);
 
-    return step_version;
+    return chosen->version;
 }
 
-void QueryPlanStepRegistry::checkStepVersionReadable(const std::string & name, UInt64 step_version) const
+void QueryPlanStepRegistry::checkVersionReadable(const std::string & name, UInt64 version) const
 {
-    const Versions & versions = getEntry(name).versions;
-    if (std::find(versions.readable.begin(), versions.readable.end(), step_version) == versions.readable.end())
+    const StepVersions & versions = getEntry(name).versions;
+    const bool known = std::any_of(versions.begin(), versions.end(),
+        [version](const StepVersion & candidate) { return candidate.version == version; });
+    if (!known)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Query plan step '{}' cannot be read at serialization version {}; this server does not know it",
-            name, step_version);
+            name, version);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

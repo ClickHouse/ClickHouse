@@ -155,14 +155,13 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto step_name = node->step->getSerializationName();
         writeStringBinary(step_name, out);
 
-        /// The per-step version selects how this step writes its own payload (in `serialize` below).
-        /// It is chosen for the global plan version the writer serializes with, so an older-release
-        /// peer receives the step encoding it knows. The step settings written further down are gated
-        /// by the global version, not by this per-step version.
+        /// The per-step version selects how this step writes its own payload in `serialize` below; it is
+        /// chosen for the plan version this stream is serialized at. The step settings written further
+        /// down are gated by the plan version itself, not by the per-step version.
         UInt64 step_version = 0;
         if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
         {
-            step_version = QueryPlanStepRegistry::instance().writeStepVersion(step_name, flags.version);
+            step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, flags.version);
             writeVarUInt(step_version, out);
         }
 
@@ -274,7 +273,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
         {
             readVarUInt(step_version, in);
-            step_registry.checkStepVersionReadable(step_name, step_version);
+            step_registry.checkVersionReadable(step_name, step_version);
         }
 
         std::string step_description;

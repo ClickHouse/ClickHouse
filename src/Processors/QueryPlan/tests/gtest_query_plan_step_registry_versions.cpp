@@ -33,18 +33,19 @@ QueryPlanStepPtr nullCreate(IQueryPlanStep::Deserialization &)
 
 }
 
-/// The writer serializes at a stable global plan version and must pick the step version pinned for it,
-/// so an older peer gets the older step format.
+/// The writer serializes at the plan version both peers support and must send the newest step version
+/// that peer's release knows, so an older peer gets the older bytes.
 TEST(QueryPlanStepRegistryVersions, WriteVersionFollowsPlanVersion)
 {
     QueryPlanStepRegistry registry;
-    /// Declared out of order on purpose: registration sorts the write entries by plan version.
-    registry.registerStep("Test", nullCreate, {.readable = {3, 4, 5}, .write = {{18, 5}, {16, 4}}});
+    /// Declared out of order on purpose: registration orders the entries by the release that introduced them.
+    registry.registerStep("Test", nullCreate, {{5, 18}, {3, 15}, {4, 16}});
 
-    EXPECT_EQ(registry.writeStepVersion("Test", 16), 4u);
-    EXPECT_EQ(registry.writeStepVersion("Test", 17), 4u);
-    EXPECT_EQ(registry.writeStepVersion("Test", 18), 5u);
-    EXPECT_EQ(registry.writeStepVersion("Test", 100), 5u);
+    EXPECT_EQ(registry.versionToWrite("Test", 15), 3u);
+    EXPECT_EQ(registry.versionToWrite("Test", 16), 4u);
+    EXPECT_EQ(registry.versionToWrite("Test", 17), 4u);
+    EXPECT_EQ(registry.versionToWrite("Test", 18), 5u);
+    EXPECT_EQ(registry.versionToWrite("Test", 100), 5u);
 }
 
 /// A step version this binary does not know is refused up front, so wrong-code bytes are never
@@ -52,14 +53,14 @@ TEST(QueryPlanStepRegistryVersions, WriteVersionFollowsPlanVersion)
 TEST(QueryPlanStepRegistryVersions, UnknownReadVersionIsRefused)
 {
     QueryPlanStepRegistry registry;
-    registry.registerStep("Test", nullCreate, {.readable = {3, 4}, .write = {{16, 4}}});
+    registry.registerStep("Test", nullCreate, {{3, 15}, {4, 16}});
 
-    EXPECT_NO_THROW(registry.checkStepVersionReadable("Test", 3));
-    EXPECT_NO_THROW(registry.checkStepVersionReadable("Test", 4));
+    EXPECT_NO_THROW(registry.checkVersionReadable("Test", 3));
+    EXPECT_NO_THROW(registry.checkVersionReadable("Test", 4));
 
     try
     {
-        registry.checkStepVersionReadable("Test", 5);
+        registry.checkVersionReadable("Test", 5);
         FAIL() << "expected INCORRECT_DATA for an unknown step version";
     }
     catch (const Exception & e)
@@ -74,9 +75,34 @@ TEST(QueryPlanStepRegistryVersions, DefaultStepStaysAtVersionZero)
     QueryPlanStepRegistry registry;
     registry.registerStep("Plain", nullCreate);
 
-    EXPECT_EQ(registry.writeStepVersion("Plain", DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 0u);
-    EXPECT_NO_THROW(registry.checkStepVersionReadable("Plain", 0));
-    EXPECT_ANY_THROW(registry.checkStepVersionReadable("Plain", 1));
+    EXPECT_EQ(registry.versionToWrite("Plain", DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 0u);
+    EXPECT_NO_THROW(registry.checkVersionReadable("Plain", 0));
+    EXPECT_ANY_THROW(registry.checkVersionReadable("Plain", 1));
+}
+
+/// The plan version moves for many reasons unrelated to this step. None of them changes what the step
+/// writes or requires touching its entry: the entry changes only when the step's own bytes change.
+TEST(QueryPlanStepRegistryVersions, UnrelatedPlanVersionBumpsDoNotTouchTheStep)
+{
+    QueryPlanStepRegistry registry;
+    registry.registerStep("Test", nullCreate, {{1, 16}});
+
+    for (UInt64 plan_version : {UInt64(16), UInt64(17), UInt64(25), UInt64(100)})
+        EXPECT_EQ(registry.versionToWrite("Test", plan_version), 1u) << "plan version " << plan_version;
+}
+
+/// A critical fix backported into a released line gets a new step version anchored at that release's
+/// plan version. Peers of that release then receive the fixed bytes, and the old version stays readable
+/// from peers that do not have the fix yet.
+TEST(QueryPlanStepRegistryVersions, BackportedFixIsWrittenAtItsReleaseVersion)
+{
+    QueryPlanStepRegistry registry;
+    registry.registerStep("Test", nullCreate, {{1, 16}, {2, 16}});
+
+    EXPECT_EQ(registry.versionToWrite("Test", 16), 2u);
+    EXPECT_EQ(registry.versionToWrite("Test", 17), 2u);
+    EXPECT_NO_THROW(registry.checkVersionReadable("Test", 1));
+    EXPECT_NO_THROW(registry.checkVersionReadable("Test", 2));
 }
 
 namespace
@@ -130,7 +156,7 @@ void tryRegisterVersionedTestStep()
             QueryPlanStepRegistry::instance().registerStep(
                 "VersionedTest",
                 &VersionedTestStep::deserialize,
-                {.readable = {0, 1}, .write = {{DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS, 1}}});
+                {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS}});
         }
     } registered;
 }
