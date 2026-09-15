@@ -117,11 +117,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     if (!distributed_target)
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 
-    /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
+    /// A Distributed table created `AS <TimeSeries table>` declares the same outer samples column,
     /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    UInt64 time_series_version = outerSamplesVersion(*time_series_storage, *time_series_metadata);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -178,6 +179,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;

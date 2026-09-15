@@ -37,7 +37,7 @@ CREATE TABLE ts_dist AS shard_0.ts_local
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local, cityHash64(tags['host']));
 
 -- h1 and h2 hash to one shard, h3 h4 h5 to the other, so both jobs of `m` straddle the two shards.
-INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
+INSERT INTO ts_dist (metric_name, tags, samples) VALUES
     ('m', map('job', 'a', 'host', 'h1'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 2), (toDateTime64(120, 3), 3), (toDateTime64(130, 3), 4), (toDateTime64(140, 3), 5)]),
     ('m', map('job', 'a', 'host', 'h3'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30), (toDateTime64(130, 3), 40), (toDateTime64(140, 3), 50)]),
     ('m', map('job', 'b', 'host', 'h2'), [(toDateTime64(100, 3), 100), (toDateTime64(110, 3), 200), (toDateTime64(120, 3), 300), (toDateTime64(130, 3), 400), (toDateTime64(140, 3), 500)]),
@@ -46,7 +46,7 @@ INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
 
 -- The oracle: the same five series in a single local TimeSeries table.
 CREATE TABLE ts_all ENGINE = TimeSeries;
-INSERT INTO ts_all (metric_name, tags, time_series) SELECT metric_name, tags, time_series FROM ts_dist;
+INSERT INTO ts_all (metric_name, tags, samples) SELECT metric_name, tags, samples FROM ts_dist;
 
 SELECT '--- both jobs of `m` straddle the two shards, `solo` sits on one of them ---';
 SELECT tags['job'] AS job, uniqExact(_shard_num) AS shards FROM ts_dist WHERE metric_name = 'm' GROUP BY job ORDER BY job;
@@ -89,10 +89,10 @@ SELECT * FROM prometheusQuery(ts_remote_tf, 'm', 140); -- { serverError UNEXPECT
 CREATE TABLE ts_nested AS ts_all ENGINE = Distributed(test_shard_localhost, currentDatabase(), ts_dist);
 SELECT * FROM prometheusQuery(ts_nested, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
-SELECT '--- rejected: the shard-local tables must declare the same time_series type ---';
+SELECT '--- rejected: the shard-local tables must declare the same samples type ---';
 -- Legal for Distributed, which never validates the shard-side structure, but PromQL would parse
 -- the times with the wrapper's scale and read with the shards'.
-CREATE TABLE ts_coarse (metric_name String, tags Map(String, String), time_series Array(Tuple(DateTime64(0), Float64)))
+CREATE TABLE ts_coarse (metric_name String, tags Map(String, String), samples Array(Tuple(DateTime64(0), Float64)))
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local);
 SELECT * FROM prometheusQuery(ts_coarse, 'm', 140); -- { serverError TYPE_MISMATCH }
 -- A selector-free query reads no shard, so nothing is probed either.

@@ -79,7 +79,7 @@ COARSE_TABLE_FUNCTIONS = [
 ]
 
 INSERT_TEST_DATA = """
-INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
+INSERT INTO ts_dist (metric_name, tags, samples) VALUES
     ('m', map('job', 'a', 'host', 'h1'), [(toDateTime64(140, 3), 5)]),
     ('m', map('job', 'a', 'host', 'h3'), [(toDateTime64(140, 3), 50)]),
     ('m', map('job', 'b', 'host', 'h2'), [(toDateTime64(140, 3), 500)]),
@@ -103,11 +103,11 @@ def start_cluster():
         node.query(
             "CREATE TABLE mt_not_ts AS shard_0.ts_local ENGINE = MergeTree ORDER BY tuple()"
         )
-        # The same shards behind a wrapper declaring another `time_series` type: the shard probe
+        # The same shards behind a wrapper declaring another samples type: the shard probe
         # refuses it, so an allowed caller is told about the shard-local tables.
         node.query(
             f"CREATE TABLE {COARSE_TABLE} (metric_name String, tags Map(String, String), "
-            "time_series Array(Tuple(DateTime64(0), Float64))) "
+            "samples Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})

@@ -44,7 +44,7 @@ HIDDEN_SYSTEM_TABLES = ["tables", "columns"]
 # column, which is all a remote write sends, and nothing that lets it read a table's metadata.
 CLUSTER_COLUMN_USER = "prom_cluster_column_user"
 # The columns a remote write sends, and so the only ones the shard INSERT names.
-WRITTEN_COLUMNS = "metric_name, tags, time_series"
+WRITTEN_COLUMNS = "metric_name, tags, samples"
 
 # The metric family a sample and its metadata are sent under, and the metadata sent with it: a
 # wrapper declaring only the columns above has no column any of the three could travel in.
@@ -77,11 +77,11 @@ def start_cluster():
             "CREATE TABLE prom_dist_bad AS shard_0.ts_local "
             "ENGINE = Distributed(two_shards_dist, '', mt_bad, cityHash64(tags['host']))"
         )
-        # The right shards behind a wrapper declaring a coarser `time_series` type than they hold:
+        # The right shards behind a wrapper declaring a coarser samples type than they hold:
         # the sink would round every sample to whole seconds before it reached a shard.
         node.query(
             "CREATE TABLE prom_dist_coarse (metric_name String, tags Map(String, String), "
-            "time_series Array(Tuple(DateTime64(0), Float64))) "
+            "samples Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
         # Two shards and no sharding key: the sink refuses this unless the caller picks a shard.
@@ -89,10 +89,10 @@ def start_cluster():
             "CREATE TABLE prom_dist_keyless AS shard_0.ts_local "
             "ENGINE = Distributed(two_shards_dist, '', ts_local)"
         )
-        # A TimeSeries table of another `time_series` type, to swap in under a shard-local name:
+        # A TimeSeries table of another samples type, to swap in under a shard-local name:
         # its engine says nothing about the samples the sink would round into it.
         node.query(
-            "CREATE TABLE shard_0.ts_coarse (time_series Array(Tuple(DateTime64(0), Float64))) "
+            "CREATE TABLE shard_0.ts_coarse (samples Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = TimeSeries"
         )
 
@@ -144,7 +144,7 @@ def start_cluster():
         # Declaring only the columns a write sends, so the shard INSERT names no more than those.
         node.query(
             "CREATE TABLE prom_column_granted (metric_name String, tags Map(String, String), "
-            "time_series Array(Tuple(DateTime64(3), Float64))) "
+            "samples Array(Tuple(DateTime64(3), Float64))) "
             "ENGINE = Distributed(two_shards_column_granted, '', ts_column_granted, cityHash64(tags['host']))"
         )
         # The same columns and the same credentials over a shard target that must still be refused.
@@ -169,7 +169,7 @@ def write(path, metric_name, hosts=("h0",)):
 
 
 def write_one(path, metric_name, host, timestamp):
-    """One sample, at a timestamp a shard of a coarser `time_series` type could not hold."""
+    """One sample, at a timestamp a shard of a coarser samples type could not hold."""
     return get_response_to_remote_write(
         node.ip_address,
         9093,
@@ -371,7 +371,7 @@ def test_remote_write_refuses_a_shard_target_swapped_after_the_check():
 
 
 def test_remote_write_refuses_another_time_series_type_swapped_after_the_check():
-    """A TimeSeries table of another `time_series` type swapped in under a shard-local name is refused
+    """A TimeSeries table of another samples type swapped in under a shard-local name is refused
     too: its engine passes, and the sink would round every sample into it and answer 204.
     """
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -478,7 +478,7 @@ def test_the_probe_asks_the_cluster_user_no_more_than_the_shards_do():
             user=CLUSTER_SHARD_USER,
         )
         node.query(
-            "INSERT INTO shard_0.ts_restricted (metric_name, tags, time_series) VALUES "
+            "INSERT INTO shard_0.ts_restricted (metric_name, tags, samples) VALUES "
             f"('premise_metric', map('host', 'h3'), [(toDateTime64({START_TIME}, 3), 1)])",
             user=CLUSTER_SHARD_USER,
         )

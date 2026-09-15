@@ -23,9 +23,11 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <fmt/ranges.h>
 
@@ -118,6 +120,16 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query)
     return hasInstantSelector(promql_query.getRoot());
 }
 
+UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetadata & metadata)
+{
+    if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&storage))
+        return time_series->getVersion();
+    /// A Distributed table is created `AS <TimeSeries table>` or declares the columns itself, so the name it
+    /// carries is the only statement it makes about the version: the probe refuses a shard that names it otherwise.
+    return metadata.columns.has(TimeSeriesColumnNames::Samples) ? TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN
+                                                                : TimeSeriesVersion::MIN_SUPPORTED;
+}
+
 namespace
 {
     /// Parsed as the planner parses it: a literal true, which isAlwaysTrue() exempts for a row policy, restricts nothing.
@@ -157,7 +169,10 @@ namespace
     {
         const auto & remote_id = target.remote_time_series_storage_id;
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-        const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
+        /// Whichever of the two names the wrapper declares: a shard naming the other one is reported as a target
+        /// the request has not got, because the sink sends the column the wrapper declares and no other.
+        const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(storage, *metadata));
+        const auto time_series_type = metadata->columns.get(samples_column).type->getName();
 
         /// An undeclared database is each replica's own default, as it is for the read and the write themselves.
         const String qualified_name = remote_id.database_name.empty()
@@ -196,7 +211,7 @@ namespace
             /// Not exposed to the probe, or not there at all: the type went unchecked either way.
             else if (ts_type.empty())
                 unavailable_replicas.push_back(fmt::format(
-                    "{} (no `{}` column on {})", replica, TimeSeriesColumnNames::TimeSeries, backQuoteIfNeed(remote_id.table_name)));
+                    "{} (no `{}` column on {})", replica, samples_column, backQuoteIfNeed(remote_id.table_name)));
             else if (ts_type != time_series_type)
             {
                 ++wrong_type_replicas;
@@ -226,7 +241,7 @@ namespace
                     {
                         engine = table->getName();
                         const auto local_metadata = table->getInMemoryMetadataPtr(context, false);
-                        if (const auto * column = local_metadata->columns.tryGet(TimeSeriesColumnNames::TimeSeries))
+                        if (const auto * column = local_metadata->columns.tryGet(samples_column))
                             ts_type = column->type->getName();
                     }
                     else
@@ -255,7 +270,7 @@ namespace
                             const auto & names = *block.getByPosition(0).column;
                             const auto & types = *block.getByPosition(1).column;
                             for (size_t row = 0; row != names.size(); ++row)
-                                if (names[row].safeGet<String>() == TimeSeriesColumnNames::TimeSeries)
+                                if (names[row].safeGet<String>() == samples_column)
                                     ts_type = types[row].safeGet<String>();
                         });
                 }
@@ -290,7 +305,7 @@ namespace
                 "This operation is not supported over table {}: {} shard-local target(s) named {} declare `{}` as {} "
                 "while the table declares {}",
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
-                TimeSeriesColumnNames::TimeSeries, fmt::join(wrong_types, ", "), time_series_type);
+                samples_column, fmt::join(wrong_types, ", "), time_series_type);
 
         /// A replica the check could not see would take the samples unchecked.
         if (for_write && !unavailable_replicas.empty())

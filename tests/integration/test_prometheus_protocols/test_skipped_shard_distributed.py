@@ -83,7 +83,7 @@ def start_cluster():
             "ENGINE = Distributed(two_nodes_dist, default, ts_missing, cityHash64(tags['host']))"
         )
         node1.query(
-            "INSERT INTO ts_local (metric_name, tags, time_series) "
+            "INSERT INTO ts_local (metric_name, tags, samples) "
             f"VALUES ('m', map('host', 'h0'), [(toDateTime64({START_TIME}, 3), 1)])"
         )
         yield cluster

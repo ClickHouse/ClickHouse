@@ -54,7 +54,7 @@ UNRESTRICTED_FILTER_USERS = ["prom_filter_trivial", "prom_filter_other"]
 # The same series, tags and timestamps as 05055's `m`: `h1` and `h2` hash to one shard and `h3`,
 # `h4` to the other, so both jobs of `m` straddle the two shards.
 INSERT_TEST_DATA = """
-INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
+INSERT INTO ts_dist (metric_name, tags, samples) VALUES
     ('m', map('job', 'a', 'host', 'h1'),
         [(toDateTime64(100, 3), 1), (toDateTime64(120, 3), 3), (toDateTime64(140, 3), 5)]),
     ('m', map('job', 'a', 'host', 'h3'),
@@ -82,8 +82,8 @@ def start_cluster():
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})
         # The oracle holds exactly what the shards hold, read back through the wrapper.
         node.query(
-            "INSERT INTO ts_all (metric_name, tags, time_series) "
-            "SELECT metric_name, tags, time_series FROM ts_dist"
+            "INSERT INTO ts_all (metric_name, tags, samples) "
+            "SELECT metric_name, tags, samples FROM ts_dist"
         )
         yield cluster
     finally:

@@ -42,7 +42,7 @@ METADATA_HELP = "Metadata of the metric the shards hold"
 # The same series, tags and timestamps as 05055's `m`: `h1` and `h2` hash to one shard and `h3`,
 # `h4` to the other, so the Distributed target really does span both shards.
 INSERT_TEST_DATA = """
-INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
+INSERT INTO ts_dist (metric_name, tags, samples) VALUES
     ('m', map('job', 'a', 'host', 'h1'),
         [(toDateTime64(100, 3), 1), (toDateTime64(120, 3), 3), (toDateTime64(140, 3), 5)]),
     ('m', map('job', 'a', 'host', 'h3'),
@@ -69,13 +69,13 @@ def start_cluster():
         node.query("CREATE TABLE ts_all ENGINE=TimeSeries")
         node.query(
             "CREATE TABLE ts_coarse (metric_name String, tags Map(String, String), "
-            "time_series Array(Tuple(DateTime64(0), Float64))) "
+            "samples Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})
         node.query(
-            "INSERT INTO ts_all (metric_name, tags, time_series) "
-            "SELECT metric_name, tags, time_series FROM ts_dist"
+            "INSERT INTO ts_all (metric_name, tags, samples) "
+            "SELECT metric_name, tags, samples FROM ts_dist"
         )
         # Metrics metadata only reaches a table through the remote write protocol.
         send_protobuf_to_remote_write(

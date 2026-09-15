@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <base/types.h>
 
 #include <optional>
 #include <string_view>
@@ -11,6 +12,7 @@ namespace DB
 {
 class IStorage;
 class PrometheusQueryTree;
+struct StorageInMemoryMetadata;
 
 /// A prometheus query target which is a Distributed table over per-shard TimeSeries tables.
 struct PrometheusQueryDistributedTarget
@@ -28,6 +30,10 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 
 /// True when the parsed PromQL contains a selector, i.e. would actually read the table.
 bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
+
+/// The TimeSeries version naming this table's outer samples column: its own for a TimeSeries table, and for a
+/// Distributed wrapper, which has none, the one implied by the column it declares (the probe makes the shards agree).
+UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetadata & metadata);
 
 /// Refuses `operation`, which reads the table through `rewrite` rather than as itself, while the caller's row policy
 /// on the table (unless trivially true) or an additional_table_filters entry aimed at it would be left unapplied.
