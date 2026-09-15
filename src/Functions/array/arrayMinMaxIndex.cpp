@@ -208,6 +208,25 @@ constexpr size_t mediumTwoPassMinSize()
     return 64;
 }
 
+template <ArrayMinMaxIndexStrategy strategy, typename T>
+static bool isBetter(const T & lhs, const T & rhs)
+{
+    if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+        return lhs < rhs;
+    else
+        return lhs > rhs;
+}
+
+template <ArrayMinMaxIndexStrategy strategy, typename T>
+requires(has_find_extreme_implementation<T>)
+static std::optional<T> findExtremeValue(const T * data, size_t begin, size_t end)
+{
+    if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+        return findExtremeMin(data, begin, end);
+    else
+        return findExtremeMax(data, begin, end);
+}
+
 static bool useAVX2()
 {
 #if USE_MULTITARGET_CODE
@@ -265,7 +284,7 @@ static size_t findFirstSelectedValue(const T * data, size_t size, const T & valu
     return findFirstEqual(data, size, value, use_simd);
 }
 
-template <ArrayMinMaxIndexStrategy strategy, typename T>
+template <typename T>
 requires(std::is_integral_v<T>)
 struct IndexedValue
 {
@@ -275,17 +294,14 @@ struct IndexedValue
 
 template <ArrayMinMaxIndexStrategy strategy, typename T>
 requires(std::is_integral_v<T>)
-static IndexedValue<strategy, T> selectIndexedValue(const IndexedValue<strategy, T> & lhs, const IndexedValue<strategy, T> & rhs)
+static IndexedValue<T> selectIndexedValue(const IndexedValue<T> & lhs, const IndexedValue<T> & rhs)
 {
-    if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-        return rhs.value < lhs.value ? rhs : lhs;
-    else
-        return rhs.value > lhs.value ? rhs : lhs;
+    return isBetter<strategy>(rhs.value, lhs.value) ? rhs : lhs;
 }
 
 template <size_t count, ArrayMinMaxIndexStrategy strategy, typename T>
 requires(std::is_integral_v<T>)
-static IndexedValue<strategy, T> selectIndexedBlock(const T * data, size_t offset)
+static IndexedValue<T> selectIndexedBlock(const T * data, size_t offset)
 {
     if constexpr (count == 1)
         return {data[offset], offset};
@@ -300,9 +316,9 @@ requires(std::is_integral_v<T>)
 static size_t findIndexTournament(const T * data, size_t size)
 {
     bool have_best = false;
-    IndexedValue<strategy, T> best{};
+    IndexedValue<T> best{};
 
-    const auto add = [&](const IndexedValue<strategy, T> & value)
+    const auto add = [&](const IndexedValue<T> & value)
     {
         if (!have_best)
         {
@@ -358,21 +374,10 @@ static size_t findIndexOnePass(const T * data, size_t size)
 #pragma clang loop unroll_count(8)
     for (size_t i = index + 1; i < size; ++i)
     {
-        if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+        if (isBetter<strategy>(data[i], best))
         {
-            if (data[i] < best)
-            {
-                best = data[i];
-                index = i;
-            }
-        }
-        else
-        {
-            if (data[i] > best)
-            {
-                best = data[i];
-                index = i;
-            }
+            best = data[i];
+            index = i;
         }
     }
 
@@ -419,11 +424,7 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
     for (size_t block_begin = 0; block_begin < size; block_begin += block_size)
     {
         const size_t block_end = std::min(block_begin + block_size, size);
-        std::optional<T> block_extreme;
-        if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-            block_extreme = findExtremeMin(data, block_begin, block_end);
-        else
-            block_extreme = findExtremeMax(data, block_begin, block_end);
+        const auto block_extreme = findExtremeValue<strategy>(data, block_begin, block_end);
 
         chassert(block_extreme.has_value());
 
@@ -441,14 +442,7 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
             }
         }
 
-        bool record = !have_numeric_value;
-        if (have_numeric_value)
-        {
-            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-                record = *block_extreme < best;
-            else
-                record = *block_extreme > best;
-        }
+        const bool record = !have_numeric_value || isBetter<strategy>(*block_extreme, best);
 
         if (record)
         {
@@ -543,10 +537,7 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
 
                 row_data[tile_rows] = data + tile_begin;
                 row_sizes[tile_rows] = tile_size;
-                if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-                    extrema[tile_rows] = *findExtremeMin(data, tile_begin, tile_end);
-                else
-                    extrema[tile_rows] = *findExtremeMax(data, tile_begin, tile_end);
+                extrema[tile_rows] = *findExtremeValue<strategy>(data, tile_begin, tile_end);
                 tile_begin = tile_end;
                 ++tile_rows;
             }
@@ -647,16 +638,8 @@ struct ArrayMinMaxIndexImpl
             for (size_t i = begin + 1; i < end; ++i)
             {
                 const int comparison = mapped->compareAt(i, best, *mapped, nan_null_direction_hint);
-                if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-                {
-                    if (comparison < 0)
-                        best = i;
-                }
-                else
-                {
-                    if (comparison > 0)
-                        best = i;
-                }
+                if (isBetter<strategy>(comparison, 0))
+                    best = i;
             }
 
             result_data[row] = static_cast<UInt32>(best - begin + 1);
