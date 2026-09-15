@@ -376,6 +376,55 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign the return address in the prologue and authenticate it before returning, so that
+    # overwriting a saved return address cannot redirect control flow. `paciasp` and `autiasp`
+    # live in the `NOP` encoding space: they are real operations on a core implementing
+    # `FEAT_PAuth` (ARMv8.3 and later, which covers Graviton3 and Graviton4) and decode as no-ops
+    # on older cores, so one binary still runs everywhere - just unprotected on the older ones.
+    # Leaf functions are left unsigned, which is the default and free, because they do not spill
+    # the return address to the stack.
+    # `bti` is deliberately left out. The linker keeps the BTI property only when every input
+    # object carries it, including hand-written assembly and every contrib, so enabling it needs
+    # its own audit; without one it would cost code size and enforce nothing.
+    #
+    # Sanitizer builds are excluded, because a signed return address on the stack is only
+    # readable by an unwinder that strips the signature, and the sanitizer runtimes shipped with
+    # the toolchain do not. `compiler-rt`'s frame-pointer unwinder collects the allocation and
+    # deallocation stacks behind every ASan and LSan report, and its `STRIP_PAC_PC` is the
+    # identity unless `compiler-rt` itself was compiled with `-mbranch-protection`. Signed frames
+    # then reach the reports verbatim: the signature occupies the bits above the virtual address,
+    # so most of the frames of a report symbolize to `<unknown module>` (17 of 21 in the one that
+    # this was measured on, against 1 of 26 for the same report on master). It is also a memory
+    # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
+    # different value at every stack depth and each one takes a fresh entry in the stack depot,
+    # which is never freed.
+    #
+    # What this covers is the code the compiler generates from the sources it is given, so anything
+    # compiled with a flag set of its own, assembled rather than compiled, or built by another
+    # compiler keeps unsigned return addresses:
+    #   - the in-tree `compiler-rt` runtimes. `contrib/compiler-rt-cmake` filters the inherited
+    #     flags down to an allowlist (`_compiler_rt_keep_re`) which drops the hardening ones, and
+    #     that is also why their unwinder does not strip the signature: `sanitizer_ptrauth.h` keys
+    #     stripping on `__ARM_FEATURE_PAC_DEFAULT`, which is precisely what this flag defines, so
+    #     adding it to that allowlist is what it would take to sign them and to make sanitizer
+    #     builds readable again.
+    #   - hand-written assembly. A `.s` input assembles to a byte-identical object with and without
+    #     the flag, so `longjmp.s` and `syscall.s` under `base/glibc-compatibility/musl/aarch64`
+    #     stay unsigned, as does every prebuilt library we link.
+    #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
+    #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
+    #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
+    #     needs `std` built from source with the same flag - non-sanitizer builds do not pass
+    #     `-Zbuild-std` - or an explicit `-Cunsafe-allow-abi-mismatch=branch-protection`.
+    #
+    # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
+    # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
+    # the frame-pointer walk that `StackTrace::tryCapture` uses under TSan is abseil's, which
+    # strips the signature with `xpaclri` unconditionally.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+endif()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
