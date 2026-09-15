@@ -1057,12 +1057,25 @@ void LDAPAccessStorage::runSyncThread()
     /// of the interval so that they do not all hit the directory at the same moment.
     std::uniform_int_distribution<Int64> jitter(0, interval.count() / 10);
     std::chrono::seconds wait{jitter(thread_local_rng)};
+    bool first_run = true;
 
     while (true)
     {
         {
             std::unique_lock lock(sync_thread_mutex);
             if (sync_thread_cv.wait_for(lock, wait, [this] { return sync_thread_should_exit; }))
+                return;
+        }
+
+        /// The jitters are independent, so the first run of this directory could come before the first run of a
+        /// synchronised directory declared before it, and `checkPrecedingLDAPDirectories` would refuse it, with an
+        /// error logged and a failure counted, for a layout that is correct. Wait for those first runs instead, so
+        /// that the first runs happen in declaration order: this run is then judged against what they left behind,
+        /// a snapshot, or a failure that is already reported.
+        if (first_run)
+        {
+            first_run = false;
+            if (!waitForFirstRunsOfPrecedingDirectories())
                 return;
         }
 
@@ -1087,6 +1100,45 @@ void LDAPAccessStorage::runSyncThread()
 }
 
 
+bool LDAPAccessStorage::waitForFirstRunsOfPrecedingDirectories()
+{
+    const LDAPAccessStorage * awaited = nullptr;
+    while (const auto * pending = findPrecedingDirectoryWithPendingFirstRun())
+    {
+        if (pending != awaited)
+        {
+            awaited = pending;
+            LOG_INFO(getLogger(), "The first LDAP synchronisation of directory {} waits for the first synchronisation of directory {}, "
+                "which is declared before it", backQuote(getStorageName()), backQuote(pending->getStorageName()));
+        }
+
+        std::unique_lock lock(sync_thread_mutex);
+        if (sync_thread_cv.wait_for(lock, std::chrono::seconds{1}, [this] { return sync_thread_should_exit; }))
+            return false;
+    }
+    return true;
+}
+
+
+const LDAPAccessStorage * LDAPAccessStorage::findPrecedingDirectoryWithPendingFirstRun() const
+{
+    /// The wait always ends: every `ldap` directory is added from the main configuration before the jobs are
+    /// started, and the job of each synchronised directory finishes its first run whatever the outcome. The
+    /// layouts `checkPrecedingLDAPDirectories` refuses for good are not special-cased: their first run finishes
+    /// too, and the refusal follows right after the wait.
+    for (const auto & storage : access_control.getStorages())
+    {
+        if (storage.get() == this)
+            return nullptr;
+
+        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
+        if (ldap_storage && ldap_storage->sync_params && ldap_storage->isFirstSyncRunPending())
+            return ldap_storage;
+    }
+    return nullptr;
+}
+
+
 void LDAPAccessStorage::sync()
 {
     /// Runs are serialised; `mutex` is taken only for the in-memory apply phase, never around LDAP I/O.
@@ -1106,6 +1158,8 @@ void LDAPAccessStorage::sync()
     SCOPE_EXIT({
         if (!succeeded)
             ProfileEvents::increment(ProfileEvents::LDAPSyncFailures);
+        /// The jobs of the directories declared after this one wait for this, whatever the outcome (see `runSyncThread`).
+        first_sync_run_finished.store(true);
     });
 
     LOG_DEBUG(getLogger(), "Starting LDAP synchronisation of directory {} from server '{}'{}",

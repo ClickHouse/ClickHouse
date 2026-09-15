@@ -903,8 +903,10 @@
                          immediately. In a synchronized directory a login verifies the password only; roles come from the
                          synchronization. Read at startup only.
                     interval - seconds between two runs, 900 by default. The first run starts after a random delay of up to a
-                             tenth of the interval; a failed run is retried after min(interval, 60) seconds. 0 runs the
-                             synchronization at startup and on SYSTEM RELOAD USERS only. At most 315360000 (ten years).
+                             tenth of the interval, and, for a directory declared after another synchronized 'ldap'
+                             directory, only once the first run of that directory has finished; a failed run is retried
+                             after min(interval, 60) seconds. 0 runs the synchronization at startup and on
+                             SYSTEM RELOAD USERS only. At most 315360000 (ten years).
                     base_dn - base DN of the search that lists the users. Mandatory; must not contain '{user_name}',
                              '{bind_dn}' or '{user_dn}'.
                     scope - scope of that search: 'base', 'one_level', 'children', 'subtree' (the default).

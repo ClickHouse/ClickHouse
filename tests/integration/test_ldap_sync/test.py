@@ -19,7 +19,8 @@ Nodes:
     restarted with invalid configurations for the startup validation and with an `ldap` directory
     declared before the synchronised one that cannot answer the shadow rule: one that materialises
     users at login (no `<sync>`, or `only_synced_users` false) or a `dry_run` one, layouts every run
-    refuses, and one that has not applied a snapshot yet, refused until it has.
+    refuses, and one that has not applied a snapshot yet, refused until it has; and with two correct
+    synchronised directories, whose startup runs must happen in declaration order.
   - `node_stale`: the `ldap` directory FIRST (`interval` 1, `max_staleness` 3), then `users_xml`
     with the local user `local_after`: the gate order must keep local users reachable while the
     directory is stale.
@@ -1029,11 +1030,11 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
         admin(node_manual, "SYSTEM RELOAD USERS")
         assert admin(node_manual, ldap_users_query("janedoe")) == "0\n"
         assert node_manual.contains_in_log("Removed LDAP user 'janedoe'")
-        assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
         # With the cleanup reverted, the file would still hold the old id while the two renderings below
         # would look exactly the same.
         definition = stored_policy_definition()
         assert janedoe_id not in definition and "ID(" not in definition, definition
+        assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
         assert "janedoe" not in admin(
             node_manual, "SHOW CREATE ROW POLICY sync_policy ON default.policy_table"
         )
@@ -1353,8 +1354,9 @@ def test_synced_directory_declared_before_the_synced_one_needs_an_applied_snapsh
             "LDAP synchronisation of directory `ldap` cannot run yet: user directory `ldap_first` is an"
             " 'ldap' directory declared before it and has no authoritative snapshot yet"
         )
-        # The startup runs (`interval` 0): `ldap_first` fails on the lookup bind, `ldap` on the layout.
-        # Both are logged after `LDAPSyncFailures` was incremented.
+        # The startup runs (`interval` 0): `ldap_first` fails on the lookup bind, then `ldap`, whose startup
+        # run waits for that one to finish, on the layout. Both are logged after `LDAPSyncFailures` was
+        # incremented.
         assert_logs_contain_with_retry(
             node_bad, "LDAP synchronisation of directory .ldap_first. failed"
         )
@@ -1391,6 +1393,43 @@ def test_synced_directory_declared_before_the_synced_one_needs_an_applied_snapsh
             " which precedes directory .ldap.: not synchronised"
         )
         assert login(node_bad, "janedoe") == TSV([["janedoe"]])
+    finally:
+        restore_node_bad()
+
+
+def test_first_runs_happen_in_declaration_order(janedoe_in_role_a):
+    """The correct version of the layout above, against the good server definition: `ldap_first` (the
+    members of `clickhouse-role_b`) is declared before `ldap` (both groups), both with `interval` 0, so
+    both jobs are released at once. The startup run of `ldap` must wait for the startup run of `ldap_first`
+    to finish instead of racing it: were it first, it would be refused for a layout that is correct, with an
+    error logged, a failure counted and nobody served by `ldap` until `SYSTEM RELOAD USERS`. Exactly two
+    runs, no failure, every user in the first directory that serves them."""
+    try:
+        restart_node_bad_with(
+            preceding_ldap_config(
+                "ldap_first",
+                sync_section(
+                    search_filter=ROLE_B_SYNC_SEARCH_FILTER.replace("&", "&amp;")
+                ),
+            ),
+            server_config=read_config("ldap_server.xml"),
+        )
+        assert_eq_with_retry(
+            node_bad,
+            "SELECT name, storage FROM system.users"
+            " WHERE name IN ('janedoe', 'johndoe', 'permanent') ORDER BY name",
+            TSV(
+                [["janedoe", "ldap"], ["johndoe", "ldap_first"], ["permanent", "ldap"]]
+            ),
+            user="admin",
+        )
+        assert event_value(node_bad, "LDAPSyncRuns") == 2
+        assert event_value(node_bad, "LDAPSyncFailures") == 0
+        assert not node_bad.contains_in_log(
+            "LDAP synchronisation of directory .ldap. cannot run yet"
+        )
+        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
+        assert login(node_bad, "johndoe") == TSV([["johndoe"]])
     finally:
         restore_node_bad()
 
