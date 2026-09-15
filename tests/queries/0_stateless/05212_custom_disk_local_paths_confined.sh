@@ -41,6 +41,10 @@ CREATE TABLE t_encrypted_outside (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(type = encrypted, name = '${name}_encrypted_outside', disk = 'local_disk', path = '../../${name}_escape/', key = '1234567812345678'); -- { serverError BAD_ARGUMENTS }
 SELECT 'encrypted path outside wrapped disk, disk registered', count() FROM system.disks WHERE name = '${name}_encrypted_outside';
 
+CREATE TABLE t_encrypted_default (a Int32) ENGINE = MergeTree ORDER BY a
+SETTINGS disk = disk(type = encrypted, name = '${name}_encrypted_default', disk = 'default', path = '${name}_encrypted/', key = '1234567812345678'); -- { serverError BAD_ARGUMENTS }
+SELECT 'encrypted over local disk outside base directory, disk registered', count() FROM system.disks WHERE name = '${name}_encrypted_default';
+
 CREATE TABLE t_inside (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(name = '${name}_inside', type = 'local_blob_storage', path = '${inside}/');
 INSERT INTO t_inside VALUES (1), (2);
