@@ -157,6 +157,14 @@ public:
             nested->renameInMemory(new_table_id);
     }
 
+    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
     void checkTableCanBeDropped(ContextPtr query_context) const override
     {
         getNested()->checkTableCanBeDropped(query_context);
