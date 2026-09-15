@@ -72,6 +72,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_insert;
+    extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -1535,6 +1536,8 @@ BlockIO InterpreterInsertQuery::execute()
             /// and lose data. Kept before the transaction guard, which throws rather than downgrades.
             if (!is_initial_insert)
                 reason = "insert is not user-initiated";
+            else if (!settings[Setting::async_insert_select_as_async_insert])
+                reason = "async_insert_select_as_async_insert is disabled";
             else if (!context->tryGetAsynchronousInsertQueue())
                 reason = "asynchronous insert queue is not configured";
             else if (!settings[Setting::async_insert] && !table->areAsynchronousInsertsEnabled())
