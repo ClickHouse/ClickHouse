@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include <array>
 #include <Common/TargetSpecific.h>
 #include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
@@ -248,7 +249,7 @@ void transpose64x8(UInt64 * src_dst)
 
 /// Inverse of `transpose64x8`. Bit i of plane p (UInt64) becomes bit p of byte i. Reads only the first `num_bits` planes (the rest are 0).
 /// Please do not touch this function unless you really know what you are doing – it's tightly vectorised.
-void reverseTranspose64x8(UInt64 * matrix, UInt32 num_bits)
+ALWAYS_INLINE void reverseTranspose64x8(UInt64 * matrix, UInt32 num_bits)
 {
     /// pattern[i] = 1 << (i % 8): the bit of output byte i inside its plane byte.
     static constexpr UInt8 pattern[64] = {
@@ -271,7 +272,7 @@ void reverseTranspose64x8(UInt64 * matrix, UInt32 num_bits)
         for (UInt32 lane = 0; lane < 16; ++lane)
         {
             UInt32 byte_index = lane / 2;
-            if constexpr (std::endian::native != std::endian::little)
+            if constexpr (std::endian::native == std::endian::big)
                 byte_index = 7 - byte_index;
             expanded[lane] = bytes[8 * bit + byte_index] * 0x01010101u;
         }
@@ -417,6 +418,54 @@ T restoreUpperBits(T value, T upper_min, T upper_max, T sign_bit)
     return static_cast<T>(value | upper_min);
 }
 
+/// one_bit_expansion[b][j] = bit j of byte b.
+/// With one stored bit, eight consecutive values share a byte. The row unpacks it with one 8-byte load instead of eight shifts.
+constexpr auto one_bit_expansion = []
+{
+    std::array<std::array<UInt8, 8>, 256> table{};
+    for (size_t value = 0; value < table.size(); ++value)
+        for (size_t bit = 0; bit < 8; ++bit)
+            table[value][bit] = (value >> bit) & 1;
+    return table;
+}();
+
+/// `num_bits == 1` (flags, booleans) is common. With one stored bit, there are no planes to transpose, so the transpose is skipped.
+/// Tightly vectorised. Better not to touch this function unless you really know what you are doing.
+template <typename T>
+NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_elements, T upper_min, T upper_max, T sign_bit)
+{
+    const UInt32 full_bytes = num_elements / 8;
+    /// The loop within is vectorised. Vectorising this outer loop gave `Int8`, `Int16` and `Int32` a second copy that spilled registers.
+#pragma clang loop vectorize(disable)
+    for (UInt32 i = 0; i < full_bytes; ++i)
+    {
+        UInt32 byte_index = i;
+        if constexpr (std::endian::native == std::endian::big)
+            byte_index ^= 7;
+        const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
+        for (UInt32 bit = 0; bit < 8; ++bit)
+        {
+            T value = restoreUpperBits(static_cast<T>(values[bit]), upper_min, upper_max, sign_bit);
+            unalignedStore<T>(dst + bit * sizeof(T), value);
+        }
+        dst += 8 * sizeof(T);
+    }
+
+    const UInt32 tail = num_elements % 8;
+    if (tail)
+    {
+        UInt32 byte_index = full_bytes;
+        if constexpr (std::endian::native == std::endian::big)
+            byte_index ^= 7;
+        const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
+        for (UInt32 bit = 0; bit < tail; ++bit)
+        {
+            T value = restoreUpperBits(static_cast<T>(values[bit]), upper_min, upper_max, sign_bit);
+            unalignedStore<T>(dst + bit * sizeof(T), value);
+        }
+    }
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
@@ -425,7 +474,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
 {
     UInt32 part_bits = num_bits % 8;
 
-    /// Flags and small ranges often need at most eight stored bits.
+    /// Small ranges often need at most eight stored bits.
     /// A 64-byte matrix avoids clearing unused planes and reconstructing zero high bytes.
     if (num_bits <= 8)
     {
@@ -694,6 +743,13 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
             sign_bit = static_cast<T>(1ull << (num_bits - 1));
             upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
         }
+    }
+
+    if (num_bits == 1)
+    {
+        decompressOneBit(src, dst, static_cast<UInt32>(num_elements), upper_min, upper_max, sign_bit);
+        dst += uncompressed_size;
+        return static_cast<UInt32>(dst - original_dst);
     }
 
     for (UInt32 i = 0; i < num_full; ++i)
