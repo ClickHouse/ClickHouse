@@ -18,6 +18,7 @@ set(DBMS_FUNCTIONS
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
+    CancellationBudget.cpp # makeCancellationCheck (Used by StorageMerge.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
     FunctionsConversion_impl00.cpp
@@ -61,6 +62,7 @@ set(DBMS_FUNCTIONS
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
+    CancellationBudget.h
     ComparisonOrderDomain.h
     IFunction.h
     FunctionFactory.h
