@@ -1,0 +1,24 @@
+<test run_all_queries="1">
+    <!--
+        Keep the input nonconstant so the functions receive a ColumnString.
+        The payload contains no delimiter, forcing the scan to inspect the
+        whole value. Each query processes about 2 GiB of data and uses
+        FORMAT Null so client output does not dominate the result.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>1024</max_block_size>
+    </settings>
+
+    <!-- One delimiter: the XML decoder scans for '&amp;'. -->
+    <query>SELECT decodeXMLComponent(concat(repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT decodeXMLComponent(concat(repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+
+    <!-- Two delimiters: the URL decoder scans for '%' and '+'. -->
+    <query>SELECT decodeURLComponent(concat(repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT decodeURLComponent(concat(repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+
+    <!-- Four delimiters: the URL parser enters the query string, then scans a payload with no separators. -->
+    <query>SELECT extractURLParameters(concat('?', repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT extractURLParameters(concat('?', repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+</test>
