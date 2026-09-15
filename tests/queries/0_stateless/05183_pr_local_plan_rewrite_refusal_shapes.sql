@@ -19,10 +19,20 @@ DROP VIEW IF EXISTS v_limit_by_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_with_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_stateful_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_nondet_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_limit_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_offset_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_range_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_cte_pr_rewrite_shapes;
+DROP TABLE IF EXISTS r_pr_rewrite_shapes;
 
 CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
     SETTINGS index_granularity = 128;
 INSERT INTO t_pr_rewrite_shapes SELECT number % 10, number FROM numbers(10000);
+
+-- `FINAL` is refused by the rewrite as well, and parallel replicas do not run such a query at all.
+CREATE TABLE r_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = ReplacingMergeTree ORDER BY (tenant, ts)
+    SETTINGS index_granularity = 128;
+INSERT INTO r_pr_rewrite_shapes SELECT number % 10, number FROM numbers(10000);
 
 CREATE VIEW v_window_pr_rewrite_shapes AS
     SELECT tenant, ts, sum(ts) OVER (PARTITION BY tenant ORDER BY ts) AS s FROM t_pr_rewrite_shapes ORDER BY ts;
@@ -49,6 +59,18 @@ CREATE VIEW v_stateful_pr_rewrite_shapes AS
 -- orders itself off it - which is what tells statefulness apart from non-determinism as the reason.
 CREATE VIEW v_nondet_pr_rewrite_shapes AS
     SELECT tenant, ts, rand() AS r FROM t_pr_rewrite_shapes ORDER BY ts;
+-- The rest of the list `rewriteSubquery` refuses on. A `LIMIT` of any kind keeps the condition from
+-- reaching the read at all, so there is nothing left to order by the time it matters.
+CREATE VIEW v_limit_pr_rewrite_shapes AS
+    SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT 9999;
+CREATE VIEW v_offset_pr_rewrite_shapes AS
+    SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT 9000 OFFSET 10;
+CREATE VIEW v_range_pr_rewrite_shapes AS
+    SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT AFTER 5 UNTIL 9999;
+-- A `WITH` that names a subquery is rewritten into a subquery in the `FROM`, so the shipped query
+-- carries no `WITH` for the rewrite to refuse and the condition travels like any other.
+CREATE VIEW v_cte_pr_rewrite_shapes AS
+    WITH c AS (SELECT tenant, ts FROM t_pr_rewrite_shapes) SELECT tenant, ts FROM c ORDER BY ts;
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -125,6 +147,33 @@ FROM (
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
 SELECT count() FROM (SELECT tenant, ts, r FROM v_nondet_pr_rewrite_shapes WHERE tenant = 5);
 
+SELECT 'every kind of limit keeps the condition away from the read';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_limit_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_offset_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_range_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+
+SELECT 'a named subquery is not a with list, so the condition travels and orders the read';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_cte_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
+SELECT count() FROM (SELECT tenant, ts FROM v_cte_pr_rewrite_shapes WHERE tenant = 5);
+
+SELECT 'final: parallel replicas do not run the query at all, so there is no mode to agree on';
+SELECT count() AS shipped_fragments
+FROM (EXPLAIN description = 0 SELECT tenant, ts FROM (SELECT tenant, ts FROM r_pr_rewrite_shapes FINAL ORDER BY ts) WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
+DROP TABLE r_pr_rewrite_shapes;
+DROP VIEW v_cte_pr_rewrite_shapes;
+DROP VIEW v_range_pr_rewrite_shapes;
+DROP VIEW v_offset_pr_rewrite_shapes;
+DROP VIEW v_limit_pr_rewrite_shapes;
 DROP VIEW v_nondet_pr_rewrite_shapes;
 DROP VIEW v_stateful_pr_rewrite_shapes;
 DROP VIEW v_with_pr_rewrite_shapes;

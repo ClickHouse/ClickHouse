@@ -19,3 +19,13 @@ non-deterministic but not stateful: the condition does go below it
 Read type: InOrder
 Prewhere filter column:  tenant = 5
 1000
+every kind of limit keeps the condition away from the read
+Read type: Default
+Read type: Default
+Read type: Default
+a named subquery is not a with list, so the condition travels and orders the read
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+1000
+final: parallel replicas do not run the query at all, so there is no mode to agree on
+0
