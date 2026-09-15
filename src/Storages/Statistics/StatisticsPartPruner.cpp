@@ -9,6 +9,7 @@
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <map>
 #include <unordered_set>
 
 namespace DB
@@ -68,17 +69,17 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, bool is_
     return std::nullopt;
 }
 
-/// Returns true when a column's statistics description can produce a useful range for part
-/// pruning: numeric min/max values (an explicit `MinMax` statistic, or `Basic` on a
-/// numeric/temporal column), or a NULL count (`Basic` on a nullable column). Used before part
-/// statistics are loaded to decide whether part pruning can be beneficial at all.
-bool statisticsSupportsPartPruning(const ColumnStatisticsDescription & stats_desc)
+/// Returns true when a column's statistics description can produce a numeric min/max range for
+/// part pruning: an explicit `MinMax` statistic, or `Basic` on a numeric/temporal column.
+/// Nullable non-numeric `Basic` statistics (NULL count only) are not sufficient on their own:
+/// `LIKE '%x%'` on `Nullable(String)` cannot use that count, and treating it as prunable would
+/// load per-part statistics with no chance to prune.
+bool statisticsHasMinMaxForPartPruning(const ColumnStatisticsDescription & stats_desc)
 {
     if (stats_desc.types_to_desc.contains(StatisticsType::MinMax))
         return true;
     if (stats_desc.types_to_desc.contains(StatisticsType::Basic))
-        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber()
-            || isNullableOrLowCardinalityNullable(stats_desc.data_type);
+        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber();
     return false;
 }
 
@@ -260,6 +261,8 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
         collectFloatColumnsUnderNegation(filter_node_, /*under_negation=*/ false, nan_unsafe_columns, visited_under_negation, visited);
     }
 
+    std::map<String, DataTypePtr> nullable_only_columns;
+
     for (const auto & name : filter_columns)
     {
         if (nan_unsafe_columns.contains(name))
@@ -267,10 +270,17 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
 
         if (const auto * col = columns.tryGet(name))
         {
-            if (statisticsSupportsPartPruning(col->statistics))
+            if (statisticsHasMinMaxForPartPruning(col->statistics))
             {
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
+            }
+            else if (hasBasicStatsOnNullableType(*col))
+            {
+                /// Candidate for NULL-count pruning. Do not mark useful yet: wait for a recognized
+                /// `IS NULL` / `IS NOT NULL` conjunct or a non-trivial `KeyCondition` (native
+                /// `isNull` atoms, or a range that can exclude the NULL sentinel).
+                nullable_only_columns[col->name] = col->type;
             }
         }
     }
@@ -286,6 +296,29 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
         null_predicates.push_back(pred);
         used_column_names.insert(pred.first);
         useless = false;
+    }
+
+    if (!nullable_only_columns.empty())
+    {
+        NamesAndTypesList probe_columns;
+        for (const auto & [col_name, col_type] : nullable_only_columns)
+            probe_columns.emplace_back(col_name, col_type);
+
+        if (KeyCondition * key_condition = getKeyConditionForEstimates(probe_columns))
+        {
+            const auto column_names = probe_columns.getNames();
+            for (size_t col_idx : key_condition->getUsedColumns())
+            {
+                if (col_idx >= column_names.size())
+                    continue;
+                auto it = nullable_only_columns.find(column_names[col_idx]);
+                if (it != nullable_only_columns.end())
+                {
+                    stats_column_name_to_type_map[it->first] = it->second;
+                    useless = false;
+                }
+            }
+        }
     }
 }
 
