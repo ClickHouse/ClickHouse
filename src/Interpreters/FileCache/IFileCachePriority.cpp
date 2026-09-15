@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -28,7 +29,7 @@ IFileCachePriority::Entry::Entry(
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
-    , size(size_)
+    , size(key_metadata_ && key_metadata_->useRealDiskSize() ? key_metadata_->alignFileSize(size_) : size_)
     , state(initial_state)
 {
 }

@@ -73,6 +73,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(Bool, use_real_disk_size, false, "Account cached file reservations in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of reserved bytes, so FilesystemCacheSize and the eviction-size metrics reflect the reservation footprint. Restart is required to change this setting.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
@@ -140,7 +141,11 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 
     result.add(
         ColumnDescription(
-            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+            "current_size",
+            std::make_shared<DataTypeUInt64>(),
+            "Current cache size. By default this is the sum of the reserved sizes of the cache file segments. "
+            "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
+            "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
