@@ -88,7 +88,7 @@ do
     echo -n "$1: "
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+$2+FORMAT+Native" --data-binary "@$DATA_DIR/$1.bin" \
         | grep -oE "DB::Exception: [^(]*\((INCORRECT_DATA|LOGICAL_ERROR)\)" | tail -1 \
-        | sed -E 's/DB::Exception: //'
+        | sed -E 's/DB::Exception: //; s/: While executing [A-Za-z]+//'
 done
 
 $CLICKHOUSE_CLIENT -q "
