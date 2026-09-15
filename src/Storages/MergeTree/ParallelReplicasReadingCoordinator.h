@@ -48,6 +48,22 @@ public:
 
     void setReadCompletedCallback(ReadCompletedCallback callback);
 
+    /// Registers the authoritative part-name identity class of the table named `table_name` (a full
+    /// table name, i.e. the `stream_id` of its parallel-replicas streams with the `#split_{i}` suffix
+    /// stripped), derived on the initiator from its OWN `MergeTreeData` via `partNameIdentityOf`.
+    ///
+    /// Announcements carry `part_name_identity` only since
+    /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`, so every announcement from an
+    /// older replica reports `PartNameIdentity::Unknown`. The initiator reads the same table as the
+    /// announcing replicas, so its own classification of that table is authoritative and is applied
+    /// to those announcements: without it, a mixed-version cluster reading a non-replicated
+    /// `MergeTree` would see only `Unknown` announcements and fall back to the weaker mark-count
+    /// check, which merges divergent same-named parts whose mark counts happen to coincide.
+    ///
+    /// Must be called before any announcement for the table can reach the coordinator (i.e. during
+    /// pipeline build, right after the coordinator is created).
+    void setAuthoritativePartNameIdentity(const String & table_name, RangesInDataPartDescription::PartNameIdentity identity);
+
 private:
     bool isReadingCompleted() const;
     std::shared_ptr<ImplInterface> getCoordinator(const String & stream_id) const;
@@ -70,6 +86,10 @@ private:
 
     /// Authoritative parts for each stream, captured from the snapshot replica's announcement.
     std::unordered_map<String, RangesInDataPartsDescription> stream_to_registered_parts;
+
+    /// Per-table part-name identity classes derived on the initiator from its own `MergeTreeData`,
+    /// keyed by full table name. See `setAuthoritativePartNameIdentity`.
+    std::unordered_map<String, RangesInDataPartDescription::PartNameIdentity> table_to_part_name_identity;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
