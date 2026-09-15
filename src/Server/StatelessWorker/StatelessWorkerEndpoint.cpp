@@ -219,10 +219,15 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
 
-        std::optional<UInt64> requested_status_version;
+        std::optional<UInt64> requested_task_status_version;
         if (params.has("task_status_version"))
-            requested_status_version = parse<UInt64>(params.get("task_status_version"));
-        const UInt64 task_status_version = negotiateTaskStatusVersion(requested_status_version);
+            requested_task_status_version = parse<UInt64>(params.get("task_status_version"));
+        const UInt64 task_status_version = negotiateTaskStatusVersion(requested_task_status_version);
+
+        std::optional<UInt64> requested_progress_version;
+        if (params.has("progress_version"))
+            requested_progress_version = parse<UInt64>(params.get("progress_version"));
+        const UInt64 progress_version = negotiateProgressVersion(requested_progress_version);
 
         body->eof();
         body.reset();
@@ -276,9 +281,11 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 break;
             }
         }
-        /// Respond with version used to serialize task status
+        /// Respond with the versions used to serialize the status so the coordinator reads it back
+        /// with the exact same versions.
         response.set("X-ClickHouse-Task-Status-Version", toString(task_status_version));
-        task_status.write(out, task_status_version);
+        response.set("X-ClickHouse-Progress-Version", toString(progress_version));
+        task_status.write(out, task_status_version, progress_version);
     }
     else if (operation == "cancel")
     {
