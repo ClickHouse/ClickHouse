@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 SET optimize_if_transform_strings_to_enum = 1;
+-- This test checks the `optimize_if_transform_strings_to_enum` optimization in isolation,
+-- so pin the unrelated `optimize_if_transform_const_strings_to_lowcardinality` optimization (enabled by default).
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
 
 SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10;
 EXPLAIN SYNTAX SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10;
