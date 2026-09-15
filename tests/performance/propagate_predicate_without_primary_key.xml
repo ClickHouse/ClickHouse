@@ -26,7 +26,14 @@
         INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 100) AS s ON b.k = s.k
     </query>
 
-    <!-- Same as the first one, but the copied atom is a constant set -->
+    <!-- Worst case: the copy filters nothing, so its per-row cost is pure overhead -->
+    <query>
+        SELECT count()
+        FROM prop_nopk_big AS b
+        INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 10000000) AS s ON b.k = s.k
+    </query>
+
+    <!-- A set lookup is too expensive to copy off-index, so this one must not change -->
     <query>
         SELECT count()
         FROM (SELECT * FROM prop_nopk_small WHERE k IN (SELECT number * 7 FROM numbers(300))) AS s

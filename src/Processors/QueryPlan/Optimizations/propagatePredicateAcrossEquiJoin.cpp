@@ -81,21 +81,43 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Only a MergeTree target is worth it: that is where a smaller input turns into less work
-bool targetReadsFromMergeTree(const QueryPlan::Node * target_root)
+/// Primary key of the MergeTree the target reads from. `std::nullopt` when it reads from something else
+std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
 {
-    return walkDown(target_root, [](const auto * n)
+    const auto * read = walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
-    }) != nullptr;
+    });
+    if (!read)
+        return {};
+    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
+    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// Every substituted key has to resolve to a column the target actually reads
-bool atomResolvesOnTarget(
+/// A fixed-size comparison costs a fraction of a hash probe, so a copy that filters nothing is a
+/// rounding error. A set lookup is an order of magnitude more, so it has to earn its place by
+/// pruning the primary key instead of being evaluated over the whole target
+bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
+{
+    if (atom->function_base->getName() == "in")
+        return false;
+    for (const auto * child : atom->children)
+    {
+        if (!child->result_type->isValueRepresentedByNumber())
+            return false;
+    }
+    return true;
+}
+
+/// Every substituted key has to resolve to a column the target reads, and a copy that cannot prune
+/// the primary key is only worth it when the atom itself is cheap
+bool atomWorthCopying(
     const QueryPlan::Node * target_root,
+    const NameSet & primary_key_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
+    const bool cheap = atomIsCheapEnoughForAnyTarget(atom);
     for (const auto * child : atom->children)
     {
         if (child->type != ActionsDAG::ActionType::INPUT)
@@ -103,7 +125,10 @@ bool atomResolvesOnTarget(
         const auto it = substitution.find(child->result_name);
         if (it == substitution.end())
             return false;
-        if (!resolveDown(target_root, it->second.name, /*stop_at_filter=*/false))
+        const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
+        if (!target_column)
+            return false;
+        if (!cheap && !primary_key_columns.contains(*target_column))
             return false;
     }
     return true;
@@ -215,7 +240,8 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    if (!targetReadsFromMergeTree(target_root))
+    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
+    if (!primary_key_columns)
         return 0;
 
     SubstitutionMap filter_level_sub;
@@ -234,7 +260,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomResolvesOnTarget(target_root, atom, filter_level_sub))
+            && atomWorthCopying(target_root, *primary_key_columns, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())
