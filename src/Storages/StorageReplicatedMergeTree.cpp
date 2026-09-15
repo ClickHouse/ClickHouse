@@ -10748,6 +10748,11 @@ std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishe
     return queue.getUnfinishedMutations();
 }
 
+Strings StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope() const
+{
+    return queue.getMutationsWithLegacyPartitionScope();
+}
+
 void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     if (zookeeper_retries_info.max_retries > 0)

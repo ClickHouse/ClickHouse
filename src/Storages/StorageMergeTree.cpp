@@ -1562,6 +1562,23 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     return result;
 }
 
+Strings StorageMergeTree::getMutationsWithLegacyPartitionScope() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A legacy file that could not be upgraded at load (see `loadMutations`) is read back by every
+    /// later load of the table, finished or not, and decoding its literals through a changed
+    /// partition key would fail the load of the whole table.
+    Strings result;
+    for (const auto & [mutation_version, entry] : current_mutations_by_version)
+    {
+        if (entry.needs_file_upgrade)
+            result.push_back(entry.file_name);
+    }
+
+    return result;
+}
+
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);

@@ -1120,6 +1120,13 @@ public:
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
+    /// Names of the mutation entries created by an older server version whose `IN PARTITION <value>`
+    /// scope is still persisted in the original literal form and cannot be recovered without
+    /// decoding the literals through the current partition key (see `rewritePartitionScopeToIds`
+    /// and `pinPartitionScopeOfLegacyCommands`). A partition key type change is refused while such
+    /// entries exist, because they would become undecodable after it.
+    virtual Strings getMutationsWithLegacyPartitionScope() const = 0;
+
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
@@ -1283,6 +1290,13 @@ public:
     /// the commands are left unpinned if that fails, e.g. after a partition key type change).
     void pinPartitionScopeOfLegacyCommands(
         MutationCommands & commands, const std::map<String, Int64> & block_numbers, ContextPtr query_context) const;
+
+    /// Can the partition scope of a legacy `ReplicatedMergeTree` mutation entry (see above) be
+    /// recovered from its block numbers, without decoding the literals through the partition key?
+    /// That is the case when every command is partition-scoped and the entry allocated a block
+    /// number in a single partition, so all the commands resolved to that very partition.
+    static bool isLegacyPartitionScopeRecoverableFromBlockNumbers(
+        const MutationCommands & commands, const std::map<String, Int64> & block_numbers);
 
     /// Returns the set of partition IDs affected by mutation commands.
     /// nullopt means all partitions are affected. An empty set means zero partitions are affected.

@@ -2282,6 +2282,26 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     return result;
 }
 
+Strings ReplicatedMergeTreeQueue::getMutationsWithLegacyPartitionScope() const
+{
+    Strings result;
+    std::lock_guard lock(state_mutex);
+
+    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    {
+        if (status.is_done)
+            break;
+
+        /// The znode keeps the original literals whatever this replica pinned in memory, so every
+        /// replica that loads the entry later (and this one after a restart) has to decode them again.
+        if (MergeTreeData::hasUnresolvedPartitionScope(status.entry->commands)
+            && !MergeTreeData::isLegacyPartitionScopeRecoverableFromBlockNumbers(status.entry->commands, status.entry->block_numbers))
+            result.push_back(name);
+    }
+
+    return result;
+}
+
 std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQueue::getMergePredicate(
     zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint)
 {

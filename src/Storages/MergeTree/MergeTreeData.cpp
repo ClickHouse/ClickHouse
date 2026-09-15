@@ -5634,6 +5634,30 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+
+        /// Even a key-safe type change of a partition key column (e.g. `Enum8 -> Int8`, a metadata-only
+        /// conversion) makes an `IN PARTITION <value>` literal undecodable ('a' cannot be read as
+        /// `Int8`). New mutation entries pin their scope as partition ids at creation, but an entry
+        /// created by an older server version may still carry the literals and have no other way to
+        /// recover its scope (a legacy plain `MergeTree` file on a non-writable disk cannot be upgraded,
+        /// and a legacy replicated entry spanning several partitions stores no per-command scope).
+        /// Refuse the change while such entries exist instead of leaving them, and possibly the whole
+        /// table, unloadable afterwards.
+        if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && columns_alter_type_check_safe_for_partition.contains(command.column_name))
+        {
+            auto old_type = old_types.find(command.column_name);
+            if (old_type != old_types.end() && !old_type->second->equals(*command.data_type))
+            {
+                if (auto legacy_mutations = getMutationsWithLegacyPartitionScope(); !legacy_mutations.empty())
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "ALTER of partition key column {} is forbidden while the mutation(s) {} created by "
+                                    "an older server version still scope their commands with an `IN PARTITION <value>` "
+                                    "literal that would become undecodable after the change; "
+                                    "wait for them to finish or kill them (KILL MUTATION) and retry",
+                                    backQuoteIfNeed(command.column_name), fmt::join(legacy_mutations, ", "));
+            }
+        }
         /// Just validate partition expression
         if (command.partition)
         {
@@ -10321,11 +10345,11 @@ void MergeTreeData::pinPartitionScopeOfLegacyCommands(
     /// partition-scoped and resolved to a single partition, that partition id is recovered
     /// from the block numbers without decoding the literals through the current partition
     /// key at all -- this stays correct even after a partition key type change.
-    if (block_numbers.size() == 1 && legacy_commands.size() == commands.size())
+    if (isLegacyPartitionScopeRecoverableFromBlockNumbers(commands, block_numbers))
     {
         const String & partition_id = block_numbers.begin()->first;
         for (auto * command : legacy_commands)
-            command->resolved_partition_id = partition_id;
+            command->resolved_partition_ids = PartitionIds{partition_id};
         return;
     }
 
@@ -10352,6 +10376,19 @@ void MergeTreeData::pinPartitionScopeOfLegacyCommands(
             "if its execution fails after a partition key change, it has to be killed",
             legacy_commands.size()));
     }
+}
+
+bool MergeTreeData::isLegacyPartitionScopeRecoverableFromBlockNumbers(
+    const MutationCommands & commands, const std::map<String, Int64> & block_numbers)
+{
+    if (block_numbers.size() != 1)
+        return false;
+
+    return std::ranges::all_of(commands, [](const auto & command)
+    {
+        auto alter = command.ast();
+        return alter && hasPartitionValueLiteral(getPartitionScopeLiterals(*alter));
+    });
 }
 
 PartitionIds MergeTreeData::getAllPartitionIds() const

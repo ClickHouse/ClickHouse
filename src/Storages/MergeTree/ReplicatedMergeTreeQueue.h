@@ -468,6 +468,11 @@ public:
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
+    /// Znode names of the unfinished mutation entries written by an older server version whose
+    /// `IN PARTITION <value>` scope cannot be recovered from the block numbers of the entry (see
+    /// `MergeTreeData::getMutationsWithLegacyPartitionScope`).
+    Strings getMutationsWithLegacyPartitionScope() const;
+
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:
