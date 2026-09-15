@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <optional>
+#include <set>
 
 
 namespace DB
@@ -72,6 +73,9 @@ private:
     /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
     UInt64 prev_reader_executor_cost_us = 0;
     UInt64 prev_reader_executor_requested_bytes = 0;
+
+    using FilesystemCacheUsageLabels = std::pair<String, String>;
+    std::set<FilesystemCacheUsageLabels> previous_filesystem_cache_usage_labels;
 
     void updateMutationAndDetachedPartsStats();
     void updateThreadStackStats();
