@@ -989,7 +989,13 @@ def test_prepared_statement_omits_schema_that_follows_a_setting():
         "ENGINE = Memory"
     )
 
-    for query in ["SELECT id, s FROM mytable", "SELECT id, a FROM mytable"]:
+    for query in [
+        "SELECT id, s FROM mytable",
+        "SELECT id, a FROM mytable",
+        # Inference substitutes NULL for a placeholder, so a bare `?` infers as `Nothing`, which has no
+        # Arrow mapping either. Its values are all NULL under either mode, so it does not cost the schema.
+        "SELECT id, ? AS p FROM mytable",
+    ]:
         stmt = client.prepare(query)
         assert stmt.dataset_schema is not None, query
         stmt.close()

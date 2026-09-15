@@ -349,8 +349,15 @@ namespace
         {
             if (const auto & metadata = field.metadata())
             {
-                const int index = metadata->FindKey("ARROW:extension:name");
-                if (index != -1 && std::string_view{metadata->value(index)} == FormatSettings::ARROW_OPAQUE_EXTENSION_NAME)
+                const int name_index = metadata->FindKey("ARROW:extension:name");
+                const int type_index = metadata->FindKey("ARROW:extension:metadata");
+                if (name_index != -1
+                    && std::string_view{metadata->value(name_index)} == FormatSettings::ARROW_OPAQUE_EXTENSION_NAME
+                    /// `Nothing` has no Arrow mapping either, but every one of its values is NULL, so the
+                    /// column carries nothing a client could read differently under the other mode. Counting
+                    /// it would cost the schema of every statement whose placeholder sits bare in the select
+                    /// list, since inference substitutes `NULL` and `SELECT ? AS x` infers as `Nothing`.
+                    && (type_index == -1 || std::string_view{metadata->value(type_index)} != "Nothing"))
                     return true;
             }
         }
