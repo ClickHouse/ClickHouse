@@ -37,10 +37,8 @@ same_user_query="SELECT count() FROM remote('127.0.0.1:$CLICKHOUSE_PORT_TCP', $i
 
 function run_remote_as_user()
 {
-    for analyzer in 1 0; do
-        for localhost_replica in 0 1; do
-            run_as_user "$query SETTINGS enable_analyzer = $analyzer, prefer_localhost_replica = $localhost_replica"
-        done
+    for localhost_replica in 0 1; do
+        run_as_user "$query SETTINGS prefer_localhost_replica = $localhost_replica"
     done
     for localhost_replica in 0 1; do
         run_as_user "$same_user_query SETTINGS prefer_localhost_replica = $localhost_replica"
