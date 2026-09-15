@@ -14,12 +14,13 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 truncate_error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.truncate.stderr"
+truncate_query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_truncate"
 trap 'rm -f "$truncate_error"' EXIT
 
 # With the queue stopped the DROP_RANGE entry is never executed, so TRUNCATE stays inside
 # waitForLogEntryToBeProcessedIfNecessary. alter_sync is pinned because that wait is what the
 # RENAME below must not block on; at alter_sync = 0 TRUNCATE would not wait at all.
-$CLICKHOUSE_CLIENT -q "SET alter_sync = 1; TRUNCATE TABLE t" > /dev/null 2> "$truncate_error" &
+$CLICKHOUSE_CLIENT --query_id="$truncate_query_id" -q "SET alter_sync = 1; TRUNCATE TABLE t" > /dev/null 2> "$truncate_error" &
 truncate_pid=$!
 
 # Stopping the queue stops executing it, not pulling into it, so the queue can still hold the
@@ -27,11 +28,17 @@ truncate_pid=$!
 queued=0
 for _ in {1..300}
 do
-    queued=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.replication_queue WHERE database = currentDatabase() AND table = 't' AND type = 'DROP_RANGE'")
+    queued=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.replication_queue WHERE database = currentDatabase() AND table = 't' AND type = 'DROP_RANGE' SETTINGS use_query_cache = 0")
     [[ "$queued" == "1" ]] && break
     sleep 0.1
 done
 [[ "$queued" == "1" ]] || echo "TRUNCATE never created its DROP_RANGE entry"
+
+# A queued entry does not prove TRUNCATE is still waiting on it: dropPartitions creates every entry
+# before it waits for any. One sample suffices because the stopped queue cannot execute the entry
+# just observed, so a TRUNCATE seen in flight here stays in flight until the queues start below.
+in_flight=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.processes WHERE query_id = '$truncate_query_id' SETTINGS use_query_cache = 0")
+[[ "$in_flight" == "1" ]] || echo "TRUNCATE was not in flight when its DROP_RANGE was queued"
 
 # TRUNCATE only removes data, so DDL on the table name must not wait for it.
 timeout 30 $CLICKHOUSE_CLIENT -q "RENAME TABLE t TO t2" && echo "RENAME is not blocked"
