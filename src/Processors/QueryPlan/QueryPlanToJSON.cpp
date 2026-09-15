@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/StepStatsJSONPrinter.h>
 #include <Processors/QueryPlan/StepStatsStorage.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/StringUtils.h>
 #include <base/types.h>
 
 #include <memory>
@@ -28,7 +29,7 @@ namespace
 /// read the DAG at all, and FilterStep would otherwise look its filter column up with
 /// ActionsDAG::findInOutputs, which throws UNKNOWN_IDENTIFIER on the empty remains. Under pretty
 /// the expressions come from the names captured while the DAGs were still intact.
-void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const PrettyNames * plan_pretty_names)
+String addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const PrettyNames * plan_pretty_names)
 {
     PrettyNames empty_pretty_names;
     WriteBufferFromOwnString out;
@@ -61,6 +62,10 @@ void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, con
     }
 
     map.add("Details", std::move(details));
+
+    /// Returned so that references between plans can be resolved against what a step actually
+    /// printed -- a set is named here by its `subqueryN` alias, not by the key the sub-plan knows.
+    return text;
 }
 
 /// The names are scoped per plan: a sub-plan is its own naming scope and has its own entry.
@@ -73,7 +78,17 @@ const PrettyNames * findPrettyNames(const PrettyNamesPerPlan * pretty_names, con
     return it == pretty_names->names.end() ? nullptr : &it->second;
 }
 
-std::unique_ptr<JSONBuilder::JSONMap> makeNode(
+/// A serialized node, with the text it rendered kept beside it so that one plan can find the step
+/// in another that refers to it. Ids and text only -- nothing here points into the plan, which the
+/// caller may drop before the document is assembled.
+struct CollectedNode
+{
+    String id;
+    String text;
+    std::unique_ptr<JSONBuilder::JSONMap> map;
+};
+
+CollectedNode makeNode(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
     size_t max_description_length,
@@ -81,6 +96,7 @@ std::unique_ptr<JSONBuilder::JSONMap> makeNode(
     const PrettyNames * plan_pretty_names)
 {
     auto map = std::make_unique<JSONBuilder::JSONMap>();
+    String text;
 
     /// `Node Type` and `Node Id` keep the names EXPLAIN json=1 gives them, so that a reader who
     /// knows one form recognises the other.
@@ -103,11 +119,15 @@ std::unique_ptr<JSONBuilder::JSONMap> makeNode(
             description = description.substr(0, max_description_length);
 
         if (!description.empty())
+        {
             map->add("Description", description);
+            text += description;
+            text += '\n';
+        }
     }
 
     if (options.actions)
-        addStepDetails(step, *map, plan_pretty_names);
+        text += addStepDetails(step, *map, plan_pretty_names);
 
     if (options.indexes)
         step.describeIndexes(*map);
@@ -118,12 +138,13 @@ std::unique_ptr<JSONBuilder::JSONMap> makeNode(
     if (steps_to_stats)
         map->add("Statistics", StepStatsJSONPrinter::toJSON(steps_to_stats->analyzeStep(&step)));
 
-    return map;
+    return {step.getUniqID(), std::move(text), std::move(map)};
 }
 
-}
 
-JSONBuilder::ItemPtr queryPlanToJSON(
+/// Walks a plan and serializes every node, children included. Shared by the main document and by
+/// the sub-plans that are serialized on their own.
+std::vector<CollectedNode> collectNodes(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
@@ -136,7 +157,7 @@ JSONBuilder::ItemPtr queryPlanToJSON(
         QueryPlan::Node * node = nullptr;
     };
 
-    auto nodes_array = std::make_unique<JSONBuilder::JSONArray>();
+    std::vector<CollectedNode> collected;
 
     std::vector<Frame> stack;
     stack.push_back({&plan, plan.getRootNode()});
@@ -150,7 +171,7 @@ JSONBuilder::ItemPtr queryPlanToJSON(
             continue;
 
         auto & step = *frame.node->step;
-        auto node_map = makeNode(
+        auto collected_node = makeNode(
             step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, frame.plan));
 
         auto children = std::make_unique<JSONBuilder::JSONArray>();
@@ -176,8 +197,214 @@ JSONBuilder::ItemPtr queryPlanToJSON(
             stack.push_back({child_plan, child_root});
         }
 
-        node_map->add("Children", std::move(children));
-        nodes_array->add(std::move(node_map));
+        collected_node.map->add("Children", std::move(children));
+        collected.push_back(std::move(collected_node));
+    }
+
+    return collected;
+}
+
+/// The `__set_<hash>` -> alias entries of a plan's pretty names. `buildPrettyNamesPerPlan` puts
+/// them in the same map as the column names, keyed by exactly the string `PreparedSets::toString`
+/// produces, which is what a captured sub-plan records for the set it builds.
+std::unordered_map<String, String> extractSetAliases(const PrettyNames * names)
+{
+    std::unordered_map<String, String> aliases;
+    if (!names)
+        return aliases;
+
+    for (const auto & [key, pretty] : names->pretty_names)
+        if (key.starts_with("__set_"))
+            aliases.emplace(key, pretty.expression);
+
+    return aliases;
+}
+
+/// Whether `text` names `name` as a whole word, so that `subquery1` does not match inside
+/// `subquery10`. Set aliases are the only thing looked up this way, and they are exactly of that
+/// shape -- a fixed prefix followed by a number.
+bool mentionsWord(std::string_view text, std::string_view name)
+{
+    const auto is_word_char = [](char c) { return isWordCharASCII(c); };
+
+    for (size_t pos = text.find(name); pos != std::string_view::npos; pos = text.find(name, pos + 1))
+    {
+        const size_t after = pos + name.size();
+        const bool starts_word = pos == 0 || !is_word_char(text[pos - 1]);
+        const bool ends_word = after >= text.size() || !is_word_char(text[after]);
+
+        if (starts_word && ends_word)
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+SerializedSubPlan serializeSubPlan(
+    const QueryPlan & plan,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    std::string_view origin,
+    const StepStatsStorage * steps_to_stats,
+    const PrettyNamesPerPlan * pretty_names)
+{
+    SerializedSubPlan result;
+    if (!plan.isInitialized() || !plan.getRootNode())
+        return result;
+
+    result.root_id = plan.getRootNode()->step->getUniqID();
+
+    for (auto & node : collectNodes(plan, options, max_description_length, steps_to_stats, pretty_names))
+    {
+        // Says where the node came from, so a reader does not take it for part of the main tree.
+        node.map->add("Origin", String(origin));
+        result.node_text.emplace_back(node.id, std::move(node.text));
+        result.nodes.push_back(std::move(node.map));
+    }
+
+    result.set_aliases = extractSetAliases(findPrettyNames(pretty_names, &plan));
+
+    if (steps_to_stats)
+    {
+        result.execution_time_ns = steps_to_stats->getExecutionTimeNs();
+        result.max_threads = steps_to_stats->getMaxThreads();
+    }
+
+    return result;
+}
+
+JSONBuilder::ItemPtr queryPlanToJSON(
+    const QueryPlan & plan,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const StepStatsStorage * steps_to_stats,
+    const PrettyNamesPerPlan * pretty_names,
+    std::vector<SerializedSubPlan> * sub_plans)
+{
+    auto collected = collectNodes(plan, options, max_description_length, steps_to_stats, pretty_names);
+
+    /// What each step of the query's own plan printed, kept only long enough to work out which of
+    /// them uses each set built during planning. See `findSetConsumers`.
+    std::vector<std::pair<String, String>> main_plan_text;
+    main_plan_text.reserve(collected.size());
+
+    auto nodes_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (auto & node : collected)
+    {
+        main_plan_text.emplace_back(node.id, std::move(node.text));
+        nodes_array->add(std::move(node.map));
+    }
+
+    /// A sub-plan knows the set it builds by key; the steps that use that set print a `subqueryN`
+    /// alias instead, and the pretty names of the plan those steps belong to hold the translation.
+    ///
+    /// Searched one plan at a time rather than over every node, because the aliases are numbered
+    /// per plan: `subquery1` in the query's plan and `subquery1` in a sub-plan are different sets,
+    /// so a document-wide search for the name would invent links that do not exist.
+    struct Scope
+    {
+        const std::unordered_map<String, String> * aliases;
+        const std::vector<std::pair<String, String>> * node_text;
+    };
+
+    const auto main_set_aliases = extractSetAliases(findPrettyNames(pretty_names, &plan));
+
+    std::vector<Scope> scopes;
+    scopes.push_back({&main_set_aliases, &main_plan_text});
+    if (sub_plans)
+        for (const auto & sub_plan : *sub_plans)
+            scopes.push_back({&sub_plan.set_aliases, &sub_plan.node_text});
+
+    /// The alias the consuming steps print, and the ids of those steps. Empty when nothing in the
+    /// document refers to the set -- a subquery whose result was used only by index analysis that
+    /// did not name it, for instance.
+    const auto findConsumers = [&](const String & set_key, const std::vector<std::pair<String, String>> * own_nodes)
+    {
+        struct Found
+        {
+            String alias;
+            std::vector<String> node_ids;
+        };
+        Found found;
+
+        for (const auto & scope : scopes)
+        {
+            /// A plan does not consume the set it builds itself.
+            if (scope.node_text == own_nodes)
+                continue;
+
+            const auto alias_it = scope.aliases->find(set_key);
+            if (alias_it == scope.aliases->end())
+                continue;
+
+            for (const auto & [node_id, node_text] : *scope.node_text)
+            {
+                if (!mentionsWord(node_text, alias_it->second))
+                    continue;
+
+                found.alias = alias_it->second;
+                found.node_ids.push_back(node_id);
+            }
+
+            if (!found.node_ids.empty())
+                return found;
+
+            /// Remember the name even when no step spelled it out, so the entry can still say what
+            /// the query called this subquery.
+            if (found.alias.empty())
+                found.alias = alias_it->second;
+        }
+
+        return found;
+    };
+
+    // Plans that ran for this query without being part of its tree, listed among the nodes so a
+    // reader walks one array, and named at the root so their roots can be told from the main one.
+    auto sub_plan_roots = std::make_unique<JSONBuilder::JSONArray>();
+    if (sub_plans)
+    {
+        // Moved rather than copied: JSONBuilder items are not copyable, and `render` keeps its
+        // result and releases the plan afterwards, so nothing serializes these a second time.
+        for (auto & sub_plan : *sub_plans)
+        {
+            if (sub_plan.nodes.empty())
+                continue;
+
+            // Shaped like the root of the document, one level down: same keys, same meanings, for
+            // the pipeline this subquery ran in. `ExecutionTimeNs` is that pipeline's own -- it ran
+            // before the main one existed, so it is not part of the query's and the two do not sum.
+            auto entry = std::make_unique<JSONBuilder::JSONMap>();
+            entry->add("Root", sub_plan.root_id);
+
+            /// Which step uses this set. Without it a reader sees a sub-plan that reads a large
+            /// table and nothing at all saying what the query wanted it for.
+            if (!sub_plan.set_key.empty())
+            {
+                const auto found = findConsumers(sub_plan.set_key, &sub_plan.node_text);
+
+                if (!found.alias.empty())
+                    entry->add("Name", found.alias);
+
+                if (!found.node_ids.empty())
+                {
+                    auto consumers = std::make_unique<JSONBuilder::JSONArray>();
+                    for (const auto & node_id : found.node_ids)
+                        consumers->add(node_id);
+                    entry->add("ConsumedBy", std::move(consumers));
+                }
+            }
+
+            if (sub_plan.execution_time_ns)
+                entry->add("ExecutionTimeNs", *sub_plan.execution_time_ns);
+            if (sub_plan.max_threads)
+                entry->add("MaxThreads", *sub_plan.max_threads);
+            sub_plan_roots->add(std::move(entry));
+
+            for (auto & node : sub_plan.nodes)
+                nodes_array->add(std::move(node));
+        }
     }
 
     auto result = std::make_unique<JSONBuilder::JSONMap>();
@@ -208,6 +435,9 @@ JSONBuilder::ItemPtr queryPlanToJSON(
 
         result->add("Output", std::move(output_array));
     }
+
+    if (sub_plans && !sub_plans->empty())
+        result->add("SetSubqueries", std::move(sub_plan_roots));
 
     result->add("Nodes", std::move(nodes_array));
 

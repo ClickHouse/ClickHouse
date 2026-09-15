@@ -40,5 +40,9 @@ SELECT
     countSubstrings(toJSONString(query_plan), '"Node Type":"IntersectOrExcept"') AS set_op_steps,
     countSubstrings(toJSONString(query_plan), '"Node Type":"ReadFromSystemNumbers"') AS sources
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05185\_%'
+-- Named one by one rather than matched by prefix: `clickhouse-test` gives every statement it runs
+-- a default `log_comment` of `<test file name>-<database>`, which starts with `05185_` too, so a
+-- prefix match also picks up this file's own `SET` and `SYSTEM FLUSH LOGS` statements.
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05185_intersect', '05185_except', '05185_intersect_distinct', '05185_mixed')
 ORDER BY shape;

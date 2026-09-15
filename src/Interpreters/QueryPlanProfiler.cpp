@@ -39,6 +39,20 @@ bool isSupportedQuery(const ASTPtr & ast)
     return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
 }
 
+/// The same for the main plan and for every sub-plan: `compact` and `pretty` are not preferences
+/// but the only settings under which the describe methods do not read an ActionsDAG that
+/// buildQueryPipeline has already moved out. See addStepDetails in QueryPlanToJSON.cpp.
+ExplainPlanOptions planExplainOptions()
+{
+    return ExplainPlanOptions
+    {
+        .actions = true,
+        .indexes = true,
+        .compact = true,
+        .pretty = true,
+    };
+}
+
 void maskSensitiveValues(JSONBuilder::IItem & item)
 {
     auto masker = SensitiveDataMasker::getInstance();
@@ -138,6 +152,139 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
     pipeline.setStepWallClockRegistry(std::move(registry));
 }
 
+SetSubPlanCapture::SetSubPlanCapture(
+    QueryPlanProfilerPtr profiler_, const QueryPlan & plan_, PrettyNamesPerPlan pretty_names_, String set_key_)
+    : profiler(std::move(profiler_))
+    , plan(&plan_)
+    , pretty_names(std::move(pretty_names_))
+    , set_key(std::move(set_key_))
+{
+}
+
+SetSubPlanCapture::~SetSubPlanCapture()
+{
+    /// Reached when `finish` never ran -- an exception while the sub-pipeline was executing, or a
+    /// caller that stopped early. The structure is still worth having: without it the stored plan
+    /// does not name the tables this subquery read. Only the statistics are lost.
+    publish(nullptr);
+}
+
+void SetSubPlanCapture::publish(const StepStatsStorage * stats) noexcept
+{
+    if (!profiler)
+        return;
+
+    /// Spent first, so that neither a later call nor the destructor publishes this a second time.
+    auto owner = std::move(profiler);
+
+    /// As everywhere else in the profiler: this runs in the middle of planning a query that has
+    /// returned nothing yet, so the allocations are the profiler's and no exception may escape.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        auto serialized = serializeSubPlan(
+            *plan,
+            planExplainOptions(),
+            owner->max_description_length,
+            "Set subquery, built during planning",
+            stats,
+            &pretty_names);
+
+        if (serialized.nodes.empty())
+            return;
+
+        serialized.set_key = set_key;
+        owner->addSetSubPlan(std::move(serialized));
+    }
+    catch (...) /// Ok: the plan is a diagnostic, and this runs both from a destructor and in the
+                /// middle of planning a query that has not returned anything yet. Losing one
+                /// sub-plan from the document costs the row some detail; letting the exception out
+                /// would fail the query itself.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void SetSubPlanCapture::instrument(QueryPipeline & pipeline)
+{
+    if (!profiler)
+        return;
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        auto registry = std::make_unique<StepWallClockRegistry>();
+        registry->populateFromPlan(*plan);
+        pipeline.setStepWallClockRegistry(std::move(registry));
+    }
+    catch (...) /// Ok: the sub-plan keeps its structure and loses only its timings.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void SetSubPlanCapture::finish(const QueryPipeline & pipeline)
+{
+    if (!profiler)
+        return;
+
+    std::optional<StepStatsStorage> stats;
+
+    {
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            UInt64 execution_time_ns = 0;
+            if (const auto * registry = pipeline.getStepClocks())
+                execution_time_ns = registry->getExecutionTimeNs();
+
+            /// The subquery's own pipeline and its own execution time -- not the query's, which has
+            /// no pipeline at this point.
+            stats.emplace(pipeline, *plan, execution_time_ns);
+        }
+        catch (...) /// Ok: publishing below still records the sub-plan, without its statistics.
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    publish(stats ? &*stats : nullptr);
+}
+
+SetSubPlanCapture QueryPlanProfiler::captureSetSubPlan(const ContextPtr & context, const QueryPlan & plan, String set_key)
+{
+    auto profiler = context->getPlanProfiler();
+    if (!profiler)
+        return {};
+
+    if (!plan.isInitialized() || !plan.getRootNode())
+        return {};
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        /// The only thing that has to be read now rather than at the end: building the pipeline
+        /// moves the ActionsDAGs these names come from out of every expression step.
+        return SetSubPlanCapture(
+            std::move(profiler), plan, QueryPlanFormat::buildPrettyNamesPerPlan(plan), std::move(set_key));
+    }
+    catch (...) /// Ok: see `publish`.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return {};
+    }
+}
+
+void QueryPlanProfiler::addSetSubPlan(SerializedSubPlan sub_plan)
+{
+    std::lock_guard lock(sub_plans_mutex);
+    set_sub_plans.push_back(std::move(sub_plan));
+}
+
 const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
 {
     /// Rendering twice would throw away the version that has the statistics, and the second call
@@ -164,20 +311,14 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
             stats.emplace(*pipeline, *query_plan, execution_time_ns);
         }
 
-        ExplainPlanOptions explain_options
-        {
-            .actions = true,
-            .indexes = true,
-            .compact = true,
-            .pretty = true,
-        };
-
+        std::lock_guard lock(sub_plans_mutex);
         plan_json = toJSONString(queryPlanToJSON(
             *query_plan,
-            explain_options,
+            planExplainOptions(),
             max_description_length,
             stats ? &*stats : nullptr,
-            pretty_names ? &*pretty_names : nullptr));
+            pretty_names ? &*pretty_names : nullptr,
+            &set_sub_plans));
     }
     catch (...)
     {
