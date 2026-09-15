@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A distributed plan cannot guarantee that a projection is used, so a forced projection
 -- (`force_optimize_projection` / `force_optimize_projection_name`) falls back to local execution:
 -- the plan has no exchanges. Without forcing, the same query is distributed and has a GatherExchange.
