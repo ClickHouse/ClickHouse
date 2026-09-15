@@ -34,6 +34,7 @@ public:
         FileStatusPtr file_status_,
         BucketInfoPtr bucket_info_,
         size_t buckets_num_,
+        size_t buckets_per_partition_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
@@ -62,6 +63,7 @@ public:
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
         const std::string & path,
         size_t buckets_num,
+        size_t buckets_per_partition,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
@@ -101,6 +103,7 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
+        size_t buckets_per_partition,
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
