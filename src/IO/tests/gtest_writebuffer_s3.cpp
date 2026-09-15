@@ -123,6 +123,9 @@ public:
     /// The `ETag` of the generation at each key, a new one for every write to the key, served by
     /// HeadObject and checked by the copies against `x-amz-copy-source-if-match`. Quoted, as S3 quotes it.
     std::map<Key, ETag> object_etags;
+    /// The versions of a key a versioned bucket keeps, by version id: a copy that addresses the
+    /// source as `key?versionId=...` copies the one it names, whatever is at the key now.
+    std::map<Key, std::map<std::string, Data>> object_versions;
     /// The `If-None-Match` header of every PutObject that reached the store, empty for an
     /// unconditional one, so a test can assert that a write was a create-if-absent one.
     std::vector<std::string> put_if_none_match;
@@ -161,6 +164,13 @@ public:
         objects[key] = data;
         object_metadata[key] = metadata;
         return object_etags[key] = "\"" + sequencer.next_id() + "\"";
+    }
+
+    /// Keeps what is at `key` now as version `version_id`, the way a versioned bucket keeps every
+    /// generation a write creates; the current version stays what it is.
+    void RecordVersion(const std::string & key, const std::string & version_id)
+    {
+        object_versions[key][version_id] = objects.at(key);
     }
 
     /// A delete as S3 evaluates it on general purpose buckets: `If-Match` is compared with the
@@ -286,12 +296,23 @@ inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, 
 
 inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedError();
 
-/// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key".
+/// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key", or "bucket/key?versionId=..."
+/// for a version of the source other than the current one. The version is not part of the key.
 inline std::pair<std::string, std::string> splitCopySource(const std::string & copy_source)
 {
     auto slash = copy_source.find('/');
     chassert(slash != std::string::npos);
-    return {copy_source.substr(0, slash), copy_source.substr(slash + 1)};
+    const auto version = copy_source.find("?versionId=", slash);
+    const auto key_end = version == std::string::npos ? copy_source.size() : version;
+    return {copy_source.substr(0, slash), copy_source.substr(slash + 1, key_end - slash - 1)};
+}
+
+/// The version a `CopySource` names, or empty for the current one.
+inline std::string copySourceVersionId(const std::string & copy_source)
+{
+    static const std::string marker = "?versionId=";
+    const auto version = copy_source.find(marker);
+    return version == std::string::npos ? std::string{} : copy_source.substr(version + marker.size());
 }
 
 struct InjectionModel
@@ -700,7 +721,7 @@ struct Client : DB::S3::Client
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
         if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
             return *refused;
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
+        const String & src_data = copySourceData(src_bucket, src_key, copySourceVersionId(request.GetCopySource()));
         const auto etag = store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
 
         /// The `ETag` of the generation the copy created, in the `CopyObjectResult` element of the response.
@@ -720,7 +741,7 @@ struct Client : DB::S3::Client
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
         if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
             return *refused;
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
+        const String & src_data = copySourceData(src_bucket, src_key, copySourceVersionId(request.GetCopySource()));
 
         size_t begin = 0;
         size_t end = src_data.size() - 1;
@@ -741,10 +762,23 @@ struct Client : DB::S3::Client
         return Aws::S3::Model::UploadPartCopyOutcome(result);
     }
 
+    /// The bytes a copy source names: the version it selects, as a versioned bucket serves it, or
+    /// what is at the key now. Every version a copy names is recorded in `copy_source_version_ids`.
+    const String & copySourceData(const std::string & src_bucket, const std::string & src_key, const std::string & version_id) const
+    {
+        auto & bucket_store = store->GetBucketStore(src_bucket);
+        if (version_id.empty())
+            return bucket_store.objects[src_key];
+        copy_source_version_ids.push_back(version_id);
+        return bucket_store.object_versions.at(src_key).at(version_id);
+    }
+
     std::shared_ptr<S3MemStrore> store;
     mutable EventCounts counters;
     /// Every non-empty `x-amz-copy-source-if-match` a CopyObject or UploadPartCopy carried.
     mutable std::vector<std::string> copy_source_if_match_headers;
+    /// Every `?versionId=` a CopyObject or UploadPartCopy source named.
+    mutable std::vector<std::string> copy_source_version_ids;
     mutable std::shared_ptr<InjectionModel> injections;
     void resetCounters() const { counters = {}; }
 };
@@ -2172,12 +2206,13 @@ protected:
         };
     }
 
-    void runWholeCopy(const String & src_key, size_t size, const String & dst_key, const String & src_etag = {})
+    void runWholeCopy(
+        const String & src_key, size_t size, const String & dst_key, const String & src_etag = {}, const String & src_version_id = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3File(
-            client, bucket, src_key, size, src_etag,
+            client, bucket, src_key, size, src_etag, src_version_id,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
@@ -2185,12 +2220,18 @@ protected:
     }
 
     void runRangeCopy(
-        const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key, const String & src_etag = {})
+        const String & src_key,
+        size_t offset,
+        size_t size,
+        size_t src_object_size,
+        const String & dst_key,
+        const String & src_etag = {},
+        const String & src_version_id = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3FileRange(
-            client, bucket, src_key, offset, size, src_object_size, src_etag,
+            client, bucket, src_key, offset, size, src_object_size, src_etag, src_version_id,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
@@ -2272,6 +2313,53 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyPinnedToAReplacedGenerationIsRefused)
     EXPECT_EQ(client->counters.multiUploadComplete, 0u);
     EXPECT_EQ(client->counters.multiUploadAbort, 1u);
     EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// A restore from `S3('...?versionId=...')` reads one version of every object of the backup, and its
+/// native copy to an S3 disk has to transfer that same version: the `CopyObject` names it on the copy
+/// source, so a newer version at the key - of the same size, which no size check would tell apart -
+/// is not what lands on the disk.
+TEST_F(CopyS3FileRoutingTest, WholeCopyOfAVersionedSourceCopiesThatVersion)
+{
+    const String selected_version = putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).RecordVersion("src", "v1");
+    client->store->GetBucketStore(bucket).PutObject("src", String(selected_version.size(), 'x'));
+    ASSERT_NE(client->store->GetBucketStore(bucket).objects["src"], selected_version);
+
+    runWholeCopy("src", selected_version.size(), "dst", /* src_etag= */ {}, /* src_version_id= */ "v1");
+
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->copy_source_version_ids, std::vector<std::string>{"v1"});
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], selected_version);
+}
+
+/// The same for a ranged copy: every `UploadPartCopy` names the version, so a restore of a range
+/// of a versioned backup file is not a splice of the selected and the latest version.
+TEST_F(CopyS3FileRoutingTest, RangedCopyOfAVersionedSourceCopiesThatVersion)
+{
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    const String selected_version = putSource("src", source_size);
+    client->store->GetBucketStore(bucket).RecordVersion("src", "v1");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source_size, 'x'));
+
+    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst", /* src_etag= */ {}, /* src_version_id= */ "v1");
+
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_GT(client->counters.uploadPartCopy, 0u);
+    ASSERT_FALSE(client->copy_source_version_ids.empty());
+    EXPECT_TRUE(std::all_of(
+        client->copy_source_version_ids.begin(), client->copy_source_version_ids.end(), [](const auto & v) { return v == "v1"; }));
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], selected_version.substr(10, 20));
+}
+
+/// A copy that selects no version names none, as before: the current version of the key is copied.
+TEST_F(CopyS3FileRoutingTest, UnversionedCopyNamesNoVersion)
+{
+    const String source = putSource("src", /* size= */ 100);
+    runWholeCopy("src", source.size(), "dst");
+
+    EXPECT_TRUE(client->copy_source_version_ids.empty());
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
 }
 
 /// An unpinned copy carries no precondition, as before: a caller that names no generation gets a copy

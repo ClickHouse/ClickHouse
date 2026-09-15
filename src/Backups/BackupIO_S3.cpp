@@ -599,8 +599,9 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             /// replacement - and names the generation the copy and its read-and-write fallback are
             /// both pinned to, the one an ordinary read of the file would be pinned to (see
             /// `checkBackupFile`): the native copy carries it as `x-amz-copy-source-if-match`, and
-            /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version and
-            /// gets no token, and `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
+            /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version, which
+            /// the native copy addresses (`?versionId=` on the copy source, the version the fallback
+            /// reads too), and gets no token; `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
             /// it does every other plain read of the backup, but not out of the size check - which
             /// then holds for the object at the `HeadObject` only; a replacement between it and the
             /// copy is not caught with the pinning off (see `checkBackupFile`).
@@ -612,12 +613,12 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 
             if (is_range)
                 copyS3FileRange(
-                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size, src_etag,
+                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size, src_etag, s3_uri.version_id,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
             else
                 copyS3File(
-                    client, s3_uri.bucket, src_key, size, src_etag,
+                    client, s3_uri.bucket, src_key, size, src_etag, s3_uri.version_id,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
 
@@ -815,14 +816,14 @@ void BackupWriterS3::copyFileFromDisk(
 
             if (whole_object)
                 copyS3File(
-                    src_client, src_bucket, src_key, length, src_etag,
+                    src_client, src_bucket, src_key, length, src_etag, /* src_version_id= */ "",
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
             else
                 copyS3FileRange(
                     src_client, src_bucket, src_key, start_pos, length,
-                    /* src_object_size= */ source_size, src_etag,
+                    /* src_object_size= */ source_size, src_etag, /* src_version_id= */ "",
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
@@ -871,6 +872,7 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         /* src_key= */ source_key,
         size,
         src_etag,
+        /* src_version_id= */ s3_uri.version_id,
         /* dest_s3_client= */ client,
         /* dest_bucket= */ s3_uri.bucket,
         /* dest_key= */ fs::path(s3_uri.key) / destination,

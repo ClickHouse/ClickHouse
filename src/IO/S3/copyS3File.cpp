@@ -689,6 +689,7 @@ namespace
             size_t src_size_,
             size_t src_object_size_,
             const String & src_etag_,
+            const String & src_version_id_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -714,6 +715,7 @@ namespace
             , size(src_size_)
             , src_object_size(src_object_size_)
             , src_etag(src_etag_)
+            , src_version_id(src_version_id_)
             /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
             /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
             /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
@@ -735,7 +737,8 @@ namespace
 
         void performCopy()
         {
-            LOG_TEST(log, "Copy object {} to {} using native copy{}", src_key, dest_key,
+            LOG_TEST(log, "Copy object {} to {} using native copy{}{}", src_key, dest_key,
+                src_version_id.empty() ? "" : fmt::format(" of version {}", src_version_id),
                 src_etag.empty() ? "" : fmt::format(", pinned to the generation with `ETag` {}", src_etag));
 
             /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
@@ -774,11 +777,25 @@ namespace
         size_t src_object_size;
         /// The generation of the source that is copied, or empty for a copy by key alone.
         String src_etag;
+        /// The version of the source that is copied, or empty for the current one.
+        const String & src_version_id;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
         /// The read-and-write copy; returns the `ETag` of the generation it created, like this class does.
         std::function<String()> fallback_method;
+
+        /// What `CopyObject` and `UploadPartCopy` name as the source: `bucket/key`, with the version
+        /// appended as `?versionId=...` when one is selected, which is the form the SDK documents for
+        /// `SetCopySource` (the SDK percent-encodes the whole value into `x-amz-copy-source`, and the
+        /// endpoint decodes it back). Without the version, a copy of a source that the caller reads by
+        /// version would copy the latest version of the key instead.
+        String copySource() const
+        {
+            if (src_version_id.empty())
+                return src_bucket + "/" + src_key;
+            return src_bucket + "/" + src_key + "?versionId=" + src_version_id;
+        }
 
         void performSingleOperationCopy()
         {
@@ -808,7 +825,7 @@ namespace
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
-            request.SetCopySource(src_bucket + "/" + src_key);
+            request.SetCopySource(copySource());
             if (!src_etag.empty())
                 request.SetCopySourceIfMatch(src_etag);
             request.SetBucket(dest_bucket);
@@ -934,7 +951,7 @@ namespace
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
             /// Make a copy request to copy a part.
-            request->SetCopySource(src_bucket + "/" + src_key);
+            request->SetCopySource(copySource());
             /// Every part is pinned to the same generation, so a source replaced in place between two
             /// parts cannot make the destination a splice of two generations.
             if (!src_etag.empty())
@@ -1028,6 +1045,7 @@ namespace
         size_t src_size,
         size_t src_object_size,
         const String & src_etag,
+        const String & src_version_id,
         std::shared_ptr<const S3::Client> dest_s3_client,
         const String & dest_bucket,
         const String & dest_key,
@@ -1071,6 +1089,7 @@ namespace
             src_size,
             src_object_size,
             src_etag,
+            src_version_id,
             dest_bucket,
             dest_key,
             settings,
@@ -1091,6 +1110,7 @@ String copyS3File(
     const String & src_key,
     size_t src_size,
     const String & src_etag,
+    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1109,6 +1129,7 @@ String copyS3File(
         src_size,
         /* src_object_size= */ src_size,
         src_etag,
+        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,
@@ -1129,6 +1150,7 @@ String copyS3FileRange(
     size_t src_size,
     size_t src_object_size,
     const String & src_etag,
+    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1147,6 +1169,7 @@ String copyS3FileRange(
         src_size,
         src_object_size,
         src_etag,
+        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,
