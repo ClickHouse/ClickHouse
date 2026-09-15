@@ -130,6 +130,8 @@ If you are killing a query in ClickHouse Cloud or in a self-managed cluster, the
 
 Read-only users can only stop their own queries.
 
+A user who has not been granted `SELECT` on `system.processes` can still kill their own queries; in that case rows belonging to other users are ignored rather than reported as an error.
+
 By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.
 
 The synchronous version (`SYNC`) waits for all queries to stop and displays information about each process as it stops.
