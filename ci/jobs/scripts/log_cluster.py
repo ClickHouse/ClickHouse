@@ -1,3 +1,4 @@
+import json
 import time
 import traceback
 from dataclasses import dataclass
@@ -18,6 +19,21 @@ MAX_ERROR_LEN = 1000
 
 class ReadFailure(Exception):
     """A read-only query did not produce a result."""
+
+
+def _response_error(response):
+    """The failure a response reports, or None when it carries a result.
+
+    A failure raised after the status was sent travels in the body: the JSON
+    formats put it in an `exception` field next to the rows already produced.
+    """
+    try:
+        payload = json.loads(response.text)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("exception"):
+        return payload["exception"]
+    return None if response.ok else response.text
 
 
 @dataclass(frozen=True)
@@ -218,7 +234,10 @@ class LogCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
+                print(
+                    "ERROR: No connection to LogCluster: status "
+                    f"{response.status_code}: {response.text[:MAX_ERROR_LEN]}"
+                )
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
@@ -315,21 +334,14 @@ class LogCluster:
             print("ERROR: LogCluster not ready")
         return False
 
-    def select(self, query, retries=8, timeout=60, body_error=None):
+    def select(self, query, retries=8, timeout=60):
         """Run a read-only query and return the response body.
 
         Unlike do_query (INSERT transport, discards the body), this returns the
-        result text. Retries transient (>=500 and connection) errors with a
-        growing backoff: the shared cluster goes through minutes-long
-        server-wide memory-pressure spikes (Code 241 for every query).
-
-        Raises ReadFailure with the status and what the cluster said went wrong,
-        so that a failed read cannot be read as a result.
-
-        body_error, when given, maps a response to the failure its body reports
-        and None when the body holds a result. A failure raised after the status
-        was already on the wire arrives there instead of in the status, and gets
-        the same backoff as a 500.
+        result text, and raises ReadFailure with the status and the cluster's
+        error when the read fails. Retries a >=500, a dropped connection and an
+        error reported in the body with a growing backoff: the shared cluster
+        goes through minutes-long server-wide memory-pressure spikes.
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -338,8 +350,8 @@ class LogCluster:
         # of the settings here is needed to read.
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
-        # What the last attempt that got an answer reported: a connection
-        # failure after it must not be reported as that answer's status.
+        # The last answer's failure: a dropped connection after it is not that
+        # answer's status.
         failure = ""
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
@@ -358,10 +370,10 @@ class LogCluster:
                     headers=self._auth,
                     timeout=timeout,
                 )
-                error = body_error(response) if body_error else None
-                if response.ok and error is None:
+                error = _response_error(response)
+                if error is None:
                     return response.text
-                failure = f"status {response.status_code}: {(error or response.text)[:MAX_ERROR_LEN]}"
+                failure = f"status {response.status_code}: {error[:MAX_ERROR_LEN]}"
                 print(f"WARNING: LogCluster select failed with {failure}")
                 if response.ok or response.status_code >= 500:
                     time.sleep(5 * (retry + 1))
@@ -372,8 +384,6 @@ class LogCluster:
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
                 time.sleep(5 * (retry + 1))
-        # The SQL stays in the log and out of the exception: the caller reports
-        # the cause where a traceback does not reach, and there it is noise.
         print(f"ERROR: Failed to select from LogCluster, query:\n {query}")
         raise ReadFailure(failure or "the endpoint never became ready")
 

@@ -204,27 +204,6 @@ class Section:
     summary: str = ""  # one line for the job result info
 
 
-def _cluster_error(response) -> Optional[str]:
-    """The failure a cluster response reports, or None when it carries a result.
-
-    A failure raised after the result started streaming, a timeout or the memory
-    pressure the retries exist for, cannot travel in the status: that is already
-    on the wire. It arrives in the body instead, next to the rows produced
-    before it, so reading `data` alone would pass those on as a whole result.
-    """
-    try:
-        payload = json.loads(response.text)
-    except ValueError:
-        return response.text
-    if not isinstance(payload, dict):
-        return response.text
-    if payload.get("exception"):
-        return payload["exception"]
-    if payload.get("data") is None:
-        return response.text
-    return None
-
-
 class Db:
     def __init__(self):
         # CI_LOGS_USER only for local runs
@@ -249,15 +228,8 @@ class Db:
             self._cluster = LogCluster(readonly=True, user=user)
 
     def query(self, query: str) -> List[dict]:
-        """Run a SELECT and return rows as dicts.
-
-        Propagates the `ReadFailure` of a failed read, which carries the status
-        and the cluster's own error.
-        """
-        # `select` returns only a body `_cluster_error` passed, so `data` is there.
-        return json.loads(
-            self._cluster.select(query + " FORMAT JSON", body_error=_cluster_error)
-        )["data"]
+        """Run a SELECT and return rows as dicts. Raises on failure."""
+        return json.loads(self._cluster.select(query + " FORMAT JSON"))["data"]
 
 
 def quote(s: str) -> str:
