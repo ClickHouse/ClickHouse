@@ -167,6 +167,17 @@ private:
     /// is still empty, so such a copy can be the first registration of its id.
     std::unordered_set<Int32> manifest_only_schema_ids TSA_GUARDED_BY(mutex);
 
+    /// Manifest-only schema-ids whose registered copy was contradicted by another manifest file
+    /// header. Neither copy is authoritative, so the id has no usable schema until a metadata.json
+    /// copy settles the conflict: every lookup of such an id fails instead of answering with an
+    /// arbitrary first header, which could otherwise transform the files of the other manifest with
+    /// the wrong schema. A manifest walk that never consults the schema (e.g. collecting file paths)
+    /// is unaffected. Always a subset of `manifest_only_schema_ids`.
+    std::unordered_set<Int32> unsettled_manifest_schema_ids TSA_GUARDED_BY(mutex);
+
+    /// Throws `ICEBERG_SPECIFICATION_VIOLATION` if `schema_id` is in `unsettled_manifest_schema_ids`.
+    void assertSchemaIsSettled(Int32 schema_id) const TSA_REQUIRES_SHARED(mutex);
+
     /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered copy of the
     /// same id when asked. The schema is fully validated and converted into temporaries before
     /// anything is dropped or written, so a malformed schema leaves the processor exactly as it was:

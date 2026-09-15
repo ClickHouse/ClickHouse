@@ -9,6 +9,11 @@
 
 using namespace DB::Iceberg;
 
+namespace DB::ErrorCodes
+{
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
+
 namespace
 {
 Poco::JSON::Object::Ptr parseSchema(const std::string & json)
@@ -344,8 +349,25 @@ TEST(IcebergSchemaProcessor, CompactionRegistersManifestHeadersBeforeAllMetadata
     }
 }
 
+namespace
+{
+/// Every lookup of `schema_id` must fail while the id has no authoritative schema.
+void expectSchemaLookupsFail(IcebergSchemaProcessor & processor, Int32 schema_id)
+{
+    EXPECT_THROW(processor.getClickHouseTableSchemaById(schema_id), DB::Exception);
+    EXPECT_THROW(processor.getIcebergTableSchemaById(schema_id), DB::Exception);
+    EXPECT_THROW(processor.getColumnMapperById(schema_id), DB::Exception);
+    EXPECT_THROW(processor.getFieldCharacteristics(schema_id, 1), DB::Exception);
+    EXPECT_THROW(processor.tryGetFieldCharacteristics(schema_id, 1), DB::Exception);
+    EXPECT_THROW(processor.tryGetFieldsCharacteristics(schema_id, {1}), DB::Exception);
+    EXPECT_THROW(processor.tryGetColumnIDByName(schema_id, "ts"), DB::Exception);
+}
+}
+
 /// Two manifest headers may disagree with each other before any metadata.json copy of the id has
-/// been seen. Neither is authoritative; a tolerant walk keeps the first and metadata.json settles it.
+/// been seen. Neither is authoritative: a tolerant walk keeps the first copy so that metadata.json
+/// can settle the conflict later, but until it does the id has no usable schema, and using the
+/// first header for the files of the second manifest would transform them with the wrong schema.
 TEST(IcebergSchemaProcessor, ConflictingManifestCopiesSettledByMetadataSchema)
 {
     auto first_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
@@ -354,9 +376,83 @@ TEST(IcebergSchemaProcessor, ConflictingManifestCopiesSettledByMetadataSchema)
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT));
-    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6))");
+    expectSchemaLookupsFail(processor, 0);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata, FROM_METADATA, TOLERANT));
     EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// The same conflict settled by a metadata.json copy that agrees with the first header: the
+/// registered copy is confirmed and becomes usable, the second header was the degraded one.
+TEST(IcebergSchemaProcessor, ConflictingManifestCopiesConfirmedByMetadataSchema)
+{
+    auto first_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto second_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT);
+    processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT);
+    expectSchemaLookupsFail(processor, 0);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata, FROM_METADATA, TOLERANT));
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// A schema-id that metadata.json never defines (e.g. an expired schema still referenced by old
+/// manifests) has no authoritative copy at all. Two disagreeing headers for it must not be
+/// resolved by whichever was read first: tolerant mode still registers the walk, but every use of
+/// the schema fails with `ICEBERG_SPECIFICATION_VIOLATION`. Other ids are unaffected, and a
+/// strict walk fails already at the second header.
+TEST(IcebergSchemaProcessor, ConflictingManifestCopiesWithoutMetadataSchemaFailEveryLookup)
+{
+    auto first_manifest = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto second_manifest = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"string"}]})json");
+    auto other_metadata = parseSchema(R"json({"schema-id":7,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+
+    {
+        IcebergSchemaProcessor processor;
+        processor.addIcebergTableSchema(other_metadata, FROM_METADATA, TOLERANT);
+        processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT);
+        EXPECT_NO_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT));
+
+        expectSchemaLookupsFail(processor, 5);
+        try
+        {
+            processor.getClickHouseTableSchemaById(5);
+            FAIL() << "lookup of an unsettled schema-id must throw";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
+        }
+
+        /// The id is registered, only unusable; a transformation into or out of it fails as well.
+        EXPECT_TRUE(processor.hasClickHouseTableSchemaById(5));
+        EXPECT_THROW(processor.getSchemaTransformationDagByIds(5, 7), DB::Exception);
+        EXPECT_THROW(processor.getSchemaTransformationDagByIds(7, 5), DB::Exception);
+
+        EXPECT_EQ(processor.getClickHouseTableSchemaById(7)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+        EXPECT_EQ(processor.getFieldCharacteristics(7, 1).name, "ts");
+    }
+    {
+        IcebergSchemaProcessor processor;
+        processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, STRICT);
+        EXPECT_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, STRICT), DB::Exception);
+    }
+}
+
+/// With the metadata.json copy known first, a conflicting header is plainly ignored: the id has
+/// its authoritative schema, so there is nothing unsettled and lookups keep working.
+TEST(IcebergSchemaProcessor, ConflictingManifestCopyAfterMetadataSchemaKeepsLookups)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto first_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto second_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"string"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata, FROM_METADATA, TOLERANT);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT));
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT));
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }
 
 /// Replacing a manifest header copy must also drop the per-field lookups derived from it. They are

@@ -420,7 +420,10 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
             /// The authoritative copy agrees with what a manifest file header registered, so the
             /// registered copy is now confirmed and a later metadata.json conflict is corruption.
             if (source == SchemaSource::Metadata)
+            {
                 manifest_only_schema_ids.erase(schema_id);
+                unsettled_manifest_schema_ids.erase(schema_id);
+            }
             return;
         }
 
@@ -449,6 +452,15 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         {
             if (source == SchemaSource::ManifestFile)
             {
+                /// When the registered copy came from a manifest file header too, neither copy is
+                /// authoritative and there is nothing to settle the conflict yet. Keep the first
+                /// copy so that a metadata.json copy read later can confirm or replace it, but
+                /// refuse every lookup of the id until then (`assertSchemaIsSettled`): with no
+                /// metadata.json definition of the id, picking either header would transform the
+                /// files of the other manifest with the wrong schema.
+                if (manifest_only_schema_ids.contains(schema_id))
+                    unsettled_manifest_schema_ids.insert(schema_id);
+
                 LOG_WARNING(
                     getLogger("IcebergSchemaProcessor"),
                     "Iceberg manifest file header binds schema-id {} to a schema that differs from the one already "
@@ -533,6 +545,7 @@ void IcebergSchemaProcessor::dropSchemaImpl(Int32 schema_id)
     iceberg_table_schemas_by_ids.erase(schema_id);
     clickhouse_table_schemas_by_ids.erase(schema_id);
     manifest_only_schema_ids.erase(schema_id);
+    unsettled_manifest_schema_ids.erase(schema_id);
 
     /// Per-field lookups and cached schema transformations are derived from the schema being dropped
     /// and are never rebuilt once populated, so a surviving entry would keep answering with the
@@ -543,9 +556,20 @@ void IcebergSchemaProcessor::dropSchemaImpl(Int32 schema_id)
         transform_dags_by_ids, [&](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
 }
 
+void IcebergSchemaProcessor::assertSchemaIsSettled(Int32 schema_id) const
+{
+    if (unsettled_manifest_schema_ids.contains(schema_id))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg schema with schema-id {} is bound to two different schemas by manifest file headers and metadata.json "
+            "does not define it, so there is no authoritative schema for this id",
+            schema_id);
+}
+
 NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(schema_version);
 
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
@@ -556,6 +580,7 @@ NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_ver
 std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(schema_version);
 
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
@@ -566,6 +591,7 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(schema_id);
 
     auto it = clickhouse_ids_by_source_names.find({schema_id, name});
     if (it == clickhouse_ids_by_source_names.end())
@@ -576,6 +602,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_i
 NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(schema_id);
 
     NamesAndTypesList fields;
     for (const auto & source_id : source_ids)
@@ -870,6 +897,8 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         return nullptr;
 
     std::lock_guard lock(mutex);
+    assertSchemaIsSettled(old_id);
+    assertSchemaIsSettled(new_id);
     auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
     if (required_transform_dag_it != transform_dags_by_ids.end())
         return required_transform_dag_it->second;
@@ -889,6 +918,7 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
 Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(id);
 
     auto it = iceberg_table_schemas_by_ids.find(id);
     if (it == iceberg_table_schemas_by_ids.end())
@@ -939,6 +969,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
+    assertSchemaIsSettled(id);
 
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
