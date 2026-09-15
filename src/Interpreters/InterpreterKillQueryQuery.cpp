@@ -267,7 +267,8 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         Block exports_block = getSelectResult(
             "source_database, source_table, transaction_id, destination_database, destination_table, partition_id",
-            "system.replicated_partition_exports");
+            "system.partition_exports");
+
         if (exports_block.empty())
             return res_io;
 

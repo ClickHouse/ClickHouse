@@ -69,7 +69,10 @@ def fetch_manifest_entries(node, query_id):
     escapes backslashes in the ``content`` string, which would double-encode
     the inner ``\\uXXXX`` sequences coming from Iceberg bytes-bounds.
     """
-    node.query("SYSTEM FLUSH LOGS")
+    # Only the Iceberg metadata log is read below. An unqualified flush would also write out
+    # query_log, trace_log, part_log, metric_log and the rest, which dominates this helper's
+    # cost on a sanitizer build.
+    node.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
     raw = node.query(
         f"""
         SELECT DISTINCT content

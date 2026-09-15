@@ -4,7 +4,7 @@
 #include <queue>
 #include <string>
 #include <unordered_set>
-#include <Storages/System/StorageSystemReplicatedPartitionExports.h>
+#include <Storages/MergeTree/PartitionExportInfo.h>
 #include <Storages/ExportReplicatedMergeTreePartitionTaskEntry.h>
 namespace DB
 {
@@ -25,7 +25,7 @@ public:
 
     /// Returns a snapshot of every replicated partition export task tracked by this
     /// replica's in-memory mirror. No ZooKeeper traffic; safe to call from query threads.
-    std::vector<ReplicatedPartitionExportInfo> getPartitionExportsInfo() const;
+    std::vector<PartitionExportInfo> getPartitionExportsInfo() const;
 
 private:
     StorageReplicatedMergeTree & storage;
@@ -35,7 +35,7 @@ private:
         ExportReplicatedMergeTreePartitionTaskEntry::Status status,
         std::map<String, LastExceptionEntry> last_exception_per_replica,
         std::map<String, std::vector<String>> destination_file_paths_per_part,
-        std::optional<ExportReplicatedMergeTreePartitionCommitInfoEntry> commit_info,
+        std::optional<ExportPartitionCommitInfoEntry> commit_info,
         const std::string & key,
         auto & entries_by_key
     );

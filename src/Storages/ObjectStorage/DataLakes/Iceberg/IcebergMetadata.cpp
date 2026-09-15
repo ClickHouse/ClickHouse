@@ -1833,7 +1833,7 @@ std::optional<IStorage::ExportPartitionCommitInfo> IcebergMetadata::commitImport
             transaction_id);
         /// Surface a sentinel so the caller treats this as a successful attempt (non-empty
         /// commit info), persists a commit_info znode, and makes the situation visible in
-        /// system.replicated_partition_exports.committed_metadata_file. We do not know the
+        /// system.partition_exports.committed_metadata_file. We do not know the
         /// original committer's paths from here.
         IStorage::ExportPartitionCommitInfo already_committed_info;
         already_committed_info.iceberg_metadata_file = "<committed in a previous run, paths unavailable>";

@@ -100,8 +100,6 @@ namespace DB
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
-struct ReplicatedPartitionExportInfo;
-
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
@@ -378,7 +376,7 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
-    std::vector<ReplicatedPartitionExportInfo> getPartitionExportsInfo() const;
+    std::vector<PartitionExportInfo> getPartitionExportsInfo() const override;
 
 private:
     std::atomic_bool are_restoring_replica {false};

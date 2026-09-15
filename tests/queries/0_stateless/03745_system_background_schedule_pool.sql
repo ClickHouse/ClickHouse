@@ -15,7 +15,9 @@ DROP TABLE test_table_03745;
 DROP TABLE IF EXISTS test_merge_tree_03745;
 CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x SETTINGS refresh_statistics_interval = '0';
 INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
-SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase() ORDER BY ALL;
+-- Exclude the experimental, config-gated EXPORT PARTITION scheduler task so this test stays
+-- deterministic regardless of whether `allow_experimental_export_merge_tree_partition` is enabled.
+SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase() AND log_name NOT LIKE '%partition_export_task%' ORDER BY ALL;
 DROP TABLE test_merge_tree_03745;
 
 -- Test 3: Distributed table (distributed pool)

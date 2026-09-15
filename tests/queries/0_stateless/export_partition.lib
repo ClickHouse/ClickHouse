@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+
+# Shared bodies for the `ALTER TABLE ... EXPORT PARTITION` tests.
+#
+# Every body is invoked once per source engine, so a plain `MergeTree` and a `ReplicatedMergeTree`
+# run exactly the same scenario. The wrappers share a body's reference file, so the output must not
+# depend on the engine.
+
+# $1 is the engine: "plain" or "replicated". $2 is the table name, used for the ZooKeeper path.
+function partition_export_source_engine()
+{
+    if [ "$1" = "replicated" ]
+    then
+        echo "ReplicatedMergeTree('/clickhouse/tables/{database}/$2', 'r1')"
+    else
+        echo "MergeTree"
+    fi
+}
+
+# Poll `system.partition_exports` until the given export reaches the expected status (or timeout).
+# $1 source table, $2 destination database, $3 destination table, $4 partition id, $5 expected status.
+function wait_for_partition_export_status()
+{
+    local source_table="$1"
+    local destination_database="$2"
+    local destination_table="$3"
+    local partition_id="$4"
+    local expected="$5"
+
+    local status
+    local i=0
+    while [ "$i" -lt 120 ]
+    do
+        status=$(${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.partition_exports WHERE source_table = '$source_table' AND destination_database = '$destination_database' AND destination_table = '$destination_table' AND partition_id = '$partition_id'")
+        if [ "$status" = "$expected" ]
+        then
+            return 0
+        fi
+        sleep 0.5
+        i=$((i + 1))
+    done
+
+    echo "TIMEOUT waiting for the export of $partition_id to $destination_database.$destination_table to reach $expected (last: '$status')"
+    return 1
+}
+
+# Export partitions one by one and then all the remaining ones, read the result back and roundtrip it
+# into a new table. $1 is the engine.
+function run_partition_export_roundtrip_test()
+{
+    local engine="$1"
+
+    local mt_table="mt_table_${CLICKHOUSE_DATABASE}"
+    local s3_table="s3_table_${CLICKHOUSE_DATABASE}"
+    local mt_roundtrip="mt_roundtrip_${CLICKHOUSE_DATABASE}"
+
+    local source_engine
+    source_engine=$(partition_export_source_engine "$engine" "$mt_table")
+    local roundtrip_engine
+    roundtrip_engine=$(partition_export_source_engine "$engine" "$mt_roundtrip")
+
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $mt_table"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $s3_table"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $mt_roundtrip"
+
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $mt_table (id UInt64, year UInt16) ENGINE = $source_engine PARTITION BY year ORDER BY tuple()"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $s3_table (id UInt64, year UInt16) ENGINE = S3(s3_conn, filename='$s3_table', format=Parquet, partition_strategy='hive') PARTITION BY year"
+
+    # Stop merges so the number of parts per partition stays stable for the assertions below.
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES $mt_table"
+
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO $mt_table VALUES (1, 2020), (2, 2020), (4, 2021)"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO $mt_table VALUES (3, 2020), (5, 2021)"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO $mt_table VALUES (6, 2022), (7, 2022)"
+
+    echo "Export partition 2020"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2020' TO TABLE $s3_table"
+    wait_for_partition_export_status "$mt_table" "$CLICKHOUSE_DATABASE" "$s3_table" "2020" "COMPLETED"
+
+    echo "Export partition 2021"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2021' TO TABLE $s3_table"
+    wait_for_partition_export_status "$mt_table" "$CLICKHOUSE_DATABASE" "$s3_table" "2021" "COMPLETED"
+
+    echo "Select from destination table (2020, 2021)"
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $s3_table ORDER BY id"
+
+    echo "Re-exporting 2020 without force is rejected"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2020' TO TABLE $s3_table" 2>&1 | grep -o "EXPORT_PARTITION_ALREADY_EXPORTED" | head -1
+
+    echo "Export remaining partitions with EXPORT PARTITION ALL (skip existing)"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ALL TO TABLE $s3_table SETTINGS export_merge_tree_partition_all_on_error = 'skip_conflicts'"
+    wait_for_partition_export_status "$mt_table" "$CLICKHOUSE_DATABASE" "$s3_table" "2022" "COMPLETED"
+
+    echo "Select from destination table (all partitions)"
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $s3_table ORDER BY id"
+
+    echo "Roundtrip: create a table from the exported S3 data"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $mt_roundtrip ENGINE = $roundtrip_engine PARTITION BY year ORDER BY tuple() AS SELECT * FROM $s3_table"
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $mt_roundtrip ORDER BY id"
+
+    echo "system.partition_exports statuses"
+    ${CLICKHOUSE_CLIENT} --query "SELECT partition_id, status, parts_count, parts_to_do FROM system.partition_exports WHERE source_table = '$mt_table' AND destination_table = '$s3_table' ORDER BY partition_id"
+
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $mt_table"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $s3_table"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $mt_roundtrip"
+}
+
+# Dots are legal in identifiers, so the destinations `<db>.x`.`y` and `<db>`.`x.y` flatten to the
+# same qualified name. The export registry must still track them as two independent tasks.
+# $1 is the engine.
+function run_partition_export_dotted_destination_test()
+{
+    local engine="$1"
+
+    local mt_table="mt_table_${CLICKHOUSE_DATABASE}"
+    local dotted_database="${CLICKHOUSE_DATABASE}.x"
+
+    local source_engine
+    source_engine=$(partition_export_source_engine "$engine" "$mt_table")
+
+    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS \`$dotted_database\`"
+    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE \`$dotted_database\`"
+
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $mt_table (id UInt64, year UInt16) ENGINE = $source_engine PARTITION BY year ORDER BY tuple()"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE \`$dotted_database\`.y (id UInt64, year UInt16) ENGINE = S3(s3_conn, filename='first_${CLICKHOUSE_DATABASE}', format=Parquet, partition_strategy='hive') PARTITION BY year"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $CLICKHOUSE_DATABASE.\`x.y\` (id UInt64, year UInt16) ENGINE = S3(s3_conn, filename='second_${CLICKHOUSE_DATABASE}', format=Parquet, partition_strategy='hive') PARTITION BY year"
+
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO $mt_table VALUES (1, 2020), (2, 2020)"
+
+    echo "Export partition 2020 to the first destination"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2020' TO TABLE \`$dotted_database\`.y"
+    wait_for_partition_export_status "$mt_table" "$dotted_database" "y" "2020" "COMPLETED"
+
+    echo "The same partition can be exported to the second destination"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2020' TO TABLE $CLICKHOUSE_DATABASE.\`x.y\`"
+    wait_for_partition_export_status "$mt_table" "$CLICKHOUSE_DATABASE" "x.y" "2020" "COMPLETED"
+
+    echo "Both exports are tracked independently"
+    ${CLICKHOUSE_CLIENT} --query "SELECT replaceOne(destination_database, '$CLICKHOUSE_DATABASE', '{db}'), destination_table, status FROM system.partition_exports WHERE source_table = '$mt_table' ORDER BY 1, 2"
+
+    echo "Both destinations received the partition"
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM \`$dotted_database\`.y ORDER BY id"
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $CLICKHOUSE_DATABASE.\`x.y\` ORDER BY id"
+
+    echo "Re-exporting to the first destination is still rejected"
+    ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $mt_table EXPORT PARTITION ID '2020' TO TABLE \`$dotted_database\`.y" 2>&1 | grep -o "EXPORT_PARTITION_ALREADY_EXPORTED" | head -1
+
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.\`x.y\`"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $mt_table"
+    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS \`$dotted_database\`"
+}
+
+# vi: ft=bash

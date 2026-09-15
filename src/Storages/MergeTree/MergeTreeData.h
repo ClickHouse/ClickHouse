@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreePartExportStatus.h>
 #include <Storages/MergeTree/MergeTreePartExportManifest.h>
+#include <Storages/MergeTree/PartitionExportInfo.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1110,6 +1111,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPORT PARTITION is not implemented for engine {}", getName());
     }
+
+    /// Snapshot of this table's partition-export tasks for `system.partition_exports`, taken from
+    /// an in-memory mirror: no disk or ZooKeeper I/O, so it is safe to call from query threads.
+    virtual std::vector<PartitionExportInfo> getPartitionExportsInfo() const { return {}; }
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.

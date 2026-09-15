@@ -1,6 +1,8 @@
 #pragma once
 
+#include <ctime>
 #include <filesystem>
+#include <optional>
 #include <vector>
 #include <string>
 #include <Core/Field.h>
@@ -28,9 +30,54 @@ namespace ExportPartitionUtils
 {
     bool isNonRetryableExportError(int code);
 
-    std::vector<std::string> getExportedPaths(const LoggerPtr & log, const zkutil::ZooKeeperPtr & zk, const std::string & export_path);
+    bool isNonRetryablePlainExportError(int code);
 
-    ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest);
+    size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds);
+
+    bool isExportTaskTimedOut(time_t create_time, size_t timeout_seconds, time_t now);
+
+    struct ExportedPaths
+    {
+        /// Number of `<export_path>/processed` leaves, that is, parts this export has finished.
+        size_t processed_parts_count = 0;
+
+        /// Destination paths recorded by those leaves, flattened. A leaf may carry none, so this
+        /// can legitimately be shorter than `processed_parts_count`.
+        std::vector<std::string> paths;
+    };
+
+    /// Reads the destination paths recorded under `<export_path>/processed`.
+    ExportedPaths getExportedPaths(const LoggerPtr & log, const zkutil::ZooKeeperPtr & zk, const std::string & export_path);
+
+    /// Build a query context carrying the export task's persisted settings. Templated on the
+    /// descriptor type so it serves both the replicated manifest (backed by ZooKeeper) and the
+    /// plain `MergeTreePartitionExportTask` (backed by disk); both expose the same setting fields.
+    template <typename ManifestT>
+    ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ManifestT & manifest);
+
+#if USE_AVRO
+    std::string verifyAndExtractDestinationIcebergMetadataJson(
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata,
+        const StoragePtr & dest_storage,
+        const MergeTreeData::DataPartsVector & parts,
+        const String & partition_id,
+        const ContextPtr & context);
+#endif
+
+    /// Invokes `commitExportPartitionTransaction` on the destination storage. Does not mark the export
+    /// task complete; the caller persists the returned commit info.
+    IStorage::ExportPartitionCommitInfo commitExportOnDestination(
+        const String & transaction_id,
+        const String & partition_id,
+        const String & iceberg_metadata_json,
+        bool write_full_path_in_iceberg_metadata,
+        const std::optional<String> & iceberg_partition_timezone,
+        const std::vector<std::string> & exported_paths,
+        const std::vector<String> & exported_part_names,
+        const StoragePtr & destination_storage,
+        MergeTreeData & source_storage,
+        const ContextPtr & context);
 
     /// Get the min/max values from the partition expression columns
     Block getPartitionSourceBlockForIcebergCommit(

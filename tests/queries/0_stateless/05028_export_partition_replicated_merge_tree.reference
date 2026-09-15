@@ -1,0 +1,31 @@
+Export partition 2020
+Export partition 2021
+Select from destination table (2020, 2021)
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+Re-exporting 2020 without force is rejected
+EXPORT_PARTITION_ALREADY_EXPORTED
+Export remaining partitions with EXPORT PARTITION ALL (skip existing)
+Select from destination table (all partitions)
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+6	2022
+7	2022
+Roundtrip: create a table from the exported S3 data
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+6	2022
+7	2022
+system.partition_exports statuses
+2020	COMPLETED	2	0
+2021	COMPLETED	2	0
+2022	COMPLETED	1	0

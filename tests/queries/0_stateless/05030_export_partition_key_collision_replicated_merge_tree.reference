@@ -1,0 +1,12 @@
+Export partition 2020 to the first destination
+The same partition can be exported to the second destination
+Both exports are tracked independently
+{db}	x.y	COMPLETED
+{db}.x	y	COMPLETED
+Both destinations received the partition
+1	2020
+2	2020
+1	2020
+2	2020
+Re-exporting to the first destination is still rejected
+EXPORT_PARTITION_ALREADY_EXPORTED

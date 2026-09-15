@@ -85,7 +85,7 @@ public:
 
     bool supportsImport(ContextPtr) const override;
 
-    SinkToStoragePtr import(
+    ImportResult import(
         const std::string & /* file_name */,
         Block & /* block_with_partition_values */,
         const std::function<void(const std::string &)> & new_file_path_callback,

@@ -2,21 +2,28 @@
 
 ## Overview
 
-The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from Replicated*MergeTree tables to object storage (S3, Azure Blob Storage, etc.) or data lakes like Apache Iceberg tables (with and without catalogs), typically in Parquet format. This feature coordinates export part operations across all replicas using ZooKeeper.
+The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from `MergeTree`-family tables to object storage (S3, Azure Blob Storage, etc.) or data lakes like Apache Iceberg tables (with and without catalogs), typically in Parquet format.
 
-The set of parts that are exported is based on the list of parts the replica that received the export command sees. The other replicas will assist in the export process if they have those parts locally. Otherwise they will ignore it.
+- On non replicated `MergeTree` tables the export runs entirely on the single node that received the command.
+- On `Replicated*MergeTree` tables the export is coordinated across all replicas using ZooKeeper.
 
-The partition export tasks can be observed through `system.replicated_partition_exports`. The table is served from each replica's in-memory mirror, so queries do not contact ZooKeeper and are cheap to run. The mirror is refreshed on the manifest-updater poll cycle and on every status change, so a freshly written exception or terminal state may take up to one poll interval to appear. Individual part export progress can be observed as usual through `system.exports`.
+The set of parts that are exported is based on the list of parts the replica that received the export command sees. On `Replicated*MergeTree`, the other replicas will assist in the export process if they have those parts locally. Otherwise they will ignore it.
 
-The same partition can not be exported to the same destination more than once. There are two ways to override this behavior: either by setting the `export_merge_tree_partition_force_export` setting or waiting for the task to expire.
+The partition export tasks of both engines can be observed through `system.partition_exports`.
 
-The export task can be killed by issuing the kill command: `KILL EXPORT PARTITION <where predicate for system.replicated_partition_exports>`.
+`system.replicated_partition_exports` is kept as an alias of `system.partition_exports` for backwards compatibility. It returns exactly the same rows, including exports of plain `MergeTree` tables.
+
+The same partition can not be exported to the same destination more than once. This behavior can be overriden with `export_merge_tree_partition_force_export`.
+
+The export task can be killed by issuing the kill command: `KILL EXPORT PARTITION <where predicate for system.partition_exports>`.
 
 The task is persistent - it should be resumed after crashes, failures and etc.
 
+A part with no surviving rows writes no file. This happens when every row of the part was removed by a lightweight delete: the part is still exported, and counts as done, but it contributes nothing to the destination. If that is true of every part of the partition, the export produces no files at all and there is nothing to commit, so the task reaches `COMPLETED` without touching the destination. Such a part therefore has no entry in the `destination_file_paths` column of `system.partition_exports`.
+
 ### On Apache Iceberg storage exports:
 
-Each MergeTree part will become a separate file (or more depending on `max_bytes` and `max_rows` settings) following the engine naming convention. Once all parts have been exported, new snapshots / manifest files are generated and the data is comitted using the Apache Iceberg commit mechanism.
+Each MergeTree part that has surviving rows will become a separate file (or more depending on `max_bytes` and `max_rows` settings) following the engine naming convention. Once all parts have been exported, new snapshots / manifest files are generated and the data is comitted using the Apache Iceberg commit mechanism.
 
 The manifest file produced by the commit contains a summary field `clickhouse.export-partition-transaction-id` that stores the transaction id. This field is used to implement idempotency and avoid data duplication. Some Apache Iceberg storage managers employ old manifests cleanup, ClickHouse does not.
 
@@ -34,6 +41,14 @@ The source partition must not be split in the destination. This is validated at 
 ### On plain object storage exports:
 
 Each MergeTree part will become a separate file with the following name convention: `<table_directory>/<partitioning>/<data_part_name>_<merge_tree_part_checksum>.<format>`. To ensure atomicity, a commit file containing the relative paths of all exported parts is also shipped. A data file should only be considered part of the dataset if a commit file references it. The commit file will be named using the following convention: `<table_directory>/commit_<partition_id>_<transaction_id>`.
+
+## Plain (non-replicated) MergeTree {#plain-non-replicated-mergetree}
+
+The command, its settings, the partition-key compatibility rules and the destination file layout are the same for both engines. Only the coordination differs as it is performed by a single node in the plain MergeTree case.
+
+### Pending mutations {#plain-merge-tree-pending-mutations}
+
+The pending-mutation gate is more conservative than on a `Replicated*MergeTree`. A plain `MergeTree` does not scope its mutation snapshot by partition, so a mutation restricted with `IN PARTITION` still marks the parts of every other partition as having pending mutations, and exporting an unaffected partition is refused with `PENDING_MUTATIONS_NOT_ALLOWED`. The gate fails closed - it never exports data that a pending mutation would have changed - so the effect is that you may have to wait for an unrelated mutation to finish, or set `export_merge_tree_part_throw_on_pending_mutations` to `false`.
 
 ## Syntax
 
@@ -66,7 +81,7 @@ TO TABLE [destination_database.]destination_table
 
 - **Type**: `Bool`
 - **Default**: `false`
-- **Description**: Enable export replicated merge tree partition feature. It is experimental and not yet ready for production use.
+- **Description**: Enable the `EXPORT PARTITION` feature for both `Replicated*MergeTree` and plain `MergeTree` tables. It is experimental and not yet ready for production use.
 
 ### Query Settings
 
@@ -183,19 +198,17 @@ WHERE partition_id = '2020'
   AND destination_table = 's3_table'
 ```
 
-The `WHERE` clause filters exports from the `system.replicated_partition_exports` table. You can use any columns from that table in the filter.
-
 ## Monitoring
 
 ### Active and Completed Exports
 
-Monitor partition exports using the `system.replicated_partition_exports` table:
+Monitor partition exports using the `system.partition_exports` table:
 
 ```sql
-arthur :) select * from system.replicated_partition_exports Format Vertical;
+arthur :) select * from system.partition_exports Format Vertical;
 
 SELECT *
-FROM system.replicated_partition_exports
+FROM system.partition_exports
 FORMAT Vertical
 
 Query id: 9efc271a-a501-44d1-834f-bc4d20156164
@@ -259,16 +272,14 @@ Status values include:
 
 ### Exception columns
 
-- `last_exception_per_replica` is an `Array(Tuple(replica String, message String, part String, time DateTime, count UInt64))`. Each tuple is the most recent exception observed by a single replica plus a best-effort within-replica `count`. Replicas that have never reported an exception are omitted.
+- `last_exception_per_replica` is an `Array(Tuple(replica String, message String, part String, time DateTime, count UInt64))`. Each tuple is the most recent exception observed by a single replica plus a best-effort within-replica `count`. Replicas that have never reported an exception are omitted. A plain `MergeTree` export runs on a single node, so it contributes at most one tuple and its `replica` is empty.
 - `exception_count` is the sum of every `count` in `last_exception_per_replica`. Each replica owns its own counter, so cross-replica updates do not race; the sum is exact w.r.t. the snapshot returned. Within a single replica concurrent failing writers may under-count by one.
 
 ### Per-part destination file paths
 
-- `destination_file_paths` is a `Map(String, Array(String))` keyed by source part name. Each value is the list of file paths written to the destination object storage when that part was exported (a single part can produce multiple files depending on `max_bytes` / `max_rows`). If a refresh cannot read a processed entry from ZooKeeper, the affected key holds the sentinel `<failed to read from zk>` instead of silently under-counting.
+- `destination_file_paths` is a `Map(String, Array(String))` keyed by source part name. Each value is the list of file paths written to the destination object storage when that part was exported (a single part can produce multiple files depending on `max_bytes` / `max_rows`). On a `Replicated*MergeTree` source, if a refresh cannot read a processed entry from ZooKeeper, the affected key holds the sentinel `<failed to read from zk>` instead of silently under-counting.
 
 ### Commit info columns
-
-These columns surface paths produced by the destination storage during commit, so it is possible to inspect what was written without consulting the destination directly:
 
 - `committed_metadata_file` — for Iceberg destinations: path of the new `vN.metadata.json` written by the commit. Empty for non-Iceberg destinations and before the commit lands. If the commit was already finished by a previous run (detected via the transaction id stored in the snapshot summary), this column carries a human-readable sentinel string instead of a path because the original committer's paths are not recoverable from inside the impl.
 - `committed_manifest_list` — for Iceberg destinations: path of the manifest list file (`snap-*.avro`) referenced by the new snapshot. Empty under the same conditions as `committed_metadata_file`.
@@ -280,7 +291,7 @@ To pick the latest exception across replicas:
 ```sql
 SELECT
     arraySort(x -> -x.time, last_exception_per_replica)[1] AS latest_exception
-FROM system.replicated_partition_exports
+FROM system.partition_exports
 WHERE source_table = 'rmt_table' AND destination_table = 's3_table';
 ```
 

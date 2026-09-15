@@ -6,6 +6,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
+#include <Storages/ExportPartitionCommitInfoEntry.h>
 #include <Storages/MergeTree/MergeTreePartExportManifest.h>
 #include <optional>
 
@@ -145,74 +146,6 @@ struct ExportReplicatedMergeTreePartitionProcessedPartEntry
             entry.paths_in_destination.emplace_back(paths_in_destination_array->getElement<String>(static_cast<unsigned int>(i)));
 
         entry.finished_by = json->getValue<String>("finished_by");
-
-        return entry;
-    }
-};
-
-/// Per-task "commit info" record persisted at <export-entry>/commit_info.
-///
-/// Written exactly once, atomically with the status -> COMPLETED transition
-/// (see ExportPartitionUtils::commit). Captures the metadata-layer file paths
-/// produced by the destination storage during commit so they can be surfaced in
-/// system.replicated_partition_exports for debugging.
-///
-/// All Iceberg fields are empty for non-Iceberg destinations. They may also be
-/// empty for an Iceberg destination if the committing replica crashed between
-/// writing the object-storage files and writing this znode; in that case the
-/// task still transitions to COMPLETED via the recovery path but commit_info
-/// remains absent. This is best-effort observability and acceptable.
-struct ExportReplicatedMergeTreePartitionCommitInfoEntry
-{
-    /// Iceberg: path (in destination object storage) of the new vN.metadata.json
-    /// written by the commit.
-    String iceberg_metadata_file;
-
-    /// Iceberg: path of the snap-<id>-<format_version>-<uuid>.avro manifest list
-    /// referenced by the new snapshot.
-    String iceberg_manifest_list;
-
-    /// Iceberg: path of the manifest entry file (*.avro) referenced by the
-    /// manifest list.
-    String iceberg_manifest_file;
-
-    /// Plain object storage: path of the commit marker file written by
-    /// StorageObjectStorage::commitExportPartitionTransaction. Empty for Iceberg.
-    String commit_marker_file;
-
-    std::string toJsonString() const
-    {
-        Poco::JSON::Object json;
-        json.set("iceberg_metadata_file", iceberg_metadata_file);
-        json.set("iceberg_manifest_list", iceberg_manifest_list);
-        json.set("iceberg_manifest_file", iceberg_manifest_file);
-        json.set("commit_marker_file", commit_marker_file);
-
-        std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        oss.exceptions(std::ios::failbit);
-        Poco::JSON::Stringifier::stringify(json, oss);
-        return oss.str();
-    }
-
-    static ExportReplicatedMergeTreePartitionCommitInfoEntry fromJsonString(const std::string & json_string)
-    {
-        ExportReplicatedMergeTreePartitionCommitInfoEntry entry;
-        if (json_string.empty())
-            return entry;
-
-        Poco::JSON::Parser parser;
-        auto json = parser.parse(json_string).extract<Poco::JSON::Object::Ptr>();
-
-        if (json->has("iceberg_metadata_file"))
-            entry.iceberg_metadata_file = json->getValue<String>("iceberg_metadata_file");
-        if (json->has("iceberg_manifest_list"))
-            entry.iceberg_manifest_list = json->getValue<String>("iceberg_manifest_list");
-
-        if (json->has("iceberg_manifest_file"))
-            entry.iceberg_manifest_file = json->getValue<String>("iceberg_manifest_file");
-
-        if (json->has("commit_marker_file"))
-            entry.commit_marker_file = json->getValue<String>("commit_marker_file");
 
         return entry;
     }

@@ -12,6 +12,7 @@
 #include "Storages/MergeTree/MergeTreePartExportManifest.h"
 #include "Formats/FormatFactory.h"
 #include <Core/Settings.h>
+#include <algorithm>
 #include <limits>
 
 namespace ProfileEvents
@@ -39,34 +40,6 @@ namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    /// Capped exponential back-off, matching the standard ClickHouse convention
-    /// (see ZooKeeperRetriesControl): delay = min(initial << (retry_count - 1), max).
-    /// `retry_count` is the number of failures so far (>= 1 when a retry is pending).
-    /// The shift is guarded against overflow by saturating to `max_backoff_seconds`.
-    size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds)
-    {
-        const size_t initial = std::min(initial_backoff_seconds, max_backoff_seconds);
-
-        if (retry_count <= 1 || initial == 0)
-            return initial;
-
-        const size_t shift = retry_count - 1;
-
-        /// If shifting would overflow size_t, the result is certainly clamped to the cap.
-        static constexpr size_t bits = sizeof(size_t) * 8;
-        if (shift >= bits)
-            return max_backoff_seconds;
-
-        const size_t headroom = std::numeric_limits<size_t>::max() >> shift;
-        if (initial > headroom)
-            return max_backoff_seconds;
-
-        return std::min(initial << shift, max_backoff_seconds);
-    }
 }
 
 ExportPartitionTaskScheduler::ExportPartitionTaskScheduler(StorageReplicatedMergeTree & storage_)
@@ -318,7 +291,7 @@ time_t ExportPartitionTaskScheduler::registerLocalBackoff(
     auto & backoff = parts.try_emplace(part_name).first->second;
 
     ++backoff.attempts;
-    const auto backoff_seconds = computeRetryBackoffSeconds(
+    const auto backoff_seconds = ExportPartitionUtils::computeRetryBackoffSeconds(
         backoff.attempts, manifest.retry_initial_backoff_seconds, manifest.retry_max_backoff_seconds);
     const auto now = time(nullptr);
     /// Clamp so a huge configured back-off cannot overflow time_t (now is a normal wall-clock value).

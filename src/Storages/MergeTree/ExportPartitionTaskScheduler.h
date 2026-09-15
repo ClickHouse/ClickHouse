@@ -109,7 +109,7 @@ private:
     void pruneLocalBackoff(const ExportPartitionTaskEntriesContainer::index<ExportPartitionTaskEntryTagByTransactionId>::type & model);
 
 public:
-    /// Snapshot of the local back-off map for system.replicated_partition_exports:
+    /// Snapshot of the local back-off map for system.partition_exports:
     /// transaction_id -> part -> (attempts, next_retry_time). Briefly locks local_backoff_mutex;
     /// never held across ZooKeeper I/O.
     std::unordered_map<TransactionID, PartNameToBackOffMap> getLocalBackoffSnapshot() const;

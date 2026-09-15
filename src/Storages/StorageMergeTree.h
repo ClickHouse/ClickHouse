@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeCleanupThread.h>
+#include <Storages/MergeTree/MergeTreePartitionExportScheduler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -126,7 +128,28 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    /// EXPORT PARTITION for a plain (non-replicated) MergeTree table. Coordinated locally by
+    /// `partition_export_scheduler`; the task descriptor is persisted on disk (no ZooKeeper).
+    void exportPartitionToTable(const PartitionCommand & command, ContextPtr query_context) override;
+
+    CancellationCode killExportPartition(const String & transaction_id) override;
+
+    /// Snapshot of local partition-export tasks for `system.partition_exports`. No disk I/O.
+    std::vector<PartitionExportInfo> getPartitionExportsInfo() const override;
+
 private:
+    friend class MergeTreePartitionExportScheduler;
+
+    /// Local coordinator + on-disk state for EXPORT PARTITION. Only created when the server setting
+    /// `allow_experimental_export_merge_tree_partition` is enabled.
+    std::shared_ptr<MergeTreePartitionExportScheduler> partition_export_scheduler;
+    BackgroundSchedulePoolTaskHolder partition_export_task;
+
+    /// Schedule-pool task body: drives partition_export_scheduler->run() periodically.
+    void partitionExportTask();
+    /// Wakes up the partition-export schedule-pool task (no-op when the feature is disabled).
+    void triggerPartitionExportTask();
+
 
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;

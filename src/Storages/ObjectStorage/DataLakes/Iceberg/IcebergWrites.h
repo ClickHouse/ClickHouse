@@ -259,6 +259,7 @@ private:
     const String& write_format;
     SharedHeader sample_block;
     std::unique_ptr<MultipleFileWriter> writer;
+    bool consumed_rows = false;
     const DataLakeStorageSettings & data_lake_settings;
     std::function<void(const std::string &)> new_file_path_callback;
 };

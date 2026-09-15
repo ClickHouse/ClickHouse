@@ -79,11 +79,11 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/System/StorageSystemReplicatedPartitionExports.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/ExportPartitionKey.h>
 #include <Storages/MergeTree/ExportPartitionUtils.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -4859,7 +4859,7 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
     }
 }
 
-std::vector<ReplicatedPartitionExportInfo> StorageReplicatedMergeTree::getPartitionExportsInfo() const
+std::vector<PartitionExportInfo> StorageReplicatedMergeTree::getPartitionExportsInfo() const
 {
     return export_merge_tree_partition_manifest_updater->getPartitionExportsInfo();
 }
@@ -8688,7 +8688,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     
     const auto exports_path = fs::path(zookeeper_path) / "exports";
 
-    const auto export_key = partition_id + "_" + dest_storage_id.getQualifiedName().getFullName();
+    const auto export_key = ExportPartitionUtils::compositeKey(
+        partition_id, dest_storage_id.getDatabaseName(), dest_storage_id.getTableName());
 
     const auto partition_exports_path = fs::path(exports_path) / export_key;
 
@@ -8806,50 +8807,16 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     if (dest_storage->isDataLake())
     {
 #if USE_AVRO
-        auto * object_storage = dynamic_cast<StorageObjectStorage *>(dest_storage.get());
-        auto * object_storage_cluster = dynamic_cast<StorageObjectStorageCluster *>(dest_storage.get());
-
-        /// in theory this should never happen, but just in case
-        if (!object_storage && !object_storage_cluster)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is not a StorageObjectStorage", dest_storage->getName());
-        }
-
-        IcebergMetadata * iceberg_metadata = nullptr;
-        if (object_storage)
-            iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(query_context));
-        else if (object_storage_cluster)
-            iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_cluster->getExternalMetadata(query_context));
-        if (!iceberg_metadata)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is a data lake but not an iceberg table", dest_storage->getName());
-        }
-
-        if (!query_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Iceberg writes are experimental. "
-                "To allow its usage, enable the setting `allow_insert_into_iceberg` on the initiator (query, session or profile) - replicas inherit it from the scheduled task.");
-        }
-
-        const auto metadata_object = iceberg_metadata->getMetadataJSON(query_context);
-
-        ExportPartitionUtils::verifyIcebergPartitionCompatibility(
-            metadata_object,
+        manifest.iceberg_metadata_json = ExportPartitionUtils::verifyAndExtractDestinationIcebergMetadataJson(
             src_snapshot,
             destination_snapshot,
+            dest_storage,
             parts,
             partition_id,
             query_context);
 
-        std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        oss.exceptions(std::ios::failbit);
-        metadata_object->stringify(oss);
-        manifest.iceberg_metadata_json = oss.str();
-
         manifest.max_bytes_per_file = query_context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file];
         manifest.max_rows_per_file = query_context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file];
-
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data lake export requires Avro support");
 #endif
@@ -8857,11 +8824,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     else
     {
         ExportPartitionUtils::verifyPlainPartitionCompatibility(
-            src_snapshot,
-            destination_snapshot,
-            parts,
-            partition_id,
-            query_context);
+            src_snapshot, destination_snapshot, parts, partition_id, query_context);
     }
 
     ops.emplace_back(zkutil::makeCreateRequest(

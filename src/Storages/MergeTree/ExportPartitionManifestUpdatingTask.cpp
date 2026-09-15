@@ -41,8 +41,7 @@ namespace FailPoints
 namespace
 {
     /// Value published into destination_file_paths when a processed/ Keeper refresh
-    /// is incomplete (or a leaf is unreadable), so system.replicated_partition_exports
-    /// can show that the in-memory mirror failed to sync instead of silently under-counting.
+    /// is incomplete (or a leaf is unreadable).
     constexpr std::string_view zk_sync_failed_marker = "<failed to read from zk>";
 
     /// Describes pending commits
@@ -214,6 +213,19 @@ namespace
         return false;
     }
 
+    size_t calculatePartsToDo(
+        size_t number_of_parts,
+        const std::map<String, std::vector<String>> & destination_file_paths_per_part)
+    {
+        /// A failed listing publishes the marker as a key and says nothing about progress, while a
+        /// marker as a value only means that leaf's paths were unreadable - the leaf exists, so
+        /// that part is done and still counts.
+        if (destination_file_paths_per_part.contains(String(zk_sync_failed_marker)))
+            return number_of_parts;
+
+        return number_of_parts - destination_file_paths_per_part.size();
+    }
+
     bool skipReadingDestinationFilePaths(
         ExportReplicatedMergeTreePartitionTaskEntry::Status status,
         const std::map<String, std::vector<String>> & cached_paths,
@@ -232,7 +244,7 @@ namespace
     /// Returns nullopt when the znode is absent (task has not committed yet, peer
     /// crashed before writing it, or transient ZK error). Callers should treat
     /// nullopt as "leave the in-memory copy untouched".
-    std::optional<ExportReplicatedMergeTreePartitionCommitInfoEntry> readCommitInfo(
+    std::optional<ExportPartitionCommitInfoEntry> readCommitInfo(
         const zkutil::ZooKeeperPtr & zk,
         const std::filesystem::path & entry_path,
         const std::string & log_key,
@@ -248,7 +260,7 @@ namespace
 
         try
         {
-            return ExportReplicatedMergeTreePartitionCommitInfoEntry::fromJsonString(data);
+            return ExportPartitionCommitInfoEntry::fromJsonString(data);
         }
         catch (...)
         {
@@ -270,9 +282,8 @@ namespace
         std::vector<CommitRecoveryWork> & deferred_commits
     )
     {
-        bool task_timed_out = is_pending
-            && metadata.task_timeout_seconds > 0
-            && metadata.create_time + static_cast<time_t>(metadata.task_timeout_seconds) < now;
+        const bool task_timed_out = is_pending
+            && ExportPartitionUtils::isExportTaskTimedOut(metadata.create_time, metadata.task_timeout_seconds, now);
 
         if (task_timed_out)
         {
@@ -389,7 +400,7 @@ ExportPartitionManifestUpdatingTask::ExportPartitionManifestUpdatingTask(Storage
 {
 }
 
-std::vector<ReplicatedPartitionExportInfo> ExportPartitionManifestUpdatingTask::getPartitionExportsInfo() const
+std::vector<PartitionExportInfo> ExportPartitionManifestUpdatingTask::getPartitionExportsInfo() const
 {
     const auto model = storage.export_partition_manifests.get();
 
@@ -398,14 +409,14 @@ std::vector<ReplicatedPartitionExportInfo> ExportPartitionManifestUpdatingTask::
 
     const auto backoff = storage.export_merge_tree_partition_task_scheduler->getLocalBackoffSnapshot();
 
-    std::vector<ReplicatedPartitionExportInfo> infos;
+    std::vector<PartitionExportInfo> infos;
     infos.reserve(model->size());
 
     for (const auto & entry : model->get<ExportPartitionTaskEntryTagByCompositeKey>())
     {
         const auto & manifest = entry.manifest;
 
-        ReplicatedPartitionExportInfo info;
+        PartitionExportInfo info;
 
         info.destination_database = manifest.destination_database;
         info.destination_table = manifest.destination_table;
@@ -415,7 +426,7 @@ std::vector<ReplicatedPartitionExportInfo> ExportPartitionManifestUpdatingTask::
         info.create_time = manifest.create_time;
         info.source_replica = manifest.source_replica;
         info.parts_count = manifest.number_of_parts;
-        info.parts_to_do = manifest.parts.size();
+        info.parts_to_do = calculatePartsToDo(manifest.number_of_parts, entry.destination_file_paths_per_part);
         info.parts = manifest.parts;
         info.status = magic_enum::enum_name(entry.status);
 
@@ -424,7 +435,7 @@ std::vector<ReplicatedPartitionExportInfo> ExportPartitionManifestUpdatingTask::
         for (const auto & [_, ex] : entry.last_exception_per_replica)
         {
             total_exception_count += ex.count;
-            info.last_exception_per_replica.push_back(ex);
+            info.last_exception_per_replica.push_back({ex.replica, ex.message, ex.part, ex.time, ex.count});
         }
         info.exception_count = total_exception_count;
 
@@ -454,9 +465,7 @@ std::vector<ReplicatedPartitionExportInfo> ExportPartitionManifestUpdatingTask::
 void ExportPartitionManifestUpdatingTask::poll()
 {
     /// Commit-recovery work collected while the storage-wide mutex is held.
-    /// Executed AFTER the mutex is released - committing to Iceberg/REST-catalog can take
-    /// many seconds (up to MAX_TRANSACTION_RETRIES=100 catalog round-trips) and blocking
-    /// `system.replicated_partition_exports` for that long is what we are fixing here.
+    /// Executed AFTER the mutex is released.
     std::vector<CommitRecoveryWork> deferred_commits;
 
     auto zk = storage.getZooKeeper();
@@ -710,7 +719,7 @@ void ExportPartitionManifestUpdatingTask::addTask(
     ExportReplicatedMergeTreePartitionTaskEntry::Status status,
     std::map<String, LastExceptionEntry> last_exception_per_replica,
     std::map<String, std::vector<String>> destination_file_paths_per_part,
-    std::optional<ExportReplicatedMergeTreePartitionCommitInfoEntry> commit_info,
+    std::optional<ExportPartitionCommitInfoEntry> commit_info,
     const std::string & key,
     auto & entries_by_key
 )
@@ -720,7 +729,7 @@ void ExportPartitionManifestUpdatingTask::addTask(
     /// If the status is PENDING, we grab references to the data parts to prevent them from being deleted from the disk
     /// Otherwise, the operation has already been completed and there is no need to keep the data parts alive
     /// You might also ask: why bother adding tasks that have already been completed (i.e, status != PENDING)?
-    /// The reason is the `replicated_partition_exports` table might miss entries if they are not added here.
+    /// The reason is the `partition_exports` table might miss entries if they are not added here.
     if (status == ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING)
     {
         for (const auto & part_name : metadata.parts)
@@ -748,7 +757,7 @@ void ExportPartitionManifestUpdatingTask::addTask(
             LOG_ERROR(storage.log,
                 "ExportPartition Manifest Updating Task: failed to replace in-memory entry for {} (transaction_id {}). "
                 "This most likely means another export already holds the same transaction_id (id collision); "
-                "this export will be missing from system.replicated_partition_exports.",
+                "this export will be missing from system.partition_exports.",
                 key, entry.getTransactionId());
     }
     else if (!entries_by_key.insert(entry).second)
@@ -756,7 +765,7 @@ void ExportPartitionManifestUpdatingTask::addTask(
         LOG_ERROR(storage.log,
             "ExportPartition Manifest Updating Task: failed to insert in-memory entry for {} (transaction_id {}). "
             "Another entry already holds this transaction_id (id collision); "
-            "this export will be invisible in system.replicated_partition_exports.",
+            "this export will be invisible in system.partition_exports.",
             key, entry.getTransactionId());
     }
 }
