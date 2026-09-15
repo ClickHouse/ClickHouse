@@ -31,8 +31,8 @@ private:
 
     [[gnu::noinline]] static int exactSign(const std::array<double, 6> & coordinates)
     {
-        std::array<uint64_t, 6> mantissas;
-        std::array<unsigned, 6> exponents;
+        std::array<uint64_t, 6> mantissas; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+        std::array<unsigned, 6> exponents; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
         unsigned common_exponent = 2046;
         unsigned largest_exponent = 0;
         for (size_t i = 0; i < coordinates.size(); ++i)

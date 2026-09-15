@@ -30,7 +30,7 @@ class GeoMultiPolygonValidity
     using Base = boost::geometry::detail::is_valid::is_valid_polygon<typename boost::range_value<MultiPolygon>::type, true>;
 
     template <typename T>
-    using Vector = std::vector<T, Allocator<T>>;
+    using Vector = std::vector<T, Allocator<T>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     template <typename Turns, typename Visitor, typename Strategy>
     static bool disjointInteriors(const MultiPolygon & geometry, const Turns & turns, Visitor & visitor, const Strategy & strategy)
@@ -86,7 +86,7 @@ public:
         /// Phase 2: collect self-turns and reject unacceptable intersections.
         using SelfTurns = bg::detail::is_valid::has_valid_self_turns<MultiPolygon, typename Strategy::cs_tag>;
         using Turn = typename SelfTurns::turn_type;
-        std::deque<Turn, Allocator<Turn>> turns;
+        std::deque<Turn, Allocator<Turn>> turns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         if (!SelfTurns::apply(geometry, turns, visitor, strategy))
             return false;
 
@@ -139,7 +139,8 @@ template <template <typename> class Allocator = std::allocator, typename MultiPo
 bool isValidGeoMultiPolygon(const MultiPolygon & geometry, std::string & reason)
 {
     using Strategy = typename boost::geometry::strategies::relate::services::default_strategy<MultiPolygon, MultiPolygon>::type;
-    std::ostringstream stream;
+    /// Boost's failure visitor requires a `std::ostream`.
+    std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     boost::geometry::failing_reason_policy<> visitor(stream);
     const bool valid = GeoMultiPolygonValidity<MultiPolygon, Allocator>::apply(geometry, visitor, Strategy{});
     reason = stream.str();
