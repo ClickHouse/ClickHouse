@@ -33,6 +33,10 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
   </Step>
 
   <Step title="BYOC 인프라 설정" id="set-up-byoc-infrastructure">
+    <Note>
+      **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 프로비저닝 전에 자동으로 [사전 유효성 검사](/ko/products/bring-your-own-cloud/onboarding/standard#preflight-validation)를 실행하여 관리 서비스 계정에 필요한 권한이 있는지, 필요한 Google Cloud API가 활성화되어 있는지 확인합니다. 고객 관리형 VPC의 자동 유효성 검사는 아직 GCP 사전 검사에 포함되어 있지 않으므로, 시작하기 전에 VPC가 위의 [네트워크 요구 사항](#configure-existing-vpc)을 충족하는지 확인하십시오.
+    </Note>
+
     새 인프라를 설정할 때 ClickHouse Cloud 콘솔에서 다음을 구성하십시오.
 
     1. **VPC configuration**에서 **Use existing VPC**를 선택하십시오.

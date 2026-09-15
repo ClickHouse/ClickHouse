@@ -1,10 +1,9 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- Distributed parallel FINAL via primary-key-range layers must equal local FINAL for the merging engines
 -- with extra state columns -- aggregate states (AggregatingMergeTree) and sign + version
 -- (VersionedCollapsingMergeTree) -- and must distribute the read, not fall back to a serial read.
 
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4;
-SET automatic_parallel_replicas_mode = 0;
 
 -- AggregatingMergeTree: each key carries partial aggregate states that FINAL merges across the parts.
 DROP TABLE IF EXISTS t_agg;
