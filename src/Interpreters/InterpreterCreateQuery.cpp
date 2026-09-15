@@ -1214,21 +1214,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
-    /// The setting controls every user-supplied definition which creates new metadata. Replaying
-    /// stored metadata, internal secondary CREATE queries, and backup restore must remain loadable.
-    if (isFreshTableDefinition(mode, create.attach_short_syntax)
-        && !is_restore_from_backup
-        && !getContext()->getSettingsRef()[Setting::enable_tuple_element_codecs])
-    {
-        for (const auto & column : properties.columns)
-        {
-            if (column.codec.hasSubcolumns())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
-        }
-    }
-
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
     /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
@@ -1848,6 +1833,29 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+void validateTupleElementCodecAdmission(
+    const ColumnsDescription & columns,
+    const ASTCreateQuery & create,
+    LoadingStrictnessLevel mode,
+    const ContextPtr & context,
+    bool is_restore_from_backup)
+{
+    /// The setting controls user-supplied definitions that will create metadata. Replaying stored
+    /// metadata, internal secondary CREATE queries, and backup restore must remain loadable.
+    if (!isFreshTableDefinition(mode, create.attach_short_syntax)
+        || is_restore_from_backup
+        || context->getSettingsRef()[Setting::enable_tuple_element_codecs])
+        return;
+
+    for (const auto & column : columns)
+    {
+        if (column.codec.hasSubcolumns())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+    }
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2185,6 +2193,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// The initial query does not construct the storage locally. Admit the definition before it is
+        /// placed in the replicated DDL log; secondary replays deliberately skip experimental gates.
+        validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
+
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
@@ -2451,6 +2463,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
 
+        validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
+
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
         String temporary_table_name = create.getTable();
@@ -2541,6 +2555,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
+
+    validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
@@ -3190,6 +3206,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();

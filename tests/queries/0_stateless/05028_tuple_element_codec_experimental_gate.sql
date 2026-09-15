@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS tuple_element_codec_root_only;
 DROP TABLE IF EXISTS tuple_element_codec_full_attach;
 DROP TABLE IF EXISTS tuple_element_codec_as_source;
 DROP TABLE IF EXISTS tuple_element_codec_clone_source;
+DROP TABLE IF EXISTS tuple_element_codec_existing_destination;
+DROP TEMPORARY TABLE IF EXISTS tuple_element_codec_existing_temporary;
 
 -- Root-only codecs are outside the experimental gate.
 CREATE TABLE tuple_element_codec_root_only
@@ -51,6 +53,24 @@ ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 -- not bypass the gate merely because their columns were not written in this query.
 CREATE TABLE tuple_element_codec_as_source AS tuple_element_codec_gate; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tuple_element_codec_clone_source CLONE AS tuple_element_codec_gate; -- { serverError BAD_ARGUMENTS }
+
+-- An unused copied definition does not require admission when IF NOT EXISTS makes the query a no-op.
+CREATE TABLE tuple_element_codec_existing_destination (n UInt64)
+ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE IF NOT EXISTS tuple_element_codec_existing_destination AS tuple_element_codec_gate;
+CREATE TABLE IF NOT EXISTS tuple_element_codec_existing_destination CLONE AS tuple_element_codec_gate;
+ATTACH TABLE IF NOT EXISTS tuple_element_codec_existing_destination UUID '50280000-0000-0000-0000-000000000002'
+(
+    value Tuple(number UInt64 CODEC(ZSTD), text String)
+)
+ENGINE = MergeTree ORDER BY tuple();
+SELECT n FROM tuple_element_codec_existing_destination FORMAT Null;
+
+CREATE TEMPORARY TABLE tuple_element_codec_existing_temporary (n UInt64);
+CREATE TEMPORARY TABLE IF NOT EXISTS tuple_element_codec_existing_temporary AS tuple_element_codec_gate;
+SELECT n FROM tuple_element_codec_existing_temporary FORMAT Null;
+DROP TEMPORARY TABLE tuple_element_codec_existing_temporary;
+DROP TABLE tuple_element_codec_existing_destination;
 
 -- Restating Delta, which is stored as Delta(8) for UInt64, is semantically unchanged
 -- and remains allowed without either admission gate.
