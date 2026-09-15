@@ -1,13 +1,13 @@
 ---
-sidebarTitle: '네트워킹'
-description: 'ClickPipes 네트워킹 구성 옵션입니다.'
-slug: /integrations/clickpipes/networking
-title: '네트워킹'
-doc_type: 'guide'
-keywords: ['clickpipes networking', 'private networking', 'reverse private endpoint', 'aws privatelink', 'gcp private service connect', 'private connectivity', 'azure privatelink']
+title: "개요"
+sidebarTitle: "개요"
+description: "ClickPipes 네트워킹 구성 옵션입니다."
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["clickpipes networking", "private networking", "reverse private endpoint", "aws privatelink", "gcp private service connect", "private connectivity", "azure privatelink"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 업스트림 데이터 소스의 네트워킹 구성에 따라 다음 방식으로 ClickPipes에 연결할 수 있습니다:
@@ -26,11 +26,11 @@ integration:
 
 RPE 지원 여부는 데이터 소스가 호스팅된 클라우드 제공업체와 리전에 따라 달라집니다.
 
-| 제공업체                                                                        | 지원 여부 | 참고                                                                                                                                                                  |
-| --------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AWS PrivateLink](/ko/integrations/clickpipes/networking/aws-privatelink)      | 예     | AWS에서 호스팅되는 데이터 소스에 사용할 수 있습니다. VPC 엔드포인트 서비스를 사용하여 교차 리전 연결을 구성할 수 있습니다.                                                                                           |
-| [GCP Private Service Connect](/ko/integrations/clickpipes/networking/gcp-psc)  | 예     | GCP에서 호스팅되는 `AlloyDB` 데이터 소스에 사용할 수 있습니다. Global Access를 통한 교차 리전 연결은 아직 지원되지 않습니다. 지원되지 않는 GCP 리전의 프라이빗 `AlloyDB` 데이터 소스에 연결하려면 [SSH 터널링](#ssh-tunneling)을 사용하십시오. |
-| [Azure Private Link](/ko/integrations/clickpipes/networking/azure-privatelink) | 아니요   | 프라이빗 Azure 데이터 소스에 연결하려면 [SSH 터널링](#ssh-tunneling)을 사용하십시오.                                                                                                         |
+| 제공업체                                                                        | 지원 여부 | 참고                                                                                                                                                                              |
+| --------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/ko/integrations/clickpipes/networking/aws-privatelink)      | 예     | AWS에서 호스팅되는 데이터 소스에 사용할 수 있습니다. VPC 엔드포인트 서비스를 사용하여 교차 리전 연결을 구성할 수 있습니다.                                                                                                       |
+| [GCP Private Service Connect](/ko/integrations/clickpipes/networking/gcp-psc)  | 예     | GCP에서 호스팅되는 데이터 소스에 사용할 수 있습니다. [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)를 사용하여 교차 리전 연결을 구성할 수 있습니다. |
+| [Azure Private Link](/ko/integrations/clickpipes/networking/azure-privatelink) | 아니요   | 프라이빗 Azure 데이터 소스에 연결하려면 [SSH 터널링](#ssh-tunneling)을 사용하십시오.                                                                                                                     |
 
 <div id="ssh-tunneling">
   ## SSH 터널링
@@ -42,4 +42,4 @@ RPE 지원 여부는 데이터 소스가 호스팅된 클라우드 제공업체�
 
 * 데이터 소스가 Azure에서 호스팅되는 경우
 * 데이터 소스와 ClickPipes가 서로 다른 클라우드 제공업체 또는 리전에 호스팅되어 있고, [관리형 프라이빗 엔드포인트](#managed-private-endpoints)를 통한 교차 리전 연결 옵션이 없는 경우
-* [관리형 프라이빗 엔드포인트](#managed-private-endpoints)를 사용할 수 없는 경우(예: 배스천 호스트를 통해서만 연결할 수 있는 온프레미스 배포)
+* [관리형 프라이빗 엔드포인트](#managed-private-endpoints)를 사용할 수 없는 경우(*예:* 배스천 호스트를 통해서만 연결할 수 있는 온프레미스 배포)

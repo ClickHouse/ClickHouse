@@ -1,18 +1,18 @@
 {
   "icon": "/images/icons/icon-reference.svg",
-  "item": "Справочник",
+  "item": "Reference",
   "pages": [
     "ru/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "Справочник по ClickHouse SQL",
+      "group": "SQL Reference",
       "pages": [
         "ru/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Команды",
+          "group": "Statements",
           "pages": [
             "ru/reference/statements/index",
             {
@@ -66,7 +66,7 @@
                     "ru/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "Структуры",
+                      "group": "Layouts",
                       "pages": [
                         "ru/reference/statements/create/dictionary/layouts/overview",
                         "ru/reference/statements/create/dictionary/layouts/flat",
@@ -85,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Источники",
+                      "group": "Sources",
                       "pages": [
                         "ru/reference/statements/create/dictionary/sources/overview",
                         "ru/reference/statements/create/dictionary/sources/local-file",
@@ -108,6 +108,7 @@
                 },
                 "ru/reference/statements/create/masking-policy",
                 "ru/reference/statements/create/function",
+                "ru/reference/statements/create/handler",
                 "ru/reference/statements/create/named-collection",
                 "ru/reference/statements/create/quota",
                 "ru/reference/statements/create/role",
@@ -115,7 +116,7 @@
                 "ru/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "ТАБЛИЦА",
+                  "group": "TABLE",
                   "pages": [
                     "ru/reference/statements/create/table",
                     "ru/reference/statements/create/table/codec",
@@ -191,7 +192,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Операторы",
+          "group": "Operators",
           "pages": [
             "ru/reference/operators/index",
             "ru/reference/operators/exists",
@@ -203,12 +204,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Типы данных",
+      "group": "Data Types",
       "pages": [
         "ru/reference/data-types/index",
         {
           "expanded": false,
-          "group": "Числовые типы",
+          "group": "Numeric types",
           "pages": [
             "ru/reference/data-types/int-uint",
             "ru/reference/data-types/float",
@@ -218,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "Строковые типы",
+          "group": "String types",
           "pages": [
             "ru/reference/data-types/string",
             "ru/reference/data-types/fixedstring"
@@ -226,7 +227,7 @@
         },
         {
           "expanded": false,
-          "group": "Типы даты и времени",
+          "group": "Date and time types",
           "pages": [
             "ru/reference/data-types/date",
             "ru/reference/data-types/date32",
@@ -238,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "Сетевые типы",
+          "group": "Network types",
           "pages": [
             "ru/reference/data-types/ipv4",
             "ru/reference/data-types/ipv6"
@@ -246,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "Составные типы",
+          "group": "Composite types",
           "pages": [
             "ru/reference/data-types/array",
             "ru/reference/data-types/tuple",
@@ -256,7 +257,7 @@
         },
         {
           "expanded": false,
-          "group": "Полуструктурированные типы",
+          "group": "Semi-structured types",
           "pages": [
             "ru/reference/data-types/newjson",
             "ru/reference/data-types/dynamic",
@@ -265,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable и опциональные типы",
+          "group": "Nullable and optional types",
           "pages": [
             "ru/reference/data-types/nullable",
             "ru/reference/data-types/lowcardinality"
@@ -273,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "Специализированные типы",
+          "group": "Specialized types",
           "pages": [
             "ru/reference/data-types/uuid",
             "ru/reference/data-types/enum",
@@ -284,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "Типы агрегатных функций",
+          "group": "Aggregate function types",
           "pages": [
             "ru/reference/data-types/aggregatefunction",
             "ru/reference/data-types/simpleaggregatefunction"
@@ -292,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "Специальные типы данных",
+          "group": "Special Data Types",
           "pages": [
             "ru/reference/data-types/special-data-types/index",
             "ru/reference/data-types/special-data-types/expression",
@@ -302,7 +303,7 @@
           ]
         },
         {
-          "group": "Двоичное кодирование",
+          "group": "Binary encoding",
           "pages": [
             "ru/reference/data-types/data-types-binary-encoding"
           ]
@@ -312,17 +313,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Движки",
+      "group": "Engines",
       "pages": [
         "ru/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Движки таблиц",
+          "group": "Table Engines",
           "pages": [
             "ru/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "Интеграции",
+              "group": "Integrations",
               "pages": [
                 "ru/reference/engines/table-engines/integrations/index",
                 "ru/reference/engines/table-engines/integrations/arrowflight",
@@ -356,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Семейство Log",
+              "group": "Log Family",
               "pages": [
                 "ru/reference/engines/table-engines/log-family/index",
                 "ru/reference/engines/table-engines/log-family/log",
@@ -366,7 +367,7 @@
             },
             {
               "expanded": false,
-              "group": "Семейство MergeTree",
+              "group": "MergeTree Family",
               "pages": [
                 "ru/reference/engines/table-engines/mergetree-family/index",
                 "ru/reference/engines/table-engines/mergetree-family/mergetree",
@@ -385,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "Специальные",
+              "group": "Special",
               "pages": [
                 "ru/reference/engines/table-engines/special/index",
                 "ru/reference/engines/table-engines/special/alias",
@@ -412,7 +413,7 @@
         },
         {
           "expanded": false,
-          "group": "Движки баз данных",
+          "group": "Database Engines",
           "pages": [
             "ru/reference/engines/database-engines/index",
             "ru/reference/engines/database-engines/atomic",
@@ -432,12 +433,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Функции",
+      "group": "Functions",
       "pages": [
         "ru/reference/functions/index",
         {
           "expanded": false,
-          "group": "Обычные функции",
+          "group": "Regular functions",
           "pages": [
             "ru/reference/functions/regular-functions/overview",
             "ru/reference/functions/regular-functions/ai-functions",
@@ -503,7 +504,7 @@
         },
         {
           "expanded": false,
-          "group": "Агрегатные функции",
+          "group": "Aggregate Functions",
           "pages": [
             "ru/reference/functions/aggregate-functions/index",
             "ru/reference/functions/aggregate-functions/combinators",
@@ -511,7 +512,7 @@
             "ru/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "Справочник",
+              "group": "Reference",
               "pages": [
                 "ru/reference/functions/aggregate-functions/reference-index",
                 "ru/reference/functions/aggregate-functions/aggThrow",
@@ -556,6 +557,7 @@
                 "ru/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ru/reference/functions/aggregate-functions/first_value",
                 "ru/reference/functions/aggregate-functions/flame_graph",
+                "ru/reference/functions/aggregate-functions/gini",
                 "ru/reference/functions/aggregate-functions/groupArray",
                 "ru/reference/functions/aggregate-functions/groupArrayArray",
                 "ru/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -678,7 +680,7 @@
         },
         {
           "expanded": false,
-          "group": "Табличные функции",
+          "group": "Table functions",
           "pages": [
             "ru/reference/functions/table-functions/index",
             "ru/reference/functions/table-functions/arrowflight",
@@ -745,7 +747,7 @@
         },
         {
           "expanded": false,
-          "group": "Оконные функции",
+          "group": "Window functions",
           "pages": [
             "ru/reference/functions/window-functions/index",
             "ru/reference/functions/window-functions/cume_dist",
@@ -765,7 +767,7 @@
           ]
         },
         {
-          "group": "Пользовательские функции",
+          "group": "User Defined Functions",
           "pages": [
             "ru/reference/functions/regular-functions/udf",
             "ru/reference/functions/regular-functions/wasm_udf"
@@ -776,7 +778,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Форматы",
+      "group": "Formats",
       "pages": [
         "ru/reference/formats/index",
         {
@@ -963,7 +965,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Интерфейсы",
+      "group": "Interfaces",
       "pages": [
         "ru/reference/interfaces/specs/NativeProtocol",
         "ru/reference/interfaces/specs/NativeFormat"
@@ -972,7 +974,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Настройки",
+      "group": "Settings",
       "pages": [
         "ru/reference/settings/index",
         {
@@ -993,7 +995,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Системные таблицы",
+      "group": "System Tables",
       "pages": [
         "ru/reference/system-tables/overview",
         "ru/reference/system-tables/aggregate_function_combinators",
@@ -1138,6 +1140,7 @@
         "ru/reference/system-tables/settings_profile_elements",
         "ru/reference/system-tables/settings_profiles",
         "ru/reference/system-tables/stack_trace",
+        "ru/reference/system-tables/statements",
         "ru/reference/system-tables/stemmers",
         "ru/reference/system-tables/storage_policies",
         "ru/reference/system-tables/symbols",
@@ -1171,7 +1174,7 @@
       ]
     },
     {
-      "group": "Озёра данных",
+      "group": "Data Lakes",
       "pages": [
         "ru/reference/datalakes"
       ]

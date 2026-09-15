@@ -285,8 +285,8 @@
   //      data-galaxy-prop-os="linux">...</div>
   function getTrackedHref(anchor) {
     var href = anchor.getAttribute('href');
-    // Homepage click handlers add the canonical /docs base before navigating.
-    // Record that final destination rather than the unprefixed DOM attribute.
+    // Homepage components now render the canonical /docs base during SSR. Keep
+    // this normalization for older tracked links that still omit the mount.
     if (isCanonicalDocs && href && href.charAt(0) === '/' &&
         href.indexOf('//') !== 0 && !/^\/docs(?:\/|$)/.test(href)) {
       return '/docs' + href;
