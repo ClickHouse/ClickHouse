@@ -136,7 +136,8 @@ namespace ErrorCodes
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_,
+    bool is_initial_insert_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -144,6 +145,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_squash(no_squash_)
     , no_destination(no_destination_)
     , async_insert(async_insert_)
+    , is_initial_insert(is_initial_insert_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -1525,7 +1527,12 @@ BlockIO InterpreterInsertQuery::execute()
             /// The remaining eligibility guards need the built SELECT pipeline, so
             /// `addInsertToSelectPipeline` makes the final decision.
             std::string_view reason;
-            if (!context->tryGetAsynchronousInsertQueue())
+            /// Internal inserts (refresh, POPULATE, CTAS) swap or publish their destination as soon as
+            /// execute() returns, so the async route with wait_for_async_insert = 0 would race the flush
+            /// and lose data. Kept before the transaction guard, which throws rather than downgrades.
+            if (!is_initial_insert)
+                reason = "insert is not user-initiated";
+            else if (!context->tryGetAsynchronousInsertQueue())
                 reason = "asynchronous insert queue is not configured";
             else if (!settings[Setting::async_insert] && !table->areAsynchronousInsertsEnabled())
                 reason = "async_insert is disabled for this query and table";
@@ -1638,13 +1645,17 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {
+        /// A forwarded (SECONDARY_QUERY) insert must stay out of the async queue; see is_initial_insert.
+        const bool is_initial_insert
+            = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
         return std::make_unique<InterpreterInsertQuery>(
             args.query,
             args.context,
             args.allow_materialized,
             /* no_squash */false,
             /* no_destination */false,
-            /* async_insert */false);
+            /* async_insert */false,
+            is_initial_insert);
     };
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }

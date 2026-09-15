@@ -30,7 +30,8 @@ public:
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
-        bool async_insert_);
+        bool async_insert_,
+        bool is_initial_insert_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -109,6 +110,8 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    /// True only for the user-initiated INSERT the factory builds; internal inserts stay synchronous.
+    const bool is_initial_insert;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
 
