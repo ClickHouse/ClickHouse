@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
+#include <Common/BitHelpers.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -472,6 +473,17 @@ size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
             return std::numeric_limits<size_t>::max();
     }
     return growth_memory;
+}
+
+size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
+{
+    chassert(!skip_null_keys);
+
+    /// The output filter and the optional `LowCardinality` mask can coexist with the copied columns.
+    /// Round up both masks to cover the allocation rounding used when the latter is resized.
+    const size_t mask_bytes = roundUpToPowerOfTwoOrZero(
+        chunk.getNumRows() * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
+    return chunk.allocatedBytes() + 2 * mask_bytes;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)

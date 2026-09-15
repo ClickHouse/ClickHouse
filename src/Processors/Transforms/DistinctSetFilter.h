@@ -159,6 +159,11 @@ public:
     /// when the bound is not representable.
     size_t estimateGrowthMemory(const Chunk & chunk) const;
 
+    /// Estimates filtering workspace for a copy of the prepared input and the top-level row masks.
+    /// Excludes retained set growth. Requires columns normalized by `prepareForInsert` and
+    /// `skip_null_keys_ = false`. Column-specific temporary allocations can exceed this estimate.
+    size_t estimateFilteringMemory(const Chunk & chunk) const;
+
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
     /// `max_rows_in_distinct` and `max_bytes_in_distinct` apply after insertion. `THROW` raises an
     /// exception when exceeded; `BREAK` retains the crossing chunk and sets `isLimitReached`, so the

@@ -5,6 +5,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -219,6 +221,66 @@ TEST(DistinctTransformMemory, PassThroughBeforeLowCardinalityBitmapAllocation)
             Chunk input({column}, 3);
             ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(input));
             EXPECT_EQ(input.getNumRows(), 3);
+        }
+    }).join();
+}
+
+TEST(DistinctTransformMemory, FilteringWidePayloadsWithSpareTableCapacity)
+{
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    MemoryTracker query{&user, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+        constexpr size_t num_rows = 8;
+        auto value = ColumnString::create();
+        value->insert(Field(String(1 << 20, 'x')));
+        ColumnPtr constant = ColumnConst::create(std::move(value), num_rows);
+        const Columns payloads{
+            constant->convertToFullColumnIfConst(),
+            constant,
+            ColumnReplicated::create(assert_cast<const ColumnConst &>(*constant).getDataColumnPtr(),
+                ColumnUInt8::create(num_rows, UInt8(0)))};
+        for (const auto & payload : payloads)
+        {
+            for (const bool constrained : {false, true})
+            {
+                SCOPED_TRACE(::testing::Message() << payload->getName() << ", constrained=" << constrained);
+                DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+                    /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false,
+                    /*max_bytes_before_pass_through_=*/ 1ULL << 30);
+                auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
+                input.addColumn(payload);
+                size_t materialization_bytes = 0;
+                size_t filtering_bytes = 0;
+                {
+                    auto prepared = input.clone();
+                    materializeChunk(prepared);
+                    filtering_bytes = prepared.allocatedBytes();
+                    if (prepared.getColumns()[1] != payload)
+                        materialization_bytes = prepared.getColumns()[1]->allocatedBytes();
+                }
+
+                /// Materialization fits, but copying the seven selected payloads exceeds the budget.
+                /// The eight numeric keys fit the initial hash-table capacity without growth.
+                if (constrained)
+                    user.setHardLimit(user.get() + materialization_bytes + filtering_bytes / 4 + 65536);
+                SCOPE_EXIT({ user.setHardLimit(0); });
+                ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(input));
+                ASSERT_EQ(input.getNumRows(), constrained ? num_rows : num_rows - 1);
+                EXPECT_EQ(input.getColumns()[1]->getDataAt(0).size(), 1 << 20);
+
+                auto repeated = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
+                repeated.addColumn(payload);
+                input.clear();
+                ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(repeated));
+                EXPECT_EQ(repeated.getNumRows(), constrained ? num_rows : 0);
+            }
         }
     }).join();
 }

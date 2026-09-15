@@ -80,12 +80,15 @@ void DistinctTransform::transform(Chunk & chunk)
     if (max_bytes_before_pass_through)
     {
         distinct_set->prepareForInsert(chunk);
-        const auto available = getMostStrictAvailableSystemMemory();
-        if (available && distinct_set->estimateGrowthMemory(chunk) > *available)
+        if (const auto available = getMostStrictAvailableSystemMemory())
         {
-            distinct_set.reset();
-            ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
-            return;
+            const size_t filtering_memory = distinct_set->estimateFilteringMemory(chunk);
+            if (filtering_memory > *available || distinct_set->estimateGrowthMemory(chunk) > *available - filtering_memory)
+            {
+                distinct_set.reset();
+                ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+                return;
+            }
         }
     }
 
