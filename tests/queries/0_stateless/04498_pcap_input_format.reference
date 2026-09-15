@@ -1,0 +1,78 @@
+--- schema ---
+number	UInt64
+timestamp	DateTime64(9)
+capture_length	UInt32
+original_length	UInt32
+link_type	LowCardinality(String)
+protocols	Array(LowCardinality(String))
+eth_src	Nullable(String)
+eth_dst	Nullable(String)
+eth_type	LowCardinality(String)
+vlan_id	Nullable(UInt16)
+ip_version	Nullable(UInt8)
+src_addr	Nullable(IPv6)
+dst_addr	Nullable(IPv6)
+ip_protocol	LowCardinality(String)
+ip_ttl	Nullable(UInt16)
+src_port	Nullable(UInt16)
+dst_port	Nullable(UInt16)
+tcp_flags	Nullable(String)
+tcp_seq	Nullable(UInt32)
+tcp_ack	Nullable(UInt32)
+payload_length	UInt32
+payload	String
+raw	String
+--- classic pcap (HTTP over TCP) ---
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
+3	ETHERNET_II	['ETHERNET_II','IP','ICMP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	\N
+4	ETHERNET_II	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
+6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+--- UDP ---
+2	['ETHERNET_II','IP','UDP']	UDP	68	67
+7	['ETHERNET_II','IPv6','UDP']	UDP	68	67
+--- ICMP protocol/count ---
+ICMP	1
+--- all Ethernet/IPv4/TCP ---
+7	7	5	4
+--- pcapng reads identically to the classic pcap ---
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
+3	ETHERNET_II	['ETHERNET_II','IP','ICMP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	\N
+4	ETHERNET_II	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
+6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+--- pcapng and pcap agree on every column ---
+1
+--- VLAN-tagged frame: eth_type unwraps the 802.1Q tag ---
+4	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	IP	42	TCP	12345	80
+--- non-first IPv4 fragment: ip_protocol comes from the IPv4 header ---
+5	['ETHERNET_II','IP','RAW']	TCP	\N	\N	\N
+--- native IPv6: addresses, next header and ports ---
+6	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+7	['ETHERNET_II','IPv6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
+--- truncated capture (snaplen 34: original_length > capture_length) ---
+1	34	76	['ETHERNET_II','IP']	TCP	34
+2	34	42	['ETHERNET_II','IP']	UDP	34
+3	34	42	['ETHERNET_II','IP']	ICMP	34
+--- length invariants hold across all fixtures ---
+packets.pcap	0	0	0
+packets.pcapng	0	0	0
+truncated.pcap	0	0	0
+--- subset of columns (only number, dst_port) ---
+1	80
+2	67
+3	\N
+4	80
+5	\N
+6	80
+7	67
+--- from a stream: standard input ---
+7	4
+--- from a stream: compressed file ---
+7	4
+--- schema inference via file() extension is PCAP-explicit only (count) ---
+7

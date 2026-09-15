@@ -411,6 +411,12 @@
 [submodule "contrib/mapbox-geometry"]
 	path = contrib/mapbox-geometry
 	url = https://github.com/ClickHouse/geometry.hpp
+[submodule "contrib/libpcap"]
+	path = contrib/libpcap
+	url = https://github.com/the-tcpdump-group/libpcap
+[submodule "contrib/libtins"]
+	path = contrib/libtins
+	url = https://github.com/alexey-milovidov/libtins
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc
