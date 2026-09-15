@@ -42,7 +42,6 @@ void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void registerOutputFormatValues(FormatFactory & factory);
 void registerOutputFormatValues(FormatFactory & factory)
 {
     factory.registerOutputFormat("Values", [](

@@ -3,7 +3,6 @@
 #include <unordered_set>
 #include <Core/Types.h>
 #include <Core/Field.h>
-#include <optional>
 
 namespace DataLake
 {
@@ -19,7 +18,7 @@ static constexpr auto FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES = "Other";
 
 static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
-using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     /// Catalog credentials
@@ -36,8 +35,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"storage_aws_secret_access_key", DEFAULT_MASKING_RULE},
     /// OneLake credentials
     {"onelake_client_secret", DEFAULT_MASKING_RULE},
-    {"onelake_bearer_token", DEFAULT_MASKING_RULE},
-    {"onelake_refresh_token", DEFAULT_MASKING_RULE},
     /// Google credentials
     {"google_adc_client_secret", DEFAULT_MASKING_RULE},
     {"google_adc_refresh_token", DEFAULT_MASKING_RULE},

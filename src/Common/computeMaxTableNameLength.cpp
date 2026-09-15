@@ -33,10 +33,7 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
 
     // Adjust for database name and UUID in dropped table filenames
     // Max path will look like this: ./metadata_dropped/{db_name}.{table_name}.{uuid}.{extension}
-    // Saturate at zero: the prefix alone can already exceed the limit for a long database name,
-    // and an unsigned wrap here would report a huge limit instead of rejecting the name.
-    const size_t dropped_prefix_length = dot + escaped_db_name_length + dot + uuid_length + extension_length;
-    const size_t max_to_drop = max_dropped_length > dropped_prefix_length ? max_dropped_length - dropped_prefix_length : 0;
+    size_t max_to_drop = max_dropped_length - dot - escaped_db_name_length - dot - uuid_length - extension_length;
 
     // Return the minimum of the two calculated lengths
     return std::min(max_create_length, max_to_drop);

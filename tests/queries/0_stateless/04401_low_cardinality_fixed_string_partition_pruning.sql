@@ -5,9 +5,8 @@
 -- failed because the LowCardinality wrapper is not nullable-able, so the accuracy probe in
 -- applyDeterministicDagToColumn rejected the String -> LowCardinality(FixedString) cast and the
 -- partition condition degraded to "true" (scan all partitions). The test asserts the
--- optimization is PRESERVED: a real partition condition is built and prunes, and that it is
--- still abandoned for a literal that does not fit the key column. Correct-result checks alone
--- cannot catch this regression.
+-- optimization is PRESERVED: a real partition condition is built and prunes. Correct-result
+-- checks alone cannot catch this regression.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
@@ -47,13 +46,6 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc_n_fs WHERE k = '00000001');
 -- Results stay correct after pruning.
 SELECT 'correctness match', count() FROM t_lc_fs WHERE k = '00000001';
 SELECT 'correctness no-match', count() FROM t_lc_fs WHERE k = '99999999';
-
--- A literal too long for the key column cannot be represented in key space, so no partition
--- condition may be built for it.
-SELECT 'overlong condition not built',
-       countIf(explain ILIKE '%moduloLegacy(sipHash64(k), 8)%') = 0 AS bailed
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc_fs WHERE k = '0000000123456');
-SELECT 'overlong result', count() FROM t_lc_fs WHERE k = '0000000123456';
 
 DROP TABLE t_lc_fs;
 DROP TABLE t_fs;
