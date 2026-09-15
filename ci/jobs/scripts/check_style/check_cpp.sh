@@ -513,6 +513,15 @@ find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name 
 } > "$O.20" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
+# 21: No casts from integers to IntervalKind::Kind
+{
+result=$(xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -H -n '\b(static_cast|bit_cast|reinterpret_cast)\s*<\s*(DB::)?IntervalKind::Kind\s*>|\(\s*(DB::)?IntervalKind::Kind\s*\)\s*[\w(]|(^|[^\w])(DB::)?IntervalKind::Kind\s*(\(|\{[^}])' 2>/dev/null)
+if [ -n "$result" ]; then
+    echo "$result"
+    echo "^ Do not cast integers to IntervalKind::Kind: name the enumerator, or use IntervalKind::fromBinary for a byte read from the wire"
+fi
+} > "$O.21" 2>&1 &
+
 wait
 cat "$O".* 2>/dev/null
 
