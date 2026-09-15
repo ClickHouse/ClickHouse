@@ -12,6 +12,15 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ASTFunction;
 
+/// True when the sharding key expression contains an IN whose right-hand set is a subquery that is not
+/// built yet (`future_set->get()` is null). The sharding key expression is built standalone from the
+/// sharding-key AST, so such a set is never populated during planning. Executing the expression on
+/// constant values to prune shards would then hit `FunctionIn` with an unready set and throw
+/// "Not-ready Set is passed as the second argument for function 'in'" (LOGICAL_ERROR, aborts in
+/// debug/sanitizer builds). Callers must skip the shard-pruning optimization and query all shards
+/// in that case. Materialized tuple/storage sets are already filled, so they are safe and not reported.
+bool shardingKeyExpressionContainsNotReadySet(const ExpressionActionsPtr & sharding_key_expr);
+
 /// Rewrite `sharding_key IN (...)` for specific shard,
 /// so that it will contain only values that belong to this specific shard.
 ///
