@@ -1,3 +1,3 @@
-leaked after explicit flush: 0
-leaked after timeout flush: 0
-400000
+differ after explicit flush: 0	0
+differ after size flush: 0	0
+2	2000000
