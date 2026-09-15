@@ -14,18 +14,10 @@ namespace DB
 
 struct MergeTreeSettings;
 
-/// Column count for `vertical_merge_algorithm_min_columns_to_activate`.
-/// When the experimental setting is off, this is `gathering_columns.size()`.
-/// When it is on, a flattenable `Tuple` contributes its top-level elements
-/// (nested flattenable `Tuple` is not expanded). Any nested flattenable `Tuple`
-/// or dynamic-subcolumn leaf falls back to `gathering_columns.size()`.
-size_t countGatheringColumnsForVerticalActivation(
-    const NamesAndTypesList & gathering_columns,
-    const MergeTreeSettings & settings);
-
-/// After Vertical has been chosen, replace flattenable gathering parents with
-/// leaf pairs and re-key skip indexes that were stored under the parent name
-/// onto the exact leaf they require. Logs one line per gathering column.
+/// Before choosing the merge algorithm, replace flattenable gathering parents
+/// with leaf pairs and re-key skip indexes that were stored under the parent
+/// name onto the exact leaf they require. Logs one line per gathering column.
+/// Horizontal merge later discards `gathering_columns`.
 void tryFlattenGatheringColumns(
     const MergeTreeSettings & settings,
     NamesAndTypesList & gathering_columns,

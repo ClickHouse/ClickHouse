@@ -313,34 +313,6 @@ void rerouteSkipIndexesOntoLeaves(
 
 }
 
-size_t countGatheringColumnsForVerticalActivation(
-    const NamesAndTypesList & gathering_columns,
-    const MergeTreeSettings & settings)
-{
-    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
-        return gathering_columns.size();
-
-    size_t count = 0;
-    for (const auto & column : gathering_columns)
-    {
-        const auto * tuple_type = Nested::tryGetFlattenableTuple(column.type);
-        if (!tuple_type)
-        {
-            ++count;
-            continue;
-        }
-
-        for (const auto & element : tuple_type->getElements())
-        {
-            if (Nested::tryGetFlattenableTuple(element) || element->hasDynamicSubcolumns())
-                return gathering_columns.size();
-
-            ++count;
-        }
-    }
-    return count;
-}
-
 void tryFlattenGatheringColumns(
     const MergeTreeSettings & settings,
     NamesAndTypesList & gathering_columns,

@@ -4,8 +4,9 @@
 # no-random-merge-tree-settings: pins Vertical activation and the experimental flatten setting.
 #
 # When allow_experimental_vertical_merge_tuple_subcolumns is on,
-# enough_ordinary_cols counts top-level expandable Tuple fields. A nested
-# flattenable Tuple or a dynamic leaf falls back to storage-column counting.
+# flatten runs before the merge algorithm is chosen, and
+# enough_ordinary_cols is gathering_columns.size() after flatten.
+# auto_statistics_types is empty so implicit parent stats do not pin flatten.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +21,8 @@ COMMON_SETTINGS="
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
-    vertical_merge_algorithm_min_columns_to_activate = 11
+    vertical_merge_algorithm_min_columns_to_activate = 11,
+    auto_statistics_types = ''
 "
 
 print_merge_algorithm()
@@ -115,7 +117,7 @@ print_merge_algorithm t_off
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_off;"
 
 echo
-echo '=== nested flattenable Tuple falls back to storage columns ==='
+echo '=== nested flattenable Tuple expands and activates Vertical ==='
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_nested;
@@ -142,7 +144,7 @@ print_merge_algorithm t_nested
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_nested;"
 
 echo
-echo '=== JSON Tuple disables leaf counting for the whole merge ==='
+echo '=== JSON sibling does not block flattening the other Tuple ==='
 
 ${CLICKHOUSE_CLIENT} -q "
     SET enable_json_type = 1;

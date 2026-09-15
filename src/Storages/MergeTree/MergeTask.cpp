@@ -1052,6 +1052,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
 
+    {
+        MergeTreeDataPartsVector classify_parts(
+            global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end());
+        MergeTreeDataPartsVector classify_patch_parts(
+            global_ctx->future_part->patch_parts.begin(), global_ctx->future_part->patch_parts.end());
+        tryFlattenGatheringColumns(
+            *global_ctx->data_settings,
+            global_ctx->gathering_columns,
+            global_ctx->merging_columns,
+            global_ctx->storage_columns,
+            global_ctx->metadata_snapshot,
+            classify_parts,
+            classify_patch_parts,
+            global_ctx->new_data_part->expired_columns,
+            global_ctx->skip_indexes_by_column,
+            ctx->log);
+    }
+
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
     global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
 
@@ -1134,22 +1152,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
         case MergeAlgorithm::Vertical:
         {
-            MergeTreeDataPartsVector classify_parts(
-                global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end());
-            MergeTreeDataPartsVector classify_patch_parts(
-                global_ctx->future_part->patch_parts.begin(), global_ctx->future_part->patch_parts.end());
-            tryFlattenGatheringColumns(
-                *global_ctx->data_settings,
-                global_ctx->gathering_columns,
-                global_ctx->merging_columns,
-                global_ctx->storage_columns,
-                global_ctx->metadata_snapshot,
-                classify_parts,
-                classify_patch_parts,
-                global_ctx->new_data_part->expired_columns,
-                global_ctx->skip_indexes_by_column,
-                ctx->log);
-
             ctx->rows_sources_temporary_file = std::make_shared<RowsSourcesTemporaryFile>(global_ctx->context->getTempDataOnDisk());
 
             std::map<String, UInt64> local_merged_column_to_size;
@@ -3810,9 +3812,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols
-        = countGatheringColumnsForVerticalActivation(global_ctx->gathering_columns, *merge_tree_settings)
-            >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
+    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
 
     bool enough_total_rows = total_rows_count >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate];
 

@@ -16,14 +16,14 @@ Horizontal
 merge_algorithm
 Horizontal
 
-=== nested flattenable Tuple falls back to storage columns ===
+=== nested flattenable Tuple expands and activates Vertical ===
 2
 1
 merge_algorithm
-Horizontal
+Vertical
 
-=== JSON Tuple disables leaf counting for the whole merge ===
+=== JSON sibling does not block flattening the other Tuple ===
 2
 1
 merge_algorithm
-Horizontal
+Vertical

@@ -23,7 +23,8 @@ COMMON_SETTINGS="
     ratio_of_defaults_for_sparse_serialization = 0.9,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
-    allow_experimental_vertical_merge_tuple_subcolumns = 1
+    allow_experimental_vertical_merge_tuple_subcolumns = 1,
+    auto_statistics_types = ''
 "
 
 print_part_files()
