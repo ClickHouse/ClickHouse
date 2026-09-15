@@ -409,22 +409,13 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         }
     }
 
-    /// GROUP and TIES are defined in terms of the ordering peers of the current row, and peers are
-    /// decided by comparing the ORDER BY values. That comparison does not consult a collator, here or
-    /// anywhere else in this transform, so with one in the window order it would disagree with the
-    /// order the rows are actually in and take the wrong rows out of the frame. Refuse instead of
-    /// answering wrongly; the peer comparison is master's and changing it changes `rank`, `RANGE`
-    /// frames and `GROUPS` frames along with this.
-    if (window_description.frame.exclusion == WindowFrame::Exclusion::Group
-        || window_description.frame.exclusion == WindowFrame::Exclusion::Ties)
+    const bool is_peer_exclusion = window_description.frame.exclusion == WindowFrame::Exclusion::Group
+        || window_description.frame.exclusion == WindowFrame::Exclusion::Ties;
+    const auto hasCollationInOrderBy = [&]
     {
-        for (const auto & column_description : window_description.order_by)
-        {
-            if (column_description.collator)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
-        }
-    }
+        return std::ranges::any_of(window_description.order_by,
+            [](const auto & column_description) { return column_description.collator != nullptr; });
+    };
 
     for (const auto & workspace : workspaces)
     {
@@ -443,6 +434,20 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                     "Window frame exclusion is not supported for function '{}'",
                     workspace.aggregate_function->getName());
             }
+        }
+        else if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
+            && is_peer_exclusion && hasCollationInOrderBy())
+        {
+            /// GROUP and TIES are defined in terms of the ordering peers of the current row, and
+            /// peers are decided by comparing the ORDER BY values. That comparison does not consult
+            /// a collator, here or anywhere else in this transform, so with one in the window order
+            /// it would disagree with the order the rows are in and take the wrong rows out of the
+            /// frame. Refuse rather than answer wrongly; the peer comparison is master's, and
+            /// changing it changes `rank`, `RANGE` frames and `GROUPS` frames along with this.
+            /// Only the aggregates read the frame, so a window carrying nothing but `rank` or
+            /// `row_number` is unaffected and is left alone.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
         }
         else if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
             && workspace.aggregate_function->allocatesMemoryInArena())
@@ -1329,10 +1334,6 @@ void WindowTransform::updateAggregationState()
     }
     else
     {
-        // The excluded rows move with the current row, so nothing can be carried over from the
-        // previous one: the state is rebuilt from the frame minus the hole at every row.
-        reset_aggregation = true;
-
         RowNumber excluded_start = current_row;
         RowNumber excluded_end = current_row;
         advanceRowNumber(excluded_end);
@@ -1348,16 +1349,48 @@ void WindowTransform::updateAggregationState()
         excluded_start = std::max(excluded_start, frame_start);
         excluded_end = std::min(excluded_end, frame_end);
 
-        add_range(frame_start, std::min(excluded_start, frame_end));
-        if (window_description.frame.exclusion == WindowFrame::Exclusion::Ties)
+        RowNumber after_current = current_row;
+        advanceRowNumber(after_current);
+
+        // Clamping can leave nothing to take out - the current row is not in the frame to begin
+        // with, or the peer group falls outside it. TIES keeps the current row, so a range holding
+        // only that row takes nothing out either.
+        const bool excludes_nothing = !(excluded_start < excluded_end)
+            || (window_description.frame.exclusion == WindowFrame::Exclusion::Ties
+                && excluded_start == current_row && excluded_end == after_current);
+
+        if (excludes_nothing)
         {
-            // TIES drops the peers but keeps the current row.
-            RowNumber after_current = current_row;
-            advanceRowNumber(after_current);
-            if (frame_start <= current_row && current_row < frame_end)
-                add_range(current_row, after_current);
+            // The frame is the one the query would have without the clause, so the state carries
+            // over from the previous row as it does for any other frame, and a frame whose start
+            // does not move stays linear. The one thing that cannot be carried over is a state
+            // built with a hole in it.
+            if (prev_row_excluded_rows)
+            {
+                reset_aggregation = true;
+                rows_to_add_start = frame_start;
+                rows_to_add_end = frame_end;
+            }
+
+            add_range(rows_to_add_start, rows_to_add_end);
+            prev_row_excluded_rows = false;
         }
-        add_range(std::max(excluded_end, frame_start), frame_end);
+        else
+        {
+            // The excluded rows move with the current row, so nothing can be carried over from the
+            // previous one: the state is rebuilt from the frame minus the hole at every row.
+            reset_aggregation = true;
+
+            add_range(frame_start, std::min(excluded_start, frame_end));
+            if (window_description.frame.exclusion == WindowFrame::Exclusion::Ties)
+            {
+                // TIES drops the peers but keeps the current row.
+                if (frame_start <= current_row && current_row < frame_end)
+                    add_range(current_row, after_current);
+            }
+            add_range(std::max(excluded_end, frame_start), frame_end);
+            prev_row_excluded_rows = true;
+        }
     }
 
     for (auto & ws : workspaces)
@@ -1706,6 +1739,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         frame_end = partition_start;
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
+        prev_row_excluded_rows = false;
         chassert(current_row == partition_start);
         current_row_number = 1;
         peer_group_start = partition_start;

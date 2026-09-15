@@ -324,6 +324,10 @@ public:
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
 
+    // Whether the frame exclusion actually took rows out for the previous row of the partition. The
+    // state left behind then is not a prefix of this row's frame, so it cannot be carried over.
+    bool prev_row_excluded_rows = false;
+
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
     // each row would be slow.

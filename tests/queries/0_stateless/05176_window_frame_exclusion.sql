@@ -74,6 +74,21 @@ SELECT
     sum(v) OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)
 FROM t_05176 ORDER BY ALL;
 
+SELECT 'an exclusion that takes nothing out leaves the frame, and the state, alone';
+-- The current row is not in either frame to begin with, and the peer group of a unique ORDER BY key
+-- holds only the current row, which TIES keeps. Both answer as the same frame without the clause,
+-- and both keep the incremental path rather than rebuilding the state per row.
+SELECT groupArray(a) = groupArray(b) FROM (
+    SELECT sum(v) OVER (ORDER BY g, v ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING EXCLUDE CURRENT ROW) AS a,
+           sum(v) OVER (ORDER BY g, v ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS b
+    FROM t_05176);
+SELECT groupArray(a) = groupArray(b) FROM (
+    SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE TIES) AS a,
+           sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS b
+    FROM t_05176);
+-- A row where the exclusion does take something out, mixed in with rows where it does not.
+SELECT v, sum(v) OVER (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP) FROM t_05176 ORDER BY ALL;
+
 SELECT 'the clause survives formatting';
 SELECT formatQuery('SELECT sum(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t');
 SELECT formatQuery('SELECT sum(v) OVER w FROM t WINDOW w AS (ORDER BY v RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)');
