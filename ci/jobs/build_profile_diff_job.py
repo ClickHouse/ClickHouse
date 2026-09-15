@@ -1599,7 +1599,9 @@ def main():
             # The skip is only legitimate while the comment says the comparison
             # did not run, so an unposted comment stays a failure.
             raise
-        Result.create_from(status=Result.Status.SKIPPED, info=f"Comparison skipped: {e}").complete_job()
+        # The verdict is the cluster's health, which no digest input captures, so a
+        # cached success would turn one pressure spike into a permanent skip.
+        Result.create_from(status=Result.Status.SKIPPED, info=f"Comparison skipped: {e}").complete_job(do_not_cache=True)
         return
     except Exception as e:
         # The tagged comment is pinned to the pull request, not to a commit, so

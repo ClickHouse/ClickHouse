@@ -330,14 +330,14 @@ class LogCluster:
         # Only a 5xx or a timeout may be reported as a read that did not run;
         # any other observed failure keeps the caller's fail-closed path.
         transient = False
-        unapproved = False
+        non_transient = False
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
             if not self.is_ready():
                 # False here also answers a refused `SELECT 1`, so a readiness
                 # failure cannot be attributed to pressure.
-                unapproved = True
+                non_transient = True
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -360,13 +360,13 @@ class LogCluster:
                     transient = True
                     time.sleep(5 * (retry + 1))
                     continue
-                unapproved = True
+                non_transient = True
                 break
             except Exception as ex:
                 if isinstance(ex, requests.exceptions.Timeout):
                     transient = True
                 else:
-                    unapproved = True
+                    non_transient = True
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
                 time.sleep(5 * (retry + 1))
@@ -374,7 +374,7 @@ class LogCluster:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
-        if transient and not unapproved:
+        if transient and not non_transient:
             raise TransientReadFailure(
                 "every attempt of the read failed with a server error or a timeout"
             )
