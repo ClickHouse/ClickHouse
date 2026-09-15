@@ -33,6 +33,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
@@ -198,11 +199,12 @@ protected:
                 auto allowed = tablesAllowedIn(database_name);
                 /// A data lake catalog lists its tables over the network, and only the hinted iterator passes the
                 /// table-name hint on, as `system.tables` does - the plain one walks the whole catalog to resolve a
-                /// single table. It also keeps a table whose metadata cannot be resolved as a null storage, which
-                /// the loop below skips, instead of failing the query. Other databases keep the plain iterator: for
-                /// `Remote` the hinted one would turn an unreachable server from no rows into an error.
+                /// single table. The hinted one hands back a table it could not resolve as a null storage rather
+                /// than failing; the loop below restores the plain iterator's outcome for those. Other databases
+                /// keep the plain iterator: for `Remote` the hinted one would turn an unreachable server from no
+                /// rows into an error.
                 databases_cursor.setTablesIterator(
-                    DatabaseCatalog::instance().isDatalakeCatalog(database_name)
+                    database->isDatalakeCatalog()
                         ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, tables_filter)
                         : database->getTablesIterator(context, allowed));
             }
@@ -216,7 +218,13 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it.table();
+                StoragePtr table = tables_it.table();
+                /// A data lake table the hinted iterator could not resolve: ask for it directly, which throws the
+                /// catalog's error, or returns nothing for a table that is gone - what the plain iterator would have
+                /// done. Otherwise a table the catalog refuses to describe would silently lose its rows.
+                if (!table && databases_cursor.getDatabase()->isDatalakeCatalog()
+                    && context->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+                    table = databases_cursor.getDatabase()->tryGetTable(table_name, context);
                 if (!table)
                     continue;
 
