@@ -42,7 +42,8 @@ public:
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
       const ColumnNodePtrWithHashSet & correlated_columns_set_,
-      bool use_column_identifier_as_action_node_name_ = true);
+      bool use_column_identifier_as_action_node_name_ = true,
+      NameSet columns_for_in_to_join_ = {});
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -54,6 +55,8 @@ private:
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
+    /// Columns an `IN` may be joined on. Empty when the caller can't build the join for `IN` rewrite.
+    NameSet columns_for_in_to_join;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.

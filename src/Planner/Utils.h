@@ -63,7 +63,16 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    bool can_rewrite_in_to_join = false);
+
+/// Collects the columns an expression reads from this query's tables, skipping the ones it binds
+/// itself, such as a lambda parameter.
+void collectExpressionColumns(
+    const QueryTreeNodePtr & expression_node, const PlannerContext & planner_context, ColumnNodePtrWithHashSet & result);
+
+/// Whether the expression contains a subquery.
+bool containsSubquery(const QueryTreeNodePtr & expression_node);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);

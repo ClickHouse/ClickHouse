@@ -1,0 +1,75 @@
+<test>
+    <create_query>CREATE TABLE probe (k UInt64, v UInt64, h UInt64, s String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE build (k UInt64, g UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE other (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE dim (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO probe SELECT number, number, number % 1000, toString(number) FROM numbers(30000000)</fill_query>
+    <fill_query>INSERT INTO build SELECT number, number % 1000 FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO other SELECT number FROM numbers(30000000)</fill_query>
+    <fill_query>INSERT INTO dim SELECT number % 1000 FROM numbers(10000)</fill_query>
+
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 1</query>
+
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build WHERE k &lt; 1000000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build WHERE k &lt; 1000000) SETTINGS rewrite_in_to_join = 1</query>
+
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE v IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- NOT IN -->
+    <query>SELECT count() FROM probe WHERE k NOT IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE k NOT IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 1</query>
+
+    <query>SELECT count() FROM probe WHERE k NOT IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE k NOT IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- 10M rows over 1K distinct values.-->
+    <query>SELECT count() FROM probe WHERE v IN (SELECT g FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE v IN (SELECT g FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- String keys. -->
+    <query>SELECT count() FROM probe WHERE s IN (SELECT toString(k) FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE s IN (SELECT toString(k) FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- Tuple keys. -->
+    <query>SELECT count() FROM probe WHERE (v, h) IN (SELECT k, g FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE (v, h) IN (SELECT k, g FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- Same IN subquery once rewritten to join and once kept as set in the same query. -->
+    <query>SELECT sum(v IN (SELECT k FROM build)) FROM probe WHERE h IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT sum(v IN (SELECT k FROM build)) FROM probe WHERE h IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1</query>
+
+    <!-- Left key is the primary key and can be used for prunnig. -->
+
+    <!-- 10K values in one range. -->
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 1</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build WHERE k &lt; 10000) SETTINGS rewrite_in_to_join = 1, enable_join_runtime_filters_index_analysis = 1</query>
+
+    <!-- 10M values in one range. -->
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1, enable_join_runtime_filters_index_analysis = 1</query>
+
+    <!-- 300K values in six bands. -->
+    <query>SELECT count() FROM probe WHERE k IN (SELECT intDiv(k, 50000) * 5000000 + k % 50000 FROM build WHERE k &lt; 300000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT intDiv(k, 50000) * 5000000 + k % 50000 FROM build WHERE k &lt; 300000) SETTINGS rewrite_in_to_join = 1</query>
+    <query>SELECT count() FROM probe WHERE k IN (SELECT intDiv(k, 50000) * 5000000 + k % 50000 FROM build WHERE k &lt; 300000) SETTINGS rewrite_in_to_join = 1, enable_join_runtime_filters_index_analysis = 1</query>
+
+    <!-- Selective IN. The set reaches the read of `probe`, the semi join stays above both joins if not re-ordered. -->
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN dim ON probe.h = dim.k WHERE probe.v IN (SELECT k FROM build WHERE k &lt; 1000) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN dim ON probe.h = dim.k WHERE probe.v IN (SELECT k FROM build WHERE k &lt; 1000) SETTINGS rewrite_in_to_join = 1</query>
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN dim ON probe.h = dim.k WHERE probe.v IN (SELECT k FROM build WHERE k &lt; 1000) SETTINGS rewrite_in_to_join = 1, query_plan_optimize_join_order_algorithm='dpsub', query_plan_optimize_join_order_use_cd_c_conflict_detector=1</query>
+
+    <!-- Non-selective IN. The set is pinned to the read of `probe`, the semi join can run once the join has reduced the rows. -->
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN (SELECT DISTINCT k FROM dim WHERE k &lt; 3) AS d ON probe.h = d.k WHERE probe.v IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 0</query>
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN (SELECT DISTINCT k FROM dim WHERE k &lt; 3) AS d ON probe.h = d.k WHERE probe.v IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1</query>
+    <query>SELECT count() FROM probe JOIN other ON probe.k = other.k JOIN (SELECT DISTINCT k FROM dim WHERE k &lt; 3) AS d ON probe.h = d.k WHERE probe.v IN (SELECT k FROM build) SETTINGS rewrite_in_to_join = 1, query_plan_optimize_join_order_algorithm='dpsub', query_plan_optimize_join_order_use_cd_c_conflict_detector=1</query>
+
+    <drop_query>DROP TABLE probe</drop_query>
+    <drop_query>DROP TABLE build</drop_query>
+    <drop_query>DROP TABLE other</drop_query>
+    <drop_query>DROP TABLE dim</drop_query>
+</test>
