@@ -1,0 +1,11 @@
+compatibility restores the legacy behavior
+1
+0
+legacy: max_bytes_in_join spills instead of failing
+2000000
+legacy: max_rows_in_join spills instead of failing
+2000000
+legacy: grace_hash needs no spill threshold
+10
+legacy: the spill threshold does not apply
+2000000
