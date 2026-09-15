@@ -7,36 +7,36 @@
       "versionId": "0b240341596183431a2c0d2988a1d4211d0dfcc018e1a88b8cfa67f4b0deaf22",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-14T23:00:52.704Z",
+          "updatedAt": "2026-09-15T05:00:59.160Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-14T23:00:51.846Z",
+          "updatedAt": "2026-09-15T05:00:58.610Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-14T23:00:51.632Z",
+          "updatedAt": "2026-09-15T05:00:58.435Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-14T23:00:53.301Z",
+          "updatedAt": "2026-09-15T05:00:59.670Z",
           "fileName": "docs.json",
           "postProcessHash": "10001ee8d639cdcf3e006e3d4b73f4fe73d853d85af3cce4a2c431a5b0b152a9"
         },
         "ko": {
-          "updatedAt": "2026-09-14T23:00:52.297Z",
+          "updatedAt": "2026-09-15T05:00:58.795Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-14T23:00:52.506Z",
+          "updatedAt": "2026-09-15T05:00:58.979Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-14T23:00:52.912Z",
+          "updatedAt": "2026-09-15T05:00:59.330Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-14T23:00:53.113Z",
+          "updatedAt": "2026-09-15T05:00:59.497Z",
           "fileName": "docs.json"
         }
       },
@@ -80293,51 +80293,50 @@
     },
     {
       "fileId": "0bfc6b5e451f267b0b91a3a8309f2125e1d8675c7e99601ec8e096fe1eda51fa",
-      "versionId": "fae83c94c1bcb33364d9dd3cb365e885f815291a149db7f82ce9ef0e25aa7650",
+      "versionId": "88b7596f49fcdc6c9ba2f7b00b1b4067ff30b9865d3801071fb382e159f49511",
       "translations": {
-        "ar": {
-          "updatedAt": "2026-08-18T23:25:00.346Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "4801325d63f75e90236fa38f8d13ee3e1dfe838827f892b45da52f09ccf96b57"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.380Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "35c673f0fc84c69621ae01e8e96acf63a4edbb2e86f3bee124cd498ec6ecc9e7"
-        },
-        "ru": {
-          "updatedAt": "2026-08-18T23:25:00.381Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "bd6afbefd1f5fdb72c0eca657753ce0bd9827de563b59e6eec464be50b110a30"
-        },
-        "zh": {
-          "updatedAt": "2026-08-18T23:25:00.382Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "4f0f5431c3f84e8beeeb73e427816f80297c77c47f7abfe32df9a50ceb17dc5f"
-        },
-        "fr": {
-          "updatedAt": "2026-08-18T23:25:00.393Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "8f453601011cd994c1a3d92b6fc5d10bf397e82a6d36f4ddc68c0410e329ddad"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.406Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "cd3a3c8ae25a58da14216dcb9af4bb4d482d2595f93b5c35d26451565600fff4"
+        "es": {
+          "updatedAt": "2026-09-15T05:01:05.002Z",
+          "fileName": "es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "3f59283a610f2347a4bddcdc9a8b2e247286885a8bf664fb95e8e5afd3383bcb"
         },
         "ja": {
-          "updatedAt": "2026-08-18T23:25:00.409Z",
+          "updatedAt": "2026-09-15T05:01:05.003Z",
           "fileName": "ja/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "74aa66e23f5b0e71d9a3f863b6c4e38bc60ecc912d725dfbbd2cfe14669630df"
+          "postProcessHash": "28342fb14b001c2b8820c4603358779ff31df9cca1863052a1adba77794504a8"
         },
-        "es": {
-          "updatedAt": "2026-08-18T23:25:00.412Z",
-          "fileName": "es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-          "postProcessHash": "c5a5a8d8756211d20200e17567287cdc96217ad2bc7d2fb57fac596f057d11d8"
+        "ru": {
+          "updatedAt": "2026-09-15T05:01:05.004Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "c81502d5d286b442e5c8bfa8e0323fb3ab24942666ea44172c331553edf29fcf"
+        },
+        "ko": {
+          "updatedAt": "2026-09-15T05:01:05.005Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "aea42052a30f6658146c96b7a3e96c266755bb6021fa70744f15636343a4b2ab"
+        },
+        "ar": {
+          "updatedAt": "2026-09-15T05:01:05.006Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "2260490ce0a8b0a97e8ef4961cd77cdc0ac2f2a9d73bdfe462957e7a8f55d5ff"
+        },
+        "fr": {
+          "updatedAt": "2026-09-15T05:01:05.007Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "6ab74c2e3378984d26c368ec901bc142c9e2193ff15f4820a56949d12255cec1"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-15T05:01:05.008Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "4295d14d934781e25a1b39bacb6b5db93ac45f0728e85f5c32beb26ff1c6d904"
+        },
+        "zh": {
+          "updatedAt": "2026-09-15T05:01:05.009Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
+          "postProcessHash": "8de8a168b2c8ce14a97275d3343b455b16156585b395c4cdb3de6fc7cabbec2d"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink.mdx"
     },
     {
       "fileId": "2594204713edc1a80fd7235a570bded3c243c05f835aba4ac3ca698a933ac913",
