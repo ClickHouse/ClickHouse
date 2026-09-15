@@ -567,7 +567,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             }
         }
 
-        if (!object_info->info.position_deletes_objects.empty())
+        if (object_info->info.hasPositionDeletes())
         {
             LOG_DEBUG(
                 logger,
