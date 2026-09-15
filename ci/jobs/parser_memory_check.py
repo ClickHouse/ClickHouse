@@ -1050,7 +1050,11 @@ def run_profiler_collect_heap(
     }
 
 
-def batch_symbolize(binary_path: str, heap_files: list) -> bool:
+def batch_symbolize(
+    binary_path: str,
+    heap_files: list,
+    timeout: int = 600,
+) -> bool:
     """
     Run batch symbolization: invokes --symbolize-batch on all heap files.
     The tool's global LRU cache deduplicates addresses across files.
@@ -1067,7 +1071,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
             args,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         print("ERROR: batch symbolization timed out")
