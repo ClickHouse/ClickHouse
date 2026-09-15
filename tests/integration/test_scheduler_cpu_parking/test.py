@@ -91,6 +91,17 @@ def create_throttled_table():
     )
 
 
+def create_idle_table():
+    node.query("drop table if exists idle_data sync")
+    node.query("create table idle_data (key UInt64) engine=MergeTree order by key")
+    # Enough rows that the ordered parallel read spawns several workers AND the serial running-sum
+    # window over them runs for seconds -- long enough that the idle workers reliably sleep and park
+    # even under slow sanitizer scheduling (a small/fast table finishes before any worker sits idle,
+    # which made this test flaky). The row is narrow and the window is incremental, so the read
+    # streams and memory stays low (no in-memory sort).
+    node.query("insert into idle_data select number from numbers_mt(50000000)")
+
+
 # A low local read bandwidth forces Throttler::sleep on the pipeline worker threads while they
 # hold a CPU lease, which parks the lease (releasing the CPU slot) and unparks it on wakeup.
 THROTTLED_QUERY = (
@@ -142,23 +153,24 @@ def test_parking_fires_on_single_thread_async_remote_wait():
     assert parks == unparks, f"parks={parks} != unparks={unparks}"
 
 
-# `numbers_mt` generates in parallel and `order by sipHash64(number)` forces a real multi-threaded
-# sort, so the query actually spawns several workers (the small/fast 300k table did not). The sort
-# feeds a global running-sum window (single partition, ordered frame) that is serial and cannot use
-# all those threads, so the extras sit idle in `ExecutorTasks::tryGetTask` with no runnable task --
-# the #95727 path. No table, throttle, or async source is involved, so the only park site reached
-# is the idle wait, which isolates that guard (deleting it makes this zero). The window is
-# incremental (running sum), so memory stays bounded even at 10M rows.
+# The ordered read of the (large) table fans out to several parallel workers, then the global
+# running-sum window (single partition, ordered frame) is serial and cannot use them, so the extras
+# sit idle in `ExecutorTasks::tryGetTask` with no runnable task -- the #95727 path -- for the whole
+# multi-second window phase. The table is local and the read is not throttled, so no cached-read,
+# throttle, or async park site is reached: any park here comes only from the idle-wait guard, which
+# isolates it (deleting that guard makes this zero). This is the same read-then-serial-window shape
+# used to reproduce #95727 in the PR description, sized so idle workers reliably sleep under CI load.
 IDLE_WORKER_QUERY = (
     "select max(s) from ("
-    "  select sum(number) over (order by sipHash64(number) rows between unbounded preceding and current row) as s "
-    "  from numbers_mt(10000000)"
+    "  select sum(key) over (order by key rows between unbounded preceding and current row) as s "
+    "  from idle_data"
     ") settings workload = 'all', max_threads = 8"
 )
 
 
 def test_parking_fires_on_idle_worker():
     setup_cpu_workload()
+    create_idle_table()
     query_id = "cpu_parking_idle"
     node.query(IDLE_WORKER_QUERY, query_id=query_id)
     node.query("system flush logs")
