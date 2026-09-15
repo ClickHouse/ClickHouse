@@ -191,6 +191,82 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
 }
 
 
+namespace
+{
+
+/// `createBlockWithNestedColumns` only strips the null map, it does not touch the values under it, so
+/// the nested value of a null slot is whatever happened to be stored there. For a `Nullable(Enum)`
+/// that value is usually not a member of the type: both `INSERT ... VALUES (NULL)` and the padding of
+/// non-joined rows in a `LEFT JOIN` leave a raw 0 there, and 0 is a declared value only if the enum
+/// happens to define it. A function that reads the nested column of such an argument - `like`,
+/// `match`, anything that turns an `Enum` into its name - is then handed a code that does not exist
+/// and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose result is NULL anyway.
+///
+/// Normalize the null slots to the default of the nested type, which for an `Enum` is a declared
+/// value. With `only_enums` the other argument types are left alone, which is what the paths that
+/// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
+/// for a null row (see below) passes false and normalizes everything.
+///
+/// `only_enums` is deliberately not "every type whose payload some function might reject". An `Enum`
+/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
+/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
+/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
+/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
+/// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
+/// non-null row. Installing the type default there would only swap one arbitrary value for another,
+/// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
+/// even a `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows,
+/// which is what the short-circuit branch below already does when
+/// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
+/// see https://github.com/ClickHouse/ClickHouse/issues/119614.
+void patchNullSlots(
+    const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
+{
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        if (!args[i].type->isNullable())
+            continue;
+        if (only_enums && !isEnum(removeNullable(args[i].type)))
+            continue;
+
+        const auto & nested_type = nested_args[i].type;
+
+        if (isColumnConst(*args[i].column))
+        {
+            if (args[i].column->onlyNull())
+                nested_args[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
+            continue;
+        }
+
+        const auto & null_map = assert_cast<const ColumnNullable &>(*args[i].column).getNullMapData();
+
+        bool has_any_null = false;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+            {
+                has_any_null = true;
+                break;
+            }
+        }
+        if (!has_any_null)
+            continue;
+
+        auto patched = nested_type->createColumn();
+        patched->reserve(input_rows_count);
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+                nested_type->insertDefaultInto(*patched);
+            else
+                patched->insertFrom(*nested_args[i].column, row);
+        }
+        nested_args[i].column = std::move(patched);
+    }
+}
+
+}
+
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -245,47 +321,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// produces a Nullable column whose nested data still contains `'x'`, so running the
             /// function on it would return `f('x')` instead of the desired `f('')`.
             ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
+            patchNullSlots(args, patched_columns, input_rows_count, /*only_enums=*/ false);
             auto temporary_result_type = removeNullable(result_type);
-
-            for (size_t i = 0; i < args.size(); ++i)
-            {
-                if (!args[i].type->isNullable())
-                    continue;
-                const auto & nested_type = patched_columns[i].type;
-
-                if (isColumnConst(*args[i].column))
-                {
-                    if (args[i].column->onlyNull())
-                        patched_columns[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
-                    continue;
-                }
-
-                const auto & nullable = assert_cast<const ColumnNullable &>(*args[i].column);
-                const auto & null_map = nullable.getNullMapData();
-
-                bool has_any_null = false;
-                for (size_t r = 0; r < input_rows_count; ++r)
-                {
-                    if (null_map[r])
-                    {
-                        has_any_null = true;
-                        break;
-                    }
-                }
-                if (!has_any_null)
-                    continue;
-
-                auto patched = nested_type->createColumn();
-                patched->reserve(input_rows_count);
-                for (size_t r = 0; r < input_rows_count; ++r)
-                {
-                    if (null_map[r])
-                        patched->insertDefault();
-                    else
-                        patched->insertFrom(*patched_columns[i].column, r);
-                }
-                patched_columns[i].column = std::move(patched);
-            }
 
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
@@ -323,6 +360,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
             auto temporary_result_type = removeNullable(result_type);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
@@ -369,6 +407,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
         auto temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
