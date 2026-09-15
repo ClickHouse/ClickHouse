@@ -996,19 +996,10 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples with at least one element name in common allow conversions for tuples
-    /// with different sets of elements: elements are matched by name, source elements without
-    /// a counterpart are dropped, and target elements without a counterpart are filled by default
-    /// values (schema evolution: adding, dropping and renaming elements of a Tuple or a Nested
-    /// column with ALTER).
-    /// For named tuples with disjoint sets of element names, matching by name cannot be meant,
-    /// and elements are converted positionally, as for unnamed tuples (e.g. the result of function
-    /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
-    /// elements are named differently). Previously such conversions silently filled the whole
-    /// result by default values, losing all the data (see issue #70830).
-    bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
-
-    if (!convert_positionally)
+    /// For named tuples allow conversions for tuples with
+    /// different sets of elements. If element exists in @to_type
+    /// and doesn't exist in @to_type it will be filled by default values.
+    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
     {
         const auto & from_names = from_type->getElementNames();
         UnorderedMapWithMemoryTracking<String, size_t> from_positions;
@@ -1017,38 +1008,25 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             from_positions[from_names[i]] = i;
 
         const auto & to_names = to_type->getElementNames();
+        element_wrappers.reserve(to_names.size());
+        to_reverse_index.reserve(from_names.size());
 
-        size_t common_names_count = 0;
-        for (const auto & to_name : to_names)
-            common_names_count += from_positions.contains(to_name);
-
-        if (common_names_count == 0)
+        for (size_t i = 0; i < to_names.size(); ++i)
         {
-            convert_positionally = true;
-        }
-        else
-        {
-            element_wrappers.reserve(to_names.size());
-            to_reverse_index.reserve(from_names.size());
-
-            for (size_t i = 0; i < to_names.size(); ++i)
+            auto it = from_positions.find(to_names[i]);
+            if (it != from_positions.end())
             {
-                auto it = from_positions.find(to_names[i]);
-                if (it != from_positions.end())
-                {
-                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                    to_reverse_index.emplace_back(it->second);
-                }
-                else
-                {
-                    element_wrappers.emplace_back();
-                    to_reverse_index.emplace_back();
-                }
+                element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                to_reverse_index.emplace_back(it->second);
+            }
+            else
+            {
+                element_wrappers.emplace_back();
+                to_reverse_index.emplace_back();
             }
         }
     }
-
-    if (convert_positionally)
+    else
     {
         if (from_element_types.size() != to_element_types.size())
             throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
@@ -3352,34 +3330,6 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
-/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
-/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
-/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
-static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
-{
-    return castBothTypes(from, to, [](const auto & left, const auto & right)
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-
-        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-        {
-            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-            {
-                if constexpr (is_floating_point<typename LeftDataType::FieldType>
-                    && !is_floating_point<typename RightDataType::FieldType>)
-                    return isBool(right.getPtr());
-                return true;
-            }
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return !is_floating_point<typename LeftDataType::FieldType>;
-            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-        }
-        return false;
-    });
-}
-
 bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type)
 {
     if (types.empty())
@@ -3388,7 +3338,25 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
     if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
         return false;
 
-    return isCompilableNumericConversion(types[0].get(), result_type.get());
+    return castBothTypes(
+        types[0].get(),
+        result_type.get(),
+        [](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+            }
+            return false;
+        });
 }
 
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
@@ -3490,7 +3458,21 @@ bool FunctionCast::isCompilable() const
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
         return false;
 
-    return isCompilableNumericConversion(denull_input_type.get(), denull_result_type.get());
+    return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
+    {
+        using LeftDataType = std::decay_t<decltype(left)>;
+        using RightDataType = std::decay_t<decltype(right)>;
+        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        {
+            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                return true;
+            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+        }
+        return false;
+    });
 }
 
 llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const

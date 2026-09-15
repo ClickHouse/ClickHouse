@@ -113,44 +113,6 @@ bool isSameSetting(const String & left, const String & right)
     return resolve(left) == resolve(right);
 }
 
-/// Removes the settings with the given names from the `SETTINGS` clause of a table definition.
-void resetSettings(SettingsChanges & settings_from_storage, const std::set<String> & settings_resets)
-{
-    for (const auto & setting_name : settings_resets)
-    {
-        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-        auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
-
-        if (it != settings_from_storage.end())
-        {
-            settings_from_storage.erase(it, settings_from_storage.end());
-        }
-        else
-        {
-            /// Intentionally ignore if there is no such setting name
-            LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
-        }
-    }
-}
-
-/// Splits a parsed `SETTINGS` clause into changes and resets.
-/// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
-void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
-{
-    settings_changes = set_query.changes;
-
-    for (const auto & setting_name : set_query.default_settings)
-    {
-        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-        if (std::ranges::any_of(settings_changes, same_setting))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is both modified and reset in one command", backQuote(setting_name));
-
-        auto insertion = settings_resets.emplace(setting_name);
-        if (!insertion.second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
-    }
-}
-
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
     if (property.empty())
@@ -603,7 +565,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        parseSettingsChangesAndResets(command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
@@ -719,8 +681,7 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
-void AlterCommand::apply(
-    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -859,9 +820,9 @@ void AlterCommand::apply(
                         column.settings.removeSetting(setting);
                 }
 
-                /// Restating the type is not a default decision, so the column keeps the default it
-                /// currently has. Removals are handled by the `to_remove` branches above.
-                if (default_expression)
+                /// User specified default expression or changed
+                /// datatype. We have to replace default.
+                if (default_expression || data_type)
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
@@ -882,20 +843,8 @@ void AlterCommand::apply(
             primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, metadata.virtuals, context);
         }
 
-        /// An expression added to the sorting key may use only the columns (and their subcolumns) added by
-        /// the same ALTER - see `MergeTreeData::checkProperties` - so for a typo in it only those are
-        /// suggested: an existing column or a virtual one would pass the analysis and fail that check.
-        std::optional<Names> hint_columns;
-        if (columns_before_alter)
-        {
-            hint_columns.emplace();
-            for (const auto & column : metadata.columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
-                if (!columns_before_alter->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
-                    hint_columns->push_back(column.name);
-        }
-
         /// Recalculate key with new order_by expression.
-        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context, hint_columns);
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
@@ -1224,8 +1173,6 @@ void AlterCommand::apply(
         }
 
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        resetSettings(settings_from_storage, settings_resets);
-
         for (const auto & change : settings_changes)
         {
             auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
@@ -1278,7 +1225,22 @@ void AlterCommand::apply(
         if (!metadata.settings_changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        for (const auto & setting_name : settings_resets)
+        {
+            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
+
+            if (it != settings_from_storage.end())
+            {
+                settings_from_storage.erase(it, settings_from_storage.end());
+            }
+            else
+            {
+                /// Intentionally ignore if there is no such setting name
+                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+            }
+        }
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1322,14 +1284,7 @@ void AlterCommand::apply(
             /// For implicit indices, check the index name rather than column_names because
             /// for ALIAS columns, column_names contains the underlying expression columns.
             if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
-            {
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
-                index.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to;
-                /// For an ALIAS column the index covers the columns its expression expands to,
-                /// which the column's own name never appears in, so a rename does not affect them.
-                if (!metadata.columns.hasAlias(rename_to))
-                    index.column_names = {rename_to};
-            }
             else
                 rename_visitor.visit(index.definition_ast);
         }
@@ -1785,7 +1740,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
+            command.apply(metadata_copy, context, share_nested_offsets);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
@@ -2033,6 +1988,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                         }
                     }
                 }
+
+                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
+                {
+                    command.default_kind = column_from_table.default_desc.kind;
+                    command.default_expression = column_from_table.default_desc.expression;
+                }
+
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
@@ -2102,13 +2064,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
 
-        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
-        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
-        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
-        /// way around it.
-        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
-            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
-
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
@@ -2177,16 +2132,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                /// `default_kind` holds its enumerator's zero value unless `default_expression` is set.
+                /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
                 const bool becomes_physical = command.default_expression
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                /// The type is optional here, and a codec can resolve differently per type, so
-                /// validate against the type the column will have, as `apply` does.
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type ? command.data_type : all_columns.get(column_name).type,
+                    command.data_type,
                     codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
