@@ -1196,7 +1196,13 @@ def test_query_masking_rule_with_ddl():
         f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
     )
 
-    assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
+    # Not `system`: the CI logs export puts its Distributed sender tables there,
+    # see tests/integration/helpers/ci_logs_export.py
+    assert_eq_with_retry(
+        node,
+        "SELECT count(*) FROM system.distribution_queue WHERE database != 'system'",
+        "0\n",
+    )
     assert "sensetive_data" in node.query(
         f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
     )
