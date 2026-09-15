@@ -185,7 +185,7 @@ def test_different_credentials(different_credentials_cluster):
 
     node5.query("SYSTEM RELOAD CONFIG")
     node5.query("INSERT INTO test_table values('2017-06-21', 333, 1)")
-    node6.query("SYSTEM SYNC REPLICA test_table", timeout=60)
+    node6.query("SYSTEM SYNC REPLICA test_table", timeout=30)
 
     assert node6.query("SELECT id FROM test_table order by id") == "111\n222\n333\n"
 
@@ -253,5 +253,5 @@ def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
 
     node7.query("SYSTEM RELOAD CONFIG")
     node7.query("insert into test_table values ('2017-06-22', 333, 1)")
-    node8.query("SYSTEM SYNC REPLICA test_table", timeout=60)
+    node8.query("SYSTEM SYNC REPLICA test_table", timeout=30)
     assert node8.query("SELECT id FROM test_table order by id") == "111\n222\n333\n"
