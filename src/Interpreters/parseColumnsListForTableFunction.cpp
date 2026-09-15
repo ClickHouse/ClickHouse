@@ -68,20 +68,20 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     auto validate_callback = [&](const IDataType & data_type)
     {
         if (!settings.allow_experimental_time_decay_aggregate_functions)
-{
-    bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
-    if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
-        is_experimental_time_decay_type
-            |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(
-                aggregate_function_type->getFunctionName());
+        {
+            bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
+            if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+                is_experimental_time_decay_type
+                    |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(
+                        aggregate_function_type->getFunctionName());
 
-    if (is_experimental_time_decay_type)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
-            "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
-            data_type.getName());
-}
+            if (is_experimental_time_decay_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
+                    "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
+                    data_type.getName());
+        }
 
         if (!settings.allow_suspicious_low_cardinality_types)
         {
