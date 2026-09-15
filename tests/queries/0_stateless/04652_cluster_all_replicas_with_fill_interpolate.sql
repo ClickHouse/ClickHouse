@@ -14,15 +14,10 @@
 -- regardless of how the replica streams interleave. The three replicas read the same table, so real
 -- rows are tripled while the fill rows (a = 1, a = 2) are generated once.
 --
--- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
--- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
--- serialize_query_plan on globally; this test exercises the replica read, not plan serialization.
 
 DROP TABLE IF EXISTS t2_04652;
 CREATE TABLE t2_04652 (a UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t2_04652 VALUES (0, 100), (3, 300);
-
-SET serialize_query_plan = 0;
 
 SELECT a, c FROM
 (

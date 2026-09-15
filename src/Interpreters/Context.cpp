@@ -1478,6 +1478,7 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    streaming_cursor(o.streaming_cursor),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -4473,16 +4474,31 @@ ThreadPool & Context::getBackgroundQueryPool() const
     return *shared->background_query_pool;
 }
 
+void Context::stopAcceptingNewBackupsAndRestores() const
+{
+    /// Not `if (shared->backups_worker)`: the worker is created on first use, and the flag has to
+    /// land on the instance any later caller will get.
+    getBackupsWorker().stopAcceptingNewOperations();
+}
+
 void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
 }
 
-void Context::cancelAllBackupsAndRestores() const
+bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
-        shared->backups_worker->cancelAll();
+        return shared->backups_worker->cancelAll(/* wait_= */ true, deadline);
+    return true;
+}
+
+bool Context::hasUnfinishedBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        return shared->backups_worker->hasUnfinishedOperations();
+    return false;
 }
 
 std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
@@ -4496,6 +4512,16 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
+}
+
+void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
+{
+    streaming_cursor = std::move(cursor);
+}
+
+std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
+{
+    return streaming_cursor;
 }
 
 
