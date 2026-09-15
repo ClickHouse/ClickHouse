@@ -3455,12 +3455,14 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
 WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+An `EXCLUDE` on that frame is accepted and leaves the result alone: the function is read off the ranks and the
+size of the partition, not off the rows of the frame.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
@@ -3522,12 +3524,14 @@ Computes the cumulative distribution of a value within a group of values, i.e., 
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
 WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+An `EXCLUDE` on that frame is accepted and leaves the result alone: the function is read off the ranks and the
+size of the partition, not off the rows of the frame.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
