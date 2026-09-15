@@ -27,14 +27,16 @@ namespace
 
 /// The vocabulary a call names. It is a constant argument: a vocabulary is loaded once and shared,
 /// and picking a different one per row would mean loading one per row.
-BPEVocabularyPtr getVocabulary(const ColumnsWithTypeAndName & arguments, size_t argument, const ContextPtr & context, const String & function_name)
+BPEVocabularyPtr getVocabulary(const ColumnsWithTypeAndName & arguments, size_t argument, const String & function_name)
 {
     const ColumnConst * column = checkAndGetColumnConst<ColumnString>(arguments[argument].column.get());
     if (!column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Argument {} of function {} must be a constant string naming a BPE vocabulary", argument + 1, function_name);
 
-    return BPEVocabularyFactory::instance().get(column->getValue<String>(), context->getConfigRef());
+    /// Vocabularies are declared server-wide rather than per query, so they are read from the
+    /// configuration of the global context and the function itself holds no context at all.
+    return BPEVocabularyFactory::instance().get(column->getValue<String>(), Context::getGlobalContextInstance()->getConfigRef());
 }
 
 
@@ -42,9 +44,7 @@ class FunctionTokenizeBPE : public IFunction
 {
 public:
     static constexpr auto name = "tokenizeBPE";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTokenizeBPE>(std::move(context)); }
-
-    explicit FunctionTokenizeBPE(ContextPtr context_) : context(std::move(context_)) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokenizeBPE>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -64,7 +64,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, context, getName());
+        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, getName());
 
         const ColumnPtr text_column = arguments[0].column->convertToFullColumnIfConst();
         const ColumnString * text = checkAndGetColumn<ColumnString>(text_column.get());
@@ -76,21 +76,15 @@ public:
         auto & offsets = offsets_column->getData();
         offsets.resize(input_rows_count);
 
-        std::vector<UInt32> ids;
         auto & data = ids_column->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            ids.clear();
-            vocabulary->encode(text->getDataAt(row), ids);
-            data.insert(ids.begin(), ids.end());
+            vocabulary->encode(text->getDataAt(row), data);
             offsets[row] = data.size();
         }
 
         return ColumnArray::create(std::move(ids_column), std::move(offsets_column));
     }
-
-private:
-    ContextPtr context;
 };
 
 
@@ -98,9 +92,7 @@ class FunctionDetokenizeBPE : public IFunction
 {
 public:
     static constexpr auto name = "detokenizeBPE";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDetokenizeBPE>(std::move(context)); }
-
-    explicit FunctionDetokenizeBPE(ContextPtr context_) : context(std::move(context_)) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDetokenizeBPE>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -127,7 +119,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, context, getName());
+        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, getName());
 
         const ColumnPtr ids_column = arguments[0].column->convertToFullColumnIfConst();
         const ColumnArray * ids_array = checkAndGetColumn<ColumnArray>(ids_column.get());
@@ -140,7 +132,7 @@ public:
         auto result = ColumnString::create();
         result->reserve(input_rows_count);
 
-        std::vector<UInt32> ids;
+        PODArray<UInt32> ids;
         String text;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -168,9 +160,6 @@ public:
 
         return result;
     }
-
-private:
-    ContextPtr context;
 };
 
 }

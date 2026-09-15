@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/PODArray.h>
 
 #include <memory>
 #include <span>
@@ -55,7 +56,7 @@ public:
 
     /// Ids of `text`, appended to `result`. Text is encoded as text: a vocabulary has no special
     /// tokens, so a piece of the text that reads like one is encoded the way any other text is.
-    void encode(std::string_view text, std::vector<UInt32> & result) const;
+    void encode(std::string_view text, PaddedPODArray<UInt32> & result) const;
 
     /// The text of `ids`, appended to `out`. Throws if an id is not in the vocabulary.
     void decode(std::span<const UInt32> ids, WriteBuffer & out) const;
@@ -73,7 +74,7 @@ private:
     UInt32 rankOf(std::string_view piece) const;
 
     /// Encodes one piece that is not a token of the vocabulary by merging.
-    void encodePiece(std::string_view piece, std::vector<UInt32> & result) const;
+    void encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const;
 
     BPEPretokenizer pretokenizer = BPEPretokenizer::Cl100k;
 

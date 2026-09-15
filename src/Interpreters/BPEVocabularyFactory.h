@@ -42,7 +42,7 @@ private:
     {
         /// Empty for a vocabulary written out in the configuration.
         String path;
-        BPEPretokenizer pretokenizer;
+        BPEPretokenizer pretokenizer = BPEPretokenizer::Cl100k;
         /// Of the file, or of the inline content, so that a changed vocabulary is picked up.
         UInt64 modification_time = 0;
         UInt64 size = 0;

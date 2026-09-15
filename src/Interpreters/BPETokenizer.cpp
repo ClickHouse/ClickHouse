@@ -300,7 +300,7 @@ size_t matchO200kWord(std::string_view text, size_t pos)
             {
                 /// The upper case run is given back one character at a time until the character it
                 /// gives back starts a lower case run, which the first alternative needs.
-                for (size_t candidate = upper_end; candidate >= start; )
+                for (size_t candidate = upper_end; candidate >= start;)
                 {
                     size_t length;
                     if (candidate < text.size() && isLowercaseish(codePointAt(text, candidate, length)))
@@ -410,7 +410,7 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
     size_t line_number = 0;
     std::vector<bool> single_bytes(256, false);
 
-    for (size_t pos = 0; pos < contents.size(); )
+    for (size_t pos = 0; pos < contents.size();)
     {
         const size_t line_end = std::min(contents.find('\n', pos), contents.size());
         std::string_view line = contents.substr(pos, line_end - pos);
@@ -496,7 +496,7 @@ UInt32 BPEVocabulary::rankOf(std::string_view piece) const
     return it == nullptr ? no_rank : it->getMapped();
 }
 
-void BPEVocabulary::encodePiece(std::string_view piece, std::vector<UInt32> & result) const
+void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const
 {
     /// The piece is taken apart into its bytes, and the adjacent pair whose concatenation has the
     /// lowest rank is merged, until no pair is a token of the vocabulary. A merge only changes the
@@ -567,7 +567,7 @@ void BPEVocabulary::encodePiece(std::string_view piece, std::vector<UInt32> & re
     }
 }
 
-void BPEVocabulary::encode(std::string_view text, std::vector<UInt32> & result) const
+void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & result) const
 {
     size_t pos = 0;
     while (pos < text.size())
