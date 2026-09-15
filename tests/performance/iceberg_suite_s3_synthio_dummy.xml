@@ -1,0 +1,64 @@
+<test profile_all_queries="1" run_all_queries="1">
+    <!-- Synthetic-IO twin of iceberg_suite_s3_dummy.xml: s3_slow_*_response enabled on both servers so each S3 GET/HEAD/PUT/DELETE against the fast job-local endpoint pays tens of ms (accounted in SimulatedObjectStorageLatencyMicroseconds). -->
+    <!-- Enabled after the data fill (setup runs in document order); the drop queries disable them (server-wide) and both compared binaries must contain them. -->
+    <!-- The infrastructure keys off content, not the name: referencing perf_s3 triggers provisioning in the perf job and the skip in PGO/BOLT profile collection. -->
+    <!-- The fixed literal path cannot collide across the comparison (each server's perf_s3 points at its own namespace); drop + iceberg_delete_data_on_drop cleans reruns. -->
+    <!-- run_all_queries: a smoke test must run every query regardless of the sampling policy. -->
+
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+        <!-- 1M rows / 250K per file: the queries below read a multi-file table over S3. -->
+        <iceberg_insert_max_rows_in_data_file>250000</iceberg_insert_max_rows_in_data_file>
+    </settings>
+
+    <create_query>CREATE DATABASE IF NOT EXISTS iceberg_suite_s3_synthio_dummy</create_query>
+
+    <create_query>DROP TABLE IF EXISTS iceberg_suite_s3_synthio_dummy.events</create_query>
+    <create_query>
+        CREATE TABLE iceberg_suite_s3_synthio_dummy.events
+        (
+            id UInt64,
+            ts DateTime,
+            value Float64,
+            tag String
+        )
+        ENGINE = IcebergS3(perf_s3, filename = 'iceberg_suite_s3_synthio_dummy_events/')
+    </create_query>
+
+    <fill_query>
+        INSERT INTO iceberg_suite_s3_synthio_dummy.events
+        SELECT
+            number AS id,
+            toDateTime('2024-01-01 00:00:00') + (number % 86400) AS ts,
+            (number % 1000) / 7 AS value,
+            'tag_' || toString(number % 100) AS tag
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1
+    </fill_query>
+
+    <!-- Setup done: from here every S3 request pays its simulated response latency. -->
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_get_response</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_head_response</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_put_response</fill_query>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_delete_response</fill_query>
+
+    <!-- full_scan: read every data file from S3. -->
+    <query>SELECT count(), sum(value) FROM iceberg_suite_s3_synthio_dummy.events</query>
+
+    <!-- filtered_scan: predicate over all files, exercises Parquet reads over S3. -->
+    <query>SELECT avg(value), max(id) FROM iceberg_suite_s3_synthio_dummy.events WHERE id % 10 = 0</query>
+
+    <!-- group_by: aggregation over the low-cardinality tag column. -->
+    <query>SELECT tag, count() FROM iceberg_suite_s3_synthio_dummy.events GROUP BY tag ORDER BY tag LIMIT 10</query>
+
+    <!-- table_function_resolution: same data via icebergS3, paying resolution + schema inference per run. -->
+    <query>SELECT count() FROM icebergS3(perf_s3, filename = 'iceberg_suite_s3_synthio_dummy_events/') WHERE ts &lt; toDateTime('2024-01-01 12:00:00')</query>
+
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_get_response</drop_query>
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_head_response</drop_query>
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_put_response</drop_query>
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_delete_response</drop_query>
+    <drop_query>DROP TABLE IF EXISTS iceberg_suite_s3_synthio_dummy.events</drop_query>
+</test>
