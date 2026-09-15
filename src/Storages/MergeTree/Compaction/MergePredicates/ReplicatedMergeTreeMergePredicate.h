@@ -12,8 +12,8 @@ class ReplicatedMergeTreeBaseMergePredicate : public DistributedMergePredicate<A
 public:
     explicit ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_, std::optional<PartitionIdsHint> partition_ids_hint_);
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
+    std::expected<void, LazyPreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
+    std::expected<void, LazyPreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 protected:

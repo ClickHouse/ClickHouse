@@ -86,7 +86,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr &
             /// If we cannot merge with previous part we need to close this range.
             if (auto result = merge_predicate->canMergeParts(prev_part, current_part); !result.has_value())
             {
-                LOG_TRACE(series_log, "Can't merge parts {} and {}. Reason: {}", prev_part.name, current_part.name, result.error().text);
+                LOG_TRACE(series_log, "Can't merge parts {} and {}. Reason: {}", prev_part.name, current_part.name, result.error().format().text);
                 return mergeable_range;
             }
 
@@ -600,7 +600,7 @@ std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & ran
         const auto & current_part = range[i];
 
         if (auto can_merge_result = merge_predicate->canMergeParts(prev_part, current_part); !can_merge_result)
-            return can_merge_result;
+            return std::move(can_merge_result).transform_error(&LazyPreformattedMessage::format);
     }
 
     return {};
@@ -739,7 +739,7 @@ std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
     const std::string & partition_id)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id).transform_error(&LazyPreformattedMessage::format);
 }
 
 }
