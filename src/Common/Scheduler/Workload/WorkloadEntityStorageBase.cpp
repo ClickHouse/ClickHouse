@@ -703,13 +703,36 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
     // The implicit root workload uses a reserved name (see storeEntity). A workload with this name
     // may already be persisted from before the name was reserved, so the load path (config / Keeper /
     // disk) must NOT abort over it — otherwise a server could fail to start after an upgrade. Ignore
-    // such a workload here (it cannot be used anyway) and warn; new creations are still rejected by
-    // storeEntity on the SQL path.
-    if (auto it = local_new_entities.find(IMPLICIT_ROOT_WORKLOAD_NAME);
-        it != local_new_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(it->second.get()))
+    // the reserved-name workload AND every workload transitively parented under it: dropping only the
+    // reserved-name node would leave its children with a dangling parent that then fails to attach in
+    // the resource manager. New creations are still rejected by storeEntity on the SQL path.
     {
-        LOG_WARNING(log, "Ignoring workload '{}': this name is reserved for the implicit root workload", IMPLICIT_ROOT_WORKLOAD_NAME);
-        local_new_entities.erase(it);
+        std::unordered_set<String> ignored;
+        if (auto it = local_new_entities.find(IMPLICIT_ROOT_WORKLOAD_NAME);
+            it != local_new_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(it->second.get()))
+            ignored.insert(IMPLICIT_ROOT_WORKLOAD_NAME);
+        for (bool changed = !ignored.empty(); changed; )
+        {
+            changed = false;
+            for (const auto & [name, ast] : local_new_entities)
+            {
+                if (ignored.contains(name))
+                    continue;
+                const auto * child_workload = typeid_cast<const ASTCreateWorkloadQuery *>(ast.get());
+                if (child_workload && ignored.contains(child_workload->getWorkloadParent()))
+                {
+                    ignored.insert(name);
+                    changed = true;
+                }
+            }
+        }
+        if (!ignored.empty())
+        {
+            LOG_WARNING(log, "Ignoring {} workload(s) using or descending from the reserved name '{}', which is reserved for the implicit root workload",
+                ignored.size(), IMPLICIT_ROOT_WORKLOAD_NAME);
+            for (const auto & name : ignored)
+                local_new_entities.erase(name);
+        }
     }
 
     std::unique_lock lock(mutex);
