@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -389,6 +390,31 @@ TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
+}
+
+/// Only a reader that accepts `Kind::DETACHED` at all reaches this check, and no such reader is exposed
+/// to a client, so it cannot be covered by a functional test.
+TEST(SerializationInfoBinary, RejectsDetachedThatIsNotOutermost)
+{
+    /// COMBINATION encoding of {Default, Detached, Sparse}.
+    const char kinds[] = {5, 3, 0, 2, 1};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    EXPECT_THROW(info.deserializeFromKindsBinary(in, ISerialization::KindSet::all()), Exception);
+}
+
+TEST(SerializationInfoBinary, AcceptsDetachedOverSparse)
+{
+    /// COMBINATION encoding of {Default, Sparse, Detached}.
+    const char kinds[] = {5, 3, 0, 1, 2};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
+
+    ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED};
+    EXPECT_EQ(info.getKindStack(), expected);
 }
 
 }
