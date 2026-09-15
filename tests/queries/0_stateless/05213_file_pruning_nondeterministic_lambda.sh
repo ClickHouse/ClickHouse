@@ -36,8 +36,16 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'visible predicate is not used to prune files',
     WHERE rand() % 2 = 0"
 
 # Control: a deterministic predicate over `_file` is still used for pruning, so the guard did not
-# degrade into refusing every predicate.
+# degrade into refusing every predicate. A file that does not parse as `UInt32` is added to the glob:
+# it is only tolerated when the pruning drops it before it is read, so a `count()` instead of an
+# error is the evidence that the pruning happened. The lambda variant checks that the guard stayed
+# specific to non-deterministic lambdas and does not refuse every lambda.
+echo "not_a_number" > "${CLICKHOUSE_USER_FILES_UNIQUE}"/databad.csv
+
 ${CLICKHOUSE_CLIENT} -q "SELECT 'deterministic predicate still prunes', count()
     FROM file('${GLOB}', 'CSV', 'a UInt32') WHERE _file = 'data1.csv'"
+
+${CLICKHOUSE_CLIENT} -q "SELECT 'deterministic lambda still prunes', count()
+    FROM file('${GLOB}', 'CSV', 'a UInt32') WHERE arrayExists(x -> x = 'data1.csv', [_file])"
 
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE:?}"/*

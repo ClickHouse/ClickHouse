@@ -5,6 +5,9 @@
 
 -- The positive cases pin `query_plan_filter_push_down = 1` so that they exercise the optimizer regardless of the
 -- session profile; the `= 0` controls show what pushing the filter down would return.
+-- The route under test is the plan-level push-down of the analyzer; the legacy analyzer moves `HAVING` into
+-- `WHERE` on its own (#117758), so the test is pinned to the analyzer instead of the session default.
+SET enable_analyzer = 1;
 
 -- The lambda has no captures, so it is folded into a constant `ColumnFunction` holding its body.
 SELECT
