@@ -1165,15 +1165,6 @@ void LDAPAccessStorage::sync()
     last_sync_success_time_s.store(steadyNowSeconds());
     succeeded = true;
 
-    /// Phase 5: a removed user may still be named by entities of other storages: `TO` lists of row policies,
-    /// quotas and settings profiles, grantees and default roles of other users. `memory_storage.remove` cleaned
-    /// such references inside this directory only; left in the other storages, they would point at a dead id and
-    /// silently stop matching the same login when a later run materialises it again under a new id. This is what
-    /// `DROP USER` does through `IAccessStorage::remove`, and it runs without `mutex` like phase 3: the writes go
-    /// to other storages, whose notifications come back to this directory's subscriptions.
-    if (!result.removed_ids.empty())
-        access_control.removeReferencesToRemovedIDs(result.removed_ids);
-
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersAdded, result.added);
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersUpdated, result.updated);
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersRemoved, result.removed);
@@ -1216,6 +1207,7 @@ void LDAPAccessStorage::checkPrecedingLDAPDirectories() const
         if (!preceding || !preceding->only_synced_users)
         {
             const bool has_sync = preceding.has_value();
+    /// The run is applied and accounted for from here on, whatever the cleanup below does.
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory {} and is declared "
                 "before it. Such a directory materialises users at their first login and would win the next login of a name "
@@ -1242,6 +1234,15 @@ void LDAPAccessStorage::checkPrecedingLDAPDirectories() const
                 "and has no authoritative snapshot yet (none of its synchronisations has been applied since the server started), "
                 "so the names it will serve cannot be told from the rest. This run is refused; the next one (periodic, or "
                 "SYSTEM RELOAD USERS) checks again",
+
+    /// Phase 5: a removed user may still be named by entities of other storages: `TO` lists of row policies,
+    /// quotas and settings profiles, grantees and default roles of other users. `memory_storage.remove` cleaned
+    /// such references inside this directory only; left in the other storages, they would point at a dead id and
+    /// silently stop matching the same login when a later run materialises it again under a new id. This is what
+    /// `DROP USER` does through `IAccessStorage::remove`, and it runs without `mutex` like phase 3: the writes go
+    /// to other storages, whose notifications come back to this directory's subscriptions.
+    if (!result.removed_ids.empty())
+        access_control.dropReferencesToRemovedEntities(result.removed_ids);
                 backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()));
     }
 }

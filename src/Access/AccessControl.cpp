@@ -596,7 +596,7 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-void AccessControl::removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids)
+void AccessControl::dropReferencesToRemovedEntities(const std::unordered_set<UUID> & removed_ids)
 {
     /// Not inside `remove`, so the depth guard of `IAccessStorage::remove` does not apply: the cascade runs
     /// exactly once, from this outermost storage, and `updateImpl` above notifies after every write.

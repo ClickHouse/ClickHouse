@@ -273,8 +273,9 @@ public:
     /// does after dropping an entity through this facade (`DROP USER` and friends), and delivers the notifications.
     /// For a storage that removes entities of its own outside `remove`, such as an `ldap` directory whose
     /// synchronisation removes the users who left the directory: its own `remove` only cleans the references
-    /// inside that storage.
-    void removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids);
+    /// inside that storage. A public counterpart of the protected `IAccessStorage::removeReferencesToRemovedIDs`,
+    /// which `remove` calls on its own and which does not notify; named differently so that it does not hide it.
+    void dropReferencesToRemovedEntities(const std::unordered_set<UUID> & removed_ids);
 
     /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
     void allowAllSettings();
