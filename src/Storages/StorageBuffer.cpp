@@ -292,6 +292,12 @@ bool StorageBuffer::isRemote() const
     return destination && destination->isRemote();
 }
 
+bool StorageBuffer::readRequiresAnalyzedQuery() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->readRequiresAnalyzedQuery();
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
