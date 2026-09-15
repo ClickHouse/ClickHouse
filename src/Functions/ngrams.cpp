@@ -1,9 +1,11 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
@@ -34,12 +36,20 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        auto is_string_or_fixed_string_nullable = [](const IDataType & type)
+        {
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+                return isStringOrFixedString(nullable->getNestedType());
+            return isStringOrFixedString(type);
+        };
+
         FunctionArgumentDescriptors mandatory_args{
-            {"s", &isStringOrFixedString, nullptr, "String or FixedString"},
+            {"s", is_string_or_fixed_string_nullable, nullptr, "String or FixedString"},
             {"N", &isNativeUInt, &isColumnConst, "const UInt8/16/32/64"}
         };
 
@@ -63,23 +73,35 @@ public:
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
+        const NullMap * null_map = nullptr;
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
+        {
+            if (checkColumn<ColumnString>(&col_nullable->getNestedColumn()))
+            {
+                input_column = col_nullable->getNestedColumnPtr();
+                null_map = &col_nullable->getNullMapData();
+            }
+            else
+                input_column = col_nullable->getNestedColumnWithDefaultOnNull();
+        }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(*ngram_tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_string, *result_column_string, *column_offsets, null_map, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(*ngram_tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_fixed_string, *result_column_string, *column_offsets, null_map, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }
 
 private:
 
-    template <typename ExtractorType, typename StringColumnType, typename ResultStringColumnType>
+    template <typename TokenizerType, typename StringColumnType, typename ResultStringColumnType>
     void executeImpl(
-        const ExtractorType & tokenizer,
+        const TokenizerType & tokenizer,
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,
         ColumnArray::ColumnOffsets & offsets_column,
+        const NullMap * null_map,
         size_t input_rows_count) const
     {
         size_t current_tokens_size = 0;
@@ -89,7 +111,9 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto data = input_data_column.getDataAt(i);
+            std::string_view data = input_data_column.getDataAt(i);
+            if (null_map && (*null_map)[i])
+                data.remove_prefix(data.size());
 
             forEachToken(
                 tokenizer,
