@@ -139,11 +139,17 @@ void resetSettings(SettingsChanges & settings_from_storage, const std::set<Strin
 /// `MODIFY SETTING enable_block_number_column = DEFAULT` and `RESET SETTING enable_block_number_column`
 /// remove the stored override, and the metadata flags have to be recomputed from what is left, else the
 /// running table keeps the previous set of indices until `DETACH` / `ATTACH` or restart.
+///
+/// `default_settings` are the settings the table has when it states nothing itself: the server's
+/// `<merge_tree>` (and, for a replicated table, `<replicated_merge_tree>`) config section on top of
+/// the `compatibility` profile setting. The MergeTree `ALTER` paths pass their engine's defaults; when
+/// absent, the non-replicated server defaults of `context` are used.
 void recomputeImplicitIndexPolicy(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
     const SettingsChanges & settings_changes,
-    const std::set<String> & settings_resets)
+    const std::set<String> & settings_resets,
+    const MergeTreeSettings * default_settings)
 {
     static constexpr std::array<std::string_view, 7> implicit_index_policy_settings = {
         "add_minmax_index_for_numeric_columns",
@@ -173,7 +179,13 @@ void recomputeImplicitIndexPolicy(
     if (!touches(implicit_index_policy_settings))
         return;
 
-    MergeTreeSettings effective_settings;
+    /// Start from what the table inherits, not from the compiled-in defaults: a table that stores no
+    /// override for a policy setting takes it from the server defaults, which is also what
+    /// `MergeTreeData::changeSettings` rebuilds the live settings from. Seeding from compiled-in
+    /// defaults lost e.g. `add_minmax_index_for_block_number_column = 1` inherited from `<merge_tree>`
+    /// on a table whose `enable_block_number_column = 0` override is being reset, so the running table
+    /// did not regain `auto_minmax_index__block_number` until DETACH / ATTACH or restart.
+    MergeTreeSettings effective_settings = default_settings ? *default_settings : context->getMergeTreeSettings();
     if (metadata.settings_changes)
     {
         for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
@@ -191,9 +203,10 @@ void recomputeImplicitIndexPolicy(
 
     /// The two block-column flags in the metadata hold the EFFECTIVE value, i.e. the setting
     /// gated by `enable_block_number_column` / `enable_block_offset_column`. A `false` there
-    /// may only mean that the gate was closed, so it must not override a stored `1` of the
-    /// read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1` never
-    /// turns the implicit index on in the running table (it appeared only after reload).
+    /// may only mean that the gate was closed, so it must not override an inherited or stored
+    /// `1` of the read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1`
+    /// never turns the implicit index on in the running table (it appeared only after reload).
+    /// A `true` is preserved for the same reason as the column policies above.
     if (metadata.add_minmax_index_for_block_number_column)
         effective_settings.applyChange({"add_minmax_index_for_block_number_column", true}, context, /*is_loading_from_existing_metadata=*/true);
     if (metadata.add_minmax_index_for_block_offset_column)
@@ -807,7 +820,11 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 
 
 void AlterCommand::apply(
-    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const ColumnsDescription * columns_before_alter,
+    const MergeTreeSettings * default_merge_tree_settings) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -1381,7 +1398,7 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        recomputeImplicitIndexPolicy(metadata, context, settings_changes, settings_resets);
+        recomputeImplicitIndexPolicy(metadata, context, settings_changes, settings_resets, default_merge_tree_settings);
     }
     else if (type == RESET_SETTING)
     {
@@ -1389,7 +1406,7 @@ void AlterCommand::apply(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
         resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
-        recomputeImplicitIndexPolicy(metadata, context, /*settings_changes=*/{}, settings_resets);
+        recomputeImplicitIndexPolicy(metadata, context, /*settings_changes=*/{}, settings_resets, default_merge_tree_settings);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1887,7 +1904,8 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+void AlterCommands::apply(
+    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const MergeTreeSettings * default_merge_tree_settings) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1896,7 +1914,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, default_merge_tree_settings);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);

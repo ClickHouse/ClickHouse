@@ -6995,7 +6995,8 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     auto old_settings = getSettings();
-    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+    const auto default_storage_settings = getDefaultSettings();
+    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], default_storage_settings.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
