@@ -16,8 +16,9 @@ $CLICKHOUSE_CLIENT -q "
 truncate_error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.truncate.stderr"
 
 # With the queue stopped the DROP_RANGE entry is never executed, so TRUNCATE stays inside
-# waitForLogEntryToBeProcessedIfNecessary.
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t" > /dev/null 2> "$truncate_error" &
+# waitForLogEntryToBeProcessedIfNecessary. alter_sync is pinned because that wait is what the
+# RENAME below must not block on; at alter_sync = 0 TRUNCATE would not wait at all.
+$CLICKHOUSE_CLIENT -q "SET alter_sync = 1; TRUNCATE TABLE t" > /dev/null 2> "$truncate_error" &
 truncate_pid=$!
 
 # Stopping the queue stops executing it, not pulling into it, so the queue can still hold the
@@ -41,3 +42,5 @@ $CLICKHOUSE_CLIENT -q "SYSTEM START REPLICATION QUEUES t; SYSTEM START REPLICATI
 # The count below says nothing about TRUNCATE unless TRUNCATE itself succeeded.
 wait "$truncate_pid" || cat "$truncate_error"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t2"
+
+rm -f "$truncate_error"
