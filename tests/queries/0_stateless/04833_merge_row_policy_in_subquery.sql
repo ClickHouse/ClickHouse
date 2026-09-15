@@ -93,7 +93,7 @@ SELECT * FROM merge(currentDatabase(), '^mrp_(a|b)$') ORDER BY id
 SETTINGS enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_plan_based = 1,
-    parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_local_plan = 1,
     parallel_replicas_allow_merge_tables = 1;
 DROP ROW POLICY 04833_a ON mrp_a;
 DROP ROW POLICY 04833_b ON mrp_b;

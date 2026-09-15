@@ -33,7 +33,7 @@ INSERT INTO t_column_codec SELECT number, number % 1000 FROM numbers(1e6);
 SELECT a, b FROM t_default_codec FORMAT Null SETTINGS log_comment='query_default_codec';
 SELECT a, b FROM t_column_codec FORMAT Null SETTINGS log_comment='query_column_codec';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

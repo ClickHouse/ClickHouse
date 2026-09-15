@@ -21,7 +21,7 @@ QUERY="SELECT count(), sum(l.k) FROM t_04839 AS l, v_04839 AS r WHERE l.k = r.k 
 COMMON="enable_analyzer = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1"
 
-single_node=$($CLICKHOUSE_CLIENT -q "SET $COMMON, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0; $QUERY")
+single_node=$($CLICKHOUSE_CLIENT -q "SET $COMMON, enable_parallel_replicas = 0; $QUERY")
 automatic=$($CLICKHOUSE_CLIENT -q "SET $COMMON, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
                                    automatic_parallel_replicas_min_bytes_per_replica = 0; $QUERY")
 
@@ -44,7 +44,7 @@ read_rows() {
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
-marks_single=$(read_rows "04839_single_${CLICKHOUSE_DATABASE}" "SET $COMMON, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0; $QUERY")
+marks_single=$(read_rows "04839_single_${CLICKHOUSE_DATABASE}" "SET $COMMON, enable_parallel_replicas = 0; $QUERY")
 marks_auto=$(read_rows "04839_auto_${CLICKHOUSE_DATABASE}" "SET $COMMON, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
                                                             automatic_parallel_replicas_min_bytes_per_replica = 0; $QUERY")
 

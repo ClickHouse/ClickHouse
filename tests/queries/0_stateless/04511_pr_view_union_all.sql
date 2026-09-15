@@ -21,7 +21,6 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 1;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_allow_view_over_mergetree = 1;
 
 -- Slow the initiator's local read so the remote replicas exercise the shipped branching fragment.

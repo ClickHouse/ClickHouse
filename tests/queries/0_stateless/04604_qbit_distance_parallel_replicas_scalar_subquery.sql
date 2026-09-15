@@ -26,7 +26,7 @@ SELECT id FROM qbit_pr ORDER BY cosineDistanceTransposed(qb, ref, 16) ASC, id AS
 -- With parallel replicas, reading from remote replicas only
 WITH (SELECT CAST(qb, 'Array(Float32)') FROM qbit_pr WHERE id = 0) AS ref
 SELECT id FROM qbit_pr ORDER BY cosineDistanceTransposed(qb, ref, 16) ASC, id ASC LIMIT 3
-SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
          parallel_replicas_min_number_of_rows_per_replica = 0;

@@ -30,7 +30,7 @@ MARSHALLING_ON="enable_parallel_blocks_marshalling = 1, prefer_localhost_replica
 MARSHALLING_OFF="enable_parallel_blocks_marshalling = 0, prefer_localhost_replica = 1"
 # Mode 2 throws instead of silently falling back to plain local execution, so an unavailable
 # cluster fails the test instead of making the parallel replicas cases assert nothing.
-PARALLEL_REPLICAS="automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1"
+PARALLEL_REPLICAS="enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1"
 
 $INITIAL_CLIENT -q "
     CREATE TABLE tab (x UInt64, y UInt64, z UInt64) ENGINE = MergeTree ORDER BY x;

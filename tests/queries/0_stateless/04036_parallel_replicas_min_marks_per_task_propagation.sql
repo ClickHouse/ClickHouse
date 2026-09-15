@@ -62,8 +62,7 @@ FROM t_pr_task_prop
 WHERE a >= 1_000_000
 FORMAT Null
 SETTINGS
-    automatic_parallel_replicas_mode = 0,
-    enable_parallel_replicas = 2,
+        enable_parallel_replicas = 2,
     max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1,
     cluster_for_parallel_replicas = 'parallel_replicas',

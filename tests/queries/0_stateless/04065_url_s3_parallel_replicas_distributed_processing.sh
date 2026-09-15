@@ -30,7 +30,7 @@ EOF
 echo "--- url with parallel replicas ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 4;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
@@ -41,7 +41,7 @@ EOF
 echo "--- s3 with parallel replicas ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 4;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
@@ -52,7 +52,7 @@ EOF
 echo "--- s3 with parallel replicas, verify data ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 4;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
@@ -77,7 +77,7 @@ cp -r "${CUR_DIR}/data_minio/paimon_no_partition/" "${PAIMON_DATA_DIR}/"
 echo "--- paimonLocal (no Cluster variant) with parallel_replicas_for_cluster_engines ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 4;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
@@ -110,7 +110,7 @@ EOF
 echo "--- parallel replicas with url in subquery ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = 0;

@@ -4,7 +4,6 @@ SET analyzer_inline_views = 1;
 
 SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 0;
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree() ORDER BY ();

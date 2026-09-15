@@ -35,7 +35,7 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 -- Reads `val`, the column the patch holds, so the patch part is actually read.
 SELECT key, val FROM t_autopr_patch FORMAT Null SETTINGS log_comment = '05098_autopr_gate_patch_parts';
 
-SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

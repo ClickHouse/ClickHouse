@@ -33,13 +33,13 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
 SELECT '-- sixteen workers: shuffled aggregation is correct';
 SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    enable_parallel_replicas = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
 SELECT '-- sixteen workers: still a distributed plan';
 EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    enable_parallel_replicas = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
 -- No `distributed_plan_execute_locally` here: only a dispatched fragment gets its own
@@ -52,7 +52,7 @@ SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread 
 SET ast_fuzzer_runs = 0;
 SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+    enable_parallel_replicas = 0,
     distributed_plan_force_shuffle_aggregation = 1,
     use_concurrency_control = 1, max_threads = 1,
     log_comment = '04515_worker_fragment_cpu_slots'

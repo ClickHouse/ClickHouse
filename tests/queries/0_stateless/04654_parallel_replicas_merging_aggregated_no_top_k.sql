@@ -24,7 +24,6 @@ SET enable_parallel_replicas = 1;
 SET parallel_replicas_plan_based = 1;
 -- CI randomizes the automatic mode, whose cost model can silently skip the
 -- parallel-replicas rewrite for a table this small; pin the explicit mode.
-SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

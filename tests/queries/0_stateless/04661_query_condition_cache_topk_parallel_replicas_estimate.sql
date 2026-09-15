@@ -36,7 +36,6 @@ SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 -- Query-tree based parallel replicas: this is the mechanism that runs the pre-plan estimate.
 SET parallel_replicas_plan_based = 0;
-SET automatic_parallel_replicas_mode = 0;
 -- Any positive value enables the estimate. A value above the table size makes the estimate conclude
 -- that one replica is enough, so the queries below execute locally: what is asserted is then the cache
 -- interaction of the estimate itself, not of reads on the follower replicas.

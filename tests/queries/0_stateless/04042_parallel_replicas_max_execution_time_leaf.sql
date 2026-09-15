@@ -17,7 +17,6 @@ SET allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas
 SET use_query_cache = false;
 -- Disable the automatic parallel replicas path so the explicit settings above are honoured (it would otherwise
 -- override the cluster).
-SET automatic_parallel_replicas_mode = 0;
 
 -- Note: 'parallel_replicas_local_plan' is intentionally left at its default (1). When 'max_execution_time_leaf'
 -- is set, the local plan is disabled automatically (the local replica shares the initiator's query status and

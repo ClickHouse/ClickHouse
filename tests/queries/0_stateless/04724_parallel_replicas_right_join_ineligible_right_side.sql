@@ -12,7 +12,6 @@ CREATE TABLE t_right (key UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_right SELECT number FROM numbers(10);
 
 SET enable_analyzer = 1;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 2,
     parallel_replicas_local_plan = 0,

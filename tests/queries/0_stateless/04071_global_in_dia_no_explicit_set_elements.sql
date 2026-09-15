@@ -48,8 +48,7 @@ SELECT sum(key)
 FROM test_dia_global_in
 WHERE key GLOBAL IN (SELECT key FROM test_dia_global_in WHERE key > 5000)
 SETTINGS
-    automatic_parallel_replicas_mode = 0,
-    parallel_replicas_for_non_replicated_merge_tree = 1,
+        parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_index_analysis_only_on_coordinator = 1,
     parallel_replicas_local_plan = 1,
     use_query_condition_cache = 0,

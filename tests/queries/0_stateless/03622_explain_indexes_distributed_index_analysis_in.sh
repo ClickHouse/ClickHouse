@@ -46,7 +46,7 @@ function explain_indexes()
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
-  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=1 --automatic_parallel_replicas_mode=0 -q "$@" | {
+  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=1 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   if [ "$with_pr" != "$without_pr" ]; then

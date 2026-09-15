@@ -31,7 +31,7 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1;
 
 -- Pin what the test runner randomizes, otherwise these queries silently move off the path under test.
-SET automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1;
+SET parallel_replicas_local_plan = 1;
 
 SELECT 'same-named ALIAS column on both sides';
 

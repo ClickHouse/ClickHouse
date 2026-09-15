@@ -30,7 +30,6 @@ SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 1;
 -- Pin the manual mode: otherwise CI's randomized automatic_parallel_replicas_mode can cost-decide
 -- against parallel replicas for this small table, so the plan-based split does not engage.
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_allow_merge_tables = 1;
 
 -- Slow down the initiator's local read so the remote replicas emit rows before the local read completes.

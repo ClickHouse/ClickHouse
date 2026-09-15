@@ -24,7 +24,6 @@ SETTINGS auto_statistics_types = 'minmax', index_granularity = 32;
 SET materialize_statistics_on_insert = 1;
 INSERT INTO t_pr_stats_short_circuit SELECT number, toInt32(number % 1000) - 500 FROM numbers(5000);
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan = 1;

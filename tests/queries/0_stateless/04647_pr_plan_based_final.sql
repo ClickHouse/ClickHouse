@@ -18,7 +18,6 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_plan_based = 1;
-SET automatic_parallel_replicas_mode = 0;
 
 -- Single FINAL: correct dedup (1000 rows, sum of 0..999), kept local (no remote read).
 SELECT count(), sum(a) FROM t_pr_final_1 FINAL;

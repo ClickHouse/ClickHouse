@@ -54,7 +54,6 @@ for local_plan in 0 1; do
     SET max_parallel_replicas = 3;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
     SET parallel_replicas_for_non_replicated_merge_tree = 1;
-    SET automatic_parallel_replicas_mode = 0;
     SET parallel_replicas_min_number_of_rows_per_replica = 0;
     SET parallel_replicas_local_plan = ${local_plan};
     -- The regression guarded here is in the query-based dispatch: each replica re-plans the outer

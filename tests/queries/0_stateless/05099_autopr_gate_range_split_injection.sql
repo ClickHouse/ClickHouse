@@ -38,7 +38,7 @@ SETTINGS log_comment = '05099_autopr_gate_range_split_injection',
     merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1,
     use_query_condition_cache = 0, optimize_read_in_order = 0;
 
-SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

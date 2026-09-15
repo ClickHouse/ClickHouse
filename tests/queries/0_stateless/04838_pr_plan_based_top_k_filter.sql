@@ -29,7 +29,6 @@ SET parallel_replicas_plan_based = 1;
 SET use_top_k_dynamic_filtering = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
-SET automatic_parallel_replicas_mode = 0;
 
 -- Sorting on a non-primary-key column: this threw `Unknown function __topKFilter` on the replica. Results
 -- must match non-parallel execution, in both directions.

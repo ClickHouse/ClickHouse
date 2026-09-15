@@ -51,7 +51,7 @@ SELECT URL from test.hits WHERE URL LIKE '%yandex%' ORDER BY URL DESC FORMAT Nul
 -- Unsupported case: filtering by set built from subquery
 --SELECT * FROM test.hits WHERE CounterID IN (SELECT CounterID % 1000 FROM test.hits) FORMAT Null SETTINGS log_comment='query_44';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

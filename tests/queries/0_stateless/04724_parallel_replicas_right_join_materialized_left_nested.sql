@@ -22,7 +22,6 @@ INSERT INTO t_replicated_right SELECT number FROM numbers(10);
 CREATE TABLE t_merge_left (key UInt64) ENGINE = Merge(currentDatabase(), '^t_mid$');
 
 SET enable_analyzer = 1;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 2,
     parallel_replicas_local_plan = 0,

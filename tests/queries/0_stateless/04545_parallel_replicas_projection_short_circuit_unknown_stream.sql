@@ -27,7 +27,6 @@ SYSTEM STOP MERGES t_pr_short_circuit;
 INSERT INTO t_pr_short_circuit SELECT number, number, if(number % 2 = 0, 'a', 'b') FROM numbers(5000);
 INSERT INTO t_pr_short_circuit VALUES (999999999, 0, 'a');
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan = 1;

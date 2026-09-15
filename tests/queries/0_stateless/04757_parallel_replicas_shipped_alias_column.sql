@@ -46,7 +46,7 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
 -- Pin what the test runner randomizes, otherwise these queries silently move off the path under test:
 -- `automatic_parallel_replicas_mode` declines parallel replicas for a table this small and
 -- `parallel_replicas_local_plan` selects between the two shipping callers.
-SET automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1;
+SET parallel_replicas_local_plan = 1;
 
 SELECT 'shipped side owns the alias';
 

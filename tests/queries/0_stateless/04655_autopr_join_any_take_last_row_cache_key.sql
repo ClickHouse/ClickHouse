@@ -58,7 +58,7 @@ SETTINGS join_any_take_last_row=1, log_comment='04655_any_last_row_1';
 DROP TABLE atlr_left;
 DROP TABLE atlr_right;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

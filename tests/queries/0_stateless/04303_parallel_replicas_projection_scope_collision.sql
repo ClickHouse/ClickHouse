@@ -19,7 +19,6 @@ INSERT INTO t_pr_proj_scope SELECT number, number % 100, number FROM numbers(100
 INSERT INTO t_pr_proj_scope SELECT number, number % 100, number FROM numbers(100000, 100000);
 
 SET enable_analyzer = 1;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
 

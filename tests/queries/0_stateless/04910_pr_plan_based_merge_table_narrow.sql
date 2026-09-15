@@ -45,7 +45,6 @@ SET parallel_replicas_allow_merge_tables = 1;
 SET parallel_replicas_local_plan = 1;
 -- Pin the manual mode: otherwise CI's randomized automatic_parallel_replicas_mode can cost-decide against
 -- parallel replicas for these small tables, so the plan-based split does not engage.
-SET automatic_parallel_replicas_mode = 0;
 SET max_threads = 1;
 
 -- The number of reads is counted instead of matching the plan: which reads end up sharing a `Concat` is

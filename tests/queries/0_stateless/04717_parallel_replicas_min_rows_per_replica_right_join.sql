@@ -24,8 +24,7 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_local_plan = 1,
-    automatic_parallel_replicas_mode = 0,
-    parallel_replicas_min_number_of_rows_per_replica = 100;
+        parallel_replicas_min_number_of_rows_per_replica = 100;
 
 -- Liveness oracle: the results below are also produced by plain execution, so assert that the
 -- query really runs with parallel replicas. Prints 1; prints 0 if the path is ever bypassed.

@@ -15,7 +15,6 @@ OPTIMIZE TABLE t_in_order_splits FINAL;
 SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET max_threads = 4;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

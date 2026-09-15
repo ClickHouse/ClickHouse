@@ -18,7 +18,6 @@ INSERT INTO t_ie_right VALUES (1, '1'), (1, '1');
 SET allow_experimental_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_execute_locally = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
 -- aggregations local. Pin it to 0 so distributed plans are exercised.

@@ -25,7 +25,7 @@ CREATE VIEW va_force_index_pr_pb AS SELECT timestamp AS ts, value AS val FROM t_
 INSERT INTO t_force_index_pr_pb
 SELECT toDateTime('2026-06-01 00:00:00') + number, number FROM numbers(1000000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+SET enable_analyzer = 1, enable_parallel_replicas = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
     parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;

@@ -38,7 +38,6 @@ $CLICKHOUSE_CLIENT -q "
 query_id="$RANDOM-$CLICKHOUSE_DATABASE"
 
 $CLICKHOUSE_CLIENT --query_id $query_id -q "
-    SET automatic_parallel_replicas_mode = 0;
     SET parallel_replicas_for_non_replicated_merge_tree = 1;
     SET parallel_replicas_index_analysis_only_on_coordinator = 1;
     SET parallel_replicas_local_plan = 1;

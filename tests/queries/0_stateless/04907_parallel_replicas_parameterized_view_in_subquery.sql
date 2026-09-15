@@ -29,7 +29,6 @@ SET enable_parallel_replicas = 2, max_parallel_replicas = 3,
 -- enable_analyzer = 0 parallel replicas do not run, at optimize_read_in_order = 0 the outer
 -- read is not in-order so both reads announce Default, and at parallel_replicas_local_plan = 0
 -- the initiator contributes no in-order local plan.
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET parallel_replicas_local_plan = 1;

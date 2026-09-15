@@ -18,7 +18,6 @@ INSERT INTO read_in_order_with_parallel_replicas SELECT number from system.numbe
 SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1;
 SELECT * from read_in_order_with_parallel_replicas ORDER BY id limit 1;
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer=1, enable_parallel_replicas=2, max_parallel_replicas=2, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1;
 
 SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1

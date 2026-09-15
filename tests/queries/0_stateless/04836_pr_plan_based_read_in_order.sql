@@ -30,7 +30,6 @@ SET parallel_replicas_plan_based = 1;
 SET optimize_read_in_order = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
-SET automatic_parallel_replicas_mode = 0;
 
 -- The rewritten plan still returns every row exactly once (a = 0..99999). No ORDER BY here on purpose - an
 -- aggregate over an ordered subquery would have the sort removed as redundant, so it would not test anything

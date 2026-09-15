@@ -18,7 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_05037 (c0 Int) ENGINE = MergeTree ORDER BY tuple()"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_05037 VALUES (1)"
 
-PR_SETTINGS="enable_parallel_replicas = 1, max_parallel_replicas = 3, automatic_parallel_replicas_mode = 0,
+PR_SETTINGS="enable_parallel_replicas = 1, max_parallel_replicas = 3,
     serialize_query_plan = 0, parallel_replicas_for_non_replicated_merge_tree = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
 

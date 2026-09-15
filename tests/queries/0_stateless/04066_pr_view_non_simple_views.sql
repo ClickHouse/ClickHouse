@@ -35,7 +35,6 @@ CREATE VIEW v_window_named AS SELECT key, value, row_number() OVER w AS rn FROM 
 CREATE VIEW v_window_partition AS SELECT key, value, sum(value) OVER (PARTITION BY key % 10) AS s FROM t_base;
 CREATE VIEW v_union_distinct AS SELECT key, value FROM t_base UNION DISTINCT SELECT key, value FROM t_base2;
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 

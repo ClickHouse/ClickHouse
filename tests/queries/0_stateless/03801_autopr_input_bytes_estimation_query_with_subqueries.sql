@@ -26,7 +26,7 @@ SELECT EventTime, CounterID, URL, Referer FROM test.hits WHERE CounterID IN (SEL
 -- `WatchID` is not
 SELECT EventTime, CounterID, URL, Referer FROM test.hits WHERE WatchID IN (SELECT a % 10000 FROM t) FORMAT Null SETTINGS log_comment='03801_autopr_input_bytes_estimation_query_with_subqueries_query_2';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

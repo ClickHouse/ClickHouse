@@ -37,8 +37,7 @@ SELECT 'parallel replicas (the original reproducer)';
 SELECT sumMap(statusMap.goal_id, statusMap.revenue)
 FROM sum_map_nested_nullable_decimal
 SETTINGS
-    automatic_parallel_replicas_mode = 0,
-    enable_parallel_replicas = 2,
+        enable_parallel_replicas = 2,
     max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas',
     parallel_replicas_for_non_replicated_merge_tree = 1;

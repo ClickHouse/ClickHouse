@@ -13,7 +13,6 @@ SET optimize_min_inequality_conjunction_chain_length = 3;
 SET rewrite_in_to_join = 0;
 SET prefer_localhost_replica = 0;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_112032;
 CREATE TABLE t_112032 (id UInt64, nid Nullable(UInt64), tu Tuple(Nullable(Int32), Int32)) ENGINE = MergeTree ORDER BY id;

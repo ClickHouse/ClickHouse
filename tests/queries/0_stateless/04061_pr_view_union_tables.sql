@@ -75,7 +75,6 @@ WHERE (Hour >= '2024-01-15' AND Hour <= '2024-01-25') AND DeviceTypeId > 0
 GROUP BY AppOrSiteIdDomain, DeviceTypeId
 ORDER BY ALL;
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET max_threads = 4; -- override random max_threads=1 which makes the correctness query too slow under sanitizers
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;

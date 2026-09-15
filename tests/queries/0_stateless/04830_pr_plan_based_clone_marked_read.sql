@@ -20,7 +20,6 @@ SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 1;
 -- Pin the manual mode: CI's randomized automatic_parallel_replicas_mode can cost-decide against
 -- parallel replicas, so the plan-based split would not engage.
-SET automatic_parallel_replicas_mode = 0;
 
 -- A system log is read through a fresh context built from the global context, which carries no
 -- parallel-replicas callbacks. This is the shape that reached the logical error.

@@ -21,7 +21,6 @@ SELECT number % 1000 AS key, number AS value
 FROM numbers(10000)
 ORDER BY key;
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1,
