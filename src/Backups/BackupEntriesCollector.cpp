@@ -15,6 +15,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageFactory.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -682,16 +683,29 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 /// dropping the clause - `makeBackupEntriesForTableData` puts no data in the backup for a
                 /// table with no local storage, so the result was a silent partial backup.
                 ///
-                /// The engine name is in the snapshot, so the MergeTree family - the only family that backs
-                /// up a partition, and the one every replicated table belongs to - is still recognisable
-                /// without an instance. Anything else is refused rather than accepted on a guess:
+                /// The engine name is in the snapshot, so `StorageFactory::getStorageFeatures` - an
+                /// instance-free lookup keyed by engine name - can still answer without an instance.
                 /// `supportsBackupPartition` is not a property of the engine name for `MaterializedView`
                 /// and `MaterializedPostgreSQL`, which answer it through a target table that this replica
-                /// may not have either.
+                /// may not have either; those (and any other unregistered or missing name) fall through to
+                /// "unsupported" below rather than being accepted on a guess.
                 const auto & create = res_table_info.create_table_query->as<const ASTCreateQuery &>();
                 const String engine_name = (create.storage && create.storage->engine) ? create.storage->engine->name : "";
 
-                if (!engine_name.ends_with("MergeTree"))
+                bool supports_backup_partition = false;
+                if (!engine_name.empty())
+                {
+                    try
+                    {
+                        supports_backup_partition = StorageFactory::instance().getStorageFeatures(engine_name).supports_backup_partition;
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Unknown engine name - treat the same as "doesn't support partitions".
+                    }
+                }
+
+                if (!supports_backup_partition)
                 {
                     throw Exception(
                         ErrorCodes::CANNOT_BACKUP_TABLE,
