@@ -13,6 +13,7 @@ class ASTFunction;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 struct ASTTableExpression;
+class ASTWithElement;
 
 class ApplyWithSubqueryVisitor
 {
@@ -37,10 +38,18 @@ public:
     static void visit(ASTSelectQuery & select) { visit(select, {}); }
     static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
 
+    /// The branches of a recursive element's body: the branches of a `UNION`, or the operands of an
+    /// `INTERSECT` / `EXCEPT`, either reached through any number of single-branch wrappers. This is
+    /// the rule `QueryTreeBuilder` applies, so a body that it takes for a recursive element is taken
+    /// for one here too. Null when the body is a single `SELECT`, which is an ordinary CTE within a
+    /// `WITH RECURSIVE` list. The first branch is the seed, the ones after it are the recursive members.
+    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery);
+
 private:
     static void visit(ASTPtr & ast, const Data & data);
     static void visit(ASTSelectQuery & ast, const Data & data);
     static void visit(ASTSelectWithUnionQuery & ast, const Data & data);
+    static void visitRecursiveWithElement(ASTWithElement & with_element, const Data & data);
     static void visit(ASTTableExpression & table, const Data & data);
     static void visit(ASTFunction & func, const Data & data);
 };
