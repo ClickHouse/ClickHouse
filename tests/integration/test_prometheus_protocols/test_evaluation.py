@@ -1047,6 +1047,13 @@ def test_function_over_time():
         ],
     )
 
+    do_query_test(
+        "changes(vector(NaN)[80:10])",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "0"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 0]],
+    )
+
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
     do_query_test(
         "changes(resets[45s])[120s:15s]",
@@ -1848,7 +1855,7 @@ def test_date_time_functions():
 # `vector(scalar(vector(time())))` below.)
 def test_date_time_functions_zero_arg_with_float32_scalar():
     node.query(
-        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+        "CREATE TABLE prometheus_f32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
 
     try:
