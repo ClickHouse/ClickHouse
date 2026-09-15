@@ -1,0 +1,3 @@
+--- non-constant parameters are rejected
+--- wide unsigned integer parameters are rejected
+--- malformed UTF-8 is rejected
