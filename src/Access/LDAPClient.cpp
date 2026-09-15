@@ -65,7 +65,9 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, port);
 
     ::updateHash(hash, static_cast<int>(enable_tls));
-    ::updateHash(hash, static_cast<int>(tls_minimum_protocol_version));
+    ::updateHash(hash, tls_minimum_protocol_version.has_value());
+    if (tls_minimum_protocol_version)
+        ::updateHash(hash, static_cast<int>(*tls_minimum_protocol_version));
     ::updateHash(hash, tls_maximum_protocol_version.has_value());
     if (tls_maximum_protocol_version)
         ::updateHash(hash, static_cast<int>(*tls_maximum_protocol_version));
@@ -351,15 +353,27 @@ bool LDAPClient::openConnection(BindMode mode)
         handleError(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
     }
 
+    /// Like every other TLS option here, the protocol bounds have to be set before `LDAP_OPT_X_TLS_NEWCTX` below:
+    /// the new TLS context is built from the options accumulated on the handle at that moment.
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_MIN
     {
-        int value = toLDAPTLSProtocolVersion(params.tls_minimum_protocol_version);
+        int value = toLDAPTLSProtocolVersion(params.tls_minimum_protocol_version.value_or(Params::default_tls_minimum_protocol_version));
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
     }
+#else
+    if (params.tls_minimum_protocol_version)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_minimum_protocol_version' is not supported by this build of libldap");
+
+    /// Unlike the timeouts above, the default minimum is a security bound rather than a tuning knob, so an operator who
+    /// relies on the documented `tls1.2` floor has to learn that this build leaves the protocol version to the library.
+    /// There is nothing to enforce when TLS is off.
+    if (params.enable_tls != Params::TLSEnable::NO)
+        LOG_WARNING(getLogger("LDAPClient"),
+            "This build of libldap lacks LDAP_OPT_X_TLS_PROTOCOL_MIN: the default minimum TLS protocol version (tls1.2) "
+            "cannot be enforced for LDAP server {}:{}, the library negotiates any version it supports",
+            params.host, params.port);
 #endif
 
-    /// Like every other TLS option here, this has to be set before `LDAP_OPT_X_TLS_NEWCTX` below:
-    /// the new TLS context is built from the options accumulated on the handle at that moment.
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_MAX
     if (params.tls_maximum_protocol_version)
     {

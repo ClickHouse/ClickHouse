@@ -236,8 +236,10 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     {
         params.tls_maximum_protocol_version = parseLDAPTLSProtocolVersion(config, ldap_server_config, "tls_maximum_protocol_version");
 
-        /// The enumerators are ordered by protocol age, see `TLSProtocolVersion`.
-        if (*params.tls_maximum_protocol_version < params.tls_minimum_protocol_version)
+        /// The enumerators are ordered by protocol age, see `TLSProtocolVersion`. The default minimum bounds the maximum
+        /// as well; comparing against the unset `std::optional` directly would rank it below every version and skip the check.
+        if (*params.tls_maximum_protocol_version
+            < params.tls_minimum_protocol_version.value_or(LDAPClient::Params::default_tls_minimum_protocol_version))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Bad value for 'tls_maximum_protocol_version' entry, "
                             "must not be lower than 'tls_minimum_protocol_version'");
