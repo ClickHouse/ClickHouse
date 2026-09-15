@@ -26,7 +26,7 @@ sqlite('db_path', 'table_name')
 
 ## Passing a query instead of a table name {#passing-a-query}
 
-Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. A result column that is a direct column of a SQLite table gets the type of its declared SQLite type (see the [type mapping](/reference/engines/database-engines/sqlite#data_types-support)). A result column without a declared type - an expression, a literal, an aggregate - is typed from the storage class of its value in the first row of the query result: an `INTEGER` value gives `Int64`, a `REAL` value gives `Float64`, and any other value (`TEXT`, `BLOB`, `NULL`), as well as an empty result, gives `String`. Inferring such a column starts the query in SQLite. Every inferred column is `Nullable`. The query can be written either as a subquery, or wrapped into the `query` function:
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));

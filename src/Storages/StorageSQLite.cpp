@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
@@ -698,7 +699,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 
 ## Passing a query instead of a table name {#passing-a-query}
 
-Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. A result column that is a direct column of a SQLite table gets the type of its declared SQLite type (see the [type mapping](/reference/engines/database-engines/sqlite#data_types-support)). A result column without a declared type - an expression, a literal, an aggregate - is typed from the storage class of its value in the first row of the query result: an `INTEGER` value gives `Int64`, a `REAL` value gives `Float64`, and any other value (`TEXT`, `BLOB`, `NULL`), as well as an empty result, gives `String`. Inferring such a column starts the query in SQLite. Every inferred column is `Nullable`. The query can be written either as a subquery, or wrapped into the `query` function:
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
@@ -772,11 +773,32 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 namespace
 {
+/// The ClickHouse type for a result column that has no declared SQLite type, derived from the storage class
+/// of its value in the first result row. `TEXT`, `BLOB` and `NULL` are read as `String`, like a declared
+/// type without a numeric affinity.
+DataTypePtr typeFromStorageClass(int storage_class)
+{
+    switch (storage_class)
+    {
+        case SQLITE_INTEGER:
+            return std::make_shared<DataTypeInt64>();
+        case SQLITE_FLOAT:
+            return std::make_shared<DataTypeFloat64>();
+        default:
+            return std::make_shared<DataTypeString>();
+    }
+}
+
 ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & query)
 {
     /// Wrap the query into a subquery (mirroring how the data is read) and prepare it to read the result
-    /// columns metadata without executing it. SQLite is dynamically typed, so column types are inferred from
-    /// the declared types of the underlying table columns; expression columns fall back to Nullable(String).
+    /// columns metadata. SQLite is dynamically typed: `sqlite3_column_decltype` reports the declared type of
+    /// a result column that is a direct column of a table (`SELECT id FROM t`), and nothing for any other
+    /// result column - an expression (`id + 1`, `CAST(id AS REAL)`), a literal (`1`), an aggregate
+    /// (`count(*)`). Such a column is typed from the storage class of its value in the first result row,
+    /// which is the only type information SQLite has for it. That requires stepping the statement once, i.e.
+    /// starting the query in SQLite. When the query returns no rows, or the value is `NULL`, the column is
+    /// `String`, like every declared type without a numeric affinity.
     const auto wrapped = "SELECT * FROM (" + query + ") AS __subquery";
 
     /// Preparing loads the database schema and needs a shared lock; retry instead of failing while a
@@ -788,13 +810,40 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     if (column_count == 0)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "SQLite query returned no columns: {}", query);
 
+    std::vector<const char *> declared_types(column_count);
+    bool has_undeclared_column = false;
+    for (int i = 0; i < column_count; ++i)
+    {
+        declared_types[i] = sqlite3_column_decltype(compiled_stmt, i);
+        has_undeclared_column |= declared_types[i] == nullptr;
+    }
+
+    /// Fetch the first row only when a column needs it, so that a query over declared table columns is
+    /// still described without being executed.
+    bool has_first_row = false;
+    if (has_undeclared_column)
+    {
+        int status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
+        if (status != SQLITE_ROW && status != SQLITE_DONE)
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Cannot fetch the first row of the SQLite query to infer its structure. Error status: {}. Message: {}",
+                            status, sqlite3_errmsg(sqlite_db));
+        has_first_row = status == SQLITE_ROW;
+    }
+
     NamesAndTypesList columns;
     for (int i = 0; i < column_count; ++i)
     {
         const char * name = sqlite3_column_name(compiled_stmt, i);
-        const char * decl_type = sqlite3_column_decltype(compiled_stmt, i);
 
-        DataTypePtr type = decl_type ? convertSQLiteDataType(decl_type) : std::make_shared<DataTypeString>();
+        DataTypePtr type;
+        if (declared_types[i])
+            type = convertSQLiteDataType(declared_types[i]);
+        else if (has_first_row)
+            type = typeFromStorageClass(sqlite3_column_type(compiled_stmt, i));
+        else
+            type = std::make_shared<DataTypeString>();
+
         columns.emplace_back(String(name), std::make_shared<DataTypeNullable>(type));
     }
 
