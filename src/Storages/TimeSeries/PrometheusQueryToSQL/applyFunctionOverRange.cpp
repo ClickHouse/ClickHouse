@@ -165,11 +165,21 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// predict_linear
             /// quantile_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
             /// present_over_time
             /// absent_over_time
             /// mad_over_time
