@@ -44,23 +44,61 @@ def read_varuint(sock):
     raise RuntimeError('invalid Hello VarUInt')
 
 
-def old_hello(sock):
-    # The new revision adds no fields. Lower both Hello revisions to the immediately preceding
-    # revision to exercise both sending directions' compatibility gates with the current binary.
-    packet, data = read_varuint(sock)
-    assert packet == 0
+def read_string(sock):
     length, encoded = read_varuint(sock)
-    data += encoded + read_exact(sock, length)
-    for _ in range(2):
-        _, encoded = read_varuint(sock)
-        data += encoded
+    return encoded + read_exact(sock, length)
+
+
+def old_revision(sock):
     revision, _ = read_varuint(sock)
     assert revision >= 54493
     revision = 54492
+    data = bytearray()
     while revision >= 128:
-        data += bytes([(revision & 127) | 128])
+        data.append((revision & 127) | 128)
         revision >>= 7
-    return data + bytes([revision])
+    data.append(revision)
+    return bytes(data)
+
+
+def old_hello(sock):
+    # Revision 54493 adds no fields. Lower both `Hello` revisions to exercise the compatibility gates.
+    packet, data = read_varuint(sock)
+    assert packet == 0
+    data += read_string(sock)
+    for _ in range(2):
+        _, encoded = read_varuint(sock)
+        data += encoded
+    return data + old_revision(sock)
+
+
+def old_client_prefix(sock):
+    # Finish the client's `Hello` before waiting for its post-handshake addendum.
+    yield b''.join(read_string(sock) for _ in range(3))  # Database, user, password.
+    data = b''.join(read_string(sock) for _ in range(3))  # Quota key and chunked capabilities.
+    _, encoded = read_varuint(sock)  # Parallel replicas protocol version.
+    yield data + encoded
+
+    packet, data = read_varuint(sock)
+    while packet == 4:  # Forward any `Ping` before the single legacy query.
+        yield data
+        packet, data = read_varuint(sock)
+    assert packet == 1  # `Query`.
+    data += read_string(sock)  # Query ID.
+    query_kind = read_exact(sock, 1)
+    assert query_kind == b'\x01'  # Initial query.
+    data += query_kind
+    data += b''.join(read_string(sock) for _ in range(3))  # Initial user, query ID, address.
+    data += read_exact(sock, 8)  # Initial query start time.
+    interface = read_exact(sock, 1)
+    assert interface == b'\x01'  # TCP.
+    data += interface
+    data += b''.join(read_string(sock) for _ in range(3))  # OS user, hostname, client name.
+    for _ in range(2):  # Client major and minor versions.
+        _, encoded = read_varuint(sock)
+        data += encoded
+    # Keep `ClientInfo` consistent with `Hello` when `validate_tcp_client_information` is enabled.
+    yield data + old_revision(sock)
 
 
 def capture(query, extra=(), legacy=False):
@@ -73,19 +111,23 @@ def capture(query, extra=(), legacy=False):
             with listener.accept()[0] as client, socket.create_connection(backend) as server:
                 client.settimeout(60)
                 server.settimeout(60)
-                def pump(source, target):
+                def pump(source, target, rewrite_client_info=False):
                     result = bytearray()
                     if legacy:
                         hello = old_hello(source)
                         target.sendall(hello)
                         result.extend(hello)
+                        if rewrite_client_info:
+                            for prefix in old_client_prefix(source):
+                                target.sendall(prefix)
+                                result.extend(prefix)
                     while data := source.recv(65536):
                         result.extend(data)
                         target.sendall(data)
                     target.shutdown(socket.SHUT_WR)
                     return bytes(result)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                    sent = pool.submit(pump, client, server)
+                    sent = pool.submit(pump, client, server, True)
                     received = pool.submit(pump, server, client)
                     return sent.result(), received.result()
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
