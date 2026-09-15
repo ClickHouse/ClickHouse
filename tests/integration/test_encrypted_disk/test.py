@@ -390,6 +390,67 @@ def test_log_family():
     assert node.query(select_query) == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
 
+def test_append_to_file_without_payload():
+    # An interrupted first write leaves behind a file that holds the 64 byte encryption header and no
+    # payload: the header is written inline right before the first ciphertext byte, and the file is
+    # only fsynced at the end. Appending to such a file used to write a second header after the first
+    # one, so the payload that followed was deciphered with the initialization vector of the leftover
+    # header - garbage that the compression layer reports as `UNKNOWN_CODEC`, from an `INSERT` that
+    # returned success. A file whose length falls inside the header has neither a header to continue
+    # nor a payload to keep, and is refused instead.
+    def backing_file(table):
+        table_uuid = node.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
+        ).strip()
+        return f"/test_encrypted_disk/encrypted/store/{table_uuid[:3]}/{table_uuid}/id.bin"
+
+    def truncate_to(path, size):
+        node.exec_in_container(["bash", "-c", f"truncate -s {size} {path}"], privileged=True, user="root")
+
+    node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
+    node.query(
+        "CREATE TABLE encrypted_test (id Int64) ENGINE = Log SETTINGS storage_policy = 'encrypted_policy'"
+    )
+    node.query("INSERT INTO encrypted_test SELECT number FROM numbers(50)")
+    assert node.query("SELECT count() FROM encrypted_test") == "50\n"
+
+    # The same table on a plain disk, put through the same crash, is the answer to compare against:
+    # whatever the `Log` engine makes of a data file that lost its contents, an encrypted disk has to
+    # make the same thing of it.
+    node.query("DROP TABLE IF EXISTS plain_test SYNC")
+    node.query("CREATE TABLE plain_test (id Int64) ENGINE = Log SETTINGS storage_policy = 'local_policy'")
+    node.query("INSERT INTO plain_test SELECT number FROM numbers(50)")
+
+    plain_path = node.query(
+        "SELECT data_paths[1] FROM system.tables WHERE database = 'default' AND name = 'plain_test'"
+    ).strip()
+    truncate_to(f"{plain_path}id.bin", 0)
+    truncate_to(backing_file("encrypted_test"), 64)
+
+    assert node.query("SELECT count() FROM encrypted_test") == node.query("SELECT count() FROM plain_test")
+
+    node.query("INSERT INTO encrypted_test SELECT number FROM numbers(30)")
+    node.query("INSERT INTO plain_test SELECT number FROM numbers(30)")
+
+    # No `UNKNOWN_CODEC`: the file still holds one header, and the rows read back.
+    assert node.query("SELECT count(), sum(id) FROM encrypted_test") == node.query(
+        "SELECT count(), sum(id) FROM plain_test"
+    )
+    second_header = node.exec_in_container(
+        ["bash", "-c", f"dd if={backing_file('encrypted_test')} bs=1 skip=64 count=3 2>/dev/null"],
+        privileged=True,
+        user="root",
+    )
+    assert second_header != "ENC"
+
+    # A file that ends inside its own header is refused, and says so.
+    truncate_to(backing_file("encrypted_test"), 30)
+    with pytest.raises(QueryRuntimeException, match="less than the 64 bytes of an encryption header"):
+        node.query("INSERT INTO encrypted_test SELECT number FROM numbers(5)")
+
+    node.query("DROP TABLE plain_test SYNC")
+
+
 @pytest.mark.parametrize(
     "old_version",
     ["version_1le", "version_1be", "version_2"],

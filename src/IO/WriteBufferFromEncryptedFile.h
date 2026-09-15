@@ -18,6 +18,8 @@ class WriteBufferFromEncryptedFile : public WriteBufferDecorator<WriteBufferFrom
 {
 public:
     /// `old_file_size` should be set to non-zero if we're going to append an existing file.
+    /// `header_already_written` says that the file holds the header of that append already, which is
+    /// the case for a file that was created and then left without any payload.
     WriteBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
@@ -25,7 +27,8 @@ public:
         const FileEncryption::Header & header_,
         size_t old_file_size,
         bool use_adaptive_buffer_size_,
-        size_t adaptive_buffer_initial_size);
+        size_t adaptive_buffer_initial_size,
+        bool header_already_written = false);
 
     ~WriteBufferFromEncryptedFile() override;
 
