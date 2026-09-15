@@ -35,12 +35,12 @@ WriteBuffer::~WriteBuffer()
     }
 }
 
-void WriteBuffer::throwWriteToFinalizedBuffer()
+NO_INLINE void WriteBuffer::throwWriteToFinalizedBuffer()
 {
     throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 }
 
-void WriteBuffer::throwWriteToCanceledBuffer(int code)
+NO_INLINE void WriteBuffer::throwWriteToCanceledBuffer(int code)
 {
     throw Exception{code, "Cannot write to canceled buffer"};
 }

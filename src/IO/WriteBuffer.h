@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <IO/BufferBase.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -151,9 +152,10 @@ private:
     }
 
     /// Out of line, like `ReadBuffer::throwReadAfterEOF`: building the exception inside `write` would
-    /// give it stack locals, and a stack canary with them, on every byte written.
-    [[noreturn]] static void throwWriteToFinalizedBuffer();
-    [[noreturn]] static void throwWriteToCanceledBuffer(int code);
+    /// give it stack locals, and a stack canary with them, on every byte written. `NO_INLINE` because
+    /// they are defined in the same translation unit as `write` and the optimizer would inline them back.
+    [[noreturn]] NO_INLINE static void throwWriteToFinalizedBuffer();
+    [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
 
     int exception_level = std::uncaught_exceptions();
 
