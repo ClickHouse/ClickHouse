@@ -10,6 +10,10 @@ SET use_statistics_for_part_pruning = 0; -- Prevent auto_statistics_types from p
 set enable_analyzer = 1;
 set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 set optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+-- With `use_skip_indexes_on_data_read` on (the default) the reader-side cache write is suppressed.
+-- The stateless test profile sets it to 0 while a plain local server leaves it at 1, so without pinning
+-- it the entries below depend on where the test runs.
+set use_skip_indexes_on_data_read = 0;
 
 drop table if exists t;
 
@@ -26,6 +30,11 @@ system clear query condition cache;
 
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
 
+-- One entry per part per key space: the reader records row-level exclusions under the plain
+-- condition hash, index analysis records its own under a hash salted with the skip-index profile
+-- (issue #108519). Two keys for one predicate is not a collision - one records what evaluating
+-- the predicate on rows ruled out, the other what index analysis of the same predicate ruled out.
+-- The goal of the test is to assert that different parts do not share a cache entry.
 select part_name from system.query_condition_cache order by part_name;
 
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
