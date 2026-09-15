@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-shared-merge-tree
+-- Tag no-parallel: uses a process-global failpoint
 -- no-parallel: uses a global failpoint in ReplicatedMergeTreeSink::commitPart.
 -- no-shared-merge-tree: the failpoint is specific to ReplicatedMergeTreeSink.
 

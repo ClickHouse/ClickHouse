@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database
+# Tag no-parallel: uses a process-global failpoint
 # no-fasttest: relies on a failpoint (libfiu).
 # no-parallel, no-ordinary-database, no-replicated-database: uses an explicit fixed UUID and the
 #   global background drop queue, neither of which may be shared with other tests.

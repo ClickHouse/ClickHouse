@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 -- Case 1: RENAME DATABASE
 
@@ -24,8 +23,11 @@ SET param_new_tbl_name = 02661_t1;
 CREATE TABLE {new_db_name:Identifier}.{old_tbl_name:Identifier} (a UInt64) ENGINE = MergeTree ORDER BY tuple();
 RENAME TABLE {new_db_name:Identifier}.{old_tbl_name:Identifier} TO {new_db_name:Identifier}.{new_tbl_name:Identifier};
 
--- NOTE: no 'database = currentDatabase()' on purpose
-SELECT name FROM system.tables WHERE name = {new_tbl_name:String};
+-- NOTE: no 'database = currentDatabase()' on purpose (the table lives in the renamed
+-- database, not the current one). The database filter is still needed: without it the
+-- scan iterates every database, including concurrent tests' remote databases with
+-- unreachable hosts, whose connection errors would fail this query.
+SELECT name FROM system.tables WHERE database = {new_db_name:String} AND name = {new_tbl_name:String};
 
 -- Case 3: RENAME DICTIONARY
 
@@ -38,7 +40,7 @@ SET param_new_dict_name = 02661_d1;
 CREATE DICTIONARY {new_db_name:Identifier}.{old_dict_name:Identifier} (id UInt64, val UInt8) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
 RENAME DICTIONARY {new_db_name:Identifier}.{old_dict_name:Identifier} TO {new_db_name:Identifier}.{new_dict_name:Identifier};
 
-SELECT name FROM system.dictionaries WHERE name = {new_dict_name:String};
+SELECT name FROM system.dictionaries WHERE database = {new_db_name:String} AND name = {new_dict_name:String};
 
 -- Case 4: EXCHANGE TABLES
 

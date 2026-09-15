@@ -1,4 +1,5 @@
 -- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- Tag no-parallel: uses a process-global failpoint
 
 # no-shared-merge-tree: quorum logic is specifit to replicated tables
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database
+# Tags: no-fasttest, no-ordinary-database, no-replicated-database
 
 # Race between DROP vs UNDROP
 

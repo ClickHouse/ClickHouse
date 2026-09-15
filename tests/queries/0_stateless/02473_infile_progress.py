@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Tags: no-replicated-database, no-parallel, no-fasttest
+# Tag no-parallel: depends on process-global state or resource-sensitive race timing
 
 import os
 import sys

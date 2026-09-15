@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
 DROP FUNCTION IF EXISTS test_host_api;
-DROP FUNCTION IF EXISTS test_func;
+DROP FUNCTION IF EXISTS test_03208_func;
 DROP FUNCTION IF EXISTS test_random;
 DROP FUNCTION IF EXISTS test_log;
 DROP FUNCTION IF EXISTS export_faulty_malloc;
@@ -64,7 +64,7 @@ cat ${CUR_DIR}/wasm/import_unknown.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT I
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
-CREATE FUNCTION test_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_unknown' ARGUMENTS (UInt32) RETURNS UInt32; -- { serverError RESOURCE_NOT_FOUND }
+CREATE FUNCTION test_03208_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_unknown' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32; -- { serverError RESOURCE_NOT_FOUND }
 DELETE FROM system.webassembly_modules WHERE name = 'import_unknown';
 
 EOF
@@ -76,9 +76,9 @@ cat ${CUR_DIR}/wasm/import_non_env.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT I
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
-CREATE FUNCTION test_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_non_env' ARGUMENTS (UInt32) RETURNS UInt32;
-SELECT test_func(1 :: UInt32); -- { serverError WASM_ERROR }
-DROP FUNCTION test_func;
+CREATE FUNCTION test_03208_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_non_env' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32;
+SELECT test_03208_func(1 :: UInt32); -- { serverError WASM_ERROR }
+DROP FUNCTION test_03208_func;
 DELETE FROM system.webassembly_modules WHERE name = 'import_non_env';
 
 EOF
@@ -87,7 +87,7 @@ cat ${CUR_DIR}/wasm/import_incorrect.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
-CREATE FUNCTION test_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_incorrect' ARGUMENTS (UInt32) RETURNS UInt32;  -- { serverError BAD_ARGUMENTS }
+CREATE FUNCTION test_03208_func LANGUAGE WASM ABI ROW_DIRECT FROM 'import_incorrect' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32;  -- { serverError BAD_ARGUMENTS }
 DELETE FROM system.webassembly_modules WHERE name = 'import_incorrect';
 
 EOF
@@ -113,7 +113,7 @@ EOF
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
 DROP FUNCTION IF EXISTS test_host_api;
-DROP FUNCTION IF EXISTS test_func;
+DROP FUNCTION IF EXISTS test_03208_func;
 DROP FUNCTION IF EXISTS test_random;
 DROP FUNCTION IF EXISTS test_log;
 DROP FUNCTION IF EXISTS export_faulty_malloc;

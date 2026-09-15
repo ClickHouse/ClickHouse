@@ -108,3 +108,5 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query "DROP TABLE test_alias;"
 # Verify target table still exists
 echo "Test target table still exists"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_table;"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER ${username};"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 # Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
 # This test exercises `INSERT INTO test_02270 FORMAT Values (24)` (inline `VALUES (24)` in the
 # query string) combined with data on stdin (`echo "(42)"`), and the second case combines

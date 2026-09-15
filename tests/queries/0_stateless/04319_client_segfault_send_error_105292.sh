@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-parallel, no-fasttest
+# Tag no-parallel: relies on precise TCP send-buffer timing (an RST forced after a fixed
+# byte cutoff) to hit the client's mid-write disconnect path; concurrent CPU/network load
+# on the host can change buffering enough that the cutoff is missed and the
+# `CUTOFF_EXCEEDED` assertion fails to reproduce the regression.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105292.
 # Without the fix in `ClientBase::processOrdinaryQuery`, this would SIGSEGV at

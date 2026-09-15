@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas, no-parallel
--- Tag no-parallel: messes with the server-level query condition cache
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 -- Regression test for #104781: a `SELECT ... PREWHERE pk_prefix = X WHERE non_pk IN [...]`
 -- against a column with a `bloom_filter` skip index poisons the query condition cache for
@@ -54,7 +54,7 @@ SELECT concat('id-fresh-', toString(number)), 'P1',
        toDateTime64('2026-05-15 00:00:00', 6) + INTERVAL number SECOND
 FROM numbers(2);
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'truth', count() FROM t_104781 WHERE project_id = 'P1'
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1,
@@ -83,7 +83,7 @@ SETTINGS use_query_condition_cache = 0, optimize_use_implicit_projections = 0;
 
 -- Sanity: the `use_skip_indexes_on_data_read = 0` workaround (per @nihalzp's bisect)
 -- avoids the bug too.
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT id FROM t_104781
 PREWHERE project_id = 'P1'
 WHERE id IN ['anything-1', 'anything-2']
@@ -100,7 +100,7 @@ SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1,
 DROP TABLE IF EXISTS t_104781_sanity;
 CREATE TABLE t_104781_sanity (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_104781_sanity SELECT number, number FROM numbers(100000);
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT 'sanity_prewhere_1', count() FROM t_104781_sanity PREWHERE x > 50000
 SETTINGS use_query_condition_cache = 1, optimize_use_implicit_projections = 0;
 SELECT 'sanity_prewhere_2', count() FROM t_104781_sanity PREWHERE x > 50000

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # no-parallel: the test relies on a pending async insert remaining in the queue;
 # concurrent `SYSTEM FLUSH ASYNC INSERT QUEUE` from other tests can drain it.
 

@@ -1,4 +1,5 @@
--- Tags: use-xray
+-- Tags: use-xray, no-parallel:xray
+-- Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 -- https://github.com/ClickHouse/ClickHouse/pull/103854#discussion_r3235932168
 

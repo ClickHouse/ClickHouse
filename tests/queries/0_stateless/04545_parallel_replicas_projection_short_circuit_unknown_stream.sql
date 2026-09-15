@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- - no-parallel - due to usage of fail points
+-- Tag no-parallel: uses failpoints to force divergent parallel-replica plans.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/110518
 -- When a projection optimization consumes the whole read on the initiator's parallel-replicas local

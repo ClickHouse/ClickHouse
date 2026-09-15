@@ -1,6 +1,6 @@
 -- Tags: no-ordinary-database, no-parallel
--- no-parallel: reads the server-global ProfileEvents counters ASTFuzzerSkippedBackupRestore
--- and ASTFuzzerQueries, so no other test may run fuzzed queries against the same server while
+-- Tag no-parallel: reads the server-global ProfileEvents counters `ASTFuzzerSkippedBackupRestore`
+-- and `ASTFuzzerQueries`, so no other test may run fuzzed queries against the same server while
 -- this one measures the deltas.
 
 -- The serverfuzz/stress profile sets ast_fuzzer_runs server-wide, which would make every

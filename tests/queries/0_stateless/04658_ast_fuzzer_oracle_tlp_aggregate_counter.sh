@@ -10,7 +10,7 @@
 # (drop the WHERE, the aggregate, or the GROUP BY), silently skipping the
 # aggregate-oracle path while the test still passes. Here we retry until the
 # global counter increases, so the test fails when the path can never fire.
-# no-parallel: required because the proof event is server-global.
+# Tag no-parallel: required because the proof event is server-global.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

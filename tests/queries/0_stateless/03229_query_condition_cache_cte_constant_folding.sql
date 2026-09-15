@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 -- Test for query condition cache correctness with CTE constant folding.
 -- When constants are folded from CTE expressions, different constant values must produce

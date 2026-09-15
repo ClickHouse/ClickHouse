@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: uses a process-global failpoint
 
 # Tests for SYSTEM WAIT FAILPOINT ... PAUSE:
 #

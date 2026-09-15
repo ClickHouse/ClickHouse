@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-parallel
+# Tag no-parallel: issues an unscoped `SYSTEM CLEAR FILESYSTEM CACHE` and asserts entries in the
+# process-wide `system.filesystem_cache_log` table; a concurrent test's cache activity pollutes
+# both, so the `filesystem-cache` group is not enough - it must run fully sequentially.
 
 # set -x
 

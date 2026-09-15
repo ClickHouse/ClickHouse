@@ -1,5 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache and global udf factory
 
 -- Tests the preprocessor argument in the text indexes
 

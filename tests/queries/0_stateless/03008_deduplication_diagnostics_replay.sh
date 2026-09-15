@@ -36,9 +36,8 @@ norm() {
 #
 # This shape must DIFFER from the generator's argparse defaults, otherwise a rerun that dropped
 # "${CASE_ARGS[@]}" would still produce a byte-identical payload and the check would be vacuous.
-# Measured: against the defaults it moves SET max_insert_threads 1 -> 10 and every destination
-# guard constant (26 statements for phase first, 30 for second). Do not "simplify" it back to
-# the defaults.
+# Against the defaults it moves SET max_insert_threads 1 -> 10 and the consolidated query's
+# destination guard constants. Do not "simplify" it back to the defaults.
 REPLAY_ARGS=(--insert-method InsertSelect --table-engine MergeTree --use-insert-token False
       --single-thread False --deduplicate-src-table False --deduplicate-dst-table False
       --insert-unique-blocks False --get-logs false)

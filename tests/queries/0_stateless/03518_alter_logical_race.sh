@@ -96,7 +96,7 @@ SQL
 # budget to land its first ALTER cycle finish it instead of being failed by the progress guard,
 # while INSERTs keep running concurrently the whole time so the race is still genuinely
 # exercised. `HARD_DEADLINE` is a backstop so a truly stuck run still terminates well within the
-# 600s per-test budget - and is then correctly reported as NO ALTER/INSERT PROGRESS.
+# 300s per-test limit - and is then correctly reported as NO ALTER/INSERT PROGRESS.
 function within_budget()
 {
     if [ "$SECONDS" -ge "$HARD_DEADLINE" ]
@@ -125,7 +125,7 @@ function within_budget()
 # dependent step against a column state the previous step never actually established.
 #
 # `timeout 120s` caps each attempt so a single hung ALTER/INSERT on a slow shard cannot
-# keep the loop alive until the 600s per-test budget is hit. The cap must stay generous:
+# keep the loop alive until the 300s per-test limit is hit. The cap must stay generous:
 # on a debug build with s3 storage under parallel load a single INSERT or ALTER
 # occasionally takes more than 30 seconds without being hung.
 function run_with_retry()
@@ -244,7 +244,7 @@ function thread_insert()
 # which happens on the slowest sanitizer + s3 storage + parallel builds, where one
 # ADD -> MODIFY -> DROP cycle alone can exceed the soft budget - the workers keep running past
 # it, with INSERTs and ALTERs still concurrent, until the first progress lands or the hard cap
-# is reached (see `within_budget`). The hard cap stays well under the 600s per-test budget.
+# is reached (see `within_budget`). The hard cap stays well under the 300s per-test limit.
 # `$SECONDS` is the seconds-since-shell-start timeline shared by the background workers, so the
 # deadlines are computed once here and read by every worker.
 TIMEOUT=10

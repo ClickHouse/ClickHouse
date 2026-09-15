@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-msan
+-- Tags: no-fasttest, no-msan, no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
 
 drop table if exists dummy;
 CREATE TABLE dummy ( num1 Int32, num2 Enum8('foo' = 0, 'bar' = 1, 'tar' = 2) )

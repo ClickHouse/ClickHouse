@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, no-parallel
+# Tag no-parallel: asserts the process-wide `system.metrics` gauges `MarkCacheFiles` and
+# `PrimaryIndexCacheFiles`, which count cache entries across every table on the server; a single
+# named concurrency group cannot isolate this test from concurrent mutators of both caches
 # add_minmax_index_for_numeric_columns=0: Would open more files
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-parallel
-# Disable parallel since it creates 10 different threads querying and might overload the server
+# Tags: no-fasttest, long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

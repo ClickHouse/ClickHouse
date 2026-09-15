@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# Tag no-parallel: asserts an exact miss count on the process-wide mark cache, which it also clears.
+# Tag no-parallel: checks misses on the process-wide mark cache, which it also clears.
 # Test that reading the whole JSON column with ADVANCED shared data serialization
 # does not open per-bucket data/marks/substreams files that are not needed for reading.
 # When reading the whole JSON column, only Structure (per bucket) and Copy streams are used;

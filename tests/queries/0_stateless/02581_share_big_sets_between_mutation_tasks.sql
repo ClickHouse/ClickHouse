@@ -1,4 +1,6 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-fasttest
+-- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-fasttest
+-- Tag long: builds several 10-million-row sets for mutation predicates and can exceed the
+--   ordinary 300-second test budget when it runs alongside the rest of the parallel suite.
 -- no-fasttest: Slow test
 -- no sanitizers: too slow sometimes
 

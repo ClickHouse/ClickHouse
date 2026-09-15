@@ -349,6 +349,8 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: inspects database paths but writes only FIFO gates under `CLICKHOUSE_USER_FILES_UNIQUE`.
+    "01114_database_atomic.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
 }

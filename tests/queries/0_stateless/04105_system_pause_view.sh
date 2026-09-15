@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: atomic-database, memory-engine, no-parallel
+# Tag no-parallel: `SYSTEM PAUSE VIEWS` and `SYSTEM START VIEWS` affect every refreshable view on
+# the server, so a concurrent test can be paused or resumed unexpectedly.
 # The test uses `SYSTEM PAUSE VIEWS` and `SYSTEM START VIEWS` which affect all
 # refreshable views on the server, so it must not run concurrently with other
 # tests that create refreshable materialized views.
@@ -85,12 +87,12 @@ $CLICKHOUSE_CLIENT -q "
 # Test 2 (contrast): SYSTEM STOP VIEW DOES interrupt the current refresh.
 # ---------------------------------------------------------------------------
 
-# Use 10 source rows (10s of total sleep) to give a comfortable time budget for the SYSTEM STOP
-# query to reach the server while the pipeline is still executing - 5 rows turned out to be too
-# tight in slow CI builds.
+# Use 30 source rows (30s of total sleep) to give the `SYSTEM STOP VIEW` query a comfortable time
+# budget to reach the server while the pipeline is still executing. Ten rows still allowed the
+# refresh to finish before the stop request under heavy sanitizer load.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;
+    insert into src select * from numbers(30) settings max_block_size=1;
     create materialized view s refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh view s;"
@@ -118,7 +120,7 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;
+    insert into src select * from numbers(30) settings max_block_size=1;
     create materialized view ps refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh view ps;"

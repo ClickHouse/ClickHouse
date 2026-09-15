@@ -1,5 +1,7 @@
--- Tags: no-parallel, no-shared-merge-tree
--- no-parallel: creates own database
+-- Tags: no-shared-merge-tree, no-parallel, no-release
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `table_uuid` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863
@@ -27,11 +29,11 @@ SET use_query_condition_cache = 1;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
-SELECT count(*) from system.query_condition_cache; -- no entry
+SELECT count(*) from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab')); -- no entry
 
 SELECT count(*) FROM tab WHERE val = 24; -- 1 match
 
-SELECT count(*) from system.query_condition_cache; -- still no entry
+SELECT count(*) from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab')); -- still no entry
 
 DROP TABLE tab;
 

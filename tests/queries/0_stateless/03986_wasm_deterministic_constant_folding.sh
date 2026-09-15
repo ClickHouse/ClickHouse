@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 # Test that WASM UDFs declared DETERMINISTIC are constant-folded when called
 # with constant arguments, while non-deterministic UDFs are not.
 

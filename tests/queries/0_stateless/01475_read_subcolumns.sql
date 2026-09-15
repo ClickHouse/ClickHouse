@@ -1,4 +1,5 @@
 -- Tags: no-object-storage, no-random-settings, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 SET use_uncompressed_cache = 0;
 

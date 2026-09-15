@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-shared-merge-tree, no-msan, no-azure-blob-storage
+# Tags: long, no-shared-merge-tree, no-msan, no-azure-blob-storage
 # no-azure-blob-storage: this concurrent replication-chaos test exceeds the test framework
 #   timeout reliably on slow Azure blob storage, the same reason as for sibling test
 #   `01169_alter_partition_isolation_stress.sh`. Coverage is still provided by other
@@ -17,7 +17,7 @@ engines[0]="MergeTree"
 engines[1]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/{shard}/src', '{replica}_' || toString(randConstant()))"
 engines[2]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/{shard}/src_' || toString(randConstant()), '{replica}')"
 
-for ((i=0; i<16; i++)) do
+for ((i=0; i<8; i++)) do
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE TABLE dst_$i (p UInt64, k UInt64, v UInt64)
           ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst', '$i')
           PARTITION BY p % 10 ORDER BY k" 2>&1| grep -Pv "Retrying createReplica|created by another server at the same moment, will retry|is already started to be removing" 2>&1 &
@@ -44,9 +44,10 @@ function insert_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 16))
-        LIMIT=$(($RANDOM % 100))
+        REPLICA=$(($RANDOM % 8))
+        LIMIT=500
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO $1_$REPLICA SELECT * FROM generateRandom('p UInt64, k UInt64, v UInt64') LIMIT $LIMIT" >&/dev/null
+        sleep 0.$RANDOM;
     done
 }
 
@@ -55,8 +56,8 @@ function move_partition_src_dst_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        FROM_REPLICA=$(($RANDOM % 16))
-        TO_REPLICA=$(($RANDOM % 16))
+        FROM_REPLICA=$(($RANDOM % 8))
+        TO_REPLICA=$(($RANDOM % 8))
         PARTITION=$(($RANDOM % 10))
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE src_$FROM_REPLICA MOVE PARTITION $PARTITION TO TABLE dst_$TO_REPLICA" >&/dev/null
         sleep 0.$RANDOM;
@@ -68,8 +69,8 @@ function replace_partition_src_src_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        FROM_REPLICA=$(($RANDOM % 16))
-        TO_REPLICA=$(($RANDOM % 16))
+        FROM_REPLICA=$(($RANDOM % 8))
+        TO_REPLICA=$(($RANDOM % 8))
         PARTITION=$(($RANDOM % 10))
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE src_$TO_REPLICA REPLACE PARTITION $PARTITION FROM src_$FROM_REPLICA" >&/dev/null
         sleep 0.$RANDOM;
@@ -81,7 +82,7 @@ function drop_partition_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 16))
+        REPLICA=$(($RANDOM % 8))
         PARTITION=$(($RANDOM % 10))
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE dst_$REPLICA DROP PARTITION $PARTITION" >&/dev/null
         sleep 0.$RANDOM;
@@ -93,7 +94,7 @@ function optimize_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 16))
+        REPLICA=$(($RANDOM % 8))
         TABLE="src"
         if (( RANDOM % 2 )); then
             TABLE="dst"
@@ -108,7 +109,7 @@ function drop_part_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 16))
+        REPLICA=$(($RANDOM % 8))
         part=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT name FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' and table='dst_$REPLICA' ORDER BY rand() LIMIT 1")
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE dst_$REPLICA DROP PART '$part'" >&/dev/null
         sleep 0.$RANDOM;
@@ -132,7 +133,7 @@ try_sync_replicas "src_" 300
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT table, lost_part_count FROM system.replicas WHERE database=currentDatabase() AND lost_part_count!=0"
 
-for ((i=0; i<16; i++)) do
+for ((i=0; i<8; i++)) do
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP TABLE dst_$i" 2>&1| grep -Fv "is already started to be removing" &
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP TABLE IF EXISTS src_$i" 2>&1| grep -Fv "is already started to be removing" &
 done

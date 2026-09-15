@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 set format_json_object_each_row_column_for_object_name='name';
 set input_format_json_try_infer_numbers_from_strings=1;
 

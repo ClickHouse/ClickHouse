@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tags: atomic-database, memory-engine, no-parallel
-
-# Uses `SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_executor_published`, which is server-global
+# Tag no-parallel: uses `SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_executor_published`, which is server-global
 # and would park every other refresh on the server, so it cannot run concurrently with other tests.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

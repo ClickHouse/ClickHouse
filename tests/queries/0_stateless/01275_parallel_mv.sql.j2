@@ -1,6 +1,6 @@
 -- Tags: no-object-storage, no-parallel, no-fasttest
+-- Tag no-parallel: asserts whether the insert pipeline saturates max_threads=10; concurrent tests competing for the shared thread pool/CPU perturb whether peak_threads_usage reaches the saturation threshold
 -- no-object-storage: s3 has 20 more threads
--- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 -- avoid settings randomization by clickhouse-test
 {% set max_threads = namespace(value=10) %}

@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: runs SYSTEM DROP ENCRYPTION HEADERS CACHE, which clears a process-global cache
+-- Tag no-parallel: runs SYSTEM DROP ENCRYPTION HEADERS CACHE, which clears a process-global cache
 -- shared with other tests (also required by the style check for any test using SYSTEM DROP).
 --
 -- The encryption header cache is a global cache configured by the `encryption_header_cache_size`

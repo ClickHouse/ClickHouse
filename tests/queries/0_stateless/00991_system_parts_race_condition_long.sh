@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race
 # no-parallel because we run many concurrent mutations, which may break other tests by delaying their
 # mutations for a long time.
 

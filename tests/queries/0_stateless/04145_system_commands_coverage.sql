@@ -1,7 +1,7 @@
 -- Tags: no-parallel
--- no-parallel: SYSTEM SYNC FILE CACHE performs a host-wide sync() syscall that
--- flushes all dirty filesystem buffers; running it alongside other tests slows
--- it down unboundedly and stalls the concurrent tests, risking timeouts.
+-- Tag no-parallel: `SYSTEM SYNC FILE CACHE` performs a host-wide sync() syscall that flushes all
+-- dirty filesystem buffers, and `SYSTEM RELOAD FUNCTIONS` is process-wide; running them alongside
+-- other tests stalls the concurrent tests unboundedly and risks timeouts, so it must run alone.
 -- Coverage for uncovered branches in InterpreterSystemQuery.cpp:
 -- SYNC FILE CACHE, RELOAD FUNCTIONS.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-shared-merge-tree
+# Tags: replica, no-shared-merge-tree
 # no-shared-merge-tree: impossible to stop fetches
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

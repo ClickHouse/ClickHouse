@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# Tag no-parallel: Avoid using threads in other parallel queries.
+# Tag no-parallel: asserts exact `peak_threads_usage` counts per query; how many threads the
+#  scheduler grants a query can shift under concurrent CPU/thread-pool contention from other tests
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

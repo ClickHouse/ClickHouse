@@ -54,6 +54,7 @@ for sub in insert_several_blocks_into_table mv_generates_several_blocks several_
 done
 
 # The payload of the diagnostics, statement by statement, not just aggregate counts of it.
+# The merged generator emits one consolidated diagnostic query after the shared SET statements.
 # Enumerating individual observables (projections, FROM tables, guard constants, ...) can only
 # pin the clauses somebody thought to enumerate: a changed WHERE filter, IN list or ORDER BY
 # stayed invisible. Dumping every statement normalized is closed under that class by

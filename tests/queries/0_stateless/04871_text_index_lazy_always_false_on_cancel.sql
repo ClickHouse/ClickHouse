@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: enables a global failpoint.
+-- Tag no-parallel: enables a global failpoint.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/114603.
 -- When a query is cancelled while a read task is building the skip-index read result,
