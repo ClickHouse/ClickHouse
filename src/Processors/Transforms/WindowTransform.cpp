@@ -409,6 +409,23 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         }
     }
 
+    /// GROUP and TIES are defined in terms of the ordering peers of the current row, and peers are
+    /// decided by comparing the ORDER BY values. That comparison does not consult a collator, here or
+    /// anywhere else in this transform, so with one in the window order it would disagree with the
+    /// order the rows are actually in and take the wrong rows out of the frame. Refuse instead of
+    /// answering wrongly; the peer comparison is master's and changing it changes `rank`, `RANGE`
+    /// frames and `GROUPS` frames along with this.
+    if (window_description.frame.exclusion == WindowFrame::Exclusion::Group
+        || window_description.frame.exclusion == WindowFrame::Exclusion::Ties)
+    {
+        for (const auto & column_description : window_description.order_by)
+        {
+            if (column_description.collator)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
+        }
+    }
+
     for (const auto & workspace : workspaces)
     {
         if (workspace.window_function_impl)
@@ -2985,8 +3002,9 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     }
 
     /// The row at the offset is taken when it lies between the frame bounds, so a row that an
-    /// exclusion takes out of the frame would still be read. This holds for `lag` and `lead` too:
-    /// the full partition is only their default frame, and an explicit frame is theirs to respect.
+    /// exclusion takes out of the frame would still be read. Only `lagInFrame`/`leadInFrame` reach
+    /// this: `lag`/`lead` are refused an explicit frame by name in `resolveFunction.cpp`, so a frame
+    /// with an exclusion never gets as far as them.
     bool readsFrameRows() const override { return true; }
 };
 
@@ -3840,6 +3858,7 @@ ORDER BY date DESC
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+
 
 **Syntax**
 

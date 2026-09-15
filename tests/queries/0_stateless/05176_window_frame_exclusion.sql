@@ -97,6 +97,18 @@ SELECT nth_value(v, 1) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNB
 SELECT lagInFrame(v, 0, 42) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
 SELECT leadInFrame(v, 1) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
 
+-- `lag`/`lead` share the implementation with the `InFrame` pair, but they never reach the refusal
+-- above: an explicit frame is refused to them by name, so one carrying an exclusion cannot be
+-- written in the first place.
+SELECT lag(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM t_05176; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT lag(v) OVER (ORDER BY v) FROM t_05176);
+
+SELECT 'peers are compared without a collator, so the peer exclusions refuse a collated order';
+SELECT sum(v) OVER (ORDER BY s COLLATE 'en' RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT 'a' AS s, 1 AS v); -- { serverError NOT_IMPLEMENTED }
+SELECT sum(v) OVER (ORDER BY s COLLATE 'en' RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES) FROM (SELECT 'a' AS s, 1 AS v); -- { serverError NOT_IMPLEMENTED }
+-- CURRENT ROW takes out one row rather than a peer group, so it does not depend on the comparison.
+SELECT sum(v) OVER (ORDER BY s COLLATE 'en' ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM (SELECT 'a' AS s, 1 AS v);
+
 SELECT 'an aggregate that allocates in an arena rejects the exclusion, because the state is rebuilt per row';
 SELECT groupArray(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
 SELECT groupArray(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
