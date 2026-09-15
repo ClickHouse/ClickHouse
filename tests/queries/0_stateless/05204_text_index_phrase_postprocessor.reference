@@ -1,0 +1,13 @@
+a phrase that is present	2
+without the skip index	2
+without the direct read	2
+the postprocessor applies to the phrase too	2
+a phrase whose tokens are not adjacent	1
+a phrase that is absent	0
+a single token as a phrase	3
+hasToken is unchanged	2
+hasAllTokens still works	3
+separated by a token	1
+the same without the skip index	1
+the control	1
+no index at all	1

@@ -752,6 +752,8 @@ private:
         const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
+        /// The rewrite can also change which function is called, see the `hasPhrase` case below.
+        String rewritten_function_name = function_name;
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
         const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
@@ -834,13 +836,34 @@ private:
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (apply_postprocessor)
         {
+            /// A constant phrase is compared as a token sequence: tokenize and postprocess it here, and if
+            /// anything survives, match it against the haystack's postprocessed tokens with `hasSubstr`
+            /// below instead of rejoining both sides into strings for `hasPhrase` to re-tokenize. That
+            /// round trip assumed a space is a separator of the index tokenizer, which is not true for
+            /// e.g. `splitByString(['()'])` - the rejoined haystack came back as one token and no phrase
+            /// could match - and it also dissolved a postprocessed token that happens to be a separator
+            /// itself, making tokens adjacent that the index keeps apart.
+            std::optional<Array> phrase_tokens;
+            if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
+            {
+                const auto & phrase = needles_field.safeGet<String>();
+                VectorWithMemoryTracking<String> tokens;
+                tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
+                tokens = postprocessor->processTokens(std::move(tokens));
+                if (!tokens.empty())
+                    phrase_tokens = Array(tokens.begin(), tokens.end());
+            }
+            const bool phrase_as_token_sequence = phrase_tokens.has_value();
+
             /// Name the postprocessor's haystack input after the haystack node's actual result_name so
             /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
             /// an ALIAS/expression haystack (e.g. `ifNull(str, 'default')`), leaving a dangling input.
             const auto & haystack_name = new_children[0]->result_name;
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
+                postprocessor->getOriginalActionsDAG(
+                    haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast,
+                    /*drop_empty_tokens=*/ phrase_as_token_sequence),
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
@@ -862,7 +885,7 @@ private:
             /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
             /// elements that become adjacent separators and produce no token on re-split, reproducing the
             /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
-            if (function_name == "hasToken" || function_name == "hasPhrase")
+            if (!phrase_as_token_sequence && (function_name == "hasToken" || function_name == "hasPhrase"))
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
                 MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
@@ -871,26 +894,21 @@ private:
                 new_children[0] = &actions_dag.addFunction(concat, {new_children[0], &separator}, "");
             }
 
-            if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
+            if (phrase_as_token_sequence)
             {
-                /// The needle is a phrase: tokenize it, postprocess each token (dropping empties), and rejoin
-                /// with a space so hasPhrase re-tokenizes it into the same dense postprocessed token sequence
-                /// the index stored.
-                const auto & phrase = needles_field.safeGet<String>();
-                VectorWithMemoryTracking<String> tokens;
-                tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
-                tokens = postprocessor->processTokens(std::move(tokens));
-
-                String joined;
-                for (const auto & token : tokens)
-                {
-                    if (std::ranges::any_of(token, isTokenSeparator))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", token);
-                    if (!joined.empty())
-                        joined += ' ';
-                    joined += token;
-                }
-                needles_field = joined;
+                /// `hasSubstr` is true when the needle array occurs in the haystack array as a contiguous
+                /// run, which is what a phrase is over the index's token sequence. No re-tokenization is
+                /// involved any more, so a token containing a separator of the tokenizer is fine here.
+                needles_field = std::move(*phrase_tokens);
+                needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+                new_children.resize(2);
+                rewritten_function_name = "hasSubstr";
+            }
+            else if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
+            {
+                /// The postprocessor dropped every token of the phrase. `hasPhrase` returns 0 for an empty
+                /// needle, which matches the index condition's empty sentinel that no granule contains.
+                needles_field = String{};
             }
             else if (needles_field.getType() == Field::Types::String)
             {
@@ -930,7 +948,7 @@ private:
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
         /// Recreate a function object because we have modified the arguments.
-        FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);
+        FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(rewritten_function_name, context);
         const ActionsDAG::Node * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
 
         if (!new_function_node->result_type->equals(*function_node.result_type))
