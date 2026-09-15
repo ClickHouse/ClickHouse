@@ -74,6 +74,10 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool short_circuit_function_evaluation_for_nulls;
     extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsUInt64 webassembly_udf_max_fuel;
+    extern const SettingsUInt64 webassembly_udf_max_memory;
+    extern const SettingsUInt64 webassembly_udf_max_input_block_size;
+    extern const SettingsFloat webassembly_udf_input_split_memory_ratio;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -219,6 +223,18 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `DateTime` without a time zone in its name, so the same `s` parses to a different Unix timestamp in two
     /// sessions with an identical DAG hash.
     hash.update(settings[Setting::session_timezone].value);
+    /// A `LANGUAGE WASM` function declared `DETERMINISTIC` is admitted to the cache like any other function, and
+    /// `FunctionUserDefinedWasm` snapshots its execution budget when it is built: `webassembly_udf_max_fuel` and
+    /// `webassembly_udf_max_memory` go into the module config of its compartment pool, and each call reads
+    /// `webassembly_udf_max_input_block_size` and `webassembly_udf_input_split_memory_ratio` to decide how many
+    /// rows share one guest call. They decide between a result and a `WASM_ERROR` / `BAD_ARGUMENTS` exception
+    /// (a stricter budget runs out of fuel or memory on the same rows, an out-of-range ratio is rejected), and
+    /// none of them changes the function name or the result type, so a verdict primed under a lenient budget
+    /// must not be served to a session with a stricter one.
+    hash.update(settings[Setting::webassembly_udf_max_fuel].value);
+    hash.update(settings[Setting::webassembly_udf_max_memory].value);
+    hash.update(settings[Setting::webassembly_udf_max_input_block_size].value);
+    hash.update(settings[Setting::webassembly_udf_input_split_memory_ratio].value);
     return hash.get64();
 }
 
