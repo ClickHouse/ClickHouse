@@ -735,7 +735,7 @@ TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
     const auto preprocess = [&](const ZooKeeperRequestPtr & request)
     {
         int64_t new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         return new_zxid;
     };
 
@@ -855,7 +855,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveSeesUncommittedChildrenUntilRollback
     const auto preprocess = [&](const ZooKeeperRequestPtr & request)
     {
         int64_t new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         return new_zxid;
     };
 
@@ -926,7 +926,10 @@ TEST_P(CoordinationTest, TestRemoveRecursiveSeesUncommittedChildrenUntilRollback
 
         auto child = make_create("/p/y/c2");
         auto child_zxid = preprocess(child);
-        storage.rollbackRequest(child_zxid, /*allow_missing=*/false);
+        KeeperRequestBatch batch;
+        batch.requests.push_back(KeeperRequestForSession{.session_id = 1, .time = 0, .request = child});
+        batch.first_zxid = child_zxid;
+        storage.rollbackBatch(batch, /*allow_missing=*/false);
         --zxid;
 
         auto remove = make_remove_recursive("/p/y", 1);
