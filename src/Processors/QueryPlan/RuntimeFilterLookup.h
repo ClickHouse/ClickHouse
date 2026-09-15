@@ -298,15 +298,16 @@ private:
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
         bool index_analysis_enabled = false;
-        /// Plain [min, max] envelope, used for key types the histogram cannot bucket.
+        /// Envelope, for key types the histogram cannot bucket.
         bool has_range = false;
         Field range_min{};
         Field range_max{};
-        /// Disjoint closed intervals, sorted by left bound, at most `max_key_range_intervals`.
+        /// Disjoint closed intervals, sorted by left bound.
         std::vector<std::pair<Field, Field>> range_cover;
-        /// The keys as bits over a bucketed domain. Recording a key only sets a bit, so the
-        /// clusters it finds do not depend on the order the build side arrives in.
+        /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
         std::shared_ptr<KeyRangeHistogram> range_histogram;
+        /// Memoized `getRecordedKeyRanges`; mutable for the const getter, still mutex-guarded.
+        mutable std::optional<std::vector<Range>> recorded_key_ranges;
     };
 
     template <typename FilterImpl>
@@ -319,8 +320,7 @@ private:
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis_enabled = true;
-            /// Carry over the cover recorded by the filter this one replaces, so that pruning on the
-            /// left side survives the switch to the shared hash table.
+            /// Carry over the replaced filter's cover so left-side pruning survives the switch.
             for (const auto & range : std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges())
                 result.range_cover.emplace_back(range.left, range.right);
         }
@@ -358,13 +358,10 @@ public:
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();
     ColumnPtr getRecordedKeyValues() const;
-    /// A bounded set of disjoint closed intervals covering the recorded keys, ordered by left
-    /// bound. Empty when no cover could be computed.
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
     std::vector<Range> getRecordedKeyRanges() const;
 
-    /// How many disjoint intervals the cover may keep. Every extra interval is another OR branch for
-    /// `KeyCondition` and another mark-range trim per part, and is already more than the number of
-    /// clusters real build sides tend to have.
+    /// Intervals the cover may keep; each is another OR branch and mark-range trim per part.
     static constexpr size_t max_key_range_intervals = 8;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
@@ -376,12 +373,11 @@ private:
     const DataTypePtr filter_column_target_type;
     const bool range_supported;
     const bool range_positive;
-    /// Whether the histogram can bucket this key type. When it cannot (`DateTime64`,
-    /// `LowCardinality`) the plain envelope in `Data` is used instead.
+    /// Whether the histogram can bucket this key type; if not, the envelope is used.
     const bool range_histogram_supported;
 
-    /// Everything recorded so far as intervals: the histogram's runs plus `range_cover`.
     std::vector<std::pair<Field, Field>> effectiveRangeCover() const TSA_REQUIRES_SHARED(mutex);
+    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
 
     RuntimeFilterEvaluationState evaluation_state;
     mutable SharedMutex mutex;
