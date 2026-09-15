@@ -10,6 +10,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
+#include <absl/functional/function_ref.h>
 #include <boost/noncopyable.hpp>
 #include <map>
 #include <unordered_map>
@@ -465,6 +466,9 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
+        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
+        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -741,7 +745,7 @@ protected:
 
     /// Look up the pool by hash; on cache miss call the creator to build
     /// the object.  The creator is invoked at most once and only on miss.
-    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+    static SerializationPtr pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator);
 
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 

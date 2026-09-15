@@ -60,7 +60,10 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
