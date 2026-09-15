@@ -109,7 +109,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
         NameValueCollection params;
         Poco::Net::MessageHeader::splitParameters(request.getContentType(), media_type, params);
         encoding = media_type;
-        if (encoding == ENCODING_MULTIPART)
+        if (isMultipartFormData(request))
         {
             boundary = params["boundary"];
             readMultipart(requestBody, handler);
