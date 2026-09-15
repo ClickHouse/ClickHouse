@@ -1,0 +1,34 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>groups</name>
+            <values>
+                <value>1</value>
+                <value>16</value>
+                <value>128</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_hull_state_transfer_{groups}</drop_query>
+    <create_query>CREATE TABLE bench_hull_state_transfer_{groups} (id UInt64, p Point) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_hull_state_transfer_{groups}
+        SELECT intDiv(number, 10000), (toFloat64(number % 100), toFloat64(intDiv(number % 10000, 100)))
+        FROM numbers(10000 * {groups})
+    </fill_query>
+
+    <query>
+        SELECT sum(length(hex(s))) FROM
+            (SELECT groupConvexHullState(p) AS s FROM bench_hull_state_transfer_{groups} GROUP BY id)
+        FORMAT Null SETTINGS max_threads = 1
+    </query>
+
+    <query>
+        SELECT groupConvexHullMerge(CAST(unhex(encoded) AS AggregateFunction(groupConvexHull, Point))) FROM
+            (SELECT hex(groupConvexHullState(p)) AS encoded FROM bench_hull_state_transfer_{groups} GROUP BY id)
+        FORMAT Null SETTINGS max_threads = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_hull_state_transfer_{groups}</drop_query>
+</test>

@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionGeoHull.h>
 #include <AggregateFunctions/AggregateFunctionGeoUtils.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -58,8 +59,12 @@ struct GroupConvexHullData
     /// between compressions instead of repeatedly sorting a large prefix every 10,001 points.
     size_t size_after_compression = 0;
 
+    /// Local metadata only. A deserialized watermark does not certify that its prefix is a hull.
+    bool is_compressed = false;
+
     void finishAdd(const char * function_name)
     {
+        is_compressed = false;
         /// Compress (recompute the hull) before enforcing the budget, mirroring `merge`: many
         /// input points can collapse to a small hull, so a valid result must not be rejected
         /// based on how the points were batched across rows. If the compressed hull genuinely
@@ -88,16 +93,23 @@ struct GroupConvexHullData
         {
             points = other.points;
             size_after_compression = other.size_after_compression;
+            is_compressed = other.is_compressed;
             return;
         }
 
-        points.insert(points.end(), other.points.begin(), other.points.end());
+        /// Bound transient ingestion just as for a large input row. Do not append an entire
+        /// maximum-sized RHS before compression has a chance to remove interior points.
+        for (size_t offset = 0; offset < other.points.size();)
+        {
+            const size_t batch_size = std::min(CONVEX_HULL_INGESTION_BATCH_SIZE, other.points.size() - offset);
+            points.insert(points.end(), other.points.begin() + offset, other.points.begin() + offset + batch_size);
+            offset += batch_size;
+            is_compressed = false;
+            maybeCompress();
+        }
 
-        /// Compress (recompute the hull) before enforcing the budget. Two partial states can
-        /// each be below the cap yet share the same large hull, so the combined point count
-        /// can exceed the cap only because the hulls have not been merged yet. Computing the
-        /// canonical hull first keeps a valid result from being rejected based on the
-        /// merge-tree shape; if the merged hull genuinely exceeds the cap, reject it.
+        /// Later RHS points can make earlier hull vertices interior. Enforce the point cap
+        /// only after the complete merge, preserving the result's independence of merge shape.
         if (points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
         {
             compress();
@@ -109,8 +121,6 @@ struct GroupConvexHullData
                     points.size(),
                     MAX_POINTS_IN_CONVEX_HULL_STATE);
         }
-        else
-            maybeCompress();
     }
 
     void compress()
@@ -118,26 +128,26 @@ struct GroupConvexHullData
         if (points.size() <= 1)
         {
             size_after_compression = points.size();
+            is_compressed = true;
             return;
         }
 
-        CartesianPolygon hull;
-        boost::geometry::convex_hull(points, hull);
+        CartesianMultiPoint compressed_points;
+        computeGeoConvexHull(points, compressed_points);
 
-        CartesianMultiPoint compressed_points(hull.outer().begin(), hull.outer().end());
-
-        /// boost::geometry::convex_hull returns a closed ring (the first point is duplicated
-        /// at the end). The stored points are only an accumulator for recomputing the hull,
-        /// so the closing duplicate is redundant. Dropping it keeps the stored point count
+        /// `computeGeoConvexHull` returns a closed ring, padded for degenerate inputs. The
+        /// stored points are only an accumulator for recomputing the hull, so repeated closing
+        /// endpoints are redundant. Dropping them keeps the stored point count
         /// from exceeding the state budget by one, which would otherwise let a self-produced
         /// state at the limit serialize but fail to deserialize (INCORRECT_DATA).
-        if (compressed_points.size() >= 2 && compressed_points.front().get<0>() == compressed_points.back().get<0>()
+        while (compressed_points.size() >= 2 && compressed_points.front().get<0>() == compressed_points.back().get<0>()
             && compressed_points.front().get<1>() == compressed_points.back().get<1>())
             compressed_points.pop_back();
 
         points.swap(compressed_points);
 
         size_after_compression = points.size();
+        is_compressed = true;
     }
 
     void maybeCompress()
@@ -151,12 +161,9 @@ struct GroupConvexHullData
         if (points.empty())
             return {};
 
-        CartesianPolygon hull;
-        boost::geometry::convex_hull(points, hull);
-
-        CartesianRing result;
-        result.assign(hull.outer().begin(), hull.outer().end());
-        return result;
+        CartesianRing hull;
+        computeGeoConvexHull(points, hull);
+        return hull;
     }
 };
 
@@ -212,13 +219,29 @@ public:
         writeBinaryLittleEndian(GROUP_CONVEX_HULL_SERDE_VERSION, buf);
 
         const auto & data = AggregateFunctionGroupConvexHull::data(place);
-        writeVarUInt(data.points.size(), buf);
-        writeVarUInt(data.size_after_compression, buf);
-        for (const auto & pt : data.points)
+        auto write_points = [&](const auto & points)
         {
-            writeBinaryLittleEndian(pt.get<0>(), buf);
-            writeBinaryLittleEndian(pt.get<1>(), buf);
+            writeVarUInt(points.size(), buf);
+            writeVarUInt(points.size(), buf);
+            for (const auto & pt : points)
+            {
+                writeBinaryLittleEndian(pt.template get<0>(), buf);
+                writeBinaryLittleEndian(pt.template get<1>(), buf);
+            }
+        };
+
+        if (data.is_compressed || data.points.size() <= 1)
+        {
+            write_points(data.points);
+            return;
         }
+
+        /// Compact only the transmitted representation. Serialization must not mutate a const
+        /// state, and a small wire payload must not require frequent all-convex recompression.
+        auto hull = data.getResult();
+        while (hull.size() >= 2 && hull.front().get<0>() == hull.back().get<0>() && hull.front().get<1>() == hull.back().get<1>())
+            hull.pop_back();
+        write_points(hull);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

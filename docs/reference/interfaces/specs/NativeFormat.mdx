@@ -1079,6 +1079,8 @@ point_count × (Float64 x, Float64 y)
 
 `point_count` cannot exceed `100000000`; the watermark cannot exceed the point count. Version `2` additionally requires `point_count - compression_watermark <= 10000`. Version `3` permits adaptive compression and requires `point_count - compression_watermark <= max(10000, compression_watermark)`. These metadata constraints are checked before reading coordinates. All coordinates must be finite. The watermark describes the point count after the last compression; it does not prove that the serialized prefix is already a convex hull, so readers must not return that prefix as a trusted final result without computing or validating the hull.
 
+The current writer compacts the transmitted points to their convex hull, omits the repeated closing endpoint, and writes `compression_watermark = point_count`. It does not mutate the source aggregate state. Readers continue accepting earlier version-`3` payloads with an uncompressed suffix under the adaptive bound above. A local flag identifying a previously computed hull is not serialized; incoming coordinates must not be trusted solely because their watermark equals their count.
+
 Version-`2` readers cannot read version-`3` states. New readers accept valid version-`2` states and write them back using version `3`; applications exchanging these states must account for this direction of compatibility.
 
 #### Polygonal states {#polygonal-aggregate-states}
