@@ -119,8 +119,7 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         reject.emplace();
         reject->reason = "require the analyzer, which is not used for this mutation";
-        reject->remedy = "A lightweight `UPDATE` uses the analyzer when `enable_analyzer` is on "
-                         "and the server setting `use_analyzer_for_mutations` does not override it";
+        reject->remedy = "The server setting `use_analyzer_for_mutations` disables the analyzer for mutations";
     }
     else if (shouldRejectMaterializedCTE(getContext()) && !settings[Setting::enable_materialized_cte])
     {

@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- Test that materialized CTEs with dependencies are executed in correct order.
 -- Scalar subqueries referencing materialized CTEs must materialize them first.
 -- Before the fix, evaluateScalarSubqueryIfNeeded() executed scalar subquery

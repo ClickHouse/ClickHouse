@@ -22,7 +22,3 @@ lightweight UPDATE, materialization disabled: rejected
 lightweight UPDATE, force disabled: inlines
 3
 12
-lightweight UPDATE, old analyzer: rejected regardless of the settings
-12
-old analyzer: throws, force disabled inlines
-9

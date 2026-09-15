@@ -16,11 +16,7 @@ a CTE with ORDER BY LIMIT in FROM is not distributed per replica
 1	1
 materialization disabled: rejected, and inlined with the guard off
 1
-WITH aliases still resolve on every route with both analyzers
-1
-11
-1
-11
+WITH aliases still resolve on every route
 1
 11
 1

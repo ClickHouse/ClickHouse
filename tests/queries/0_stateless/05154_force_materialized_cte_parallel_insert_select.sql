@@ -6,7 +6,7 @@
 -- route forwards the resolved query, so both would evaluate the CTE per reference. The self-join inside one scalar
 -- subquery compares two references to a `rand64()` CTE: `1` when evaluated once, `0` otherwise. A CTE with
 -- `ORDER BY ... LIMIT` in `FROM` must not be distributed per replica. `WITH` aliases must keep resolving on every
--- route with both analyzers.
+-- route.
 
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
@@ -130,30 +130,20 @@ SELECT count() FROM dst_local_05154;
 TRUNCATE TABLE dst_local_05154;
 SET enable_materialized_cte = 1;
 
-SELECT 'WITH aliases still resolve on every route with both analyzers';
+SELECT 'WITH aliases still resolve on every route';
 -- The fast paths expand these forms in place before forwarding: a scalar alias used inside a nested subquery,
 -- and a scalar alias as the right operand of IN.
-SET enable_analyzer = 1, prefer_localhost_replica = 1;
+SET prefer_localhost_replica = 1;
 INSERT INTO dst_xd_05154 WITH 1 AS k SELECT x FROM src_dist_05154 WHERE x IN (SELECT number FROM numbers(3) WHERE number = k);
 INSERT INTO dst_xd_05154 WITH [1, 2] AS ks SELECT x + 10 FROM src_dist_05154 WHERE x IN ks;
 SELECT x FROM dst_x_05154 ORDER BY x;
 TRUNCATE TABLE dst_x_05154;
-SET enable_analyzer = 1, prefer_localhost_replica = 0;
+SET prefer_localhost_replica = 0;
 INSERT INTO dst_xd_05154 WITH 1 AS k SELECT x FROM src_dist_05154 WHERE x IN (SELECT number FROM numbers(3) WHERE number = k);
 INSERT INTO dst_xd_05154 WITH [1, 2] AS ks SELECT x + 10 FROM src_dist_05154 WHERE x IN ks;
 SELECT x FROM dst_x_05154 ORDER BY x;
 TRUNCATE TABLE dst_x_05154;
-SET enable_analyzer = 0, prefer_localhost_replica = 1;
-INSERT INTO dst_xd_05154 WITH 1 AS k SELECT x FROM src_dist_05154 WHERE x IN (SELECT number FROM numbers(3) WHERE number = k);
-INSERT INTO dst_xd_05154 WITH [1, 2] AS ks SELECT x + 10 FROM src_dist_05154 WHERE x IN ks;
-SELECT x FROM dst_x_05154 ORDER BY x;
-TRUNCATE TABLE dst_x_05154;
-SET enable_analyzer = 0, prefer_localhost_replica = 0;
-INSERT INTO dst_xd_05154 WITH 1 AS k SELECT x FROM src_dist_05154 WHERE x IN (SELECT number FROM numbers(3) WHERE number = k);
-INSERT INTO dst_xd_05154 WITH [1, 2] AS ks SELECT x + 10 FROM src_dist_05154 WHERE x IN ks;
-SELECT x FROM dst_x_05154 ORDER BY x;
-TRUNCATE TABLE dst_x_05154;
-SET enable_analyzer = 1, prefer_localhost_replica = 1;
+SET prefer_localhost_replica = 1;
 
 DROP TABLE dst_xd_05154;
 DROP TABLE dst_x_05154;

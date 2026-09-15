@@ -84,24 +84,4 @@ SELECT sum(v) FROM t_05141;
 UPDATE t_05141 SET v = (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b) WHERE id = 4;
 SELECT sum(v) FROM t_05141;
 
-SELECT 'lightweight UPDATE, old analyzer: rejected regardless of the settings';
--- Without the analyzer the mutation cannot run a CTE at all, so `MATERIALIZED` is rejected even with the guard off.
-SET enable_analyzer = 0;
-SET enable_materialized_cte = 1;
-SET force_materialized_cte = 1;
-UPDATE t_05141 SET v = 1 WHERE id IN (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT a.x FROM c AS a, c AS b); -- { serverError SUPPORT_IS_DISABLED }
-UPDATE t_05141 SET v = (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b) WHERE id = 4; -- { serverError SUPPORT_IS_DISABLED }
-SET force_materialized_cte = 0;
-UPDATE t_05141 SET v = 1 WHERE id IN (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT a.x FROM c AS a, c AS b); -- { serverError SUPPORT_IS_DISABLED }
-UPDATE t_05141 SET v = (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b) WHERE id = 4; -- { serverError SUPPORT_IS_DISABLED }
-SELECT sum(v) FROM t_05141;
-SET enable_analyzer = 1;
 DROP TABLE t_05141;
-
-SELECT 'old analyzer: throws, force disabled inlines';
-SET force_materialized_cte = 1;
-SET enable_materialized_cte = 0;
-SET enable_analyzer = 0;
-WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b; -- { serverError SUPPORT_IS_DISABLED }
-WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b SETTINGS enable_materialized_cte = 1; -- { serverError SUPPORT_IS_DISABLED }
-WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b SETTINGS force_materialized_cte = 0;
