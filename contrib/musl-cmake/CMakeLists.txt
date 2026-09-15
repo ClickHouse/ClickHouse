@@ -1666,6 +1666,11 @@ target_compile_options(musl PRIVATE
     -fno-stack-protector
     -fomit-frame-pointer
 
+    # Never instrument libc: its early-init code (__init_libc, CRT) runs before
+    # sanitizer runtimes are initialized, and sanitizers hook the public libc
+    # functions with interceptors instead (same model as with uninstrumented glibc).
+    -fno-sanitize=all
+
     # Unwind tables: required for C++ exceptions and stack traces through musl.
     -funwind-tables
     -fasynchronous-unwind-tables
@@ -1721,6 +1726,7 @@ target_compile_options(musl-crt1 PRIVATE
     -std=c99
     -ffreestanding
     -fno-stack-protector
+    -fno-sanitize=all
     -fno-builtin
 )
 add_dependencies(musl-crt1 musl-headers)
