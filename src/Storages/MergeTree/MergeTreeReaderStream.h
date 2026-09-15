@@ -84,6 +84,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;
+    std::optional<size_t> last_right_mark;
     std::optional<size_t> last_right_offset;
 
 protected:

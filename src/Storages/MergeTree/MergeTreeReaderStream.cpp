@@ -263,8 +263,13 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
+    /// Marks and the stream's column boundary are immutable. Reuse the boundary for repeated reads of the same range.
+    if (last_right_mark == right_mark)
+        return;
+
     init();
     auto right_offset = getRightOffset(right_mark);
+    last_right_mark = right_mark;
 
     if (!right_offset)
     {
