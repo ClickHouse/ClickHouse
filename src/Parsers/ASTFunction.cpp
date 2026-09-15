@@ -933,6 +933,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
+        /// The function composition operator `f | g`. `__compose` is an ordinary (if unusual)
+        /// function name a user can define a function with, so only a call the parser marked as
+        /// operator syntax is formatted back as the operator. The name must stay in sync with
+        /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
+        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
+        {
+            if (frame.need_parens)
+                ostr << '(';
+            arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+            ostr << " | ";
+            arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+            if (frame.need_parens)
+                ostr << ')';
+            written = true;
+        }
+
         if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
