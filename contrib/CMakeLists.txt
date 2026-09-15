@@ -268,8 +268,12 @@ option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_C
 # `crc32c` is a small portable library used by both `google-cloud-cpp` and the snappy framing format
 # in `SnappyWriteBuffer`/`SnappyFramedReadBuffer`, so it is always built when libraries are enabled.
 add_contrib (crc32c-cmake crc32c)
+# `nlohmann::json` is header-only and is used by both `google-cloud-cpp` and `ai-sdk-cpp`, which are
+# enabled independently of each other. It is added for everyone so that there is one copy of it in
+# the build: two copies of the same version define the same symbols with different layouts, which
+# the linker resolves silently - see `contrib/ai-sdk-cpp-cmake/CMakeLists.txt`.
+add_contrib (nlohmann-json-cmake nlohmann-json)
 if(ENABLE_GOOGLE_CLOUD_CPP)
-    add_contrib (nlohmann-json-cmake nlohmann-json)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
 else()
     message(STATUS "Not using Google Cloud Cpp")
