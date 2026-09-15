@@ -1,6 +1,12 @@
 from praktika import Workflow
 
-from ci.defs.defs import BINARIES_WITH_LONG_RETENTION, DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import (
+    BINARIES_WITH_LONG_RETENTION,
+    DOCKERS,
+    LOOM_SECRETS,
+    SECRETS,
+    ArtifactConfigs,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
@@ -21,6 +27,7 @@ workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *builds_for_release_branch,
         *[
@@ -28,6 +35,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
             if any(t in job.name for t in ("darwin",))
         ],
+        *JobConfigs.sign_macos_binary_jobs,
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
@@ -53,12 +61,14 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
+        *ArtifactConfigs.clickhouse_darwin_signed_zips,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
     ],
     dockers=DOCKERS,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -69,6 +79,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/set_parent_pr_number.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

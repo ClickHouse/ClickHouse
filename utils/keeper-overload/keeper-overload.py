@@ -26,6 +26,7 @@ XML_TEMPLATE = """
         <server_id>{server_id}</server_id>
         <log_storage_path>{data_dir}/log</log_storage_path>
         <snapshot_storage_path>{data_dir}/snapshots</snapshot_storage_path>
+        <data_storage_path>{data_dir}/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>

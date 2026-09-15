@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/clickhouse-integration
-sidebarTitle: 'تكامل ClickHouse'
-title: 'تكامل ClickHouse'
+sidebarTitle: 'المزامنة إلى ClickHouse'
+title: 'المزامنة إلى ClickHouse'
 description: 'انسخ بيانات Postgres إلى ClickHouse باستخدام إمكانات CDC المدمجة'
 keywords: ['postgres', 'تكامل clickhouse', 'CDC', 'النسخ المتماثل', 'clickpipes', 'مزامنة البيانات']
 doc_type: 'دليل'
@@ -12,14 +12,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-يأتي كل مثيل من Managed Postgres مزوّدًا بإمكانات CDC مدمجة للنسخ إلى أي من خدمات ClickHouse لديك. يتيح لك ذلك نقل بعض البيانات أو كلها من مثيل Postgres الخاص بك إلى ClickHouse، بحيث تنعكس التغييرات التي تطرأ على البيانات في Postgres على ClickHouse بشكل مستمر وبصورة شبه آنية. ويعتمد ذلك داخليًا على [ClickPipes](/ar/integrations/clickpipes/home).
+يأتي كل مثيل من ClickHouse Managed Postgres مزوّدًا بإمكانات CDC مدمجة للنسخ إلى أي من خدمات ClickHouse لديك. يتيح لك ذلك نقل بعض البيانات أو كلها من مثيل Postgres الخاص بك إلى ClickHouse، بحيث تنعكس التغييرات التي تطرأ على البيانات في Postgres على ClickHouse بشكل مستمر وبصورة شبه آنية. ويعتمد ذلك داخليًا على [ClickPipes](/ar/integrations/clickpipes/home).
 
-للوصول إلى ذلك، انقر على **تكامل ClickHouse** في الشريط الجانبي لمثيل Postgres الخاص بك.
+للوصول إلى ذلك، انقر على **المزامنة إلى ClickHouse** في الشريط الجانبي لمثيل Postgres الخاص بك.
 
 <Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="الصفحة الرئيسية لـ تكامل ClickHouse التي تعرض خيار التكامل في الشريط الجانبي" size="md" border />
 
 <Note>
-  قبل المتابعة، تأكد من أن خدمة Postgres الخاصة بك متاحة لخدمة ClickPipes. ينبغي أن يكون هذا هو الإعداد الافتراضي، ولكن إذا كنت قد قيّدت الوصول عبر IP، فقد تحتاج إلى السماح لبعض عناوين IP المصدر الواردة في [هذه](/ar/integrations/clickpipes/home#list-of-static-ips) القائمة، وذلك بحسب المنطقة التي توجد فيها **خدمة ClickHouse** الخاصة بك.
+  قبل المتابعة، تأكد من أن خدمة Postgres الخاصة بك متاحة لخدمة ClickPipes. ينبغي أن يكون هذا هو الإعداد الافتراضي، ولكن إذا كنت قد قيّدت الوصول عبر IP، فقد تحتاج إلى السماح لبعض عناوين IP المصدر الواردة في [هذه](/ar/integrations/clickpipes/networking/static-ips) القائمة، وذلك بحسب المنطقة التي توجد فيها **خدمة ClickHouse** الخاصة بك.
 </Note>
 
 انقر على **Replicate data in ClickHouse** لبدء إعداد ClickPipe الخاص بك.

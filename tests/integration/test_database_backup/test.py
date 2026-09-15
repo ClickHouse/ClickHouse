@@ -149,6 +149,65 @@ def test_database_backup_table(backup_destination):
 @pytest.mark.parametrize(
     "backup_destination",
     [
+        "Disk('backup_disk_s3_plain', 'test_database_backup')",
+    ],
+)
+def test_multiple_databases_from_same_backup(backup_destination):
+    # Written by @orloffv in https://github.com/ClickHouse/ClickHouse/pull/83220
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/83219
+    cleanup_backup_files(instance)
+
+    instance.query(
+        f"""
+        DROP DATABASE IF EXISTS test_database SYNC;
+        DROP DATABASE IF EXISTS test_database_backup_1 SYNC;
+        DROP DATABASE IF EXISTS test_database_backup_2 SYNC;
+
+        CREATE DATABASE test_database;
+
+        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+        INSERT INTO test_database.test_table VALUES (1, 'from_backup');
+
+        BACKUP DATABASE test_database TO {backup_destination};
+
+        CREATE DATABASE test_database_backup_1 ENGINE=Backup('test_database', {backup_destination});
+        CREATE DATABASE test_database_backup_2 ENGINE=Backup('test_database', {backup_destination});
+    """
+    )
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup_1.test_table")
+        == "1\tfrom_backup\n"
+    )
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup_2.test_table")
+        == "1\tfrom_backup\n"
+    )
+
+    # Both databases must still read after a restart: the storage policy name is derived
+    # again on every open, so it has to come out identical.
+    instance.restart_clickhouse()
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup_1.test_table")
+        == "1\tfrom_backup\n"
+    )
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup_2.test_table")
+        == "1\tfrom_backup\n"
+    )
+
+    instance.query("DROP DATABASE IF EXISTS test_database_backup_1 SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_database_backup_2 SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_database SYNC")
+    cleanup_backup_files(instance)
+
+
+@pytest.mark.parametrize(
+    "backup_destination",
+    [
         "File('test_database_backup_file')",
         "Disk('backup_disk_local', 'test_database_backup')",
         "Disk('backup_disk_s3_plain', 'test_database_backup')",

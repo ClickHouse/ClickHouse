@@ -194,6 +194,7 @@ TEST(TerminalMarkdownRenderer, MintlifyAdmonitionComponent)
     /// admonition components; they render like their `:::note` / `:::warning` equivalents.
     EXPECT_EQ(plainRenderer().render("<Note>\nBe careful.\n</Note>"), "NOTE:\nBe careful.\n");
     EXPECT_EQ(plainRenderer().render("<Warning>\nDo not do this.\n</Warning>"), "WARNING:\nDo not do this.\n");
+    EXPECT_EQ(plainRenderer().render("<Info title=\"Serialization\">\nRow binary format.\n</Info>"), "Serialization:\nRow binary format.\n");
     /// An open tag with no matching close is dropped alone; the content still renders.
     EXPECT_EQ(plainRenderer().render("<Tip>\nUnclosed."), "Unclosed.\n");
 }
