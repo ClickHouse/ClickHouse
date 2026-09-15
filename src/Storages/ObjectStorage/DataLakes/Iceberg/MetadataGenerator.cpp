@@ -70,13 +70,18 @@ void setSnapshotTotals(
             summary->set(field_name, std::to_string(added));
             return;
         }
-        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
+        {
+            /// A zero delta leaves the total exactly as the parent had it, so an absent counter is carried
+            /// forward by staying absent; a non-zero delta genuinely cannot be derived from a missing total.
+            if (added == 0)
+                return;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
                 field_name);
+        }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
     /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe.
