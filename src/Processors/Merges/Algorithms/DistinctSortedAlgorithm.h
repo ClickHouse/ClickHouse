@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnNumbers.h>
 #include <Core/SortCursor.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -10,18 +11,18 @@ namespace DB
 
 /// Merges external `DISTINCT` runs. The sort description contains the distinct keys without collators,
 /// followed by the already-emitted flag descending. Each input contains only ordinary rows or only
-/// suppression rows. Ordinary chunks are unique under the key sort order; suppression chunks may
+/// suppression rows. Suppression inputs need only the sort columns; ordinary inputs also provide every
+/// output column by name. Ordinary chunks are unique under the key sort order; suppression chunks may
 /// contain sort-equal keys.
 /// Equal ordinary keys retain the first row in source order. Suppression keys are never emitted.
 class DistinctSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     DistinctSortedAlgorithm(
-        SharedHeader header_, size_t num_inputs, SortDescription description_,
-        size_t flag_column_pos_, size_t max_block_size_rows_);
+        SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_, size_t max_block_size_rows_);
 
     const char * getName() const override { return "DistinctSortedAlgorithm"; }
-    void addInput();
+    void addInput(SharedHeader header);
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -33,14 +34,23 @@ private:
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
 
-    const SharedHeader header;
+    /// Selects output columns while retaining chunk information and ownership of their values.
+    Chunk projectOutput(Chunk chunk, size_t source_num) const;
+
+    struct Source
+    {
+        SharedHeader header;
+        ColumnNumbers output_positions;
+        ColumnRawPtrs output_columns;
+    };
+
+    const SharedHeader output_header;
     SortDescription description;
-    const size_t flag_column_pos;
     const size_t num_key_columns;
     const size_t max_block_size_rows;
     Inputs current_inputs;
     SortCursorImpls cursors;
-    std::vector<ColumnRawPtrs> output_columns;
+    std::vector<Source> sources;
     SortingQueueBatch<SortCursor> queue;
     MergedData merged_data;
 

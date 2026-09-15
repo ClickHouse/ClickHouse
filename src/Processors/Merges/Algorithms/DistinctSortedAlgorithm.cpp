@@ -9,73 +9,93 @@ namespace DB
 {
 
 DistinctSortedAlgorithm::DistinctSortedAlgorithm(
-    SharedHeader header_, size_t num_inputs, SortDescription description_,
-    size_t flag_column_pos_, size_t max_block_size_rows_)
-    : header(std::move(header_))
+    SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_, size_t max_block_size_rows_)
+    : output_header(std::move(output_header_))
     , description(std::move(description_))
-    , flag_column_pos(flag_column_pos_)
     , num_key_columns(description.size() - 1)
     , max_block_size_rows(max_block_size_rows_)
-    , current_inputs(num_inputs)
-    , cursors(num_inputs)
-    , output_columns(num_inputs)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
     chassert(description.size() >= 2);
-    chassert(description.back().column_name == header->getByPosition(flag_column_pos).name);
     chassert(description.back().direction == -1);
-
-    DataTypes sort_types;
-    for (const auto & column : description)
-    {
-        chassert(!column.collator);
-        sort_types.push_back(header->getByName(column.column_name).type);
-    }
-    compileSortDescriptionIfNeeded(description, sort_types, /*increase_compile_attempts=*/ true);
+    for (auto & header : input_headers)
+        addInput(std::move(header));
 }
 
-void DistinctSortedAlgorithm::addInput()
+void DistinctSortedAlgorithm::addInput(SharedHeader header)
 {
+    sources.push_back({std::move(header), {}, {}});
     current_inputs.emplace_back();
     cursors.emplace_back();
-    output_columns.emplace_back();
 }
 
 void DistinctSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(header, inputs, description);
-    removeConstAndSparse(inputs);
+    chassert(inputs.size() == sources.size());
+    DataTypes sort_types;
+    for (const auto & column : description)
+    {
+        chassert(!column.collator);
+        sort_types.push_back(sources.front().header->getByName(column.column_name).type);
+    }
+    compileSortDescriptionIfNeeded(description, sort_types, /*increase_compile_attempts=*/ true);
+
     current_inputs = std::move(inputs);
     Inputs output_inputs(current_inputs.size());
-
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
+        auto & source = sources[source_num];
+        removeReplicatedFromSortingColumns(source.header, current_inputs[source_num], description);
+        removeConstAndSparse(current_inputs[source_num]);
+        for (size_t i = 0; i < description.size(); ++i)
+            chassert(source.header->getByName(description[i].column_name).type->equals(*sort_types[i]));
         const auto & chunk = current_inputs[source_num].chunk;
         if (chunk.hasRows())
         {
-            cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-            output_columns[source_num] = cursors[source_num].all_columns;
-            output_columns[source_num].erase(output_columns[source_num].begin() + flag_column_pos);
-            output_inputs[source_num].chunk = chunk.clone();
-            output_inputs[source_num].chunk.erase(flag_column_pos);
+            auto & cursor = cursors[source_num];
+            cursor = SortCursorImpl(*source.header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
+            if (cursor.sort_columns[num_key_columns]->getUInt(0) == 0)
+            {
+                for (const auto & column : *output_header)
+                {
+                    const auto pos = source.header->getPositionByName(column.name);
+                    chassert(source.header->getByPosition(pos).type->equals(*column.type));
+                    source.output_positions.push_back(pos);
+                    source.output_columns.push_back(cursor.all_columns[pos]);
+                }
+                output_inputs[source_num].chunk = projectOutput(chunk.clone(), source_num);
+            }
         }
     }
-    auto output_header = *header;
-    output_header.erase(flag_column_pos);
-    merged_data.initialize(output_header, output_inputs);
+    merged_data.initialize(*output_header, output_inputs);
     queue = SortingQueueBatch<SortCursor>(cursors);
 }
 
 void DistinctSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(header, input, description);
+    auto & source = sources[source_num];
+    removeReplicatedFromSortingColumns(source.header, input, description);
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
     const auto & chunk = current_inputs[source_num].chunk;
-    cursors[source_num].reset(chunk.getColumns(), *header, chunk.getNumRows());
-    output_columns[source_num] = cursors[source_num].all_columns;
-    output_columns[source_num].erase(output_columns[source_num].begin() + flag_column_pos);
-    queue.push(cursors[source_num]);
+    auto & cursor = cursors[source_num];
+    cursor.reset(chunk.getColumns(), *source.header, chunk.getNumRows());
+    chassert((cursor.sort_columns[num_key_columns]->getUInt(0) == 0) == !source.output_positions.empty());
+    for (size_t i = 0; i < source.output_positions.size(); ++i)
+        source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
+    queue.push(cursor);
+}
+
+Chunk DistinctSortedAlgorithm::projectOutput(Chunk chunk, size_t source_num) const
+{
+    const auto num_rows = chunk.getNumRows();
+    const auto & columns = chunk.getColumns();
+    Columns result;
+    result.reserve(output_header->columns());
+    for (const auto pos : sources[source_num].output_positions)
+        result.push_back(columns[pos]);
+    chunk.setColumns(std::move(result), num_rows);
+    return chunk;
 }
 
 void DistinctSortedAlgorithm::saveLastKey()
@@ -116,7 +136,7 @@ IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
 
         const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
-        const auto & flags = assert_cast<const ColumnUInt8 &>(*current->all_columns[flag_column_pos]).getData();
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*current->sort_columns[num_key_columns]).getData();
         detail::RowRef current_key;
         current_key.set(current);
         current_key.num_columns = num_key_columns;
@@ -146,11 +166,10 @@ IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
             if (whole_chunk && batch_size == initial_batch_size && skipped_rows == 0)
             {
                 auto & chunk = current_inputs[current->order].chunk;
-                chunk.erase(flag_column_pos);
-                merged_data.insertChunk(std::move(chunk), rows_to_insert);
+                merged_data.insertChunk(projectOutput(std::move(chunk), current->order), rows_to_insert);
             }
             else
-                merged_data.insertRows(output_columns[current->order], first_row + skipped_rows, rows_to_insert, current->rows);
+                merged_data.insertRows(sources[current->order].output_columns, first_row + skipped_rows, rows_to_insert, current->rows);
         }
         consumed_rows += batch_size;
 
