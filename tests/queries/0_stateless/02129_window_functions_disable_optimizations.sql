@@ -13,6 +13,21 @@ SELECT
     sum(a * b) OVER (ORDER BY number ASC) AS s
 FROM numbers(10);
 
+-- A windowed sum must not be rewritten into `sum(x) + literal * count(x)`: that form cannot carry `OVER`.
+-- Each analyzer has its own carrier for this rewrite, so both are pinned here.
+SELECT sum(number + 1) OVER (ORDER BY number ASC) AS s
+FROM numbers(10)
+SETTINGS enable_analyzer = 1;
+
+SELECT sum(number + 1) OVER (ORDER BY number ASC) AS s
+FROM numbers(10)
+SETTINGS enable_analyzer = 0;
+
+-- Control: a plain aggregate must still be rewritten.
+SELECT count() FROM (EXPLAIN SYNTAX SELECT sum(number + 1) FROM numbers(10))
+WHERE explain ILIKE '%plus(sum(number), multiply(1, count(number)))%'
+SETTINGS enable_analyzer = 0;
+
 SET optimize_aggregators_of_group_by_keys=1;
 
 SELECT
