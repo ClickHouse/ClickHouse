@@ -203,6 +203,7 @@ private:
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
+                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 };
@@ -411,15 +412,17 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         /// `IsTruncated` is the only thing that ends the listing - stopping on an empty page
         /// would silently drop every object after it.
         for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
-                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
-                    .tags = {},
-                    .attributes = {},
-                }));
+            children.emplace_back(
+                std::make_shared<RelativePathWithMetadata>(
+                    object.GetKey(),
+                    ObjectMetadata{
+                        .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                        .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                        .etag = object.GetETag(),
+                        .version_id = {},
+                        .tags = {},
+                        .attributes = {},
+                    }));
 
         if (objects.empty() && outcome.GetResult().GetIsTruncated())
             LOG_INFO(
@@ -500,6 +503,16 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
+}
+
+void S3ObjectStorage::removeObjectVersionIfExists(const StoredObject & object, const String & version_id)
+{
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
+
+    deleteFileFromS3(client.get(), bucket, key, /*if_exists=*/true,
+                     blob_storage_log, object.local_path, object.bytes_size,
+                     ProfileEvents::DiskS3DeleteObjects, version_id);
 }
 
 void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
@@ -607,6 +620,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = object_info.tags;
     result.attributes = object_info.metadata;
 
@@ -647,6 +661,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = std::move(object_info.tags);
     result.attributes = object_info.metadata;
 
@@ -723,14 +738,27 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
+    const bool guarded_copy = !write_settings.object_storage_write_if_none_match.empty();
     const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
     const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
-    auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
+    auto source_info
+        = S3::getObjectInfo(*current_client, src_bucket, src_key, /*version_id=*/{}, /*with_metadata=*/false, /*with_tags=*/false);
+    /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
+    /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
+    const String source_version_id = guarded_copy ? source_info.version_id : String{};
+    /// A caller that already built provenance from an earlier lookup pins that generation here, so the
+    /// copy fails rather than stamping it onto bytes from a newer one.
+    const String & source_if_match = write_settings.object_storage_copy_source_if_match;
+    /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
+    /// `HeadObject` tag count, which restricted credentials do not get to see.
+    std::optional<ObjectAttributes> source_tags;
+    if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
+        source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -738,7 +766,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*src_s3_client=*/current_client,
         /*src_bucket=*/src_bucket,
         /*src_key=*/src_key,
-        /*src_size=*/size,
+        /*src_size=*/source_info.size,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/dest_bucket,
         /*dest_key=*/dest_key,
@@ -746,8 +774,27 @@ void S3ObjectStorage::copyObject( // NOLINT
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
-        [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+        [&, this]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            if (source_version_id.empty() && source_if_match.empty())
+                return readObject(object_from, read_settings_to_use);
+            /// The read-write fallback carries no copy-source condition, so pin the read itself:
+            /// `ReadBufferFromS3` checks every response ETag against the expected one.
+            return std::make_unique<ReadBufferFromS3>(
+                current_client, src_bucket, src_key, source_version_id,
+                settings_ptr->request_settings, read_settings_to_use,
+                /*use_external_buffer=*/false, /*offset=*/0, /*read_until_position=*/0, /*restricted_seek=*/false,
+                /*file_size=*/std::nullopt, credentials_refresh_callback,
+                /*blob_storage_log=*/nullptr, /*expected_etag=*/source_if_match);
+        },
+        object_to_attributes,
+        S3CopyFileSettings{
+            .if_none_match = write_settings.object_storage_write_if_none_match,
+            .source_version_id = source_version_id,
+            .source_if_match = source_if_match,
+            .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
+                                           : std::optional<S3::ObjectHeaders>{},
+            .source_tags = std::move(source_tags)});
 }
 
 void S3ObjectStorage::shutdown()

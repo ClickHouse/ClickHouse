@@ -19,6 +19,7 @@ public:
         String after_processing_move_uri;
         String after_processing_move_prefix;
         bool after_processing_move_preserve_path = false;
+        bool after_processing_move_preserve_tags = false;
         String after_processing_move_access_key_id;
         String after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
@@ -27,24 +28,53 @@ public:
         String after_processing_tag_value;
     };
 
+    /// `keeper_path_` identifies the queue (shared by its replicas) that stamps and recognizes its own moves.
     ObjectStorageQueuePostProcessor(
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
-        String engine_name_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
-        AfterProcessingSettings settings_);
+        AfterProcessingSettings settings_,
+        String keeper_path_);
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
+    /// An object's `etag` is the generation its rows were read from: a move never touches any other.
     void process(
         const StoredObjects & objects,
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
-    String getName() const { return engine_name; }
+    /// The source generation a copy step consumed. `version_id` is set only when the copy was pinned
+    /// to that generation, so pinning the delete to it cannot remove contents nothing copied.
+    struct SourceGeneration
+    {
+        String version_id;
+        String etag;
+    };
+
+    struct CopyResult
+    {
+        /// False when the destination is occupied by an object this queue did not put there.
+        bool destination_is_ours = true;
+        SourceGeneration consumed;
+        /// True when the source no longer holds the generation the rows were read from: nothing was copied.
+        bool source_rewritten = false;
+    };
+
+    enum class MoveResult : uint8_t
+    {
+        Moved,
+        DestinationCollision,
+        SourceRewritten,
+    };
 
     void doWithRetries(std::function<void()> action) const;
+    MoveResult copyAndRemoveObject(const StoredObject & object, const std::function<CopyResult()> & copy_object) const;
+    /// Removes the source only while it still holds the generation the copy consumed.
+    bool removeCopiedSource(const StoredObject & object, const SourceGeneration & consumed) const;
+    void reportMoveCollision(const StoredObject & source, const StoredObject & destination) const;
+    void reportSourceRewritten(const StoredObject & source, const StoredObject & destination) const;
 
     /// Move processed objects to another prefix
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
@@ -55,9 +85,9 @@ private:
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
-    const String engine_name;
     const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
+    const String keeper_path;
 
     LoggerPtr log;
 };
