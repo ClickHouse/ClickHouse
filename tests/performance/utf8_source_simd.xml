@@ -1,0 +1,61 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <!-- Keep the SIMD boundary cases as separate measurements. -->
+        <substitution>
+            <name>skip</name>
+            <values>
+                <value>1</value>
+                <value>4</value>
+                <value>9</value>
+                <value>16</value>
+                <value>24</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>64</value>
+            </values>
+        </substitution>
+        <!-- Positions are measured in code points from the traversal origin. -->
+        <substitution>
+            <name>unicode_position</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>15</value>
+                <value>16</value>
+                <value>30</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT sum(length(leftUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <!-- Exercise short scalar tails and the AVX2 32-byte threshold independently. -->
+    <query>SELECT sum(length(leftUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, {skip}))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(leftUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(substringUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <!-- Put one non-ASCII code point near the forward traversal origin on every row. -->
+    <query>SELECT sum(length(leftUTF8(concat(repeat('a', {unicode_position}), unhex('C3A9'), repeat('a', 126 - {unicode_position}), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <!-- Mirror the same cases for backward traversal. -->
+    <query>SELECT sum(length(rightUTF8(concat(toString(number % 10), repeat('a', 126 - {unicode_position}), unhex('C3A9'), repeat('a', {unicode_position})), 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(leftUTF8(concat(repeat(unhex('E4BDA0'), 64), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat(unhex('E4BDA0'), 64), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(overlayUTF8(concat(repeat('a', 127), toString(number % 10)), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(overlayUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+</test>
