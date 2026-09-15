@@ -1,5 +1,6 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-fasttest
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
+-- no-fasttest: inserting into a `TimeSeries` table through its `time_series` column is not available in the fast-test build.
 
 -- Stress test for the `make_distributed_plan` fallback decision.
 -- A plan that falls back to local execution must never
