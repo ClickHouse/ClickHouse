@@ -16,6 +16,12 @@
         <substitution>
             <name>matrix_length</name>
             <values>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>35</value>
+                <value>36</value>
+                <value>37</value>
                 <value>47</value>
                 <value>48</value>
                 <value>49</value>
@@ -32,6 +38,9 @@
                 <value>8191</value>
                 <value>8192</value>
                 <value>8193</value>
+                <value>12287</value>
+                <value>12288</value>
+                <value>12289</value>
                 <value>16383</value>
                 <value>16384</value>
                 <value>16385</value>
@@ -72,6 +81,12 @@
         <substitution>
             <name>small_width_length</name>
             <values>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>35</value>
+                <value>36</value>
+                <value>37</value>
                 <value>48</value>
                 <value>49</value>
                 <value>64</value>

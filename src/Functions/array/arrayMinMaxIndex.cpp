@@ -236,23 +236,46 @@ size_t findFirstNaNSIMD(const T * data, size_t size)
 namespace ArrayMinMaxIndexImpl
 {
 
-constexpr size_t small_tournament_limit = 48;
+constexpr size_t small_tournament_limit = 32;
+constexpr size_t small_tournament_limit_64_bit = 48;
 constexpr size_t medium_two_pass_limit = 256;
-constexpr size_t record_block_limit_64_bit_integer = 8192;
+constexpr size_t two_pass_limit_64_bit_integer = 16384;
 
 /*
  * These are measured performance cutovers for the AVX2 path. The small
- * tournament wins up to 48 elements, the two-pass SIMD path is capped at 256
- * to avoid an expensive second scan, and 64-bit one-pass scans stay ahead
- * until record blocks amortize their extra lookup work at 8192 elements.
+ * tournament wins up to 32 elements (48 for 64-bit integers), the two-pass
+ * SIMD path is capped at 256 for other types, and 64-bit arrays stay on the
+ * two-pass path until record blocks amortize their extra lookup work at 16384.
  */
+
+template <typename T>
+constexpr size_t smallTournamentLimit()
+{
+    if constexpr (std::is_integral_v<T> && sizeof(T) == 8)
+        return small_tournament_limit_64_bit;
+    else if constexpr (std::is_integral_v<T>)
+        return small_tournament_limit;
+    else
+        return 0;
+}
 
 template <typename T>
 constexpr size_t mediumTwoPassMinSize()
 {
-    if constexpr (std::is_integral_v<T> && (sizeof(T) == 2 || sizeof(T) == 4))
-        return small_tournament_limit;
-    return 64;
+    if constexpr (std::is_integral_v<T>)
+        return smallTournamentLimit<T>();
+    else
+        return 64;
+}
+
+template <ArrayMinMaxIndexStrategy strategy, typename T>
+requires(std::is_integral_v<T>)
+constexpr T terminalValue()
+{
+    if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+        return std::numeric_limits<T>::lowest();
+    else
+        return std::numeric_limits<T>::max();
 }
 
 template <ArrayMinMaxIndexStrategy strategy, typename T>
@@ -329,6 +352,18 @@ static size_t findFirstSelectedValue(const T * data, size_t size, const T & valu
             return findFirstNaN(data, size, use_simd);
     }
     return findFirstEqual(data, size, value, use_simd);
+}
+
+template <ArrayMinMaxIndexStrategy strategy, typename T>
+requires(has_find_extreme_implementation<T>)
+static size_t findIndexTwoPass(const T * data, size_t size, bool use_simd)
+{
+    const auto extreme = findExtremeValue<strategy>(data, 0, size);
+    chassert(extreme.has_value());
+
+    const size_t index = findFirstSelectedValue(data, size, *extreme, use_simd);
+    chassert(index < size);
+    return index;
 }
 
 template <typename T>
@@ -436,7 +471,7 @@ static size_t findIndexSmallOrOnePass(const T * data, size_t size)
 {
     if constexpr (std::is_integral_v<T>)
     {
-        if (size <= small_tournament_limit)
+        if (size <= smallTournamentLimit<T>())
             return findIndexTournament<strategy>(data, size);
     }
     return findIndexOnePass<strategy>(data, size);
@@ -503,10 +538,7 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
 
             if constexpr (std::is_integral_v<T>)
             {
-                constexpr T terminal_value = strategy == ArrayMinMaxIndexStrategy::Min
-                    ? std::numeric_limits<T>::lowest()
-                    : std::numeric_limits<T>::max();
-                if (block_end < size && best == terminal_value)
+                if (block_end < size && unlikely(best == terminalValue<strategy, T>()))
                     return best_index;
             }
         }
@@ -568,6 +600,16 @@ static void executeNumericData(const Element * data, const ColumnArray::Offsets 
         const size_t end = offsets[row];
         const size_t size = end - begin;
 
+        if constexpr (std::is_integral_v<Element>)
+        {
+            if (size > 1 && unlikely(data[begin] == terminalValue<strategy, Element>()))
+            {
+                result[row] = 1;
+                begin = end;
+                continue;
+            }
+        }
+
         constexpr size_t medium_two_pass_min_size = mediumTwoPassMinSize<Element>();
 
         if (size <= 1)
@@ -612,9 +654,9 @@ static void executeNumericData(const Element * data, const ColumnArray::Offsets 
         {
             result[row] = static_cast<UInt32>(findIndexSmallOrOnePass<strategy>(data + begin, size) + 1);
         }
-        else if (std::is_integral_v<Element> && sizeof(Element) == 8 && size < record_block_limit_64_bit_integer)
+        else if (std::is_integral_v<Element> && sizeof(Element) == 8 && size < two_pass_limit_64_bit_integer)
         {
-            result[row] = static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
+            result[row] = static_cast<UInt32>(findIndexTwoPass<strategy>(data + begin, size, true) + 1);
         }
         else
         {
