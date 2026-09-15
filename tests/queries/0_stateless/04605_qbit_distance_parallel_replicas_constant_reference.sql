@@ -30,7 +30,7 @@ LIMIT 3;
 SELECT id FROM qbit_pr_const
 ORDER BY cosineDistanceTransposed(qb, [toFloat32(0), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 16) ASC, id ASC
 LIMIT 3
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
          parallel_replicas_min_number_of_rows_per_replica = 0;
@@ -40,7 +40,7 @@ WITH arrayMap(i -> toFloat32(i), range(32)) AS ref
 SELECT id FROM qbit_pr_const
 ORDER BY cosineDistanceTransposed(qb, ref, 16) ASC, id ASC
 LIMIT 3
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
          parallel_replicas_min_number_of_rows_per_replica = 0;
@@ -76,7 +76,7 @@ WITH arrayMap(i -> toFloat32(i), range(128)) AS ref
 SELECT id FROM qbit_pr_const_large
 ORDER BY cosineDistanceTransposed(qb, ref, 16) ASC, id ASC
 LIMIT 3
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
          parallel_replicas_min_number_of_rows_per_replica = 0;

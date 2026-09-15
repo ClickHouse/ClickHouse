@@ -29,6 +29,7 @@ SET optimize_aggregation_in_order = 1;
 SET parallel_replicas_plan_based = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
+SET automatic_parallel_replicas_mode = 0;
 
 -- Aggregation on the primary-key prefix must match non-parallel execution exactly. Aggregating the
 -- per-group results keeps the reference small while still failing if the partial aggregation shipped with the

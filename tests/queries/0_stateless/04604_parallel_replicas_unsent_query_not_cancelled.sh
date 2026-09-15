@@ -38,7 +38,8 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
              parallel_replicas_local_plan = 1,
-                          async_query_sending_for_remote = 0,
+             automatic_parallel_replicas_mode = 0,
+             async_query_sending_for_remote = 0,
              receive_timeout = 10
 "
 

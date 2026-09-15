@@ -16,6 +16,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
+SET automatic_parallel_replicas_mode = 0;
 SET count_distinct_optimization = 1;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;

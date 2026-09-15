@@ -11,6 +11,6 @@ SELECT count() FROM t_stream_pr STREAM
 PREWHERE (x IN (t)) OR (x IN (t))
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1; -- { serverError SUPPORT_IS_DISABLED }
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_stream_pr;

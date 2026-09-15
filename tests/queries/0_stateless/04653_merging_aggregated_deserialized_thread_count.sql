@@ -17,6 +17,7 @@ INSERT INTO t_merging_aggregated_threads SELECT number + 2000, number % 7 FROM n
 -- defeats `compatibility` randomization.
 SET enable_analyzer = 1;
 SET allow_experimental_parallel_reading_from_replicas = 1;
+SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

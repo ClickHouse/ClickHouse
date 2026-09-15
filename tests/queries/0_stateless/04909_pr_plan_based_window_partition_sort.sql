@@ -27,6 +27,7 @@ SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_plan_based = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
+SET automatic_parallel_replicas_mode = 0;
 -- The partition scatter is only inserted with more than one thread, and CI randomizes `max_threads`.
 SET max_threads = 4;
 

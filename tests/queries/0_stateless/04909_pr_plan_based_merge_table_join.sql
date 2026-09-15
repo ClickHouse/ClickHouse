@@ -42,6 +42,7 @@ SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_allow_merge_tables = 1;
 -- Pin the manual mode: otherwise CI's randomized automatic_parallel_replicas_mode can cost-decide against
 -- parallel replicas for these small tables, so the plan-based split does not engage.
+SET automatic_parallel_replicas_mode = 0;
 -- Pin the plan shape: the local plan must be present to hold the join step, and a randomized join order
 -- changes which side is coordinated.
 SET parallel_replicas_local_plan = 1;

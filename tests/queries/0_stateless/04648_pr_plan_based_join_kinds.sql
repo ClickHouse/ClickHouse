@@ -18,6 +18,7 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_plan_based = 1;
+SET automatic_parallel_replicas_mode = 0;
 -- Pin the plan shape: the local plan must be present to hold the join step, and a randomized join order
 -- changes which side is coordinated.
 SET parallel_replicas_local_plan = 1;

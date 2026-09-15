@@ -31,7 +31,8 @@ SET
   -- Transitive predicate derivation adds the implicit `a.x = c.x` edge to the join graph,
   -- which gives DP a different cost surface and a different left-deep choice. Pin it off so
   -- the EXPLAIN order is stable regardless of the randomizer.
-  enable_join_transitive_predicates = 0;
+  enable_join_transitive_predicates = 0,
+  automatic_parallel_replicas_mode = 0;
 
 -- Three-way join written as `(a JOIN b) JOIN c` with `a` (100 rows) < `b` (1000) < `c` (100000).
 -- The 2-table swap can also go through the legacy `optimizeJoinLegacy` path, so this test forces

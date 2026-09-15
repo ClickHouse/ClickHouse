@@ -8,6 +8,7 @@ create table test_10m (key Int, value Int) engine=MergeTree() order by key setti
 system stop merges test_10m;
 insert into test_10m select number, number*100 from numbers(10e6);
 
+SET automatic_parallel_replicas_mode = 0;
 set parallel_replicas_for_non_replicated_merge_tree=1;
 set parallel_replicas_index_analysis_only_on_coordinator=1;
 set parallel_replicas_local_plan=1;

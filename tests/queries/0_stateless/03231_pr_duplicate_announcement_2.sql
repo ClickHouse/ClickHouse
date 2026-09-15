@@ -4,6 +4,7 @@ CREATE TABLE ANIMAL ( ANIMAL Nullable(String) ) ENGINE = ReplicatedMergeTree('/c
 
 INSERT INTO ANIMAL (ANIMAL) VALUES ('CAT'), ('FISH'), ('DOG'), ('HORSE'), ('BIRD');
 
+SET automatic_parallel_replicas_mode = 0;
 SET joined_subquery_requires_alias = 0;
 SET allow_experimental_parallel_reading_from_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 

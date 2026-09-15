@@ -31,6 +31,7 @@ SELECT '-- projection path (projection actually used)';
 SELECT b, count() FROM t_04371 WHERE b GROUP BY b ORDER BY b
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_min_number_of_rows_per_replica = 0,

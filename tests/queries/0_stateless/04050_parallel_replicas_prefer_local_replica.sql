@@ -4,6 +4,7 @@
 -- are used when `max_parallel_replicas` = 1.
 
 -- Disable automatic parallel replicas mode so randomized settings do not interfere.
+SET automatic_parallel_replicas_mode = 0;
 
 -- Keep test stable across analyzer-enabled and analyzer-disabled CI runs.
 SET parallel_replicas_only_with_analyzer = 0;

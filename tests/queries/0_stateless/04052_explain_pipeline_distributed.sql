@@ -34,6 +34,7 @@ INSERT INTO test_distributed_pipeline SELECT number, number * 2, number * 3 FROM
 INSERT INTO test_distributed_pipeline SELECT number, number * 2, number * 3 FROM numbers(100, 100);
 INSERT INTO test_distributed_pipeline SELECT number, number * 2, number * 3 FROM numbers(200, 100);
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_local_plan=1;
 
 -- `EXPLAIN PIPELINE distributed=1` forwards an `EXPLAIN PIPELINE` query to the replicas, so it needs

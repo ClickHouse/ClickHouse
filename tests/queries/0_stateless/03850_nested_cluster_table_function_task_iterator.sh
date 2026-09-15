@@ -74,7 +74,7 @@ echo "--- shape 2: cluster table function under parallel replicas ---"
 $CLICKHOUSE_CLIENT --query "
 SELECT count() FROM mt_03850
 WHERE x IN (SELECT toUInt32(x) FROM urlCluster('test_cluster_two_shards', 'http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8'))
-SETTINGS enable_analyzer = 1, enable_parallel_replicas = 1,
+SETTINGS enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
     parallel_replicas_for_cluster_engines = 0
