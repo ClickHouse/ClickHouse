@@ -56,7 +56,7 @@ public:
     /// set, so listing the parallel variant as a fallback does not silently change behavior.
     bool isParallel() const { return is_parallel; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, size_t /* worker_id */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
     }
