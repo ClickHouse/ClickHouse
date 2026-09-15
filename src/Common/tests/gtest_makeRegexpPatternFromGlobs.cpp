@@ -157,6 +157,36 @@ TEST(Common, expandSelectionGlob)
     }
 }
 
+TEST(Common, expandSelectionGlobFirst)
+{
+    auto repeat = [](const std::string & what, size_t times)
+    {
+        std::string result;
+        for (size_t i = 0; i < times; ++i)
+            result += what;
+        return result;
+    };
+
+    /// It is the first path of the full expansion, wherever the full expansion is possible.
+    for (const auto & pattern : {"file.csv", "file{1,2,3}.csv", "{a}.csv", "{a,b}/{c,d}", "{a,,b}",
+                                 "{,a}", "{}", "dir/{ab}{cd}/*.csv", "file{1..3}.csv", "{a,b}file{1..3}.csv"})
+        EXPECT_EQ(expandSelectionGlobFirst(pattern), expandSelectionGlob(pattern).front()) << pattern;
+
+    /// And it is available for the patterns the full expansion refuses: a reader that matches such
+    /// a pattern as a regexp must not be denied a sample path for hive partitioning.
+    EXPECT_EQ(expandSelectionGlobFirst(repeat("{a,b}", 100)), std::string(100, 'a'));
+    EXPECT_EQ(expandSelectionGlobFirst(repeat("{ab}", 2000)), repeat("ab", 2000));
+    EXPECT_EQ(expandSelectionGlobFirst("dir/{" + repeat("a,", 10'000'000) + "a}.csv"), "dir/a.csv");
+    EXPECT_EQ(expandSelectionGlobFirst("{" + std::string(1024, 'A') + ",b}"), std::string(1024, 'A'));
+
+    /// A malformed glob is refused, the same way the full expansion refuses it.
+    for (const auto & pattern : {"a}b{c,d}", "{a,b}{c{d,e}"})
+    {
+        EXPECT_THROW(expandSelectionGlob(pattern), DB::Exception) << pattern;
+        EXPECT_THROW(expandSelectionGlobFirst(pattern), DB::Exception) << pattern;
+    }
+}
+
 TEST(Common, rangeGlobIsBounded)
 {
     /// A `{N..M}` range glob becomes an alternation of every number of the range, so the regexp is

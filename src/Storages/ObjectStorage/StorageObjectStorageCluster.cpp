@@ -77,11 +77,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// hive partition columns. Avoid probing object metadata, because all explicit keys may
     /// be absent or later filtered out.
     if (containsOnlyEnumGlobs(path.path))
-    {
-        auto expanded = expandSelectionGlob(path.path);
-        if (!expanded.empty())
-            return expanded.front() + archive_suffix;
-    }
+        return expandSelectionGlobFirst(path.path) + archive_suffix;
 
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.

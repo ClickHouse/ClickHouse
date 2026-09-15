@@ -21,4 +21,10 @@ namespace DB
     /// The expansion is a Cartesian product of the groups, so it throws instead of expanding a pattern
     /// that asks for an unreasonable number of paths, an unreasonable amount of data, or too many groups.
     std::vector<std::string> expandSelectionGlob(const std::string & path);
+
+    /// The first path `expandSelectionGlob` would return, picking each group's first alternative
+    /// without enumerating the rest. For a caller that needs one sample path rather than the whole
+    /// product it is also always possible, where the full expansion can be refused for a pattern
+    /// the reader would go on to match as a regexp.
+    std::string expandSelectionGlobFirst(const std::string & path);
 }

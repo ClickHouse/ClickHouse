@@ -306,6 +306,50 @@ private:
     }
 };
 
+/// Scans the first `{a,b,c}` selector glob of `tail`, calling `on_anchor(index, kind)` for its '{',
+/// for every comma inside it, and for its '}'. Returns the index of the '}'. `path` is the whole
+/// pattern, used to report positions in what the user has written.
+///
+/// Anchors are reported rather than collected so that a caller needing one alternative keeps
+/// nothing: an enormous group is scanned either way, but only one of the two callers must pay for
+/// its size.
+template <typename OnAnchor>
+size_t scanNextSelectorGlob(std::string_view path, std::string_view tail, OnAnchor && on_anchor)
+{
+    /// The offset of `tail` in `path`, to report positions in the path the user has written.
+    const size_t tail_offset = path.size() - tail.size();
+    bool opened = false;
+
+    for (size_t i = 0; i < tail.size(); ++i)
+    {
+        if (tail[i] == '{')
+        {
+            if (opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected '{{' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, '{');
+            opened = true;
+        }
+        else if (tail[i] == '}')
+        {
+            if (!opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected '}}' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, '}');
+            return i;
+        }
+        else if (tail[i] == ',')
+        {
+            if (!opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected ',' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, ',');
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid {{}} glob in path {}.", path);
+}
+
 }
 
 std::vector<std::string> expandSelectionGlob(const std::string & path)
@@ -326,54 +370,23 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "The path has more than {} '{{}}' globs to expand.", MAX_SELECTOR_GLOBS);
 
-        /// The offset of `tail` in `path`, to report positions in the path the user has written.
-        const size_t tail_offset = path.size() - tail.size();
-
-        /// Looking for the first occurrence of a {} selector: write down the positions of {, } and
-        /// all intermediate commas.
+        /// The positions of the '{', of all intermediate commas, and of the '}'.
         std::vector<size_t> anchor_positions;
-        bool opened = false;
-        bool closed = false;
 
-        for (size_t i = 0; i < tail.size(); ++i)
+        scanNextSelectorGlob(path, tail, [&](size_t i, char kind)
         {
-            if (tail[i] == '{')
-            {
-                if (opened)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Unexpected '{{' found in path '{}' at position {}.", path, tail_offset + i);
-                anchor_positions.push_back(i);
-                opened = true;
-            }
-            else if (tail[i] == '}')
-            {
-                if (!opened)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Unexpected '}}' found in path '{}' at position {}.", path, tail_offset + i);
-                anchor_positions.push_back(i);
-                closed = true;
-                break;
-            }
-            else if (tail[i] == ',')
-            {
-                if (!opened)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Unexpected ',' found in path '{}' at position {}.", path, tail_offset + i);
-                anchor_positions.push_back(i);
+            anchor_positions.push_back(i);
 
-                /// Refuse an oversized group while it is being scanned, and not after it has been
-                /// materialized: otherwise a single selector with an enormous number of
-                /// alternatives - a whole file passed as a path by `file(file(...))` - still costs
-                /// memory proportional to its number of commas before the limit below is reached.
-                /// After `k` commas the group has at least `k + 1` alternatives, and
-                /// `anchor_positions` holds the '{' and those `k` commas.
-                if (num_paths > MAX_EXPANDED_PATHS / anchor_positions.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
-            }
-        }
-        if (!opened || !closed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid {{}} glob in path {}.", path);
+            /// Refuse an oversized group while it is being scanned, and not after it has been
+            /// materialized: otherwise a single selector with an enormous number of alternatives -
+            /// a whole file passed as a path by `file(file(...))` - still costs memory proportional
+            /// to its number of commas before the limit below is reached. After `k` commas the
+            /// group has at least `k + 1` alternatives, and `anchor_positions` holds the '{' and
+            /// those `k` commas.
+            if (kind == ',' && num_paths > MAX_EXPANDED_PATHS / anchor_positions.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
+        });
 
         SelectorGlob glob;
         glob.literal_before = tail.substr(0, anchor_positions.front());
@@ -434,6 +447,41 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
         }
     }
 
+    return result;
+}
+
+std::string expandSelectionGlobFirst(const std::string & path)
+{
+    /// The limits above do not apply and need not: keeping only each group's first alternative
+    /// costs one pass over the pattern whatever the groups multiply out to.
+    std::string result;
+    std::string_view tail(path);
+    SelectorGlobScanner scanner(path);
+
+    while (!scanner.noSelectorGlobsToExpand(tail))
+    {
+        size_t open_position = 0;
+        /// The ',' that ends the first alternative, or the '}' when the group has only one.
+        size_t first_alternative_end = 0;
+        bool alternative_ended = false;
+
+        const size_t close_position = scanNextSelectorGlob(path, tail, [&](size_t i, char kind)
+        {
+            if (kind == '{')
+                open_position = i;
+            else if (!alternative_ended)
+            {
+                first_alternative_end = i;
+                alternative_ended = true;
+            }
+        });
+
+        result.append(tail.substr(0, open_position));
+        result.append(tail.substr(open_position + 1, first_alternative_end - open_position - 1));
+        tail = tail.substr(close_position + 1);
+    }
+
+    result.append(tail);
     return result;
 }
 }
