@@ -491,9 +491,7 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 String ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
 {
-    /// The file name rendering is used because the subcolumn name is not injective: two streams of one
-    /// column can render to the same name while their files differ (`c.size0` and `c%2Esize0` for
-    /// Array(Tuple(`size0` UInt64))). The column prefix is dropped as the caches are per column in storage.
+    /// Unlike the subcolumn name, this rendering is injective, so two substreams never share a cache slot.
     return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
 }
 

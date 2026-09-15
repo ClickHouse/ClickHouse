@@ -21,8 +21,8 @@ DROP TABLE t_cache_key;
 DROP TABLE IF EXISTS t_cache_wide;
 DROP TABLE IF EXISTS t_cache_compact;
 
--- Every column is wrapped in a Tuple: reading `<column>.x` is the only case in which the compact reader
--- allocates a substreams cache.
+-- Every column is wrapped in a Tuple: the compact reader allocates a substreams cache only for subcolumn
+-- reads of a part that has substream marks, hence `write_marks_for_substreams_in_compact_parts` below.
 CREATE TABLE t_cache_wide
 (
     -- A Tuple element named like the array sizes of an enclosing Array.
@@ -57,7 +57,7 @@ CREATE TABLE t_cache_compact
     c11 Tuple(x Tuple(`a` Array(UInt64), `a.size0` UInt64), y UInt8),
     c12 Tuple(x Tuple(`a` Nullable(UInt64), `a.null` UInt8), y UInt8)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
 
 INSERT INTO t_cache_wide SELECT ([tuple(100), tuple(200)], 1), ([tuple('abc')], 2), ([tuple('abc')], 3), ([tuple([10, 20])], 4), ([tuple(1), tuple(NULL)], 5), ([[tuple(10), tuple(20)]], 6), ([[tuple(10), tuple(20)]], 7), ([tuple(1), NULL], 8), (map('k', [tuple(1), tuple(2)]), 9), (('abc', 99), 10), (([10, 20], 99), 11), ((5, 7), 12);
 INSERT INTO t_cache_compact SELECT ([tuple(100), tuple(200)], 1), ([tuple('abc')], 2), ([tuple('abc')], 3), ([tuple([10, 20])], 4), ([tuple(1), tuple(NULL)], 5), ([[tuple(10), tuple(20)]], 6), ([[tuple(10), tuple(20)]], 7), ([tuple(1), NULL], 8), (map('k', [tuple(1), tuple(2)]), 9), (('abc', 99), 10), (([10, 20], 99), 11), ((5, 7), 12);
@@ -96,7 +96,7 @@ CREATE TABLE t_cache_json_compact
     c6 Tuple(x JSON(`a` Variant(Int64, String), `a.Int64` Int64), y UInt8),
     c7 Tuple(x JSON(`a` JSON(`b` Int64), `a.b` Int64), y UInt8)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
 
 INSERT INTO t_cache_json_wide VALUES (('{"object_shared_data.0.size0" : 1}', 1), ('{"a" : [1, 2], "a.size0" : 7}', 2), ('{"a" : 1, "a.null" : 7}', 3), ('{"a" : "abc", "a.size" : 7}', 4), ('{"a" : 1, "a.Int64" : 7}', 5), ('{"a" : 1, "a.Int64" : 7}', 6), ('{"a" : {"b" : 1}}', 7));
 INSERT INTO t_cache_json_compact VALUES (('{"object_shared_data.0.size0" : 1}', 1), ('{"a" : [1, 2], "a.size0" : 7}', 2), ('{"a" : 1, "a.null" : 7}', 3), ('{"a" : "abc", "a.size" : 7}', 4), ('{"a" : 1, "a.Int64" : 7}', 5), ('{"a" : 1, "a.Int64" : 7}', 6), ('{"a" : {"b" : 1}}', 7));
