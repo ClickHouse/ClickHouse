@@ -1870,9 +1870,10 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         # Reachable: dpsub is in the algorithm list above. Both decide which reorderings
         # DPsub considers valid, so an unsound detector is a wrong-results bug.
-        # Disable for now, issue found
-        #"query_plan_optimize_join_order_use_cd_a_conflict_detector": lambda: random.randint(0, 1),
-        #"query_plan_optimize_join_order_use_cd_c_conflict_detector": lambda: random.randint(0, 1),
+        # Disable for now, issue found. Renamed in 26.9 (no alias kept), so the old
+        # cd_a/cd_c names would be unknown settings if these are re-enabled.
+        #"query_plan_optimize_join_order_use_conflict_detector_a": lambda: random.randint(0, 1),
+        #"query_plan_optimize_join_order_use_conflict_detector_c": lambda: random.randint(0, 1),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
@@ -1983,6 +1984,9 @@ class SettingsRandomizer:
         # decoders to block on a full queue and a large one removes the backpressure.
         "iceberg_manifest_decode_concurrency": lambda: random.choice([1, 2, 4, 16]),
         "iceberg_file_entries_queue_size": lambda: random.choice([1, 10, 100, 1000]),
+        # Skips whole manifest files by their partition summaries, so an unsound bound is a
+        # wrong-results bug. Its gate `use_iceberg_partition_pruning` defaults on.
+        "use_iceberg_manifest_list_partition_pruning": lambda: random.randint(0, 1),
         "allow_key_condition_coalesce_rewrite": lambda: random.random() > 0.05,
         # "use_constant_folding_in_index_analysis": lambda: random.random() < 0.5,
         "allow_aggregate_partitions_independently": lambda: random.random() > 0.05,
