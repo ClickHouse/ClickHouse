@@ -1,0 +1,3 @@
+default: cluster=none timeout=120 attempts=1
+replicated_database: cluster=test_cluster_database_replicated timeout=120 attempts=1
+shared_catalog: cluster=test_cluster_shared_catalog timeout=120 attempts=1

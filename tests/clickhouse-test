@@ -6865,8 +6865,10 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
-                    # The dump that does not need the server to answer SQL, which
-                    # is the case this branch reports.
+                    # The query that failed is an expensive aggregate over
+                    # system.stack_trace via HTTP; the plain read goes over TCP,
+                    # and the C stacks need no answer from the server at all.
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     exit_code.value = 1
                     hung_check_failed = True
