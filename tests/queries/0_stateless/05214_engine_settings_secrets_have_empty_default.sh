@@ -12,10 +12,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # The list of secret settings, shared by `SHOW CREATE TABLE` and `system.table_settings`, is not readable
 # from SQL, but `query_log` stores a query with those secrets masked. So one query assigns every engine
-# setting a probe that each masking rule changes - the whole value, a URI password or a connection string
-# key - and a setting whose assignment is not logged verbatim is secret.
+# setting a probe, and a setting whose assignment is not logged verbatim is secret. The probe carries every
+# form a masking rule looks for today - the whole value, a URI password, the `AccountKey` and
+# `SharedAccessSignature` connection string keys - and a few it does not yet, so that a rule added for
+# one of them is noticed too.
 
-probe="u://probe_user:probe_secret@h/?AccountKey=probe_secret"
+probe="u://probe_user:probe_secret@h/?AccountKey=probe_secret;SharedAccessSignature=probe_secret;SharedAccessKey=probe_secret;password=probe_secret;token=probe_secret"
 query_id="${CLICKHOUSE_DATABASE}_engine_settings_secrets_${RANDOM}${RANDOM}"
 
 assignments=$($CLICKHOUSE_CLIENT -q "
@@ -23,9 +25,11 @@ assignments=$($CLICKHOUSE_CLIENT -q "
     FROM system.engine_settings
     FORMAT TSVRaw")
 
-# The table does not exist, so the query fails - it only has to reach `query_log`.
+# The database does not exist, so the query fails as soon as it is resolved - before a `Replicated` database
+# would put it into its DDL log. It only has to reach `query_log`. It is read from standard input: at some
+# 200 KB it is longer than the kernel allows a single command-line argument to be.
 $CLICKHOUSE_CLIENT --query_id "$query_id" --max_query_size 100000000 --log_queries_cut_to_length 100000000 \
-    -q "ALTER TABLE ${CLICKHOUSE_DATABASE}.missing_table MODIFY SETTING $assignments" >/dev/null 2>&1
+    <<< "ALTER TABLE ${CLICKHOUSE_DATABASE}_missing.missing_table MODIFY SETTING $assignments" >/dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
@@ -47,5 +51,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'known secrets are found', hasAll(groupUniqArrayIf(name, secret),
         ['kafka_sasl_password', 'nats_url', 'rabbitmq_address', 'after_processing_move_connection_string']) FROM probed_settings;
     SELECT 'an ordinary setting is not taken for a secret', NOT has(groupUniqArrayIf(name, secret), 'index_granularity') FROM probed_settings;
+    SELECT 'no secret in the engines that read server configuration',
+        countIf(secret AND (engine_name LIKE '%MergeTree' OR engine_name = 'Distributed')) = 0 FROM probed_settings;
     SELECT 'secrets with a non-empty default or value:';
     SELECT engine_name, name, value, default FROM probed_settings WHERE secret AND (value != '' OR default != '') ORDER BY ALL;"
