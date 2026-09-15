@@ -164,8 +164,8 @@ public:
     /// Called at most once.
     void startup();
     void finalizeRestoreFromBackup();
-    /// Call after CREATE OR REPLACE committed the view under its final name. Resumes refreshing unless `stay_stopped`.
-    void finalizeCreateOrReplace(bool stay_stopped);
+    /// Call after CREATE OR REPLACE committed the view under its final name. Lifts the refresh hold.
+    void finalizeCreateOrReplace();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
@@ -457,7 +457,7 @@ private:
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);
-    void markReady(bool resume);
+    void markReady();
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 

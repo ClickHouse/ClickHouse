@@ -326,10 +326,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 void RefreshTask::startup()
 {
     if (start_paused)
-    {
-        scheduling.stop_requested = true;
         scheduling.not_ready = true;
-    }
     if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
@@ -346,12 +343,12 @@ void RefreshTask::finalizeRestoreFromBackup()
     if (coordination.coordinated)
         startReplicated();
     else
-        markReady(/*resume=*/ false);
+        markReady();
 }
 
-void RefreshTask::finalizeCreateOrReplace(bool stay_stopped)
+void RefreshTask::finalizeCreateOrReplace()
 {
-    markReady(/*resume=*/ !stay_stopped);
+    markReady();
 }
 
 void RefreshTask::shutdown()
@@ -540,15 +537,10 @@ void RefreshTask::start()
     scheduleRefresh(guard);
 }
 
-void RefreshTask::markReady(bool resume)
+void RefreshTask::markReady()
 {
     std::lock_guard guard(mutex);
     scheduling.not_ready = false;
-    if (resume && !coordination.unavailable)
-    {
-        scheduling.stop_requested = false;
-        scheduling.unexpected_error = std::nullopt;
-    }
     /// Unconditionally, unlike `start`: a `SYSTEM START` that arrived while the barrier still held
     /// has already cleared `stop_requested`, so nothing else would wake the scheduler.
     scheduleRefresh(guard);
