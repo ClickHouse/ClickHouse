@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
+    extern const Event AsyncInsertFlush;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -459,6 +460,8 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
                     flush_time_history_per_queue_shard[shard_num]);
             },
             priority);
+
+        ProfileEvents::increment(ProfileEvents::AsyncInsertFlush);
     }
     catch (...)
     {
