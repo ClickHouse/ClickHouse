@@ -64,8 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT count() >= 1 FROM system.remote_data_paths
 WHERE disk_name = '${cached_disk_name}' AND metadata_type = 'PlainRewritable'"
 
-# `metadata_type` and `last_modified` are filled for every backend, not only this one, so cover the local
-# metadata storage as well - it is what most disks served by this table actually use.
+# `metadata_type` and `last_modified` are filled for every backend, so cover local metadata too.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE 04326_local_meta_t (a Int32, b String) ORDER BY a
 SETTINGS disk = disk(

@@ -129,15 +129,8 @@ private:
     /// Metadata type name of the current disk, computed once per disk instead of once per row.
     String current_metadata_type_name;
 
-    /// A metadata storage whose contents cannot change records no modification time and answers
-    /// `getLastModifiedIfExists` with the current time for every path that exists - `Plain`,
-    /// `StaticWeb` and `WebIndex` all do. Reporting that would put the time of the query in the column
-    /// as the time of the file, so leave it at zero for them, which is what zero means here.
-    ///
-    /// `isReadOnly() || isWriteOnce()` is how the rest of the codebase spells "the contents do not
-    /// change" (see `DataPartStorageOnDiskBase::isReadonly`), asked of the metadata storage rather than
-    /// the disk: `DiskObjectStorage::isReadOnly` answers for the object storage, so a read-only endpoint
-    /// with ordinary local metadata would lose a timestamp it does record.
+    /// Zero where the metadata storage records no modification time - `Plain` and the `Web` ones
+    /// answer `getLastModifiedIfExists` with the query's time, not the file's.
     bool current_disk_reports_last_modified = true;
 };
 
