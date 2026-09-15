@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <Common/re2.h>
 
@@ -64,6 +65,15 @@ inline bool isAnchoredLiteralMatchKind(RegexpMatchKind kind)
             return false;
     }
 }
+
+/// Predicts whether `OptimizedRegularExpression` will run RE2 over `pattern` in UTF-8 mode (it retries in
+/// Latin-1 exactly when RE2 reports `ErrorBadUTF8`, that is, when the *pattern* does not decode as UTF-8).
+/// RE2's decoder (`chartorune` plus the `Runemax` check in `StringViewToRune`) is RFC 3629 without the
+/// surrogate restriction: it rejects overlong encodings, truncated sequences and code points above
+/// `U+10FFFF`, but accepts encoded surrogates (`ED A0 80` .. `ED BF BF`), which `UTF8::isValidUTF8` rejects.
+/// Predicting the mode with the stricter validator would be wrong in the dangerous direction - a pattern
+/// carrying an encoded surrogate would look like Latin-1 here while RE2 keeps matching whole code points.
+bool willRE2MatchInUTF8Mode(std::string_view pattern);
 
 struct RegexpAnalysisResult
 {

@@ -6,7 +6,6 @@
 #include <Common/Volnitsky.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
@@ -109,12 +108,10 @@ struct MatchImpl
         {
             const char * data = reinterpret_cast<const char *>(&haystack_data[prev_offset]);
             const size_t size = haystack_offsets[i] - prev_offset;
-            /// Byte-wise matching only matches RE2 (UTF-8 mode) on valid UTF-8; invalid UTF-8 may differ.
-            if (UTF8::isValidUTF8(&haystack_data[prev_offset], size))
-            {
-                const bool re2_match = regexp.match(data, size);
-                chassert(res[i] == static_cast<UInt8>(negate ^ re2_match));
-            }
+            /// Every haystack, including one that is not valid UTF-8: the compiled subset is required to
+            /// agree with RE2 on any bytes, which is what `RegexpProgram` gates the constructs for.
+            const bool re2_match = regexp.match(data, size);
+            chassert(res[i] == static_cast<UInt8>(negate ^ re2_match));
             prev_offset = haystack_offsets[i];
         }
     }

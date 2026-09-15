@@ -3,7 +3,6 @@
 #include <Functions/Regexps.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/isValidUTF8.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
 #include <cstring>
@@ -37,23 +36,21 @@ struct ExtractImpl
             const char * d = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t size = offsets[i] - prev_offset;
 
-            /// Byte-wise matching only matches RE2 (UTF-8 mode) on valid UTF-8; invalid UTF-8 may differ.
-            if (UTF8::isValidUTF8(&data[prev_offset], size))
+            /// Every haystack, including one that is not valid UTF-8: the compiled subset is required to
+            /// agree with RE2 on any bytes, which is what `RegexpProgram` gates the constructs for.
+            unsigned count = regexp.match(d, size, matches, capture + 1);
+
+            const char * expected_ptr = nullptr;
+            size_t expected_len = 0;
+            if (count > capture && matches[capture].offset != std::string::npos)
             {
-                unsigned count = regexp.match(d, size, matches, capture + 1);
-
-                const char * expected_ptr = nullptr;
-                size_t expected_len = 0;
-                if (count > capture && matches[capture].offset != std::string::npos)
-                {
-                    expected_ptr = d + matches[capture].offset;
-                    expected_len = matches[capture].length;
-                }
-
-                const size_t jit_len = res_offsets[i] - res_prev_offset;
-                chassert(jit_len == expected_len);
-                chassert(jit_len == 0 || 0 == memcmp(&res_data[res_prev_offset], expected_ptr, expected_len));
+                expected_ptr = d + matches[capture].offset;
+                expected_len = matches[capture].length;
             }
+
+            const size_t jit_len = res_offsets[i] - res_prev_offset;
+            chassert(jit_len == expected_len);
+            chassert(jit_len == 0 || 0 == memcmp(&res_data[res_prev_offset], expected_ptr, expected_len));
 
             res_prev_offset = res_offsets[i];
             prev_offset = offsets[i];
