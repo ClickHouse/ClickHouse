@@ -1,12 +1,14 @@
 -- An overflowing scale conversion must never wrap. A reader that can fall back to a `CAST` converts the value
 -- like every other numeric source of a `Time64` and saturates to the clock window of the type under the default
--- overflow mode; `convertFieldToType` alone has no mode to honour and keeps reporting `DECIMAL_OVERFLOW`.
+-- overflow mode; `convertFieldToType` alone has no mode to honour and reports "cannot convert" (Null), so an exact
+-- `IN` constant that no `Time64` can hold is excluded from the set instead of failing the query.
 select * from format(Values, 'x Time64(6)', '(253402207200000::Decimal64(0))');
 select * from format(Values, 'x Time64(6)', '(-253402207200000::Decimal64(0))');
 select * from format(Values, 'x Time64(9)', '(253402207200000::Decimal64(0))');
 select * from format(Values, 'x Nullable(Time64(6))', '(253402207200000::Decimal64(0))');
 select * from format(Values, 'x Array(Time64(6))', '([253402207200000::Decimal64(0)])');
-select 1 where toTime64('00:00:01', 6) in (253402207200000::Decimal64(0)); -- { serverError DECIMAL_OVERFLOW }
+select 1 where toTime64('00:00:01', 6) in (253402207200000::Decimal64(0));
+select 1 where toTime64('00:00:01', 6) in (1::Decimal64(0), 253402207200000::Decimal64(0));
 
 -- A value whose rescale still fits the Int64 ticks is outside the clock window all the same, so it saturates
 -- rather than being stored as a `Time64` that no clock reading can express.
@@ -21,8 +23,9 @@ select * from format(Values, 'x Time64(0)', '(253402207200000::Decimal64(3))');
 select * from format(Values, 'x Time64(0)', '(-253402207200000::Decimal64(3))');
 select * from format(Values, 'x Time64(6)', '(1::Decimal64(6))');
 
--- The DateTime64 sibling branch keeps reporting the same overflow.
-select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (253402207200000::Decimal64(0)); -- { serverError DECIMAL_OVERFLOW }
+-- The DateTime64 sibling branch excludes the impossible constant the same way.
+select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (253402207200000::Decimal64(0));
+select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (1::Decimal64(0), 253402207200000::Decimal64(0));
 
 -- A wrapped value must not be persisted: the row that lands in the table is the saturated maximum, not the
 -- `-999:59:59.722624` that the unguarded rescale produced. The conversion is asserted through `format` so that

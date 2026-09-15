@@ -1,0 +1,41 @@
+DateTime64: impossible constants are excluded
+0
+0
+0
+0
+0
+DateTime64: representable constants still match
+1
+1
+1
+1
+1
+1
+1
+DateTime64: a constant that loses its fraction cannot equal a stored value
+0
+1
+Time64: impossible constants are excluded
+0
+0
+0
+0
+0
+Time64: representable constants still match
+1
+1
+1
+1
+1
+1
+0
+Nullable and multi-element sets
+1
+1
+0
+Primary key pruning with an impossible constant
+0
+1
+0
+1
+1
