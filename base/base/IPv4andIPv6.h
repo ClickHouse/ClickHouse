@@ -2,9 +2,9 @@
 
 #include <base/extended_types.h>
 #include <base/strong_typedef.h>
+#include <base/unaligned.h>
 
 #include <bit>
-#include <cstring>
 
 
 namespace DB
@@ -36,10 +36,8 @@ namespace DB
     private:
         unsigned __int128 asBigEndian() const
         {
-            UInt64 hi;
-            UInt64 lo;
-            std::memcpy(&hi, &toUnderType(), sizeof(hi));
-            std::memcpy(&lo, reinterpret_cast<const char *>(&toUnderType()) + sizeof(hi), sizeof(lo));
+            UInt64 hi = unalignedLoad<UInt64>(&toUnderType());
+            UInt64 lo = unalignedLoad<UInt64>(reinterpret_cast<const char *>(&toUnderType()) + sizeof(hi));
             if constexpr (std::endian::native == std::endian::little)
             {
                 hi = std::byteswap(hi);

@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
-#include <cstring>
 
 #include <base/MemorySanitizer.h>
 #include <base/simd.h>
+#include <base/unaligned.h>
 
 namespace detail
 {
@@ -23,10 +23,8 @@ inline int cmp(T a, T b)
 
 inline unsigned __int128 loadBigEndian128(const void * p)
 {
-    uint64_t hi;
-    uint64_t lo;
-    std::memcpy(&hi, p, sizeof(hi));
-    std::memcpy(&lo, static_cast<const char *>(p) + sizeof(hi), sizeof(lo));
+    uint64_t hi = unalignedLoad<uint64_t>(p);
+    uint64_t lo = unalignedLoad<uint64_t>(static_cast<const char *>(p) + sizeof(hi));
     if constexpr (std::endian::native == std::endian::little)
     {
         hi = std::byteswap(hi);
