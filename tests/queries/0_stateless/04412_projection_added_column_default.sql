@@ -26,12 +26,16 @@ ALTER TABLE t_proj_added_default ADD COLUMN m Int64 MATERIALIZED 42;  -- materia
 
 -- WHERE matches the projection's ORDER BY (a, b), so reads are served by the projection.
 -- (parallel replicas disabled: irrelevant to this single-node projection read and only adds flakiness.)
+-- The identical predicate in each base read below populates the query condition cache, whose granule mask
+-- is row-exact at index_granularity = 1: the base read is then pruned to 50 marks while projection 'p' needs
+-- 51, so the cost gate declines it and force_optimize_projection throws. Hence use_query_condition_cache = 0
+-- on the forced reads, which assert the projection path rather than the cost comparison.
 -- c: base and projection reads must both return the DDL default -1, not the type default 0.
 SELECT 'c-base' AS path, c FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY c SETTINGS optimize_use_projections = 0, enable_parallel_replicas = 0;
-SELECT 'c-proj' AS path, c FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY c SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
+SELECT 'c-proj' AS path, c FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY c SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0, use_query_condition_cache = 0;
 -- d: no DDL default -> both reads return the type default 0.
 SELECT 'd-base' AS path, d FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY d SETTINGS optimize_use_projections = 0, enable_parallel_replicas = 0;
-SELECT 'd-proj' AS path, d FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY d SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
+SELECT 'd-proj' AS path, d FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY d SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0, use_query_condition_cache = 0;
 -- m: materialized column reads its expression value.
 SELECT 'm' AS path, m FROM t_proj_added_default WHERE a = 1 AND b = 4665 GROUP BY m SETTINGS optimize_use_projections = 1, enable_parallel_replicas = 0;
 
