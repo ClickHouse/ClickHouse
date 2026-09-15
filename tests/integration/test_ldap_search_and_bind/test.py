@@ -233,7 +233,7 @@ def test_search_and_bind_authenticates(ldap_cluster):
         "SELECT name, storage, auth_type FROM system.users WHERE name = 'janedoe'",
         user="common_user",
         password="qwerty",
-    ) == TSV([["janedoe", "ldap", "ldap"]])
+    ) == TSV([["janedoe", "ldap", "['ldap']"]])
 
 
 def test_wrong_password_and_unknown_user_are_authentication_failures(ldap_cluster):
@@ -261,8 +261,9 @@ def test_login_is_escaped_once(ldap_cluster):
     RFC 4514 DN-special characters that used to be escaped for the DN first and then
     again for the filter (`a\\5C=b`), so they never matched."""
     for user in ["special(user)*", "o'neil,doe", "a=b"]:
+        # `TSVRaw`: the TabSeparated format would escape the quote in `o'neil,doe`.
         assert instance.query(
-            "SELECT currentUser()", user=user, password="qwerty"
+            "SELECT currentUser() FORMAT TSVRaw", user=user, password="qwerty"
         ) == TSV([[user]]), user
 
 
