@@ -1173,6 +1173,21 @@ def _settings_alias_routes(pages):
     return dict(sorted(alias_routes.items()))
 
 
+def _settings_alias_anchors(pages):
+    """Map documented setting aliases to their canonical destination anchors."""
+    alias_anchors = {}
+    for page in walk_setting_pages(pages):
+        for section in page.sections:
+            for alias in section.aliases:
+                previous = alias_anchors.setdefault(alias, section.anchor)
+                if previous != section.anchor:
+                    raise ValueError(
+                        f"settings alias {alias!r} occurs with both "
+                        f"{previous} and {section.anchor} anchors"
+                    )
+    return dict(sorted(alias_anchors.items()))
+
+
 def _resolve_setting_anchor(anchor, routes, anchor_routes):
     for candidate in (anchor, anchor.lower()):
         if candidate in anchor_routes:
@@ -1621,17 +1636,26 @@ def _strip_settings_explorer(preamble, family):
     return pattern.sub("", preamble).strip()
 
 
-def _settings_legacy_routes_script(anchor_routes, family, alias_routes=None):
+def _settings_legacy_routes_script(
+        anchor_routes, family, alias_routes=None, alias_anchors=None):
     """Expose moved settings anchors to the global Mintlify redirect script."""
     base_route = json.dumps(family["base_route"])
     routes = json.dumps(
         anchor_routes, separators=(",", ":")).replace("<", "\\u003c")
     alias_routes = alias_routes or {}
+    alias_anchors = alias_anchors or {}
     aliases_script = ""
     if alias_routes:
+        if set(alias_routes) != set(alias_anchors):
+            raise ValueError("settings alias routes and anchors must have identical keys")
         aliases = json.dumps(
             alias_routes, separators=(",", ":")).replace("<", "\\u003c")
+        anchors = json.dumps(
+            alias_anchors, separators=(",", ":")).replace("<", "\\u003c")
         aliases_script = (
+            "window.clickhouseSettingsLegacyAliasAnchors = "
+            "window.clickhouseSettingsLegacyAliasAnchors || {};\n"
+            f"window.clickhouseSettingsLegacyAliasAnchors[{base_route}] = {anchors};\n"
             "window.clickhouseSettingsLegacyAliases = "
             "window.clickhouseSettingsLegacyAliases || {};\n"
             f"window.clickhouseSettingsLegacyAliases[{base_route}] = {aliases};\n"
@@ -2013,6 +2037,7 @@ def split_settings_page(
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
     alias_routes = _settings_alias_routes(pages)
+    alias_anchors = _settings_alias_anchors(pages)
     shard_dir = Path(dest).with_suffix("")
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
@@ -2039,7 +2064,9 @@ def split_settings_page(
     ))
     artifacts.append(GeneratedArtifact(
         _settings_legacy_routes_path(docs_dir, family_name),
-        _settings_legacy_routes_script(anchor_routes, family, alias_routes),
+        _settings_legacy_routes_script(
+            anchor_routes, family, alias_routes, alias_anchors
+        ),
     ))
     if route_contract_path:
         artifacts.append(GeneratedArtifact(

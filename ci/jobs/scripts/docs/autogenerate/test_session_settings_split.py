@@ -267,6 +267,7 @@ def main():
         mod._settings_anchor_routes(aliases_pages),
         mod.SETTINGS_SPLIT_FAMILIES["session-settings"],
         mod._settings_alias_routes(aliases_pages),
+        mod._settings_alias_anchors(aliases_pages),
     )
     aliases_routes = mod._parse_settings_legacy_routes_script(
         aliases_route_script,
@@ -274,6 +275,7 @@ def main():
     )
     assert aliases_routes["legacy_setting"] == \
         "/reference/settings/session-settings/other"
+    assert '"legacy_setting":"canonical_setting"' in aliases_route_script
     aliases_explorer = mod._settings_explorer_component(aliases_pages)
     assert '"canonical_setting":["legacy_setting","older_setting"]' in aliases_explorer
     assert "...(settingAliases[setting.name] || [])" in aliases_explorer
