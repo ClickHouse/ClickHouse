@@ -477,3 +477,52 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     const Step null_safe(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::NullSafeEquals});
     EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, null_safe.join_operator), Exception);
 }
+
+TEST(JoinSpillTriggerPlanSetting, NullSafeEqualityIsAKeyForTheMergeAlgorithmsToo)
+{
+    /// `ON l IS NOT DISTINCT FROM r` becomes an ordinary join key of the single clause on both sides
+    /// (`addJoinPredicatesToTableJoin`; nullable keys are wrapped into `tuple(...)` first), and neither merge
+    /// algorithm tells it apart from `=`. A merge algorithm listed first therefore runs the step here and on an old
+    /// peer, and a spill-capable entry behind it is never consulted, whatever the limits and thresholds say.
+    const Step null_safe(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::NullSafeEquals});
+    const Step both_keys(JoinKind::Left, JoinStrictness::All, {JoinConditionOperator::Equals, JoinConditionOperator::NullSafeEquals});
+
+    for (const auto & algorithms : {"full_sorting_merge,hash", "full_sorting_merge,grace_hash", "parallel_full_sorting_merge,grace_hash",
+                                    "partial_merge,grace_hash", "partial_merge,hash", "direct,full_sorting_merge,grace_hash"})
+    {
+        for (const auto * step : std::initializer_list<const Step *>{&null_safe, &both_keys})
+        {
+            EXPECT_NO_THROW(
+                serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version, step->join_operator))
+                << algorithms;
+            EXPECT_NO_THROW(
+                serializeAt(
+                    makeJoinSettings({{"join_algorithm", algorithms}, {"max_bytes_before_external_join", 1000000u}, {"max_bytes_in_join", 100u}}),
+                    pre_setting_version, step->join_operator))
+                << algorithms;
+        }
+    }
+
+    /// The merge algorithms still take the step by kind and strictness: for a SEMI join `full_sorting_merge` steps
+    /// aside and the list is walked on to the spill-capable entry.
+    const Step left_semi(JoinKind::Left, JoinStrictness::Semi, {JoinConditionOperator::NullSafeEquals});
+    EXPECT_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "full_sorting_merge,grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
+            pre_setting_version, left_semi.join_operator),
+        Exception);
+    EXPECT_NO_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "partial_merge,grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
+            pre_setting_version, left_semi.join_operator));
+
+    /// And a null-safe key still makes the step one `GraceHashJoin` can run, so the hash family with a spill
+    /// threshold and a size limit keeps failing closed.
+    for (const auto & algorithms : {"hash,full_sorting_merge", "parallel_hash", "grace_hash"})
+    {
+        EXPECT_THROW(
+            serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version, null_safe.join_operator),
+            Exception)
+            << algorithms;
+    }
+}

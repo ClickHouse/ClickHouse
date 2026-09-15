@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
 #include <Core/ProtocolDefines.h>
@@ -294,24 +295,26 @@ static bool isJoinOnConstant(const JoinOperator & join_operator)
         && std::get<0>(join_operator.expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
 }
 
-/// Whether every predicate of the `ON` clause is an equality between one expression of the left side and one of
-/// the right side. For such a step the merge algorithms decide on the kind and strictness alone: they decline a
-/// mixed (cross-side non-equi) condition, a one-sided filter and a disjunction, and none of those is left once the
-/// clause is plain equalities. `IS NOT DISTINCT FROM` is not counted, its keys are rewritten on the way in.
+/// Whether `predicate` is an equality between one expression of the left side and one of the right side - a `=`
+/// or an `IS NOT DISTINCT FROM`. `JoinStepLogical::addJoinPredicatesToTableJoin` turns exactly those into the join
+/// keys of the `TableJoin` clause; a null-safe key is only wrapped into `tuple(...)` on both sides beforehand,
+/// which changes neither the number of clauses nor the algorithms that can run the step.
+static bool isCrossSideEquality(const JoinActionRef & predicate)
+{
+    auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+    if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+        return false;
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
+/// Whether every predicate of the `ON` clause is a cross-side equality. For such a step the merge algorithms decide
+/// on the kind and strictness alone: they decline a mixed (cross-side non-equi) condition, a one-sided filter and a
+/// disjunction, and none of those is left once the clause is plain equalities.
 static bool isPlainEquiJoin(const JoinOperator & join_operator)
 {
     if (join_operator.expression.empty())
         return false;
-
-    for (const auto & predicate : join_operator.expression)
-    {
-        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
-            return false;
-        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
-            return false;
-    }
-    return true;
+    return std::ranges::all_of(join_operator.expression, isCrossSideEquality);
 }
 
 /// Whether `algorithm`, listed before `grace_hash`, produces a join for `join_operator` on both sides - so the list
@@ -346,15 +349,7 @@ static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & jo
 /// is converted to a CROSS join with a residual filter, and anything else is refused - none of which spills.
 static bool hasEqualityKeys(const JoinOperator & join_operator)
 {
-    for (const auto & predicate : join_operator.expression)
-    {
-        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            continue;
-        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(join_operator.expression, isCrossSideEquality);
 }
 
 /// `GraceHashJoin::isSupported` on a step: the kind and strictness it accepts, and a single join clause
