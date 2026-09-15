@@ -10,6 +10,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <cstdlib>
 #include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -325,8 +326,44 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// The object_store builder does not read the workload identity environment variables on its own.
+            auto env_value = [](const char * env_var) -> const char *
+            {
+                if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
+                    return value;
+                return nullptr;
+            };
+
+            /// Explicit IDs (extra_credentials / named collection) win over the environment.
+            const char * tenant = !connection_params.workload_identity_tenant_id.empty()
+                ? connection_params.workload_identity_tenant_id.c_str()
+                : env_value("AZURE_TENANT_ID");
+            const char * client = !connection_params.workload_identity_client_id.empty()
+                ? connection_params.workload_identity_client_id.c_str()
+                : env_value("AZURE_CLIENT_ID");
+            const char * token_file = env_value("AZURE_FEDERATED_TOKEN_FILE");
+
+            if (!tenant || !client || !token_file)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Azure workload identity is not configured for the delta-kernel path: "
+                    "AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE must be set "
+                    "(tenant/client id may instead be passed via extra_credentials)");
+
+            set_option("azure_tenant_id", tenant);
+            set_option("azure_client_id", client);
+            set_option("azure_federated_token_file", token_file);
+            if (const char * authority = env_value("AZURE_AUTHORITY_HOST"))
+                set_option("azure_authority_host", authority);
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
