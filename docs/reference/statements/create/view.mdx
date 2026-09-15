@@ -303,6 +303,8 @@ Typically the first refresh is started immediately after the materialized view i
 
 If the refreshable materialized view is in a [Replicated database](/reference/engines/database-engines/replicated), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table engine is required, so that all replicas see the data produced by the refresh.
 
+`RANDOMIZE FOR` is applied by each replica independently, so the replicas do not agree on the exact time of the next refresh and whichever one comes first performs it. This means a random replica refreshes each time, and that `next_refresh_time` in [`system.view_refreshes`](/reference/system-tables/view_refreshes) reports the time this replica would refresh at, not necessarily the time the refresh actually happens. Because the earliest of several random times is earlier than one random time on average, refreshes happen slightly earlier inside the `RANDOMIZE FOR` window the more replicas there are.
+
 In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`. This makes replicas do refreshes independently of each other. In this case ReplicatedMergeTree is not required.
 
 In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinated, use `Atomic` database and `CREATE ... ON CLUSTER` query to create refreshable materialized views on all replicas.
