@@ -1256,6 +1256,13 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// The post-processing runs before the Keeper requests are sent on purpose: an object found to
+    /// be no longer the generation that was ingested (`FILE_CHANGED_DURING_READ`, see
+    /// `ObjectStorageQueuePostProcessor::process`) throws out of here, so that the batch is not
+    /// committed as processed. The files then go back to unprocessed (their `Processing` nodes are
+    /// released when the sources are destroyed) and the newer generation is ingested on a later pass,
+    /// instead of staying in the bucket untracked for good. The objects of the batch that were moved
+    /// or deleted are gone from the bucket, so that pass does not ingest them again.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty()
@@ -1647,7 +1654,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 void StorageObjectStorageQueue::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())

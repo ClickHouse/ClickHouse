@@ -2242,11 +2242,11 @@ import TabItem from '@theme/TabItem';
 
 # DeltaLake table engine
 
-This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (from v25.10).
+This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
 
 ## Create a DeltaLake table {#create-table}
 
-To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
+By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
 <TabItem value="S3" label="S3" default>
@@ -2366,7 +2366,8 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 
 <Note>
 Writing using the table engine is supported only through delta kernel.
-Writes to Azure are not yet supported but work for S3 and GCS.
+Writes work for S3 and GCS, and for Azure from version 26.9.
+Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 </Note>
 
 ### Data cache {#data-cache}
@@ -2416,7 +2417,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage, supporting both reads and writes.",
             .syntax = "ENGINE = DeltaLakeS3(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLake"}});
 #    endif
@@ -2455,7 +2456,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
             .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"DeltaLake"}});
 #    endif
@@ -2493,7 +2494,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
+            .description = "Provides an integration with Delta Lake tables stored on the local filesystem. Reads work out of the box; with `allow_delta_lake_create_table = 1` a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` creates a new table (writing the initial commit), and `INSERT` requires `allow_delta_lake_writes = 1`.",
             .syntax = "ENGINE = DeltaLakeLocal(path)",
             .related = {"DeltaLake"}});
 }
