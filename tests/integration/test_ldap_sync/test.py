@@ -982,6 +982,12 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
     not apply to her. Now it visibly does not: the table has row policies, none of them for the new janedoe
     (`throw_on_unmatched_row_policies` is set by the harness), and `apply_to_list` no longer names her.
     """
+
+    The discriminating check is the stored definition of the policy: `apply_to_list` and `SHOW CREATE` are
+    rendered by `RolesOrUsersSet::toASTWithNames`, which silently drops an id it cannot resolve to a name,
+    and the new janedoe is denied with or without the cleanup, so all three look the same with a dangling
+    id. `local_directory` rewrites `<policy id>.sql` synchronously on every update, in the attach form that
+    names the users by id (`TO ID('<uuid>')`), so the file shows whether the reference is really gone.
     sync_node_manual()
     policy_query = (
         "SELECT apply_to_all, apply_to_list FROM system.row_policies"
@@ -1007,11 +1013,27 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
             node_manual, "SELECT id FROM system.users WHERE name = 'janedoe'"
         )
 
+        janedoe_id = id_before.strip()
+        policy_id = admin(
+            node_manual,
+            "SELECT id FROM system.row_policies WHERE short_name = 'sync_policy'",
+        ).strip()
+        policy_file = f"/var/lib/clickhouse/access/{policy_id}.sql"
+
+        def stored_policy_definition():
+            return node_manual.exec_in_container(["bash", "-c", f"cat {policy_file}"])
+
+        definition = stored_policy_definition()
+        assert f"ID('{janedoe_id}')" in definition, definition
         ldap_set_memberships("janedoe", set())
         admin(node_manual, "SYSTEM RELOAD USERS")
         assert admin(node_manual, ldap_users_query("janedoe")) == "0\n"
         assert node_manual.contains_in_log("Removed LDAP user 'janedoe'")
         assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
+        # With the cleanup reverted, the file would still hold the old id while the two renderings below
+        # would look exactly the same.
+        definition = stored_policy_definition()
+        assert janedoe_id not in definition and "ID(" not in definition, definition
         assert "janedoe" not in admin(
             node_manual, "SHOW CREATE ROW POLICY sync_policy ON default.policy_table"
         )
@@ -1025,6 +1047,7 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
         )
         assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
         error = node_manual.query_and_get_error(
+        assert "ID(" not in stored_policy_definition()
             "SELECT count() FROM policy_table", user="janedoe", password="qwerty"
         )
         assert (
