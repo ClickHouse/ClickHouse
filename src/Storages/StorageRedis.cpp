@@ -461,7 +461,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
             "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
             null_map->size(), keys.size());
 
-    for (size_t i = 0; i < values.size(); ++i)
+    for (size_t i = 0; i < keys.size(); ++i)
     {
         if (null_map && !(*null_map)[i])
         {
@@ -517,7 +517,18 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
     for (size_t i = 0; i < keys.size(); ++i)
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
-    return connection->client->execute<RedisArray>(cmd_mget);
+    RedisArray values = connection->client->execute<RedisArray>(cmd_mget);
+
+    /// Callers pair the reply with the request by position, into arrays sized from `keys`.
+    if (values.isNull() || values.size() != keys.size())
+        throw Exception(
+            ErrorCodes::INTERNAL_REDIS_ERROR,
+            "Redis table {} returned {} values for MGET of {} keys",
+            getStorageID().getFullNameNotQuoted(),
+            values.isNull() ? 0 : values.size(),
+            keys.size());
+
+    return values;
 }
 
 void StorageRedis::multiSet(const RedisArray & data) const
