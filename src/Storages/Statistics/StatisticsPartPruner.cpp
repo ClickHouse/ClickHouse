@@ -97,9 +97,16 @@ std::optional<String> tryResolveNullMapParent(const ColumnsDescription & columns
     return parent;
 }
 
+bool hasBasicStatsOnNullableType(const ColumnDescription & col)
+{
+    return col.statistics.types_to_desc.contains(StatisticsType::Basic)
+        && isNullableOrLowCardinalityNullable(col.type);
+}
+
 /// Collect top-level `AND` conjuncts testing a column's NULL-ness: a bare `<col>.null`
 /// input, `not(<col>.null)`, or `isNull(<col>)` / `isNotNull(<col>)` on a bare column.
-/// Whether the column actually has a usable NULL count is decided later from estimates.
+/// The constructor keeps only columns with `Basic` statistics on a nullable type, so a
+/// lone `IS NULL` that cannot prune does not load per-part statistics.
 void collectNullPredicates(
     const ActionsDAG::Node & node,
     const ColumnsDescription & columns,
@@ -232,9 +239,15 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
         }
     }
 
-    collectNullPredicates(*filter_dag.predicate, columns, null_predicates);
-    for (const auto & pred : null_predicates)
+    std::vector<std::pair<String, bool>> collected_null_predicates;
+    collectNullPredicates(*filter_dag.predicate, columns, collected_null_predicates);
+    for (const auto & pred : collected_null_predicates)
     {
+        const auto * col = columns.tryGet(pred.first);
+        if (!col || !hasBasicStatsOnNullableType(*col))
+            continue;
+
+        null_predicates.push_back(pred);
         used_column_names.insert(pred.first);
         useless = false;
     }

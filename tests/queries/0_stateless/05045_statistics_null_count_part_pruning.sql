@@ -176,3 +176,26 @@ SELECT count() FROM test_dot_null_column WHERE `foo.null` IS NULL;
 SELECT count() FROM test_dot_null_column WHERE `foo.null` > 8;
 
 DROP TABLE test_dot_null_column;
+
+DROP TABLE IF EXISTS test_no_basic_stats_is_null;
+CREATE TABLE test_no_basic_stats_is_null
+(
+    bucket UInt8,
+    value Nullable(Int64)
+)
+ENGINE = MergeTree()
+PARTITION BY bucket
+ORDER BY tuple()
+SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
+
+INSERT INTO test_no_basic_stats_is_null VALUES (0, NULL), (0, NULL);
+INSERT INTO test_no_basic_stats_is_null VALUES (1, 100), (1, 101);
+
+SELECT 'Test 17: `IS NULL` without `STATISTICS(basic)` does not activate statistics pruning';
+SELECT countIf(explain LIKE '%Statistics%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_no_basic_stats_is_null WHERE value IS NULL);
+SELECT count() FROM test_no_basic_stats_is_null WHERE value IS NULL;
+SELECT countIf(explain LIKE '%Statistics%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_no_basic_stats_is_null WHERE value IS NULL SETTINGS optimize_functions_to_subcolumns = 0);
+
+DROP TABLE test_no_basic_stats_is_null;

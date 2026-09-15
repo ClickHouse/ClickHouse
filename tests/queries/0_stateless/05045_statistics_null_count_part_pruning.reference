@@ -56,3 +56,7 @@ Test 14b: `IS NULL` with real +Inf max
 Test 16: user column literally named `foo.null` is not treated as a virtual key
 1
 2
+Test 17: `IS NULL` without `STATISTICS(basic)` does not activate statistics pruning
+1
+2
+1
