@@ -36,6 +36,8 @@ DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
     bool initialize)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
+    /// Replace the standalone-file index component with the packed flavor before anything can read.
+    index_storage = std::make_unique<DataPartIndexStorageOnDiskPacked>(*this);
     if (initialize)
         resetReader(read_settings_);
     if (transaction)
@@ -51,6 +53,8 @@ DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
 {
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked");
+    /// Replace the standalone-file index component with the packed flavor before anything can read.
+    index_storage = std::make_unique<DataPartIndexStorageOnDiskPacked>(*this);
     if (initialize_)
         resetReader(read_settings_);
 }
@@ -61,19 +65,22 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
     return std::make_shared<DataPartStorageOnDiskPacked>(std::move(volume_), std::move(root_path_), std::move(part_dir_), getReadSettings(), initialize_);
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
+MutableDataPartProjectionStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    return std::make_shared<DataPartProjectionStorageOnDiskPacked>(
+        volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings());
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
+MutableDataPartProjectionStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    return std::make_shared<DataPartProjectionStorageOnDiskPacked>(
+        volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false);
 }
 
-DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
+DataPartProjectionStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskPacked>(volume, std::string(fs::path(root_path) / part_dir), name, getReadSettings());
+    return std::make_shared<DataPartProjectionStorageOnDiskPacked>(
+        volume, std::string(fs::path(root_path) / part_dir), name, nullptr, getReadSettings());
 }
 
 bool DataPartStorageOnDiskPacked::exists() const
@@ -210,7 +217,7 @@ bool DataPartStorageOnDiskPacked::existsFileImpl(const std::string & file_name) 
     /// must consult the skip-indices overlay before falling through to the outer reader.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = index_storage->getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
             return true;
     }
 
@@ -229,7 +236,7 @@ size_t DataPartStorageOnDiskPacked::getFileSizeImpl(const String & file_name) co
     /// See existsFileImpl() for why we consult the skip-indices overlay first.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = index_storage->getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
             return skip_reader->getFileSize(file_name);
     }
 
@@ -277,7 +284,7 @@ std::optional<UInt64> DataPartStorageOnDiskPacked::getPackedFileUncompressedSize
     /// Consults only the skip-indices overlay index (seeded at write time or loaded lazily), so it
     /// stays usable while the part is being written, when the outer reader is not initialized yet.
     if (looksLikePackedSkipIndexFile(file_name))
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = index_storage->getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
             return skip_reader->getFileUncompressedSize(file_name);
     return {};
 }
@@ -330,7 +337,7 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
     /// outer reader at the part's current location).
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(name))
+        if (auto skip_reader = index_storage->getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(name))
         {
             if (!reader)
                 throw Exception(ErrorCodes::NOT_INITIALIZED,
@@ -616,8 +623,8 @@ bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) 
         return true;
 
     auto path = fs::path(file_name);
-    return path.extension() == ".proj"
-        || path.extension() == ".tmp_proj"
+    return path.extension() == IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX
+        || path.extension() == IDataPartProjectionStorage::TEMP_PROJECTION_DIRECTORY_SUFFIX
         || (path.extension() == ".tmp" && files_written_separately.contains(path.stem()));
 }
 
@@ -658,7 +665,7 @@ void DataPartStorageOnDiskPacked::resetReader(const ReadSettings & read_settings
         reader.emplace(volume->getDisk(), data_path, read_settings);
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartIndexStorageOnDiskPacked::getSkipIndicesPackedReader() const
 {
     {
         std::lock_guard lock(skip_indices_packed_mutex);
@@ -666,11 +673,12 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
             return skip_indices_packed_reader;
     }
 
-    auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskPacked::getSkipIndicesPackedReader");
+    auto component_guard = Coordination::setCurrentComponent("DataPartIndexStorageOnDiskPacked::getSkipIndicesPackedReader");
 
-    /// skp_idx.packed is a virtual file inside data.packed on packed-part storage; the base-class
-    /// disk->existsFile probe would always miss it. Route through the outer reader.
-    if (reader && reader->exists(String(SKIP_INDICES_PACKED_FILENAME)))
+    /// skp_idx.packed is a virtual file inside data.packed on packed-part storage; the standalone
+    /// disk->existsFile probe would always miss it. Route through the storage's outer reader.
+    const auto & outer_reader = packed_storage.reader;
+    if (outer_reader && outer_reader->exists(String(SKIP_INDICES_PACKED_FILENAME)))
     {
         /// On shared storage another replica may delete or relocate data.packed between the check
         /// above and the read below, so the read fails with a "no such key" error. Expect404ResponseScope
@@ -684,17 +692,17 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         /// concurrent rename can change getRelativeDataPath() in between, and rechecking a different
         /// path could find the relocated archive and spuriously rethrow the old-path 404.
         Expect404ResponseScope scope;
-        const String data_path = getRelativeDataPath();
+        const String data_path = packed_storage.getRelativeDataPath();
         try
         {
-            auto inner_archive_buf = reader->readFile(
-                volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
+            auto inner_archive_buf = outer_reader->readFile(
+                packed_storage.getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
             auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
             seedSkipIndicesPackedReader(inner_index);
         }
         catch (const Exception &)
         {
-            if (volume->getDisk()->existsFile(data_path))
+            if (packed_storage.getDisk()->existsFile(data_path))
                 throw;
         }
     }
