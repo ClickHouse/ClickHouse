@@ -43,8 +43,8 @@ struct MarksInCompressedFile::CompressedFile
     PODArray<char, 4096, JemallocCacheAllocator> content;
     PODArray<Block, 4096, JemallocCacheAllocator> blocks;
     String file_name;
-    size_t num_columns;
-    size_t row_size;
+    size_t num_columns = 0;
+    size_t row_size = 0;
 };
 
 struct MarksInCompressedFile::Reader::Impl
@@ -69,7 +69,7 @@ struct MarksInCompressedFile::Reader::Impl
     {
         std::lock_guard lock(mutex);
         size_t offset = index / file->num_columns * file->row_size + index % file->num_columns * sizeof(MarkInCompressedFile);
-        auto end = std::upper_bound(file->blocks.begin(), file->blocks.end(), offset,
+        const auto * end = std::upper_bound(file->blocks.begin(), file->blocks.end(), offset,
             [](size_t value, const CompressedFile::Block & block) { return value < block.decompressed_offset; });
         for (size_t i = 0; i < readers.size(); ++i)
         {
@@ -85,7 +85,7 @@ struct MarksInCompressedFile::Reader::Impl
         next_eviction = (next_eviction + 1) % readers.size();
         const auto & block = *std::prev(end);
         reader.seek(block.compressed_offset, offset - block.decompressed_offset);
-        MarkInCompressedFile mark;
+        MarkInCompressedFile mark{};
         readBinaryLittleEndian(mark.offset_in_compressed_file, reader);
         readBinaryLittleEndian(mark.offset_in_decompressed_block, reader);
         return mark;
