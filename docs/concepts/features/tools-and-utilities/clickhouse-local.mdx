@@ -201,6 +201,15 @@ $ clickhouse-local --copy < data.json > data.csv
 
 By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
 
+When `--config-file` is not given, `clickhouse-local` looks for a configuration file in the following locations and uses the first one that exists:
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+A configuration file can be written either in XML or in YAML, in the same format as for ClickHouse server - see ["Configuration Files"](/operations/configuration-files).
+
 Basic usage (Linux):
 
 ```bash
@@ -253,7 +262,7 @@ Also, there are arguments for each ClickHouse configuration variable which are m
 host - it looks for its own main configuration file and uses the first of these that exists:
 
 1. the path passed with `--config-file`;
-2. `./config.xml`;
+2. `./config.xml`, `./config.yaml` or `./config.yml`;
 3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` or `./clickhouse-local.yml`;
 4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` or `~/.clickhouse-local/config.yml`;
 5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` or `/etc/clickhouse-local/config.yml`.

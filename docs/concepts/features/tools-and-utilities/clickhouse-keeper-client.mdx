@@ -13,7 +13,7 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `-q QUERY`, `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-keeper-client` will start in interactive mode.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`.
 -   `-p N`, `--port=N` — Server port. Default value: 9181
--   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. Default value: `config.xml`.
+-   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. By default, the first of `config.xml`, `config.yaml` and `config.yml` that exists in the current directory is used.
 -   `--password=PASSWORD` — Password for authentication. Can also be set via the `CLICKHOUSE_KEEPER_PASSWORD` environment variable or in the XML config file under `<zookeeper><password>`.
 -   `--identity=IDENTITY` — Identity for `digest` authentication scheme. Can also be set via the `CLICKHOUSE_KEEPER_IDENTITY` environment variable or in the XML config file under `<zookeeper><identity>`.
 -   `--connection-timeout=TIMEOUT` — Set connection timeout in seconds. Default value: 10s.
