@@ -94,11 +94,19 @@ public:
 
     /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
     /// shard's `DatabaseReplicaInfo::shard_name` rather than from `params.cluster_name`.
+    ///
+    /// `shard_scope_key` says whose shard names those are. Shard names are chosen per database and
+    /// repeat across databases, so the key must tell one database from another, but it must not tell
+    /// apart two spellings of the same one: a `Replicated` database is reachable both as `<db>` and as
+    /// `all_groups.<db>`, and when both spellings see the same ordered shards, a shard number means the
+    /// same shard through either. Such a caller passes a spelling-independent key - the database's
+    /// ZooKeeper path. A caller without one leaves it empty and `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
-        bool internal_replication = false);
+        bool internal_replication = false,
+        const String & shard_scope_key = {});
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;

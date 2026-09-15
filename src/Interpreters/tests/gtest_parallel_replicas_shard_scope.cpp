@@ -83,14 +83,25 @@ ClusterPtr makeDiscoveredCluster(
 /// starts a new shard each time the shard name parsed out of Keeper changes, and lets `Cluster` renumber
 /// the groups `1..N`. A shard disappears from that walk once its last visible replica is filtered out by
 /// the local replica group or carries a `DROPPED_MARK`, and every later shard then shifts down.
-ClusterPtr makeReplicatedDatabaseCluster(const Settings & settings, const String & name, const Strings & shard_names)
+/// `name` is the spelling the cluster is resolved by (`<db>` or `all_groups.<db>`); `zookeeper_path` is
+/// what `DatabaseReplicated::updateCluster` keys the shard-scope identity by, the same for both spellings.
+/// On a tree without the key parameter this falls back to the form that keys the identity by the spelling,
+/// which is what makes the arms below report what an unpatched server computes instead of failing to compile.
+template <typename SettingsT>
+ClusterPtr makeReplicatedDatabaseCluster(
+    const SettingsT & settings, const String & name, const Strings & shard_names, const String & zookeeper_path = {})
 {
     std::vector<std::vector<DatabaseReplicaInfo>> infos;
     for (size_t i = 0; i < shard_names.size(); ++i)
         infos.push_back({DatabaseReplicaInfo{"127.0.0." + std::to_string(i + 1), shard_names[i], "replica1", {}}});
 
     const ConnectionParameterStorage storage;
-    return std::make_shared<Cluster>(settings, infos, storage.params(name));
+    const auto params = storage.params(name);
+
+    if constexpr (requires { Cluster(settings, infos, params, false, zookeeper_path); })
+        return std::make_shared<Cluster>(settings, infos, params, false, zookeeper_path);
+    else
+        return std::make_shared<Cluster>(settings, infos, params);
 }
 
 /// A cluster read out of `remote_servers`, as each server reads its own configuration. The initiator and
@@ -400,28 +411,64 @@ TEST(ParallelReplicasShardScope, ReplicatedDatabaseWithADroppedShardIsForeign)
     EXPECT_EQ(getShardScopeCompat(context, *unchanged).kind, SCOPE_SCOPED);
 }
 
-/// Databases name their shards identically by default, so the identity carries the cluster name as well as
-/// the shard names - otherwise one database's shard number would index another's shards. This one holds on
-/// the merge base too, where the name is the whole identity; it pins what dropping the name would cost.
+/// Databases name their shards identically by default, so the identity carries a key for the database as
+/// well as the shard names - otherwise one database's shard number would index another's shards. This one
+/// holds on the merge base too, where the name is the whole identity; it pins what dropping the key would cost.
 TEST(ParallelReplicasShardScope, ReplicatedDatabasesSharingShardNamesAreForeign)
 {
     const auto & settings = getContext().context->getSettingsRef();
-    auto producer = makeReplicatedDatabaseCluster(settings, "db_a", {"shard1", "shard2"});
-    auto consumer = makeReplicatedDatabaseCluster(settings, "db_b", {"shard1", "shard2"});
+    auto producer = makeReplicatedDatabaseCluster(settings, "db_a", {"shard1", "shard2"}, "/clickhouse/db_a");
+    auto consumer = makeReplicatedDatabaseCluster(settings, "db_b", {"shard1", "shard2"}, "/clickhouse/db_b");
 
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
     EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
 }
 
-/// Both the name and the shard names are chosen by whoever creates the database, so their assembly must be
-/// unambiguous: a name spelled like the punctuation plus one fewer shard must not produce the identity of
-/// a shorter name plus one more shard. Like the arm above, this pins the assembly rather than reproducing
+/// The key is the database's ZooKeeper path, not its name: the name is local to each server, so two
+/// unrelated `Replicated` databases can be resolved by the same `cluster_for_parallel_replicas` on the
+/// initiator and on a shard. With equal default shard names, the shipped number is in range on the other
+/// database and denotes another database's shard - the silent wrong read, keyed on the name alone.
+TEST(ParallelReplicasShardScope, ReplicatedDatabasesSharingTheNameAreForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto producer = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"}, "/clickhouse/first/db");
+    auto consumer = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"}, "/clickhouse/second/db");
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
+}
+
+/// With `replica_group_name` configured the same database is resolved both as `<db>` (the local group's
+/// replicas) and as `all_groups.<db>` (every replica). Which replicas of a shard are visible differs
+/// between the two, but while every shard keeps a visible replica the ordered shards are the same, and
+/// so is what each shard number denotes: a read must not be declined for crossing the spellings. Only a
+/// shard that the local group has no replica of - which shifts the numbering - makes the spellings foreign.
+TEST(ParallelReplicasShardScope, ReplicatedDatabaseAliasWithTheSameShardsIsScoped)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto all_groups = makeReplicatedDatabaseCluster(settings, "all_groups.db", {"shard1", "shard2"}, "/clickhouse/db");
+    auto local_group = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"}, "/clickhouse/db");
+    EXPECT_EQ(getShardScopeIdentityCompat(*all_groups), getShardScopeIdentityCompat(*local_group));
+
+    auto from_all_groups = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*all_groups)));
+    EXPECT_EQ(getShardScopeCompat(from_all_groups, *local_group).kind, SCOPE_SCOPED);
+
+    auto from_local_group = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*local_group)));
+    EXPECT_EQ(getShardScopeCompat(from_local_group, *all_groups).kind, SCOPE_SCOPED);
+
+    auto local_group_without_shard1 = makeReplicatedDatabaseCluster(settings, "db", {"shard2"}, "/clickhouse/db");
+    EXPECT_EQ(getShardScopeCompat(from_all_groups, *local_group_without_shard1).kind, SCOPE_FOREIGN);
+}
+
+/// Both the key and the shard names are chosen by whoever creates the database, so their assembly must be
+/// unambiguous: a key spelled like the punctuation plus one fewer shard must not produce the identity of
+/// a shorter key plus one more shard. Like the arm above, this pins the assembly rather than reproducing
 /// the defect - it also holds where the name is the whole identity.
 TEST(ParallelReplicasShardScope, ShardNameIdentityIsUnambiguous)
 {
     const auto & settings = getContext().context->getSettingsRef();
-    auto producer = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"});
-    auto impostor = makeReplicatedDatabaseCluster(settings, "db 6:shard1", {"shard2"});
+    auto producer = makeReplicatedDatabaseCluster(settings, "db", {"shard1", "shard2"}, "/db");
+    auto impostor = makeReplicatedDatabaseCluster(settings, "db", {"shard2"}, "/db 6:shard1");
 
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
     EXPECT_EQ(getShardScopeCompat(context, *impostor).kind, SCOPE_FOREIGN);

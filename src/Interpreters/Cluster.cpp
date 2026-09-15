@@ -702,8 +702,12 @@ Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
-    bool internal_replication)
-    : shard_scope_identity(makeShardScopeIdentity(REPLICAS_BY_SHARD_SCOPE, params.cluster_name, getShardNamesForScopeIdentity(infos)))
+    bool internal_replication,
+    const String & shard_scope_key)
+    : shard_scope_identity(makeShardScopeIdentity(
+          REPLICAS_BY_SHARD_SCOPE,
+          shard_scope_key.empty() ? params.cluster_name : shard_scope_key,
+          getShardNamesForScopeIdentity(infos)))
 {
     UInt32 current_shard_num = 1;
 
