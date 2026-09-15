@@ -33,6 +33,7 @@ function run_as_user()
 
 index="mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tab', 'idx_s')"
 query="SELECT count() FROM remote('127.0.0.1:$CLICKHOUSE_PORT_TCP', $index)"
+same_user_query="SELECT count() FROM remote('127.0.0.1:$CLICKHOUSE_PORT_TCP', $index, '$user_name', 'password')"
 
 function run_remote_as_user()
 {
@@ -41,6 +42,9 @@ function run_remote_as_user()
             run_as_user "$query SETTINGS enable_analyzer = $analyzer, prefer_localhost_replica = $localhost_replica"
         done
     done
+    for localhost_replica in 0 1; do
+        run_as_user "$same_user_query SETTINGS prefer_localhost_replica = $localhost_replica"
+    done
 }
 
 run_as_user "DESCRIBE TABLE $index"
@@ -48,8 +52,8 @@ run_remote_as_user
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name"
 
-# Over an ordinary connection the shard runs the query as the user of the connection, which the function refuses;
-# with the local shortcut it runs as the user itself.
+# Over an ordinary connection the shard runs the query as the user of the connection, which the function refuses
+# unless that is the initiating user; with the local shortcut it runs as the user itself.
 run_remote_as_user
 
 $CLICKHOUSE_CLIENT -q "
