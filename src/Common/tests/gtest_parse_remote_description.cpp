@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -44,6 +45,121 @@ TEST(ParseRemoteDescription, TooManyAddresses)
 {
     EXPECT_THROW(parse("a{1..100}b{1..100}", ',', 10), Exception);
     EXPECT_THROW(parse("a{1..100}", ',', 10), Exception);
+}
+
+TEST(ParseRemoteDescription, TooManyAddressesMessage)
+{
+    /// The message has to name the surface that was actually invoked, how many addresses the pattern
+    /// generates and the setting that raises the limit, otherwise there is nothing to act on.
+    auto message = [](const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
+    {
+        try
+        {
+            parseRemoteDescription(description, 0, description.size(), ',', max_addresses, caller);
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    /// A single numeric interval over the limit.
+    const auto interval = message("a{1..100}", 10, urlCaller("Table function 'url'", "'s3' (or another object storage table function)"));
+    EXPECT_THAT(interval, testing::HasSubstr("Table function 'url'"));
+    EXPECT_THAT(interval, testing::HasSubstr("too many result addresses: 100, while at most 10 are allowed"));
+    EXPECT_THAT(interval, testing::HasSubstr("'glob_expansion_max_elements' setting"));
+    /// For `url` the message also explains why the very same pattern is accepted by `s3`.
+    EXPECT_THAT(interval, testing::HasSubstr("'s3'"));
+
+    /// A direct product over the limit: neither of the two intervals exceeds it on its own.
+    const auto product = message("a{1..4}b{1..4}", 10, urlCaller("Table function 'url'", "'s3' (or another object storage table function)"));
+    EXPECT_THAT(product, testing::HasSubstr("Table function 'url'"));
+    EXPECT_THAT(product, testing::HasSubstr("too many result addresses: 16, while at most 10 are allowed"));
+
+    /// `remote` has a dedicated setting and no object storage hint.
+    const auto remote = message("127.0.0.{1..100}", 10, {});
+    EXPECT_THAT(remote, testing::HasSubstr("Table function 'remote'"));
+    EXPECT_THAT(remote, testing::HasSubstr("'table_function_remote_max_addresses' setting"));
+    EXPECT_THAT(remote, testing::Not(testing::HasSubstr("'s3'")));
+
+    /// The surfaces that share the parser with the table function are named as the user knows them.
+    const auto engine = message("a{1..100}", 10, urlCaller("Table engine 'URL'", "'S3' (or another object storage table engine)"));
+    EXPECT_THAT(engine, testing::HasSubstr("Table engine 'URL'"));
+    EXPECT_THAT(engine, testing::Not(testing::HasSubstr("Table function")));
+
+    const auto mysql = message("host{1..100}:3306", 10, globCaller("Table engine 'MySQL'"));
+    EXPECT_THAT(mysql, testing::HasSubstr("Table engine 'MySQL'"));
+    EXPECT_THAT(mysql, testing::HasSubstr("'glob_expansion_max_elements' setting"));
+    /// Only the `url` family gets the object storage hint.
+    EXPECT_THAT(mysql, testing::Not(testing::HasSubstr("'s3'")));
+}
+
+TEST(ParseRemoteDescription, TooManyAddressesRecommendsTheMatchingSurface)
+{
+    /// The hint has to recommend a replacement of the same kind as the surface that was invoked:
+    /// a table engine cannot be replaced by a table function, and `urlCluster` needs `s3Cluster`.
+    auto message = [](const RemoteDescriptionCaller & caller)
+    {
+        try
+        {
+            parseRemoteDescription("a{1..100}", 0, 9, ',', 10, caller);
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    const auto table_function = message(urlCaller("Table function 'url'", "'s3' (or another object storage table function)"));
+    EXPECT_THAT(table_function, testing::HasSubstr("Use 's3' (or another object storage table function) if"));
+
+    const auto table_engine = message(urlCaller("Table engine 'URL'", "'S3' (or another object storage table engine)"));
+    EXPECT_THAT(table_engine, testing::HasSubstr("Use 'S3' (or another object storage table engine) if"));
+    /// A table engine must not be told to use a table function.
+    EXPECT_THAT(table_engine, testing::Not(testing::HasSubstr("'s3' (")));
+
+    const auto cluster_function
+        = message(urlCaller("Table function 'urlCluster'", "'s3Cluster' (or another object storage cluster table function)"));
+    EXPECT_THAT(cluster_function, testing::HasSubstr("Use 's3Cluster' (or another object storage cluster table function) if"));
+}
+
+TEST(ParseRemoteDescription, TooManyAddressesReportsTheWholeCardinality)
+{
+    /// The number in the message is what `glob_expansion_max_elements` has to cover, so it has to be
+    /// the cardinality of the whole first argument. The parser throws as soon as one factor of the
+    /// direct product exceeds the limit, so the count it has at hand ignores the already expanded
+    /// prefix and the factors that follow; a separate cardinality pass supplies the real number.
+    auto message = [](const String & description, char separator, size_t max_addresses)
+    {
+        try
+        {
+            parseRemoteDescription(description, 0, description.size(), separator, max_addresses, {});
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    /// The prefix is already expanded when the interval overflows: 2 * 1001, not 1001.
+    EXPECT_THAT(message("a{1,2}{1..1001}", ',', 1000), testing::HasSubstr("too many result addresses: 2002,"));
+
+    /// The suffix factors are not looked at when the prefix overflows: 1001 * 2, not 1001.
+    EXPECT_THAT(message("{1..1001}a{1,2}", ',', 1000), testing::HasSubstr("too many result addresses: 2002,"));
+
+    /// A direct product of two huge intervals, neither of which is materialized.
+    EXPECT_THAT(message("{0..10000}{0..10000}", ',', 1000), testing::HasSubstr("too many result addresses: 100020001,"));
+
+    /// The alternatives are summed, not multiplied.
+    EXPECT_THAT(message("{1..600},{1..600}", ',', 1000), testing::HasSubstr("too many result addresses: 1200,"));
+
+    /// When the cardinality does not fit into `size_t` there is no number to report, and the
+    /// count-free form of the message is used instead.
+    const auto overflowing = message("{0..1000000000000000}{0..1000000000000000}{0..1000000000000000}", ',', 1000);
+    EXPECT_THAT(overflowing, testing::HasSubstr("generates too many result addresses, while at most 1000 are allowed"));
 }
 
 TEST(ParseRemoteDescription, LongDescription)
@@ -93,7 +209,10 @@ TEST(ParseRemoteDescription, OverLimitExpansionWithLongSuffix)
 TEST(ParseRemoteDescription, ExternalDatabase)
 {
     using Addresses = std::vector<std::pair<String, UInt16>>;
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1:5432|host2:5433", 10, 5432), (Addresses{{"host1", 5432}, {"host2", 5433}}));
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1", 10, 5432), (Addresses{{"host1", 5432}}));
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("[2001:db8::1]:5432", 10, 5432), (Addresses{{"2001:db8::1", 5432}}));
+    const auto caller = globCaller("Table engine 'PostgreSQL'");
+    EXPECT_EQ(
+        parseRemoteDescriptionForExternalDatabase("host1:5432|host2:5433", 10, 5432, caller),
+        (Addresses{{"host1", 5432}, {"host2", 5433}}));
+    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1", 10, 5432, caller), (Addresses{{"host1", 5432}}));
+    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("[2001:db8::1]:5432", 10, 5432, caller), (Addresses{{"2001:db8::1", 5432}}));
 }
