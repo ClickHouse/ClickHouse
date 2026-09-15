@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- no-fasttest: needs the streaming exchange of the stateless worker configuration.
--- no-old-analyzer: distributed planning requires the analyzer.
 
 -- The sending side of a streaming exchange keeps its work spread over the streams of a task: every
 -- scattered stream serializes its own packets ahead of the sinks, whether the scatter is round-robin
