@@ -266,7 +266,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 
 
 namespace
-y{
+{
 
 /// Finds the kind whose name, as returned by `getter`, is `name`.
 bool tryParseByName(std::string_view name, const char * (IntervalKind::*getter)() const, IntervalKind & result)
