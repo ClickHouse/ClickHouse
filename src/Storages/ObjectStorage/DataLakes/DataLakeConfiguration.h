@@ -198,7 +198,7 @@ public:
     void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->checkAlterPartitionIsPossible(commands);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
     }
 
     Pipe alterPartition(
@@ -207,8 +207,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         StorageID storage_id) override
     {
-        assertInitialized();
-        return current_metadata->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
     void alter(
