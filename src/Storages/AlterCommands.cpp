@@ -133,6 +133,93 @@ void resetSettings(SettingsChanges & settings_from_storage, const std::set<Strin
     }
 }
 
+/// A settings-only ALTER can change the set of implicit skip indices: the `add_minmax_index_for_*`
+/// policy settings, and the `enable_block_number_column` / `enable_block_offset_column` gates of the
+/// two virtual-column indices. Both a change and a reset of such a setting are policy inputs:
+/// `MODIFY SETTING enable_block_number_column = DEFAULT` and `RESET SETTING enable_block_number_column`
+/// remove the stored override, and the metadata flags have to be recomputed from what is left, else the
+/// running table keeps the previous set of indices until `DETACH` / `ATTACH` or restart.
+void recomputeImplicitIndexPolicy(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    const SettingsChanges & settings_changes,
+    const std::set<String> & settings_resets)
+{
+    static constexpr std::array<std::string_view, 7> implicit_index_policy_settings = {
+        "add_minmax_index_for_numeric_columns",
+        "add_minmax_index_for_string_columns",
+        "add_minmax_index_for_temporal_columns",
+        "add_minmax_index_for_block_number_column",
+        "add_minmax_index_for_block_offset_column",
+        "enable_block_number_column",
+        "enable_block_offset_column",
+    };
+    static constexpr std::array<std::string_view, 3> column_implicit_index_policy_settings = {
+        "add_minmax_index_for_numeric_columns",
+        "add_minmax_index_for_string_columns",
+        "add_minmax_index_for_temporal_columns",
+    };
+
+    const auto touches = [&](const auto & policy_settings)
+    {
+        const auto is_policy_setting = [&](const String & name)
+        {
+            return std::ranges::any_of(policy_settings, [&](std::string_view policy) { return isSameSetting(name, String(policy)); });
+        };
+        return std::ranges::any_of(settings_changes, [&](const SettingChange & change) { return is_policy_setting(change.name); })
+            || std::ranges::any_of(settings_resets, is_policy_setting);
+    };
+
+    if (!touches(implicit_index_policy_settings))
+        return;
+
+    MergeTreeSettings effective_settings;
+    if (metadata.settings_changes)
+    {
+        for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+            if (MergeTreeSettings::hasBuiltin(change.name))
+                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+    }
+
+    /// Preserve the implicit-index policy stored in the table metadata. It can originate
+    /// from a compatibility setting or server configuration and therefore need not be
+    /// present in the table's `SETTINGS`. Starting from a fresh MergeTreeSettings here
+    /// must not turn such a table into an implicit-index table on an unrelated ALTER.
+    effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
+    effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
+    effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
+
+    /// The two block-column flags in the metadata hold the EFFECTIVE value, i.e. the setting
+    /// gated by `enable_block_number_column` / `enable_block_offset_column`. A `false` there
+    /// may only mean that the gate was closed, so it must not override a stored `1` of the
+    /// read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1` never
+    /// turns the implicit index on in the running table (it appeared only after reload).
+    if (metadata.add_minmax_index_for_block_number_column)
+        effective_settings.applyChange({"add_minmax_index_for_block_number_column", true}, context, /*is_loading_from_existing_metadata=*/true);
+    if (metadata.add_minmax_index_for_block_offset_column)
+        effective_settings.applyChange({"add_minmax_index_for_block_offset_column", true}, context, /*is_loading_from_existing_metadata=*/true);
+
+    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+    /// A settings-only ALTER that changes only virtual-column settings must not rebuild
+    /// physical-column indices. A preceding MODIFY COLUMN may have deliberately removed
+    /// an implicit index because its files were built for the previous column definition.
+    if (touches(column_implicit_index_policy_settings))
+    {
+        for (const auto & column : metadata.columns)
+        {
+            metadata.dropImplicitIndicesForColumn(column.name);
+            metadata.addImplicitIndicesForColumn(column, context);
+        }
+    }
+    metadata.dropImplicitIndicesForVirtualColumns();
+    metadata.addImplicitIndicesForVirtualColumns(context);
+}
+
 /// Splits a parsed `SETTINGS` clause into changes and resets.
 /// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
 void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
@@ -1294,77 +1381,7 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        MergeTreeSettings effective_settings;
-        bool any_mt_setting = false;
-        for (const auto & change : settings_from_storage)
-        {
-            if (MergeTreeSettings::hasBuiltin(change.name))
-            {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
-                any_mt_setting = true;
-            }
-        }
-        if (any_mt_setting)
-        {
-            const auto changes_implicit_index_policy = [](const SettingChange & change)
-            {
-                return change.name == "add_minmax_index_for_numeric_columns"
-                    || change.name == "add_minmax_index_for_string_columns"
-                    || change.name == "add_minmax_index_for_temporal_columns"
-                    || change.name == "add_minmax_index_for_block_number_column"
-                    || change.name == "add_minmax_index_for_block_offset_column"
-                    || change.name == "enable_block_number_column"
-                    || change.name == "enable_block_offset_column";
-            };
-
-            const auto changes_column_implicit_index_policy = [](const SettingChange & change)
-            {
-                return change.name == "add_minmax_index_for_numeric_columns"
-                    || change.name == "add_minmax_index_for_string_columns"
-                    || change.name == "add_minmax_index_for_temporal_columns";
-            };
-
-            if (!std::ranges::any_of(settings_changes, changes_implicit_index_policy))
-                return;
-
-            /// Preserve the implicit-index policy stored in the table metadata. It can originate
-            /// from a compatibility setting or server configuration and therefore need not be
-            /// present in settings_from_storage. Starting from a fresh MergeTreeSettings here
-            /// must not turn such a table into an implicit-index table on an unrelated ALTER.
-            effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
-            effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
-            effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
-
-            /// The two block-column flags in the metadata hold the EFFECTIVE value, i.e. the setting
-            /// gated by `enable_block_number_column` / `enable_block_offset_column`. A `false` there
-            /// may only mean that the gate was closed, so it must not override a stored `1` of the
-            /// read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1` never
-            /// turns the implicit index on in the running table (it appeared only after reload).
-            if (metadata.add_minmax_index_for_block_number_column)
-                effective_settings.applyChange({"add_minmax_index_for_block_number_column", true}, context, /*is_loading_from_existing_metadata=*/true);
-            if (metadata.add_minmax_index_for_block_offset_column)
-                effective_settings.applyChange({"add_minmax_index_for_block_offset_column", true}, context, /*is_loading_from_existing_metadata=*/true);
-
-            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
-            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
-
-            /// A settings-only ALTER that changes only virtual-column settings must not rebuild
-            /// physical-column indices. A preceding MODIFY COLUMN may have deliberately removed
-            /// an implicit index because its files were built for the previous column definition.
-            if (std::ranges::any_of(settings_changes, changes_column_implicit_index_policy))
-            {
-                for (const auto & column : metadata.columns)
-                {
-                    metadata.dropImplicitIndicesForColumn(column.name);
-                    metadata.addImplicitIndicesForColumn(column, context);
-                }
-            }
-            metadata.dropImplicitIndicesForVirtualColumns();
-            metadata.addImplicitIndicesForVirtualColumns(context);
-        }
+        recomputeImplicitIndexPolicy(metadata, context, settings_changes, settings_resets);
     }
     else if (type == RESET_SETTING)
     {
@@ -1372,6 +1389,7 @@ void AlterCommand::apply(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
         resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        recomputeImplicitIndexPolicy(metadata, context, /*settings_changes=*/{}, settings_resets);
     }
     else if (type == RENAME_COLUMN)
     {
