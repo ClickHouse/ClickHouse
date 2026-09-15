@@ -1265,6 +1265,38 @@ def test_shared_memory_udf_growth_that_would_take_the_footprint_past_the_cap_is_
     assert node.query("SELECT test_function_shm_alloc_far_beyond_eof_filling_pool_python('2')") == "Key 2\n"
 
 
+def test_shared_memory_udf_sparse_length_and_pages_past_the_end_are_not_filled_in_by_the_server(started_cluster):
+    skip_test_msan(node)
+
+    # The footprint says how many pages a file holds, not where. The command stretches its 88-byte
+    # file to the cap of 2 MiB without committing a page, and commits just under 2 MiB of pages
+    # past the end: by its length the file is at the cap, by its pages it is under it, and a
+    # server that judged by the larger of the two would find it within the cap, keep the worker,
+    # map the file whole at the next borrow - committing the 2 MiB under its length on top of the
+    # 2 MiB past it - and hold twice the cap while charging the query for half of that. What
+    # mapping the file whole would cost is counted against the cap where the worker changes
+    # hands, so the worker is discarded at the hand-back, before the server commits anything:
+    # nothing of the stretched region stays in the pool, and the next query is served by a fresh
+    # worker. The size is one no other function in this file uses.
+    region_size = 88
+    cap = 2097152
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_sparse_to_the_cap_and_pages_past_it_pool_python")
+    pooled_before = pooled_shared_memory_baseline(region_size)
+
+    assert node.query("SELECT test_function_shm_sparse_to_the_cap_and_pages_past_it_pool_python(1)") == "Key 1\n"
+    wait_for_pooled_shared_memory_bytes(pooled_before, "the stretched region stayed with the pool")
+    assert cap not in shm_region_sizes(), shm_regions()
+    assert node.contains_in_log(
+        "grown its shared-memory region to 2097152 bytes (its length, or the pages it committed), "
+        "past shared_memory_max_size (2097152 bytes); the process will not be reused"
+    )
+
+    # A fresh worker serves the next query, with the same outcome.
+    assert node.query("SELECT test_function_shm_sparse_to_the_cap_and_pages_past_it_pool_python(2)") == "Key 2\n"
+    wait_for_pooled_shared_memory_bytes(pooled_before, "the stretched region stayed with the pool")
+    assert cap not in shm_region_sizes(), shm_regions()
+
+
 def test_shared_memory_udf_tiny_cap_is_in_bytes_for_the_length_of_the_file(started_cluster):
     skip_test_msan(node)
 
@@ -1404,7 +1436,10 @@ def test_shared_memory_udf_scrub_between_users_covers_a_tail_the_server_never_ma
     # readable as the rest, and a scrub that only covered the mapping would leave exactly the
     # bytes another user's command could still read. Here the command extends a 64 KiB region to
     # 128 KiB and probes the tail at 64 KiB - past everything the server mapped when it created
-    # the region.
+    # the region. The cap is 256 KiB: the page the command dirties in the tail is a page the
+    # server did not commit, and the hand-back takes such pages for pages past the end of the
+    # file until it maps the file and sees; at a cap of 128 KiB that would cost the worker its
+    # place in the pool, and the tail with it.
     node.query("SYSTEM RELOAD FUNCTION test_function_shm_peek_extended_pool_python")
     node.query("CREATE USER IF NOT EXISTS shm_peek_other IDENTIFIED WITH no_password")
     node.query("GRANT SELECT ON *.* TO shm_peek_other")

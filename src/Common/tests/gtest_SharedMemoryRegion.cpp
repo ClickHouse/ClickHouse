@@ -473,6 +473,41 @@ TEST(SharedMemoryRegion, PagesCommittedPastTheEndOfTheFileShowInTheFootprintButN
     EXPECT_EQ(region.footprint(), 8 * size);
 }
 
+/// The footprint says how many pages the file holds, not where: a file the command stretched to
+/// the cap without committing a page, plus a cap's worth of pages it committed past the end, has
+/// the footprint of one cap and would have two once the server commits the file up to its length
+/// - which mapping it whole does. What the server itself has committed (`reservedSize`) is what
+/// the cost of that fill is bounded from, and the cap check counts that cost in.
+TEST(SharedMemoryRegion, SparseLengthAndPagesPastTheEndAreCountedTogetherAgainstTheCap)
+{
+    const size_t page = SharedMemoryRegion::roundUpToPages(1);
+    const size_t cap = 4 * page;
+    SharedMemoryRegion region(page);
+    EXPECT_EQ(region.reservedSize(), page);
+    EXPECT_FALSE(region.isOverTheCap(cap));
+
+    /// The command stretches the file to the cap - length without pages - and commits as many
+    /// pages past the end.
+    ASSERT_EQ(::ftruncate(region.fd(), cap), 0);
+    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_KEEP_SIZE, cap, cap), 0);
+
+    /// By the length and by the pages alone the file is at the cap, not over it.
+    EXPECT_EQ(region.refreshFootprint(), cap + page);
+    EXPECT_EQ(region.backingSize(), cap);
+    EXPECT_EQ(region.reservedSize(), page);
+    /// But committing it up to its length would add three pages, and that is over the cap.
+    EXPECT_EQ(region.fillCostUpTo(cap), cap - page);
+    EXPECT_TRUE(region.isOverTheCap(cap));
+    EXPECT_FALSE(region.isOverTheCap(2 * cap));
+
+    /// And that is what the fill does: the pages past the end stay, and the sparse ones are
+    /// committed on top of them.
+    region.grow(cap);
+    EXPECT_EQ(region.reservedSize(), cap);
+    EXPECT_EQ(region.refreshFootprint(), 2 * cap);
+    EXPECT_EQ(region.fillCostUpTo(cap), 0u);
+}
+
 /// A file holds whole pages, so a region of a few bytes has the footprint of a page - and that is
 /// what it is compared with, so that its own size, rounded the same way, is not a cap it is over.
 TEST(SharedMemoryRegion, FootprintIsInWholePages)

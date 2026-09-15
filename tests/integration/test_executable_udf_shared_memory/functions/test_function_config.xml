@@ -909,6 +909,20 @@
     </function>
     <function>
         <type>executable_pool</type>
+        <name>test_function_shm_sparse_to_the_cap_and_pages_past_it_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>88</shared_memory_size>
+        <shared_memory_max_size>2097152</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py 2097152 511 2097152</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
         <name>test_function_shm_tiny_region_pool_python</name>
         <return_type>String</return_type>
         <argument>
@@ -958,7 +972,7 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>65536</shared_memory_size>
-        <shared_memory_max_size>131072</shared_memory_max_size>
+        <shared_memory_max_size>262144</shared_memory_max_size>
         <command>shm_udf_peek_extended.py --extend-to 131072 --peek-at 65536</command>
     </function>
     <function>

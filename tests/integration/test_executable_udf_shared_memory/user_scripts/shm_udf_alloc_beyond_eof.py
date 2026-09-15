@@ -9,7 +9,8 @@
 # With an argument, the pages go somewhere else: three of them (or as many as the second
 # argument says) at that absolute offset, far past the end of the file, the same ones on every
 # call. A growth of the file that stops short of them commits its own pages on top of them, not
-# instead of them.
+# instead of them. A third argument stretches the file to that length first, without committing
+# a page (`ftruncate`): length without pages, next to pages without length.
 #
 # Protocol (all control values use the ClickHouse native binary encoding):
 #   server -> stdin : varint version, varint path length + path bytes, varint input offset,
@@ -92,11 +93,13 @@ def process(input_data, region, region_size):
 FALLOC_FL_KEEP_SIZE = 0x01
 
 
-def allocate_beyond_eof(fd, far_offset, far_pages):
+def allocate_beyond_eof(fd, far_offset, far_pages, sparse_length):
     # Commits twice the file's length of pages past its end - at least three pages, for a file
     # shorter than a page - without moving the end: `st_size` stays what it was, `st_blocks` grows.
     # Or, given `far_offset`, `far_pages` pages there: the same ones every time, so that repeating
-    # this commits nothing more.
+    # this commits nothing more - after stretching the file to `sparse_length`, if given.
+    if sparse_length is not None and os.fstat(fd).st_size < sparse_length:
+        os.ftruncate(fd, sparse_length)
     if far_offset is None:
         size = os.fstat(fd).st_size
         offset, length = size, max(2 * size, 3 * mmap.PAGESIZE)
@@ -113,6 +116,7 @@ def main():
     stdout = sys.stdout.buffer
     far_offset = int(sys.argv[1]) if len(sys.argv) > 1 else None
     far_pages = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    sparse_length = int(sys.argv[3]) if len(sys.argv) > 3 else None
 
     while True:
         version = read_varint(stdin)
@@ -145,7 +149,7 @@ def main():
             # decides what to do with this worker.
             alloc_fd = os.open(path, os.O_RDWR)
             try:
-                allocate_beyond_eof(alloc_fd, far_offset, far_pages)
+                allocate_beyond_eof(alloc_fd, far_offset, far_pages, sparse_length)
             finally:
                 os.close(alloc_fd)
 

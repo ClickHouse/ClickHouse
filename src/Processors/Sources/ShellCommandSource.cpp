@@ -1056,7 +1056,7 @@ public:
     ///
     /// Never throws: this runs on a cleanup path, and it is an accounting hand-back rather than an
     /// allocation — the memory is already mapped, refusing the charge would not free anything. A
-    /// failed re-read falls back to the size last seen, which is a lower bound.
+    /// failed re-read falls back to the footprint last seen, which is a lower bound.
     ///
     /// Never more than `cap` per region, whatever the file says. The borrower has just checked the
     /// files against `shared_memory_max_size` and discarded a worker over it, but the command is
@@ -1077,8 +1077,8 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the size last seen");
-                bytes += std::min(region->backingSize(), cap);
+                tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the footprint last seen");
+                bytes += std::min(region->footprint(), cap);
             }
         }
 
@@ -2775,9 +2775,11 @@ namespace
             /// most it can commit is charged and checked first, the footprint is re-read after,
             /// and what the growth turned out not to need is given back - a moment of double
             /// counting for the pages the command committed just past the end, and only those.
-            /// The end of the file rather than the mapped size: a growth that committed its pages
-            /// and could not map them has left the file longer than the mapping, and those pages
-            /// are committed and charged. Whole pages, like the footprint.
+            /// The length the server itself committed the file up to (`reservedSize`) rather than
+            /// the mapped size or the length of the file: a growth that committed its pages and
+            /// could not map them has left the file longer than the mapping, and those pages are
+            /// committed and charged; and a file the command extended is longer than what was
+            /// committed, and the growth commits the difference. Whole pages, like the footprint.
             ///
             /// The one thing this bound does not cover is a page the command freed inside the file
             /// (`FALLOC_FL_PUNCH_HOLE`): the growth commits it again, and the re-read finds the
@@ -2785,9 +2787,7 @@ namespace
             /// command that punched the hole is the command that pays for it, and it pays with its
             /// own query's limit.
             const size_t footprint_before = region.footprint();
-            const size_t backing_before = SharedMemoryRegion::roundUpToPages(region.backingSize());
-            const size_t new_footprint = SharedMemoryRegion::roundUpToPages(new_size);
-            const size_t expected = new_footprint > backing_before ? new_footprint - backing_before : 0;
+            const size_t expected = region.fillCostUpTo(new_size);
 
             /// Never past the cap, in pages like the footprint: the server's own growth is what
             /// the cap is a promise about (the command's own commits are checked where the worker
@@ -2826,15 +2826,7 @@ namespace
             }
             catch (...)
             {
-                try
-                {
-                    added = region.refreshFootprint() - footprint_before;
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region after a failed growth; charging the size last seen");
-                    added = region.footprint() - footprint_before;
-                }
+                added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
                 if (expected > added)
                     unchargeQueryMemory(expected - added);
                 if (added)
@@ -2842,7 +2834,7 @@ namespace
                 throw;
             }
 
-            added = region.refreshFootprint() - footprint_before;
+            added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
             if (added < expected)
                 unchargeQueryMemory(expected - added);
             else if (added > expected)
@@ -2897,8 +2889,18 @@ namespace
             /// in between - within the cap - is charged for the rest before it is mapped, so that
             /// what this borrow holds is what it is charged for. May throw the memory limit, in
             /// which case nothing has been touched yet and the worker keeps its regions.
-            if (footprint > charged_size)
-                chargeQueryMemory(footprint - charged_size);
+            ///
+            /// And for what mapping the file whole is about to commit, at most: the growth below
+            /// `posix_fallocate`s the file up to its length, and the pages between the length the
+            /// server itself last committed and that length may all be missing - a command can
+            /// extend the file without committing a page - while the footprint may consist of pages
+            /// the command committed past the end, which the fill adds to rather than uses (that
+            /// is what `isOverTheCap` has just ruled out going past the cap). Charged before the
+            /// fill, like every growth (`ensureRegionFits`), and settled against the footprint
+            /// re-read after it: what the fill turned out not to need is given back.
+            const size_t fill = region.fillCostUpTo(backing);
+            if (footprint + fill > charged_size)
+                chargeQueryMemory(footprint + fill - charged_size);
 
             if (backing > region.size())
             {
@@ -2911,8 +2913,30 @@ namespace
                     dropRegionsAndWorker();
                     throw;
                 }
-            }
 
+                const size_t footprint_after = refreshFootprintKeepingTheChargeOnFailure(region, footprint + fill);
+                if (footprint_after < footprint + fill)
+                    unchargeQueryMemory(footprint + fill - footprint_after);
+            }
+        }
+
+        /// The footprint re-read after a growth, to settle the charge made before it. A re-read
+        /// that fails answers with the figure the charge was made for, `charged`: the pages may
+        /// be there, and a charge for pages that are there is the safe side, while the cached
+        /// figure - raised to the length of the file, never to the pages the command committed
+        /// past it - could be lower than what the growth committed and give back a charge for
+        /// pages that stay.
+        static size_t refreshFootprintKeepingTheChargeOnFailure(SharedMemoryRegion & region, size_t charged)
+        {
+            try
+            {
+                return region.refreshFootprint();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region after a growth; keeping the charge made for it");
+                return std::max(region.footprint(), charged);
+            }
         }
 
         /// Drops this borrow's view of the regions together with the holder's worker and regions:

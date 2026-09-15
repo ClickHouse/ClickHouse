@@ -328,6 +328,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             "Descriptor {} is claimed more than once in the child (by read_fds, write_fds or inherited_fds)", *duplicate);
 
     /// The first number above every descriptor the child is going to install something under.
+    if (child_targets.back() == std::numeric_limits<int>::max())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Descriptor {} cannot be a target in the child: there is no number above it", child_targets.back());
     const int first_free_fd = child_targets.back() + 1;
 
     std::vector<int> staged_fds;
