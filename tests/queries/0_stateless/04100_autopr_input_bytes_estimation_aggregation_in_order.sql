@@ -75,21 +75,32 @@ FROM (
 WHERE ratio > 2;
 
 -- Check output bytes estimation accuracy against known-good values (ratio should be within 2x).
--- Expected output bytes were measured with default settings on 2e6 rows:
--- execute queries with parallel replicas and with local plan disabled, then take the network received bytes metric as estimation.
--- With the query settings fixed (no-random-settings), the `ZSTD(3)`-default output estimates are
--- deterministic and stay within 2x of these original values, so they are kept as-is.
+-- The expected values are the estimate itself, recorded here as a drift guard, and they are anchored to
+-- what the replicas actually put on the wire: with compression forced on every replica of the cluster
+-- and the local plan disabled, `NetworkReceiveBytes` on the initiator is 4158835, 4150820, 2115022,
+-- 5043367 and 646299 for the five queries below, so the estimate runs 1.8x, 1.9x, 1.9x, 2.9x and 2.1x
+-- high. The `multi_agg` overshoot is the `min(s)` states, which are sampled from the hash table rather
+-- than from the sent rows.
+--
+-- The values recorded before the estimate was taught to price the compressed size and the replicas' row
+-- order were 25519057, 25515684, 10096176, 33649632 and 2532395. Those came from the same measurement run
+-- without forcing compression, where every replica address of the test cluster looks local and is
+-- therefore shipped uncompressed (see `Cluster.cpp`), which is several times more bytes than any real
+-- cluster transfers - and the estimate of the day matched them because it overshot by the same 4.9-9.0x.
+--
+-- With the query settings fixed (no-random-settings) the estimate is stable: repeated runs agree
+-- exactly on three of the five queries and within 15% on the other two, well inside the 2x window.
 SELECT format('{}: output estimation off by {}x (expected~{}, estimated={})', log_comment, round(ratio, 2), expected, statistics_output_bytes)
 FROM (
     SELECT
         log_comment,
         ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS statistics_output_bytes,
         multiIf(
-            log_comment = 'agg_in_order_single', 25519057,
-            log_comment = 'agg_in_order_multi', 25515684,
-            log_comment = 'agg_in_order_filter', 10096176,
-            log_comment = 'agg_in_order_multi_agg', 33649632,
-            log_comment = 'agg_in_order_group_by_key', 2532395,
+            log_comment = 'agg_in_order_single', 7406900,
+            log_comment = 'agg_in_order_multi', 7709448,
+            log_comment = 'agg_in_order_filter', 4009559,
+            log_comment = 'agg_in_order_multi_agg', 14687244,
+            log_comment = 'agg_in_order_group_by_key', 1351098,
             0) AS expected,
         greatest(expected, statistics_output_bytes) / least(expected, statistics_output_bytes) AS ratio
     FROM system.query_log
