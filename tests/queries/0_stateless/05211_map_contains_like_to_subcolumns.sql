@@ -25,7 +25,7 @@ INSERT INTO t_map_contains_like_subcolumns VALUES
     (5, 'unused%', 'unused%', {'a': '1', 'b': '2'}, {'a': '1', 'b': '2'});
 
 INSERT INTO t_map_contains_like_subcolumns
-SELECT number + 10, 'unused%', 'unused%', {'a': '1', 'b': '2'}, {'a': '1', 'b': '2'}
+SELECT number + 10, 'unused%', 'unused%', map('a', '1', 'b', '2'), map('a', '1', 'b', '2')
 FROM numbers(10000);
 
 -- A key-only predicate should use m.keys.
