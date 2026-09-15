@@ -32,11 +32,11 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO readonly_start_rollback VALUES (100)" 2>&1 \
 $CLICKHOUSE_CLIENT -q "SELECT countSubstrings(create_table_query, 'table_readonly = 1') FROM system.tables
     WHERE database = currentDatabase() AND name = 'readonly_start_rollback'"
 
-# The workers that were started before the failure stay running but disabled, like the workers of a
-# table that was created writable and made read-only (05217 checks that a disabled worker runs nothing).
-# The cleanup thread is stopped by the rollback, as on a 0 -> 1 toggle.
-$CLICKHOUSE_CLIENT -q "SELECT 'cleanup thread after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
-    WHERE database = currentDatabase() AND table = 'readonly_start_rollback' AND log_name LIKE '%CleanupThread%'"
+# The rollback restores the worker lifecycle of the read-only table: the assignee that was started
+# before the failure is torn down again, and the cleanup thread is stopped as on a 0 -> 1 toggle.
+$CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
+    WHERE database = currentDatabase() AND table = 'readonly_start_rollback'
+      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
 
 # A retry completes the transition: the table is writable and every worker runs.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_start_rollback MODIFY SETTING table_readonly = 0"

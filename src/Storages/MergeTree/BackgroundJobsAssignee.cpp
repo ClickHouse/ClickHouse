@@ -132,11 +132,12 @@ bool BackgroundJobsAssignee::createHolderIfNeeded()
     return true;
 }
 
-void BackgroundJobsAssignee::start()
+bool BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
-    createHolderIfNeeded();
+    bool created = createHolderIfNeeded();
     holder->activateAndSchedule();
+    return created;
 }
 
 void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)

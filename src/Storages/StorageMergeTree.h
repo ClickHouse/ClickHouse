@@ -369,7 +369,20 @@ private:
     /// 1 -> 0 `ALTER` be exception-safe as a unit: `startBackgroundWorkers` runs before the
     /// metadata commit inside its rollback unit, and `enableBackgroundWorkers` is the only step
     /// after the commit, a plain flag flip that cannot fail. Starting is idempotent.
-    void startBackgroundWorkers();
+    ///
+    /// `started` receives which assignees the call created, as opposed to found already running,
+    /// updated after each one so that it is accurate even when the call throws partway through.
+    /// The rollback of the `ALTER` passes it to `finishBackgroundWorkers`, which tears down exactly
+    /// those assignees: a table that had no workers before the failed `ALTER` has none after it,
+    /// while the workers of a table that started writable are left as they were.
+    struct StartedBackgroundWorkers
+    {
+        bool operations = false;
+        bool streaming = false;
+        bool moves = false;
+    };
+    void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
+    void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
 

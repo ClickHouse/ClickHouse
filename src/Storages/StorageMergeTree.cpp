@@ -532,6 +532,7 @@ void StorageMergeTree::alter(
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
             disableBackgroundWorkers();
 
+        StartedBackgroundWorkers started_workers;
         try
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
@@ -553,12 +554,14 @@ void StorageMergeTree::alter(
             /// rollback below. The started workers are disabled (see above), so a wake-up in this
             /// window, whether from a `trigger` or from the `storage_policy` handling of
             /// `changeSettings`, runs nothing. A failed commit thus leaves the table exactly as
-            /// read-only as before, with no merge, mutation, move, or cleanup slipping through. The
-            /// only step after the commit is enabling the workers, a flag flip that cannot fail, so
-            /// the table can never end up durably writable with some workers absent until a restart.
-            /// Starting is idempotent, so a retried `ALTER` completes the transition.
+            /// read-only as before, with no merge, mutation, move, or cleanup slipping through, and
+            /// the rollback tears down the assignees this call created, so a table that had no
+            /// background scheduling before the `ALTER` has none after it either. The only step after
+            /// the commit is enabling the workers, a flag flip that cannot fail, so the table can never
+            /// end up durably writable with some workers absent until a restart. Starting is
+            /// idempotent, so a retried `ALTER` completes the transition.
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
-                startBackgroundWorkers();
+                startBackgroundWorkers(&started_workers);
 
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_settings_pause_before_metadata_commit);
             fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
@@ -572,14 +575,20 @@ void StorageMergeTree::alter(
         catch (...)
         {
             /// Restore the settings and statistics metadata before propagating a failed commit.
-            /// Background workers started above stay disabled and are left running idle, exactly
-            /// like the workers of a table that was created writable and then made read-only. The
-            /// cleanup thread is stopped as on a 0 -> 1 toggle: a read-only table never cleans its disk.
+            /// The worker lifecycle is restored too: the assignees that `startBackgroundWorkers`
+            /// created for this `ALTER` are torn down again, so a table that was attached read-only
+            /// does not keep `BackgroundJobsAssignee` tasks waking up on a durably read-only table,
+            /// while the workers of a table that started writable, which the call found already
+            /// running, are left as they were (disabled, see above). The cleanup thread is stopped
+            /// as on a 0 -> 1 toggle: a read-only table never cleans its disk.
             changeSettings(old_metadata.settings_changes, table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(old_metadata);
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
+            {
                 cleanup_thread.stop();
+                finishBackgroundWorkers(started_workers);
+            }
             throw;
         }
     }
@@ -4064,10 +4073,14 @@ bool StorageMergeTree::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     return MergeTreeData::scheduleDataMovingJob(assignee);
 }
 
-void StorageMergeTree::startBackgroundWorkers()
+void StorageMergeTree::startBackgroundWorkers(StartedBackgroundWorkers * started)
 {
+    StartedBackgroundWorkers ignored;
+    if (!started)
+        started = &ignored;
+
     cleanup_thread.start();
-    background_operations_assignee.start();
+    started->operations = background_operations_assignee.start();
 
     /// Models a scheduling failure after some workers were already started.
     fiu_do_on(FailPoints::mt_alter_readonly_throw_in_start_background_workers,
@@ -4075,10 +4088,30 @@ void StorageMergeTree::startBackgroundWorkers()
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting background workers");
     });
 
-    background_streaming_assignee.start();
+    started->streaming = background_streaming_assignee.start();
     if (areBackgroundMovesNeeded())
-        background_moves_assignee.start();
+        started->moves = background_moves_assignee.start();
     startOutdatedAndUnexpectedDataPartsLoadingTask();
+}
+
+void StorageMergeTree::finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept
+{
+    /// Runs on a rollback path, so a failure here must not replace the exception being propagated.
+    /// The workers are disabled, so their scheduling functions return at once and `finish` does not
+    /// wait for any job of this table; there is nothing queued in the executors to cancel either.
+    try
+    {
+        if (started.operations)
+            background_operations_assignee.finish();
+        if (started.streaming)
+            background_streaming_assignee.finish();
+        if (started.moves)
+            background_moves_assignee.finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to tear down the background workers started by a rolled back ALTER");
+    }
 }
 
 void StorageMergeTree::enableBackgroundWorkers() noexcept

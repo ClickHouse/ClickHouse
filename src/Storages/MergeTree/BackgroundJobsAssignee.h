@@ -61,7 +61,9 @@ public:
     Type type{Type::DataProcessing};
 
     /// Allocates the scheduling task if needed and activates it. Idempotent.
-    void start();
+    /// Returns true if the task was created by this call, so that the caller can `finish` exactly
+    /// the assignees it started when the operation that started them is rolled back.
+    bool start();
     void trigger();
     void postpone();
     void finish();
