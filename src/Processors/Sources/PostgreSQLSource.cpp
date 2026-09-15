@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 
@@ -33,9 +34,11 @@ PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     SharedHeader sample_block,
-    UInt64 max_block_size_)
+    UInt64 max_block_size_,
+    const String & structure_hint_)
     : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
     , max_block_size(max_block_size_)
+    , structure_hint(structure_hint_)
     , connection_holder(std::move(connection_holder_))
     , query_str(query_str_)
 {
@@ -212,21 +215,33 @@ Chunk PostgreSQLSource<T>::generate()
             /// if got NULL type, then pqxx::zview will return nullptr in c_str()
             if ((*row)[idx].c_str())
             {
-                if (description.types[idx].second)
+                try
                 {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                    if (description.types[idx].second)
+                    {
+                        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                        const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
 
-                    insertPostgreSQLValue(
-                            column_nullable.getNestedColumn(), (*row)[idx],
-                            description.types[idx].first, data_type.getNestedType(), array_info, idx);
+                        insertPostgreSQLValue(
+                                column_nullable.getNestedColumn(), (*row)[idx],
+                                description.types[idx].first, data_type.getNestedType(), array_info, idx);
 
-                    column_nullable.getNullMapData().emplace_back(false);
+                        column_nullable.getNullMapData().emplace_back(false);
+                    }
+                    else
+                    {
+                        insertPostgreSQLValue(
+                                *columns[idx], (*row)[idx], description.types[idx].first, sample.type, array_info, idx);
+                    }
                 }
-                else
+                catch (Exception & e)
                 {
-                    insertPostgreSQLValue(
-                            *columns[idx], (*row)[idx], description.types[idx].first, sample.type, array_info, idx);
+                    /// Name the destination column, so a result whose columns are in the wrong order
+                    /// does not read as bad data. Keeps the error code intact.
+                    e.addMessage("while reading column {} of the result into {}", idx + 1, backQuote(sample.name));
+                    if (!structure_hint.empty())
+                        e.addMessage(structure_hint);
+                    throw;
                 }
             }
             else
