@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1780,6 +1781,9 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        assertExponentialTimeDecayingFloat64TypesCompatible(
+            arguments[0], arguments[1], getName());
+
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
@@ -1936,6 +1940,15 @@ public:
 
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
+
+        if (containsExponentialTimeDecayingFloat64(left_type)
+            || containsExponentialTimeDecayingFloat64(right_type))
+        {
+            validateExponentialTimeDecayingFloat64Column(
+                *col_with_type_and_name_left.column, left_type, getName());
+            validateExponentialTimeDecayingFloat64Column(
+                *col_with_type_and_name_right.column, right_type, getName());
+        }
 
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.

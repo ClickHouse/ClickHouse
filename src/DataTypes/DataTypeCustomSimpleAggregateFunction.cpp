@@ -40,6 +40,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "max",
         "sum",
         "sumWithOverflow",
+        "exponentialTimeDecayedSum",
         "groupBitAnd",
         "groupBitOr",
         "groupBitXor",
@@ -62,6 +63,22 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
                 function->getName(), boost::algorithm::join(supported_functions, ","));
     }
+}
+
+std::optional<Field> DataTypeCustomSimpleAggregateFunction::getDefault() const
+{
+    if (argument_types.size() == 1)
+        return argument_types[0]->getDefault();
+    return std::nullopt;
+}
+
+bool DataTypeCustomSimpleAggregateFunction::useCustomNameForTypeIdentity() const
+{
+    if (argument_types.size() != 1)
+        return false;
+
+    const auto * custom_name = argument_types[0]->getCustomName();
+    return custom_name && custom_name->useCustomNameForTypeIdentity();
 }
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
@@ -151,7 +168,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     AggregateFunctionProperties properties;
     /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
     auto action = NullsAction::EMPTY;
-    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    function = AggregateFunctionFactory::instance().getForDataType(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
@@ -232,6 +249,7 @@ The following aggregate functions are supported:
 - [`max`](/reference/functions/aggregate-functions/max)
 - [`sum`](/reference/functions/aggregate-functions/sum)
 - [`sumWithOverflow`](/reference/functions/aggregate-functions/sumWithOverflow)
+- `exponentialTimeDecayedSum` for `ExponentialTimeDecayingFloat64(decay_length)`
 - [`groupBitAnd`](/reference/functions/aggregate-functions/groupBitAnd)
 - [`groupBitOr`](/reference/functions/aggregate-functions/groupBitOr)
 - [`groupBitXor`](/reference/functions/aggregate-functions/groupBitXor)
