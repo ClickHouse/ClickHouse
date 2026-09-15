@@ -10,6 +10,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
@@ -70,7 +71,11 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// Resolve a lazily loaded table's stand-in, which is not a `StorageReplicatedMergeTree`
+            /// and would keep the table out of this system table for as long as the server runs. Only
+            /// the stand-ins whose tables are already loaded: reading a system table must not load the
+            /// catalog and defeat `lazy_load_tables`.
+            const auto table = resolveLazyTableIfLoaded(iterator->table());
             if (!table)
                 continue;
             if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))

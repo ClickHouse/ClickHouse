@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -235,7 +236,13 @@ void SelectStreamFactory::createForShardImpl(
         else
         {
             auto resolved_id = context->resolveStorageID(main_table);
-            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+            /// A lazily loaded table's stand-in is not a `StorageReplicatedMergeTree`, so without
+            /// resolving it the cast below would take this query to the local replica without ever
+            /// consulting its replication delay - silently reading stale rows off a replica whose
+            /// fetches have not started, even with `fallback_to_stale_replicas_for_distributed_queries`
+            /// turned off. This query reads the local table, or decides against it based on that delay,
+            /// either way.
+            main_table_storage = resolveLazyTable(DatabaseCatalog::instance().tryGetTable(resolved_id, context));
         }
 
 
