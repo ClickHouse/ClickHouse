@@ -22,11 +22,30 @@ static bool NO_INLINE isAllASCIIAVX512(const UInt8 * data, size_t size)
     if (unlikely(_mm512_movepi8_mask(_mm512_loadu_si512(reinterpret_cast<const void *>(data))) != 0))
         return false;
 
-    __m512i mask = _mm512_setzero_si512();
+    __m512i mask0 = _mm512_setzero_si512();
+    __m512i mask1 = _mm512_setzero_si512();
+    __m512i mask2 = _mm512_setzero_si512();
+    __m512i mask3 = _mm512_setzero_si512();
 
-    size_t i = 0;
+    const auto address_alignment = reinterpret_cast<uintptr_t>(data) & 63;
+    size_t i = (64 - address_alignment) & 63;
+    if (i == 0)
+        i = 64;
+
+    for (; i + 256 <= size; i += 256)
+    {
+        mask0 = _mm512_or_si512(mask0, _mm512_load_si512(reinterpret_cast<const void *>(data + i)));
+        mask1 = _mm512_or_si512(mask1, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 64)));
+        mask2 = _mm512_or_si512(mask2, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 128)));
+        mask3 = _mm512_or_si512(mask3, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 192)));
+    }
+
+    __m512i mask = _mm512_or_si512(
+        _mm512_or_si512(mask0, mask1),
+        _mm512_or_si512(mask2, mask3));
+
     for (; i + 64 <= size; i += 64)
-        mask = _mm512_or_si512(mask, _mm512_loadu_si512(reinterpret_cast<const void *>(data + i)));
+        mask = _mm512_or_si512(mask, _mm512_load_si512(reinterpret_cast<const void *>(data + i)));
 
     if (i < size)
     {
