@@ -168,8 +168,8 @@ Add new skip rules
 Dynamic paths:
 k1
 k4
-k7
 Shared data paths:
+k7
 k9
 0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
 0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
@@ -276,8 +276,8 @@ Add new skip rules
 Dynamic paths:
 k1
 k4
-k7
 Shared data paths:
+k7
 k9
 0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
 0	2	2020-01-02	0	Hello	\N	false	\N	\N	92

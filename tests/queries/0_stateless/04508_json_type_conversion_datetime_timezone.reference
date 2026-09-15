@@ -1,0 +1,20 @@
+Test 1: DateTime with explicit timezone removal
+{"dt":"2024-01-15 21:30:00"}
+2024-01-15 21:30:00	DateTime
+Test 2: DateTime64 with explicit timezone removal
+{"dt":"2024-01-15 21:30:00.123"}
+2024-01-15 21:30:00.123000000	DateTime64(9)
+Test 3: DateTime with explicit timezone, changed typed path
+{"dt":"2024-01-15 21:30:00"}
+2024-01-15 21:30:00
+Test 4: date_time_output_format = UnixTimestamp, removal
+1705321800	String
+Test 5: DateTime without explicit timezone (fast path)
+{"dt":"2024-01-15 12:30:00"}
+2024-01-15 12:30:00	DateTime
+Test 6: date_time_output_format = ISO, removal
+2024-01-15T12:30:00Z	DateTime
+Test 7: Array(DateTime) with explicit timezone removal
+{"dt":["2024-01-15 21:30:00","2024-01-15 22:00:00"]}
+Test 8: Array(DateTime) with explicit timezone, changed to Array(String)
+{"dt":["2024-01-15 21:30:00"]}
