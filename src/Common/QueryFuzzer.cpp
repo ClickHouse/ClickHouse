@@ -1518,6 +1518,50 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         return;
     }
 
+    auto fuzz_setting = [&](const String & name, Field value)
+    {
+        if (!storage.settings)
+        {
+            auto new_settings = make_intrusive<ASTSetQuery>();
+            new_settings->is_standalone = false;
+            storage.set(storage.settings, new_settings);
+        }
+        storage.settings->changes.emplace_back(name, std::move(value));
+    };
+
+    /// `TimeSeries` keeps its own settings, so it never reaches the MergeTree block below.
+    if (engine_name == "TimeSeries")
+    {
+        /// Only `use_all_tags_column_to_generate_id` defaults to false, so draw both ways.
+        static const Strings timeseries_bool_settings
+            = {"aggregate_min_time_and_max_time",
+               "filter_by_min_time_and_max_time",
+               "store_min_time_and_max_time",
+               "use_all_tags_column_to_generate_id"};
+
+        for (const auto & name : timeseries_bool_settings)
+            if (fuzz_rand() % 20 == 0)
+                fuzz_setting(name, UInt64(fuzz_rand() % 2));
+
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("tags_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
+        /// Writing `recent_samples_index_granularity` at all is rejected once the recent-samples
+        /// table is off, so only offer it while the TTL stays non-zero.
+        bool recent_samples_disabled = false;
+        if (fuzz_rand() % 20 == 0)
+        {
+            recent_samples_disabled = fuzz_rand() % 4 == 0;
+            fuzz_setting("recent_samples_ttl_seconds", UInt64(recent_samples_disabled ? 0 : fuzz_rand() % 345600 + 1));
+        }
+        if (!recent_samples_disabled && fuzz_rand() % 20 == 0)
+            fuzz_setting("recent_samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
+        return;
+    }
+
     /// For MergeTree family engines, inject hot table settings with low probability.
     if (!endsWith(engine_name, "MergeTree"))
         return;
@@ -1546,17 +1590,6 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
            "ttl_only_drop_parts",
            "use_const_adaptive_granularity",
            "use_primary_key_cache"};
-
-    auto fuzz_setting = [&](const String & name, Field value)
-    {
-        if (!storage.settings)
-        {
-            auto new_settings = make_intrusive<ASTSetQuery>();
-            new_settings->is_standalone = false;
-            storage.set(storage.settings, new_settings);
-        }
-        storage.settings->changes.emplace_back(name, std::move(value));
-    };
 
     for (const auto & name : hot_bool_settings)
         if (fuzz_rand() % 20 == 0)
@@ -3364,7 +3397,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
+        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags", "timeSeriesData"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -5457,17 +5490,44 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"multiFuzzyMatchAny", "multiFuzzyMatchAnyIndex", "multiFuzzyMatchAllIndices"},
         /// Integer GCD / LCM
         {"gcd", "lcm"},
-        /// Time-series group/id single-argument accessors (group or id → Map/Array/String)
+        /// Time-series group/id single-argument accessors (group or id → Map/Array/String).
+        /// `timeSeriesTagsGroupToTags` and `timeSeriesIdToTagsGroup` are aliases of two of these.
         {"timeSeriesGroupToTags",
          "timeSeriesGroupToSamplingKey",
          "timeSeriesIdToGroup",
          "timeSeriesIdToTags",
          "timeSeriesExtractTag",
-         "timeSeriesTagsToGroup"},
+         "timeSeriesTagsToGroup",
+         "timeSeriesTagsGroupToTags",
+         "timeSeriesIdToTagsGroup"},
         /// Time-series tag removal (group, tag(s) → group)
         {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
         /// Time-series tag copying (dest_group, src_group, tag(s) → group)
         {"timeSeriesCopyTag", "timeSeriesCopyTags"},
+        /// Time-series grid aggregates: all take the same four parameters (start_timestamp,
+        /// end_timestamp, step, window) and the same samples arguments, so only the name differs.
+        /// `timeSeriesPredictLinearToGrid` is deliberately absent: it takes a fifth parameter.
+        {"timeSeriesAvgToGrid",
+         "timeSeriesChangesToGrid",
+         "timeSeriesCountToGrid",
+         "timeSeriesDeltaToGrid",
+         "timeSeriesDerivToGrid",
+         "timeSeriesIncreaseToGrid",
+         "timeSeriesInstantDeltaToGrid",
+         "timeSeriesInstantRateToGrid",
+         "timeSeriesLastToGrid",
+         "timeSeriesMaxToGrid",
+         "timeSeriesMinToGrid",
+         "timeSeriesRateToGrid",
+         "timeSeriesResampleToGridWithStaleness",
+         "timeSeriesResetsToGrid",
+         "timeSeriesSumToGrid",
+         "timeSeriesTimestampOfMaxToGrid",
+         "timeSeriesTimestampOfMinToGrid"},
+        /// Time-series top-k masks over a grid ((k)(key, values) → Array masks)
+        {"timeSeriesTopKMasks", "timeSeriesBottomKMasks", "timeSeriesLimitKMasks"},
+        /// Time-series aggregates over sample pairs (timestamp, value → samples)
+        {"timeSeriesGroupArray", "timeSeriesLastTwoSamples"},
         /// Series analysis over a numeric array (array[, extra params] → Array/number)
         {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
         /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
