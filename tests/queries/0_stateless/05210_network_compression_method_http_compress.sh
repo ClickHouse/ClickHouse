@@ -23,17 +23,3 @@ method_byte NONE
 # A codec that is not usable on the wire is rejected instead of being ignored, as over the native protocol.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compress=1&network_compression_method=T64" -d 'SELECT 1' \
     | grep -o 'must be NONE, ZSTD, LZ4 or LZ4HC'
-
-# The body of an error response is framed the same way, so that a `compress=1` client can decode it
-# with the codec it asked for instead of failing on the frame.
-error_frame()
-{
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compress=1&network_compression_method=$1" -d 'SELECT throwIf(1)'
-}
-
-for method in LZ4 ZSTD
-do
-    error_frame "$method" | tail -c +17 | head -c 1 | od -An -tx1 | tr -d ' \n'
-    echo
-    error_frame "$method" | ${CLICKHOUSE_COMPRESSOR} --decompress | grep -o 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'
-done

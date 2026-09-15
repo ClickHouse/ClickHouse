@@ -183,3 +183,49 @@ SELECT max(n * 2) + max(2 * n) + max(n / 2) + max(1 / n) FROM (SELECT number n F
 SELECT sum(number * -3) + min(2 * number * -3) - max(-1 * -2 * number * -3) FROM numbers(100);
 SELECT max(log(2) * number) FROM numbers(100);
 SELECT round(max(log(2) * 3 * sin(0.3) * number * 4)) FROM numbers(100);
+
+-- Coverage for ArithmeticOperationsInAgrFuncOptimize.cpp — literal-first and negative-reversal paths.
+-- The analyzer handles this pass itself; with enable_analyzer=1 this code is bypassed entirely.
+-- Exercises: lines 31-44 (exchangeExtractFirstArgument, literal-first operand),
+--   line 67 (zeroField Int64), lines 111-116 (get_reverse_aggregate_function_name),
+--   lines 118-129 (first_literal && !second_literal branch),
+--   line 122 (literal-first divide skipped), lines 134-135 (need_reverse second_literal).
+CREATE TABLE t_arith_legacy (a Int64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_arith_legacy SELECT (number::Int64 - 5) FROM numbers(10);
+
+SET enable_analyzer = 0;
+SET optimize_arithmetic_operations_in_aggregate_functions = 1;
+
+-- 1. Literal-first multiply: sum(2 * a) → multiply(2, sum(a))
+EXPLAIN SYNTAX SELECT sum(2 * a) FROM t_arith_legacy;
+SELECT sum(2 * a) FROM t_arith_legacy;
+
+-- 2. min with literal-first plus: min(1 + a) → plus(1, min(a))
+EXPLAIN SYNTAX SELECT min(1 + a) FROM t_arith_legacy;
+SELECT min(1 + a) FROM t_arith_legacy;
+
+-- 3. min with literal-first minus: min(1 - a) → need_reverse → minus(1, max(a))
+EXPLAIN SYNTAX SELECT min(1 - a) FROM t_arith_legacy;
+SELECT min(1 - a) FROM t_arith_legacy;
+
+-- 4. max with negative first-literal multiply: max(-2 * a) → need_reverse → multiply(-2, min(a))
+EXPLAIN SYNTAX SELECT max(-2 * a) FROM t_arith_legacy;
+SELECT max(-2 * a) FROM t_arith_legacy;
+
+-- 5. min with negative first-literal multiply: min(-3 * a) → need_reverse → multiply(-3, max(a))
+EXPLAIN SYNTAX SELECT min(-3 * a) FROM t_arith_legacy;
+SELECT min(-3 * a) FROM t_arith_legacy;
+
+-- 6. max with negative second-literal multiply: max(a * -2) → need_reverse
+EXPLAIN SYNTAX SELECT max(a * -2) FROM t_arith_legacy;
+SELECT max(a * -2) FROM t_arith_legacy;
+
+-- 7. sum with negative first-literal: sum(-2 * a) → get_reverse("sum")="sum" (line 115)
+EXPLAIN SYNTAX SELECT sum(-2 * a) FROM t_arith_legacy;
+SELECT sum(-2 * a) FROM t_arith_legacy;
+
+-- 8. Literal-first divide is skipped (line 122: return {}): EXPLAIN shows unchanged form
+EXPLAIN SYNTAX SELECT min(2 / (a + 10)) FROM t_arith_legacy;
+SELECT min(2 / (a + 10)) FROM t_arith_legacy;
+
+DROP TABLE t_arith_legacy;
