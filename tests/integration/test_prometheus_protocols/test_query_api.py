@@ -74,10 +74,10 @@ def start_cluster():
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         node.query(
             "CREATE TABLE prometheus_seconds "
-            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
         )
         node.query(
-            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
             " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
             " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
         )
@@ -128,6 +128,34 @@ def test_range_query_post_urlencoded():
     )
     post_data = extract_data_from_http_api_response(post_resp)
     assert get_data == post_data
+
+
+def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
+    for step in (0, -1):
+        error = execute_range_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/api/v1/query_range",
+            "vector(1)",
+            10,
+            10,
+            step,
+            expect_error=True,
+        )
+        assert "step must be positive" in error
+
+
+def test_range_query_accepts_positive_step_for_equal_start_and_end():
+    result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        1000,
+        1000,
+        1,
+    )
+    assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
 def test_query_lookback_delta():

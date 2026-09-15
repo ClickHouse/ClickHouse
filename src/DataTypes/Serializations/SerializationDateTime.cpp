@@ -84,6 +84,7 @@ inline bool tryReadText(
 
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
+    , utc_time_zone(DateLUT::instance("UTC"))
 {
 }
 

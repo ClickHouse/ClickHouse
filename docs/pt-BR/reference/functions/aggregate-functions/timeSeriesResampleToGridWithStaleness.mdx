@@ -17,8 +17,10 @@ Função de agregação que recebe dados de séries temporais como pares de time
 
 Alias: `timeSeriesLastToGrid`.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto, um valor NaN é usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Warning>
-  Esta função é experimental; habilite-a definindo `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxe**
@@ -31,10 +33,10 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **Parâmetros**
 
-* `start_timestamp` — Especifica o início da grade. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
-* `end_timestamp` — Especifica o fim da grade. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
-* `grid_step` — Especifica o passo da grade em segundos. [`UInt32`](/pt-BR/reference/data-types/int-uint)
-* `staleness_window` — Especifica a desatualização máxima da amostra mais recente, em segundos. [`UInt32`](/pt-BR/reference/data-types/int-uint)
+* `start_timestamp` — Especifica o início da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contém um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `end_timestamp` — Especifica o fim da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contém um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `grid_step` — Especifica o passo da grade em segundos. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contém um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `staleness_window` — Especifica a desatualização máxima da amostra mais recente, em segundos. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contém um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 
 **Argumentos**
 

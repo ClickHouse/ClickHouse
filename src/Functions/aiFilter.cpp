@@ -105,8 +105,11 @@ REGISTER_FUNCTION(AiFilter)
         .description = R"(
 Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
 
-The function asks the model to respond with only lowercase `true` or `false`. Failed requests (when
-`ai_function_throw_on_error` is disabled) and unrecognised responses map to `0`, so the row is filtered out.
+The function asks the model to respond with only lowercase `true` or `false`. Any complete response other
+than `true` (including `false` and unrecognised text) maps to `0`, so the row is filtered out. A
+provider-signalled incomplete reply — truncated, content-filtered, or requiring further action — is instead
+treated as an error: with `ai_function_throw_on_error` enabled (the default) the query is aborted; with it
+disabled the row maps to `0` and is filtered out.
 
 **Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
 or inconsistent; use them only where false positives and false negatives are acceptable.
@@ -125,8 +128,8 @@ Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pai
         },
         .returned_value = {"`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled.", {"UInt8"}},
         .examples = {
-            {"Filter angry reviews", "SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')", ""},
-            {"Filter a column with explicit credentials", "SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5", ""},
+            {"Filter angry reviews", "CREATE TABLE reviews (body String) ENGINE = Memory;\nINSERT INTO reviews VALUES ('The package arrived three days late.');\nSELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')", ""},
+            {"Filter a column with explicit credentials", "CREATE TABLE issues (body String) ENGINE = Memory;\nINSERT INTO issues VALUES ('The application exits unexpectedly after login.');\nSELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});

@@ -157,7 +157,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(stack_trace, out);
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    writePODBinary(current_thread.get(), out);
 #if defined(OS_LINUX)
     writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
     for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
@@ -775,7 +775,7 @@ try
         ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
-            String changed_settings = query_context->getSettingsRef().toString();
+            String changed_settings = query_context->getSettingsRef().toString(/* show_secrets */ false);
 
             if (changed_settings.empty())
                 LOG_FATAL(log, "No settings were changed");
