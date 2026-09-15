@@ -282,7 +282,8 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- Arm 10: the extended-type gathers - `String`, `Nullable`, `Array` (nested and doubly nested),
 -- `Tuple` - all in one table. The row store pin leaves all 6 payload columns on the columnar path
 -- for all 1000 matched probe rows. The `full_sorting_merge` twin pins the same values through an
--- algorithm sharing no code.
+-- algorithm sharing no code, and the `parallel_hash` arm runs the same kernels over stored blocks
+-- scattered across slots.
 CREATE TABLE dg_ext
 (
     k UInt64,
@@ -306,6 +307,12 @@ FROM numbers(2000);
 
 SELECT 'arm10 extended types', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
+
+SELECT 'arm10 extended parallel_hash', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
@@ -333,7 +340,8 @@ SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, 
 
 -- Arm 11: `Variant` gathers its local discriminators, offsets, and every nested variant
 -- column, remapping each stored block's local discriminator order onto the destination's. An
--- unmatched row is NULL, like `insertDefault`.
+-- unmatched row is NULL, like `insertDefault`. The `parallel_hash` arm remaps the discriminators of
+-- blocks scattered across slots.
 CREATE TABLE dg_variant (k UInt64, v Variant(Array(UInt64), String, UInt64), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_variant SELECT
     number,
@@ -349,6 +357,14 @@ SELECT 'arm11 variant', count(), sum(cityHash64(k, toString(v), w)), countIf(v I
     countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
 FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
+
+SELECT 'arm11 variant parallel_hash', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
+    countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
+FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
