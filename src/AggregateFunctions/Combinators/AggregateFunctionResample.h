@@ -160,6 +160,12 @@ public:
         return align_of_data;
     }
 
+    bool serializedStateIsEmpty() const override
+    {
+        /// An empty range writes no nested state at all, a non-empty one writes every nested state.
+        return total == 0 || nested_function->serializedStateIsEmpty();
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         for (size_t i = 0; i < total; ++i)

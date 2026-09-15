@@ -166,6 +166,13 @@ public:
         return prefix_size + nested_function->sizeOfData();
     }
 
+    /// Without the flag byte the state is exactly the nested state: `getFlag` is the literal `true`
+    /// when the result is not nullable, and when it is, a `false` flag writes nothing either.
+    bool serializedStateIsEmpty() const override
+    {
+        return !serialize_flag && nested_function->serializedStateIsEmpty();
+    }
+
     size_t alignOfData() const override
     {
         return nested_function->alignOfData();

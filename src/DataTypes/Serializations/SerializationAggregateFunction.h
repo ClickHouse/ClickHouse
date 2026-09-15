@@ -17,6 +17,8 @@ private:
     SerializationAggregateFunction(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
         : function(function_), type_name(std::move(type_name_)), version(version_) {}
 
+    void deserializeStates(IColumn & column, ReadBuffer & istr, size_t limit, bool rows_are_exact) const;
+
 public:
     static constexpr bool is_parametric = true;
 
@@ -34,6 +36,12 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

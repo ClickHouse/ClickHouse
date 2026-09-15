@@ -64,6 +64,15 @@ public:
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
 
+    /// The state is the nested states back to back, with no framing of its own.
+    bool serializedStateIsEmpty() const override
+    {
+        for (const auto & nested_function : nested_functions)
+            if (!nested_function->serializedStateIsEmpty())
+                return false;
+        return true;
+    }
+
     void create(AggregateDataPtr __restrict place) const override;
     void destroy(AggregateDataPtr __restrict place) const noexcept override;
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override;

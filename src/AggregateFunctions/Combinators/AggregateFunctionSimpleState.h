@@ -76,6 +76,9 @@ public:
 
     size_t sizeOfData() const override { return nested_func->sizeOfData(); }
 
+    /// This combinator writes no bytes of its own around the nested state.
+    bool serializedStateIsEmpty() const override { return nested_func->serializedStateIsEmpty(); }
+
     size_t alignOfData() const override { return nested_func->alignOfData(); }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

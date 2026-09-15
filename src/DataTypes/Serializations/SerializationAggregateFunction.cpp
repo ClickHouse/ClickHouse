@@ -100,6 +100,34 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
 
 void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
+    deserializeStates(column, istr, limit, /*rows_are_exact=*/false);
+}
+
+void SerializationAggregateFunction::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /*state*/,
+    SubstreamsCache * cache) const
+{
+    settings.path.push_back(Substream::Regular);
+
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
+    {
+        /// Data was inserted from the substreams cache.
+    }
+    else if (ReadBuffer * stream = settings.getter(settings.path))
+    {
+        size_t prev_size = column.size();
+        deserializeStates(column, *stream, limit, settings.number_of_rows_is_exact);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
+    }
+
+    settings.path.pop_back();
+}
+
+void SerializationAggregateFunction::deserializeStates(IColumn & column, ReadBuffer & istr, size_t limit, bool rows_are_exact) const
+{
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
@@ -111,6 +139,17 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     /// Adjust the size of state to make all states aligned in vector.
     size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
+
+    /// A state of no size can occupy no bytes at all, and then the end of the data says nothing about
+    /// how many states are left: only an exact row count from the caller does.
+    if (rows_are_exact && total_size_of_state == 0 && function->serializedStateIsEmpty())
+    {
+        /// Every state is at the same place, which is what the loop below does for a state of no size.
+        char * place = arena.alignedAlloc(total_size_of_state, align_of_state);
+        function->create(place);
+        vec.resize_fill(vec.size() + limit, place);
+        return;
+    }
 
     /// The number of rows comes from the data, so it must not be turned into an allocation on its
     /// own: allocating all the states at once would multiply it by the size of a state, which comes

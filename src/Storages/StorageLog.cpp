@@ -333,6 +333,8 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    /// The marks file is what gives the number of rows; TinyLog has none and reads until the data ends.
+    settings.number_of_rows_is_exact = !limited_by_file_sizes;
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
 
@@ -1066,7 +1068,16 @@ Pipe StorageLog::createReadingPipe(
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+    /// A column can legitimately occupy no bytes (an aggregate state that serializes to nothing), so
+    /// for `Log` the marks are what say whether there are rows; `TinyLog` has none and can only look
+    /// at the size of the data.
+    const bool no_rows = !num_data_files
+        || (use_marks_file
+                ? (data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty()
+                   || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows == 0)
+                : !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path));
+
+    if (no_rows)
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
