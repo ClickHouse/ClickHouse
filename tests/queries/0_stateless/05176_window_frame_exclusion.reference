@@ -60,6 +60,4 @@ the clause survives an AST JSON round trip, and an older payload without it stil
 1
 a function that walks the frame itself rejects the exclusion instead of ignoring it
 5
-peers are compared without a collator, so the peer exclusions refuse a collated order
-0
 an aggregate that allocates in an arena rejects the exclusion, because the state is rebuilt per row
