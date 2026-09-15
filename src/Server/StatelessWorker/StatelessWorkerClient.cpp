@@ -88,16 +88,17 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);
 }
 
-static UInt64 extractResponseVersion(ReadWriteBufferFromHTTP * in)
+static UInt64 extractResponseVersion(ReadWriteBufferFromHTTP * in, const String & header_name, UInt64 fallback)
 {
     for (const auto & header : in->getResponseHeaders())
     {
         const auto & name_and_value = header.safeGet<Tuple>();
         /// HTTP header names are case-insensitive, so compare accordingly.
-        if (boost::iequals(name_and_value.at(0).safeGet<String>(), "X-ClickHouse-Task-Status-Version"))
+        if (boost::iequals(name_and_value.at(0).safeGet<String>(), header_name))
             return parse<UInt64>(name_and_value.at(1).safeGet<String>());
     }
-    return DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
+    /// An old worker sends no header; fall back to what master serialized with.
+    return fallback;
 }
 
 /// Get task status by its id.
@@ -138,7 +139,8 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
-    uri.addQueryParameter("task_status_version", toString(DBMS_TCP_PROTOCOL_VERSION));
+    uri.addQueryParameter("task_status_version", toString(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION));
+    uri.addQueryParameter("progress_version", toString(DBMS_TCP_PROTOCOL_VERSION));
 
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -148,11 +150,14 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         .withDelayInit(false)
         .create(creds);
 
-    /// In case no version is sent back, the version protocol is DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS
-    auto response_version = extractResponseVersion(in.get());
+    /// The worker echoes the versions it serialized the status with (or none, if old worker).
+    auto task_version = extractResponseVersion(in.get(), "X-ClickHouse-Task-Status-Version",
+        getCommonTaskStatusVersion());
+    auto progress_version = extractResponseVersion(in.get(), "X-ClickHouse-Progress-Version",
+        getCommonProgressVersion());
 
     DistributedQueryTaskStatus result;
-    result.read(*in, response_version);
+    result.read(*in, task_version, progress_version);
     if (!in->eof())
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Unexpected trailing data in stateless worker task status response for task {} ", task_id);
