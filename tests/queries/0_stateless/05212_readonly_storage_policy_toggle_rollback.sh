@@ -11,7 +11,7 @@ set -e
 # A single ALTER can turn `table_readonly` off and change the multi-volume `storage_policy`.
 # `changeSettings` applies both before the metadata commit, and a policy change normally starts the
 # background move assignee right away. For a table that started read-only, that assignee must stay
-# inert until the commit succeeds: otherwise it can observe the temporarily writable setting, queue
+# disabled until the commit succeeds: otherwise it can observe the temporarily writable setting, queue
 # a move, and run it after a failed commit has restored `table_readonly = 1`.
 #
 # `policy_05212_a` and `policy_05212_b` (tests/config/config.d/storage_conf_05212.xml) span the same
@@ -34,11 +34,12 @@ $CLICKHOUSE_CLIENT -q "SELECT 'policy after failed toggle: ' || storage_policy,
     'metadata: ' || toString(countSubstrings(create_table_query, 'table_readonly = 1')) || ' ' || toString(countSubstrings(create_table_query, 'policy_05212_b'))
     FROM system.tables WHERE database = currentDatabase() AND name = 'readonly_policy_rollback'"
 
-# No worker was activated by the failed ALTER, in particular not the move assignee that the
-# `storage_policy` change would have started. A deactivated task is never in the schedule pool.
-$CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
-    WHERE database = currentDatabase() AND table = 'readonly_policy_rollback'
-      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
+# The failed ALTER did not enable the workers it started: no move was queued by the assignee that
+# the `storage_policy` change would have woken up, and the cleanup thread is stopped again.
+$CLICKHOUSE_CLIENT -q "SELECT 'moves after failed toggle: ' || toString(count()) FROM system.moves
+    WHERE database = currentDatabase() AND table = 'readonly_policy_rollback'"
+$CLICKHOUSE_CLIENT -q "SELECT 'cleanup thread after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
+    WHERE database = currentDatabase() AND table = 'readonly_policy_rollback' AND log_name LIKE '%CleanupThread%'"
 
 # The retry completes both changes and starts every worker, including the move assignee.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_policy_rollback

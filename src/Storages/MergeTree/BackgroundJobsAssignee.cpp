@@ -132,18 +132,6 @@ bool BackgroundJobsAssignee::createHolderIfNeeded()
     return true;
 }
 
-void BackgroundJobsAssignee::prepare()
-{
-    std::lock_guard lock(holder_mutex);
-
-    /// A freshly created task is schedulable: `trigger` (e.g. from an INSERT or a mutation) would
-    /// queue it right away. Deactivate it so that a prepared assignee stays inert until `start`,
-    /// whatever happens in between. An already existing task is left as it is: it belongs to a
-    /// running assignee, which must not be paused by a repeated preparation.
-    if (createHolderIfNeeded())
-        holder->deactivate();
-}
-
 void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);

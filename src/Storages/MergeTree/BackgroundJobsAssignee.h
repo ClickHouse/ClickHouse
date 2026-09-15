@@ -60,12 +60,7 @@ public:
     };
     Type type{Type::DataProcessing};
 
-    /// Allocates the scheduling task in the deactivated state, so that the allocation (the only
-    /// part of `start` that can throw) can be done ahead of a point of no return, e.g. before a
-    /// metadata commit. A prepared assignee runs nothing until `start` is called: `trigger` and
-    /// `postpone` are no-ops on a deactivated task. Idempotent, and a no-op for a running assignee.
-    void prepare();
-    /// Allocates the scheduling task if needed and activates it.
+    /// Allocates the scheduling task if needed and activates it. Idempotent.
     void start();
     void trigger();
     void postpone();

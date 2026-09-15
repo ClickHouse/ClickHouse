@@ -10,6 +10,7 @@ set -e
 # Turning `table_readonly` back off on a table that was attached read-only starts its background
 # workers. If that start throws partway through, the table must stay read-only instead of becoming
 # writable with some workers missing, and a retried ALTER must complete the transition.
+# The start happens before the metadata commit, so the commit itself is the last step that can fail.
 
 $CLICKHOUSE_CLIENT --multiquery -q "
     DROP TABLE IF EXISTS readonly_start_rollback SYNC;
@@ -31,12 +32,11 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO readonly_start_rollback VALUES (100)" 2>&1 \
 $CLICKHOUSE_CLIENT -q "SELECT countSubstrings(create_table_query, 'table_readonly = 1') FROM system.tables
     WHERE database = currentDatabase() AND name = 'readonly_start_rollback'"
 
-# The failed toggle activated nothing: the workers are prepared before the metadata commit but only
-# switched on after it, so no merge, mutation, move, or cleanup could be queued on the read-only table.
-# A prepared but inactive task never enters the schedule pool, while an active one is always present.
-$CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
-    WHERE database = currentDatabase() AND table = 'readonly_start_rollback'
-      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
+# The workers that were started before the failure stay running but disabled, like the workers of a
+# table that was created writable and made read-only (05217 checks that a disabled worker runs nothing).
+# The cleanup thread is stopped by the rollback, as on a 0 -> 1 toggle.
+$CLICKHOUSE_CLIENT -q "SELECT 'cleanup thread after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
+    WHERE database = currentDatabase() AND table = 'readonly_start_rollback' AND log_name LIKE '%CleanupThread%'"
 
 # A retry completes the transition: the table is writable and every worker runs.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_start_rollback MODIFY SETTING table_readonly = 0"
