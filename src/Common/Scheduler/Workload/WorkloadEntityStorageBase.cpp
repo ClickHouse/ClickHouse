@@ -444,10 +444,12 @@ bool WorkloadEntityStorageBase::storeEntity(
         // Validate workload
         if (workload)
         {
-            // Multiple root workloads (workloads created without a PARENT) are allowed. They form an
-            // independent forest of workload trees rather than a single tree, which lets one tree be
-            // managed via SQL while another is loaded from configuration. Trees are independent: there
-            // is no scheduling relationship between different roots.
+            // Multiple workloads may be created without a PARENT (e.g. one tree via SQL, another from
+            // configuration). Internally each becomes a child of the implicit root workload, so the
+            // name reserved for that implicit root must not be used by a user workload.
+            if (entity_name == IMPLICIT_ROOT_WORKLOAD_NAME)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Workload name '{}' is reserved for the implicit root workload and cannot be used", entity_name);
 
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;

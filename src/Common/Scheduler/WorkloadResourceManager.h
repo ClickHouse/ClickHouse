@@ -245,7 +245,7 @@ private:
             // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
             // settings mean a single-root hierarchy behaves exactly as before.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
-            implicit->basename = IMPLICIT_ROOT_NAME;
+            implicit->basename = IMPLICIT_ROOT_WORKLOAD_NAME;
             implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
             executeInSchedulerThread([&, this]
@@ -267,9 +267,7 @@ private:
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        /// Reserved basename of the implicit anonymous root workload (the scheduler's single child).
-        static constexpr const char * IMPLICIT_ROOT_NAME = "__root__";
-        /// Implicit anonymous root workload: the scheduler's single child. Every workload without an
+        /// Implicit anonymous root workload (basename `IMPLICIT_ROOT_WORKLOAD_NAME`): the scheduler's single child. Every workload without an
         /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
         /// workloads form one hierarchy under it — scheduled with fairness/priorities by the normal
         /// policy machinery instead of being multiple scheduler children. Default (unlimited)
