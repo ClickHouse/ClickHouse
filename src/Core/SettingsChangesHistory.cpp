@@ -35,14 +35,17 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Settings changes is a vector of structs
-        ///     {setting_name, previous_value, new_value, reason}.
-        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
-        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
+        /// Entries are `{setting_name, previous_value, new_value, reason, compatibility_mode = Apply}`.
+        /// Use `Ignore` when a new default must apply even with an older `compatibility` version.
+        /// For a newly added setting choose the most appropriate `previous_value` (for example, if the setting
+        /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
+            {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
@@ -1498,6 +1501,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
+    using CompatibilitySetting = SettingsChangesHistory::SettingChange::CompatibilitySetting;
     static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
@@ -1509,6 +1513,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "sainte_lague", "sainte_lague", "Keep Sainte-Lague distribution regardless of `compatibility`.", CompatibilitySetting::Ignore},
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
