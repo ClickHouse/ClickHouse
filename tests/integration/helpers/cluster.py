@@ -3688,11 +3688,11 @@ class ClickHouseCluster:
                         )
 
     def _images_prefetched_and_present(self) -> bool:
-        """Whether this job prefetched every image of this project and each is in the daemon.
+        """Whether this job pulled every image of this project and each is still in the daemon.
 
-        A reference the job did not prefetch may be a floating tag whose local copy is stale, and
-        a prefetched one can still be absent (the prefetch skips an image with no manifest for
-        this architecture), so both questions are asked.
+        A reference this job did not pull may be a floating tag whose local copy is stale, and a
+        reference it did pull can still be gone (the image store is shared with everything else on
+        this daemon), so both questions are asked.
 
         `docker image inspect` prints one id per reference it finds and nothing for one it does
         not, so an equal count means none is missing. A non-zero exit or an empty enumeration

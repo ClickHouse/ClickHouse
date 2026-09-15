@@ -38,10 +38,18 @@ done
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+# The caller distinguishes "this job fetched this reference" from "the pull was waived", so the
+# waived set is reported instead of folded into the exit code. Truncated up front: an absent file
+# means this protocol did not run, which the caller must not read as "nothing was waived".
+if [[ -n "${PREFETCH_SKIPPED_FILE:-}" ]]; then
+    : > "$PREFETCH_SKIPPED_FILE"
+fi
+
 pull_one()
 {
     local image="$1"
     local fail_file="$2"
+    local skip_file="$3"
     local attempt out start elapsed
 
     for ((attempt = 1; attempt <= PULL_RETRIES; attempt++)); do
@@ -56,6 +64,7 @@ pull_one()
         # Arch-specific image — not a real failure on this runner.
         if echo "$out" | grep -q "no matching manifest"; then
             echo "SKIP $image: no manifest for this architecture (${elapsed}s)"
+            echo "$image" > "$skip_file"
             return 0
         fi
         echo "Pull of $image failed on attempt $attempt (${elapsed}s elapsed):"
@@ -83,7 +92,7 @@ for i in "${!images[@]}"; do
         done
     fi
     (
-        if pull_one "${images[i]}" "$work_dir/fail_$i"; then
+        if pull_one "${images[i]}" "$work_dir/fail_$i" "$work_dir/skip_$i"; then
             echo ok > "$work_dir/done_$i"
         else
             echo failed > "$work_dir/done_$i"
@@ -102,6 +111,12 @@ for i in "${!images[@]}"; do
         missing+=("${images[i]}")
     fi
 done
+
+if [[ -n "${PREFETCH_SKIPPED_FILE:-}" ]]; then
+    for i in "${!images[@]}"; do
+        [[ -s "$work_dir/skip_$i" ]] && cat "$work_dir/skip_$i" >> "$PREFETCH_SKIPPED_FILE"
+    done
+fi
 
 if [[ ${#failed[@]} -gt 0 ]]; then
     echo "ERROR: Failed to pull the following image(s) after $PULL_RETRIES attempt(s): ${failed[*]}"
