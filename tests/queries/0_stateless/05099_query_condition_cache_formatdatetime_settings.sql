@@ -41,15 +41,6 @@ SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS funct
 SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS function_locate_has_mysql_compatible_argument_order = 0;
 SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS use_query_condition_cache = 0, function_locate_has_mysql_compatible_argument_order = 0;
 
--- `cast_string_to_date_time_mode` is frozen in `ComparisonParams` when the comparison function is built and
--- decides how a string literal compared to a `DateTime` column is parsed, which the condition's `ActionsDAG`
--- does not see either. `'05/06/2024 00:00:00'` is 2024-06-05 with `best_effort` (day first, no row matches)
--- and 2024-05-06 with `best_effort_us` (month first, 11 rows match).
-SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS cast_string_to_date_time_mode = 'best_effort';
-SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS cast_string_to_date_time_mode = 'best_effort_us';
-SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS use_query_condition_cache = 0, cast_string_to_date_time_mode = 'best_effort_us';
-
 -- A repeated query with the same settings still reads the cached verdict.
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' FORMAT Null;

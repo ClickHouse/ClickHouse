@@ -41,10 +41,6 @@ namespace Setting
     extern const SettingsBool function_json_value_return_type_allow_complex;
     extern const SettingsBool functions_h3_default_if_invalid;
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
-    extern const SettingsBool decimal_check_overflow;
-    extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool use_variant_default_implementation_for_comparisons;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -79,13 +75,6 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// session that is supposed to see the exception.
     hash.update(settings[Setting::functions_h3_default_if_invalid].value);
     hash.update(settings[Setting::cast_ipv4_ipv6_default_on_conversion_error].value);
-    /// The comparison functions freeze this state in `ComparisonParams` when they are built: it decides how a
-    /// string literal compared to a `DateTime` / `Enum` / `Decimal` column is parsed and whether an
-    /// out-of-range or invalid literal compares or throws.
-    hash.update(settings[Setting::decimal_check_overflow].value);
-    hash.update(settings[Setting::validate_enum_literals_in_operators].value);
-    hash.update(settings[Setting::use_variant_default_implementation_for_comparisons].value);
-    hash.update(static_cast<UInt64>(settings[Setting::cast_string_to_date_time_mode].value));
     return hash.get64();
 }
 
