@@ -1,8 +1,12 @@
 with SHOW COLUMNS only:
--- the entry format version that ships the query as written:
+-- copy_legacy:
 necessary to have the grant SELECT ON db.url_src
--- the current entry format version:
+-- copy_current:
+necessary to have the grant SELECT ON db.url_src
+-- copy_legacy_unqualified:
 necessary to have the grant SELECT ON db.url_src
 after GRANT SELECT:
--- the entry format version that ships the query as written:
+-- copy_legacy:
+URL
+-- copy_legacy_unqualified:
 URL

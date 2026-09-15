@@ -28,24 +28,28 @@ ${CLICKHOUSE_CLIENT} -q "
 
 legacy=(--user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2)
 current=(--user "${user}" --distributed_ddl_output_mode throw)
-copy="CREATE TABLE ${db}.copy_of_url_src ON CLUSTER test_shard_localhost AS ${db}.url_src"
 
-# Prints either the missing privilege or the engine of the copy that was created.
+# Prints either the missing privilege or the engine of the copy that was created. The name of the copy
+# is derived from the destination so that the two source spellings do not collide.
 function try_copy()
 {
-    echo "-- ${1}:"
-    shift
-    ${CLICKHOUSE_CLIENT} "${@}" -q "${copy}" 2>&1 \
+    local name=$1 source=$2
+    shift 2
+    echo "-- ${name}:"
+    ${CLICKHOUSE_CLIENT} "${@}" -q "CREATE TABLE ${db}.${name} ON CLUSTER test_shard_localhost AS ${source}" 2>&1 \
         | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
-    ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = 'copy_of_url_src'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = '${name}'"
 }
 
 echo "with SHOW COLUMNS only:"
-try_copy "the entry format version that ships the query as written" "${legacy[@]}"
-try_copy "the current entry format version" "${current[@]}"
+try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
+try_copy copy_current "${db}.url_src" "${current[@]}"
+# An unqualified source is authorized, and read, in the database of this query.
+try_copy copy_legacy_unqualified url_src "${legacy[@]}"
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.url_src TO ${user}"
-try_copy "the entry format version that ships the query as written" "${legacy[@]}"
+try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
+try_copy copy_legacy_unqualified url_src "${legacy[@]}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
