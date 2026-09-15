@@ -73,7 +73,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool short_circuit_function_evaluation_for_nulls;
     extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
-    extern const SettingsTimezone session_timezone;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -212,13 +211,6 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
-    /// `session_timezone` is not read by any function when it is built: `DateLUT::instance()` looks it up in the
-    /// query context every time a function needs the implicit time zone, which is what `toDateTime(s)`,
-    /// `parseDateTime(s, format)` and their relatives do for a `String` argument without an explicit time zone
-    /// (`KeyCondition` refuses to analyze exactly these for the same reason). The result type is the plain
-    /// `DateTime` without a time zone in its name, so the same `s` parses to a different Unix timestamp in two
-    /// sessions with an identical DAG hash.
-    hash.update(settings[Setting::session_timezone].value);
     return hash.get64();
 }
 
