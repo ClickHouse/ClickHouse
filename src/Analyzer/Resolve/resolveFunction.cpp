@@ -91,11 +91,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-<<<<<<< HEAD
-=======
-    extern const SettingsBool allow_correlated_subqueries;
-    extern const SettingsBool rewrite_in_to_join;
->>>>>>> master
     extern const SettingsMap additional_table_filters;
 }
 
