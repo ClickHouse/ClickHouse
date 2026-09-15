@@ -10,6 +10,7 @@
 #include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <base/scope_guard.h>
 
 #include <stdexcept>
@@ -21,6 +22,7 @@ namespace Setting
     extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
     extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -597,6 +599,17 @@ SchemaCache::Keys getKeysForSchemaCache(
     /// For example, for Protobuf format additional information is the path to the schema
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
+
+    /// An inferred `DateTime`/`DateTime64` without an explicit time zone latches the effective time zone
+    /// of the session that inferred it, and the cache stores the type objects themselves. Serving such a
+    /// schema to a session with another `session_timezone` would parse the values in the reading session's
+    /// zone but format and compute them in the inferring session's zone, so the two must not share a key.
+    /// Sessions that do not set `session_timezone` all resolve to the server's zone and keep sharing one
+    /// entry, so the key of a default session is unchanged.
+    const String & session_timezone = context->getSettingsRef()[Setting::session_timezone];
+    if (!session_timezone.empty())
+        additional_format_info += fmt::format(", session_timezone={}", quoteString(session_timezone));
+
     String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef()[Setting::schema_inference_mode].value));
     SchemaCache::Keys cache_keys;
     cache_keys.reserve(sources.size());
