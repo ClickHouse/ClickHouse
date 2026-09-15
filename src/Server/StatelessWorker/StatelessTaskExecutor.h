@@ -43,6 +43,10 @@ public:
         /// Log lines collected on the worker since the previous status poll
         /// (InternalTextLogsQueue block format); empty when logs are not requested.
         Block logs;
+        /// Cumulative log lines dropped on the worker (buffer overflow) and drained into status replies,
+        /// for coordinator-side loss accounting.
+        UInt64 num_dropped_logs = 0;
+        UInt64 forwarded_log_count = 0;
     };
 
     /// The error a task ended with.
@@ -74,6 +78,9 @@ private:
         /// filled by the task's threads via the thread-group attachment, drained by
         /// status polls in `getStatus`.
         InternalTextLogsQueuePtr logs_queue;
+        /// Cumulative log lines drained into status replies; lets the coordinator detect lines lost to a
+        /// retried status poll (the worker cannot observe that loss itself).
+        std::shared_ptr<std::atomic<UInt64>> forwarded_log_count = std::make_shared<std::atomic<UInt64>>(0);
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;

@@ -25,6 +25,12 @@ struct DistributedQueryTaskStatus
     /// negotiated task status version is below 4.
     Block logs;
 
+    /// Worker-side log-loss accounting (task status version >= 4), both cumulative: lines the worker
+    /// dropped because its forwarding buffer was full, and lines it has drained into replies (compared
+    /// on the coordinator against what it received, to detect lines lost to a status-poll retry).
+    UInt64 num_dropped_logs = 0;
+    UInt64 forwarded_log_count = 0;
+
     /// Two orthogonal versions gate the wire format: `task_version` is the stateless-worker task
     /// status version (DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION domain) and gates which fields
     /// exist (error_code, logs); `progress_version` is a native TCP protocol revision and gates how
