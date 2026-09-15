@@ -53,6 +53,10 @@ public:
     void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const override;
 
 private:
+    template <typename Parser>
+    void deserializeObjectWithParser(
+        IColumn & column, std::string_view object, const FormatSettings & settings, const DateLUTImpl * session_timezone) const;
+
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
 
     const size_t max_dynamic_paths;

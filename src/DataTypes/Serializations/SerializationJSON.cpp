@@ -1,10 +1,8 @@
 #include <algorithm>
 #include <unordered_map>
-#include <Poco/Mutex.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
-#include <Common/ObjectPool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Formats/JSONExtractTree.h>
@@ -12,6 +10,7 @@
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <base/scope_guard.h>
 
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -27,6 +26,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
 }
 
 SerializationJSON::SerializationJSON(
@@ -97,12 +101,6 @@ SerializationPtr SerializationJSON::create(
     return pooled(hash.get128(), creator);
 }
 
-namespace Setting
-{
-    extern const SettingsBool allow_simdjson;
-    extern const SettingsTimezone session_timezone;
-}
-
 namespace
 {
 
@@ -124,55 +122,72 @@ struct JSONParserState
 /// Parsers and extraction trees are mutable and expensive to build, so they stay out of the immutable,
 /// pooled serialization and are cached per thread instead. A thread-local cache needs no locking.
 ///
-/// Retention policy: every entry is released as soon as the thread starts serving a different query
-/// context or a different effective session timezone (the same rule as `DataTypesCache`), and a map is
-/// cleared when it holds `MAX_ELEMENTS` schemas. An idle thread keeps the state of its last query until then.
+/// Entries are released when the effective session timezone changes, a map reaches `MAX_ELEMENTS` schemas,
+/// or an object larger than `DBMS_DEFAULT_BUFFER_SIZE` is parsed.
+/// An idle thread keeps the state of its last query until then.
 class JSONParserStateCache
 {
 public:
-    template <typename Parser>
-    using Pool = SimpleObjectPool<JSONParserState<Parser>, Poco::NullMutex>;
-
     template <typename Parser>
     struct Entry
     {
         /// Owning the serialization guarantees that its address is not reused by another schema while cached.
         SerializationPtr owner;
-        std::shared_ptr<Pool<Parser>> pool;
+        std::unique_ptr<JSONParserState<Parser>> state;
     };
 
     template <typename Parser>
-    using Pools = std::unordered_map<const ISerialization *, Entry<Parser>>;
-
-    void clearIfContextChanged(const ContextPtr & current_query_context, std::string_view current_session_timezone)
+    struct Pools
     {
-        /// Owner-based comparison: the weak pointer keeps the control block alive, so an expired
-        /// context cannot be confused with a new one allocated at the same address.
-        bool same_query_context = !query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context);
-        if (same_query_context && session_timezone == current_session_timezone)
+        void clear()
+        {
+            entries.clear();
+            last_serialization = nullptr;
+            last_state = nullptr;
+        }
+
+        std::unordered_map<const ISerialization *, Entry<Parser>> entries;
+        const ISerialization * last_serialization = nullptr;
+        JSONParserState<Parser> * last_state = nullptr;
+    };
+
+    void clearIfTimezoneChanged(const DateLUTImpl * current_session_timezone)
+    {
+        if (session_timezone == current_session_timezone)
             return;
 
 #if USE_SIMDJSON
         simdjson_pools.clear();
 #endif
         fallback_pools.clear();
-        query_context = current_query_context;
         session_timezone = current_session_timezone;
     }
 
-    /// The caller must hold the returned pool for the whole parse: leases reference it directly,
-    /// and a later lookup may evict it from the cache.
-    template <typename Parser>
-    std::shared_ptr<Pool<Parser>> get(Pools<Parser> & pools, const ISerialization & serialization)
+    template <typename Parser, typename Factory>
+    JSONParserState<Parser> & get(Pools<Parser> & pools, const ISerialization & serialization, Factory && factory)
     {
-        auto it = pools.find(&serialization);
-        if (it == pools.end())
-        {
-            if (pools.size() >= MAX_ELEMENTS)
-                pools.clear();
-            it = pools.emplace(&serialization, Entry<Parser>{serialization.shared_from_this(), std::make_shared<Pool<Parser>>()}).first;
-        }
-        return it->second.pool;
+        if (pools.last_serialization == &serialization)
+            return *pools.last_state;
+
+        auto it = pools.entries.find(&serialization);
+        if (it == pools.entries.end())
+            return add(pools, serialization, std::forward<Factory>(factory));
+        pools.last_serialization = &serialization;
+        pools.last_state = it->second.state.get();
+        return *pools.last_state;
+    }
+
+    template <typename Parser>
+    Pools<Parser> & getPools()
+    {
+#if USE_SIMDJSON
+        if constexpr (std::is_same_v<Parser, SimdJSONParser>)
+            return simdjson_pools;
+        else
+            return fallback_pools;
+#else
+        return fallback_pools;
+#endif
     }
 
 #if USE_SIMDJSON
@@ -183,8 +198,19 @@ public:
 private:
     static constexpr size_t MAX_ELEMENTS = 64;
 
-    ContextWeakPtr query_context;
-    String session_timezone;
+    template <typename Parser, typename Factory>
+    NO_INLINE JSONParserState<Parser> & add(Pools<Parser> & pools, const ISerialization & serialization, Factory && factory)
+    {
+        if (pools.entries.size() >= MAX_ELEMENTS)
+            pools.clear();
+        auto [it, _] = pools.entries.emplace(
+            &serialization, Entry<Parser>{serialization.shared_from_this(), factory()});
+        pools.last_serialization = &serialization;
+        pools.last_state = it->second.state.get();
+        return *pools.last_state;
+    }
+
+    const DateLUTImpl * session_timezone = nullptr;
 };
 
 JSONParserStateCache & getJSONParserStateCache()
@@ -435,56 +461,65 @@ void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num
     }
 }
 
+template <typename Parser>
+NO_INLINE void SerializationJSON::deserializeObjectWithParser(
+    IColumn & column, std::string_view object, const FormatSettings & settings, const DateLUTImpl * session_timezone) const
+{
+    auto & cache = getJSONParserStateCache();
+    cache.clearIfTimezoneChanged(session_timezone);
+    auto & state = cache.get(cache.getPools<Parser>(), *this, [&]
+    {
+        /// The tree is rebuilt from the type instead of keeping a reference to it: a strong
+        /// reference would form a cycle with the serialization cached inside `DataTypeObject`.
+        Strings regexps;
+        for (const auto & regexp : path_regexps_to_skip)
+            regexps.push_back(regexp.pattern());
+        auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
+            typed_paths_types, paths_to_skip, std::move(regexps), max_dynamic_paths,
+            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
+        return std::make_unique<JSONParserState<Parser>>(type);
+    });
+    SCOPE_EXIT(
+        if (unlikely(object.size() > DBMS_DEFAULT_BUFFER_SIZE))
+            cache.getPools<Parser>().clear();
+    );
+    typename Parser::Element document;
+    if (!state.parser.parse(object, document))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", object.substr(0, std::min(object.size(), 1000uz)), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
+
+    String error;
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+    if (!state.tree->insertResultToColumn(column, document, insert_settings, settings, error))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
+}
+
 void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
-    /// The parser backend and the timezone of implicitly typed `DateTime` paths follow the live query
-    /// settings, falling back to the global context the same way `DateLUT::instance` does.
-    ContextPtr query_context = CurrentThread::tryGetQueryContext();
-    ContextPtr context = query_context ? query_context : Context::getGlobalContextInstance();
-    std::string_view session_timezone;
-    if (context)
-        session_timezone = context->getSettingsRef()[Setting::session_timezone].value;
-    if (session_timezone.empty())
-        session_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
+    const DateLUTImpl * session_timezone = settings.json.session_timezone;
+    if (!session_timezone)
+        session_timezone = &DateLUT::instance();
 
-    auto & cache = getJSONParserStateCache();
-    cache.clearIfContextChanged(query_context, session_timezone);
-
-    auto deserialize = [&]<typename Parser>(JSONParserStateCache::Pools<Parser> & pools)
-    {
-        auto pool = cache.get(pools, *this);
-        auto lease = pool->get([&]
-        {
-            /// The tree is rebuilt from the type instead of keeping a reference to it: a strong
-            /// reference would form a cycle with the serialization cached inside `DataTypeObject`.
-            Strings regexps;
-            for (const auto & regexp : path_regexps_to_skip)
-                regexps.push_back(regexp.pattern());
-            auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-                typed_paths_types, paths_to_skip, std::move(regexps), max_dynamic_paths,
-                assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
-            return new JSONParserState<Parser>(type);
-        });
-        typename Parser::Element document;
-        if (!lease->parser.parse(object, document))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", object.substr(0, std::min(object.size(), 1000uz)), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
-
-        String error;
-        JSONExtractInsertSettings insert_settings;
-        insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
-        insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
-        insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
-        if (!lease->tree->insertResultToColumn(column, document, insert_settings, settings, error))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
-    };
 #if USE_SIMDJSON
-    if (!context || context->getSettingsRef()[Setting::allow_simdjson])
+    bool allow_simdjson;
+    if (settings.json.allow_simdjson)
+        allow_simdjson = *settings.json.allow_simdjson;
+    else
     {
-        deserialize(cache.simdjson_pools);
+        auto context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+        allow_simdjson = !context || context->getSettingsRef()[Setting::allow_simdjson];
+    }
+    if (allow_simdjson)
+    {
+        deserializeObjectWithParser<SimdJSONParser>(column, object, settings, session_timezone);
         return;
     }
 #endif
-    deserialize(cache.fallback_pools);
+    deserializeObjectWithParser<FallbackJSONParser>(column, object, settings, session_timezone);
 }
 
 void SerializationJSON::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
