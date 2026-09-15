@@ -292,8 +292,6 @@ For query statements, the response may include:
 
 If schema inference fails for a valid query (for example, when replacing placeholders with `NULL` is not valid for that query), ClickHouse still creates the prepared statement and returns the handle without `dataset_schema`.
 
-`dataset_schema` is also left out when the result contains a column whose Arrow type comes from [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format) — a `JSON`, `Dynamic` or `QBit` column, or a container holding one. A statement handle outlives the session that created it, and each later call reads that setting from whichever session serves it, so such a schema is not something the handle can promise. Execute the statement to obtain the schema instead. An `AggregateFunction` column does not cause this, because it is an Arrow `Binary` column under every value of the setting.
-
 Prepared statements are owned by the authenticated user, not by a single session. If you open multiple sessions as the same user, you can execute, re-bind, and close the same statement handle from any of those sessions.
 
 Other users cannot execute, bind, or close a statement handle they did not create.

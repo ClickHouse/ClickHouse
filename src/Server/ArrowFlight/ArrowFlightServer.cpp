@@ -40,7 +40,6 @@
 #include <arrow/flight/sql/protocol_internal.h>
 #include <arrow/ipc/writer.h>
 #include <arrow/scalar.h>
-#include <arrow/util/key_value_metadata.h>
 
 
 namespace DB
@@ -331,48 +330,6 @@ namespace
                 return arrow::Status::ExecutionError("Invalid format (", insert->format, "), only 'Arrow' format is supported");
         }
         return arrow::Status::OK();
-    }
-
-    /// Whether the field, or one of its children, got its Arrow type from
-    /// `output_format_arrow_unsupported_types`, so that the same query yields a different schema under a
-    /// different value of it.
-    ///
-    /// `field` has to come from a schema built in `text` mode. A type with no Arrow mapping is tagged
-    /// `clickhouse.opaque` whichever mode built it, so the tag alone does not separate the two: under
-    /// `binary` they are all `binary`. Under `text` the Arrow type tells them apart, because Arrow Flight
-    /// pins `output_string_as_string`, which leaves `arrowOpaqueTypeIsUtf8` equal to
-    /// `!isAggregateFunction()`. So `utf8` is a type that follows the setting, and `binary` is an
-    /// aggregate state, which is `binary` under both modes because its text form is not text.
-    bool followsUnsupportedTypesMode(const arrow::Field & field)
-    {
-        if (field.type()->id() == arrow::Type::STRING)
-        {
-            if (const auto & metadata = field.metadata())
-            {
-                const int name_index = metadata->FindKey("ARROW:extension:name");
-                const int type_index = metadata->FindKey("ARROW:extension:metadata");
-                if (name_index != -1
-                    && std::string_view{metadata->value(name_index)} == FormatSettings::ARROW_OPAQUE_EXTENSION_NAME
-                    /// `Nothing` has no Arrow mapping either, but every one of its values is NULL, so the
-                    /// column carries nothing a client could read differently under the other mode. Counting
-                    /// it would cost the schema of every statement whose placeholder sits bare in the select
-                    /// list, since inference substitutes `NULL` and `SELECT ? AS x` infers as `Nothing`.
-                    && (type_index == -1 || std::string_view{metadata->value(type_index)} != "Nothing"))
-                    return true;
-            }
-        }
-
-        for (const auto & child : field.type()->fields())
-            if (followsUnsupportedTypesMode(*child))
-                return true;
-
-        return false;
-    }
-
-    bool followsUnsupportedTypesMode(const arrow::Schema & schema)
-    {
-        const auto & fields = schema.fields();
-        return std::any_of(fields.begin(), fields.end(), [](const auto & field) { return followsUnsupportedTypesMode(*field); });
     }
 
     /// Creates a converter to convert ClickHouse blocks to the Arrow format.
@@ -1571,24 +1528,11 @@ arrow::Status ArrowFlightServer::DoAction(
                         if (block_io.pipeline.pulling())
                         {
                             PullingPipelineExecutor executor{block_io.pipeline};
-
-                            /// A handle outlives the session that created it - `getPreparedStatement` keys on
-                            /// the username alone - and every later call resolves
-                            /// `output_format_arrow_unsupported_types` afresh from whichever session serves it.
-                            /// A schema holding a column whose Arrow type comes from that setting would then be
-                            /// a promise this handle cannot keep, so it is not made at all and the client reads
-                            /// the schema at execution time, as it already does when inference fails.
-                            ///
-                            /// Built in `text` mode so that `followsUnsupportedTypesMode` can recognize such a
-                            /// column. When there is none the schema does not depend on the mode, so this is
-                            /// also the schema every later call will serve.
-                            auto settings = ArrowFlight::arrowConversionSettings(query_context);
-                            settings.output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::TEXT;
-                            auto schema = CHColumnToArrowColumn::calculateArrowSchema(
-                                executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, settings);
-
-                            if (!followsUnsupportedTypesMode(*schema))
-                                info.dataset_schema = std::move(schema);
+                            info.dataset_schema = CHColumnToArrowColumn::calculateArrowSchema(
+                                executor.getHeader().getColumnsWithTypeAndName(),
+                                "Arrow",
+                                nullptr,
+                                ArrowFlight::arrowConversionSettings(query_context));
                         }
                         block_io.onCancelOrConnectionLoss();
                     }
