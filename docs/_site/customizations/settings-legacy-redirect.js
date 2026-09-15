@@ -66,7 +66,11 @@
         return false;
       }
 
-      var anchorRoutes = routeFamilies[baseRoute];
+      var anchorRoutes = Object.assign(
+        {},
+        routeFamilies[baseRoute],
+        (window.clickhouseSettingsLegacyAliases || {})[baseRoute],
+      );
       var directAnchor = canonicalAnchor(anchorRoutes, decodedHash);
       var baseAnchor = directAnchor || canonicalAnchor(
         anchorRoutes,

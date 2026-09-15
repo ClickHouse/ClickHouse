@@ -64,6 +64,8 @@ SETTINGS_MARKDOWN_DEFAULT_RE = re.compile(
     r"^[ \t]*-[ \t]+\*\*Default(?: value)?:\*\*[ \t]*(?P<default>[^\n]*)",
     re.IGNORECASE | re.MULTILINE,
 )
+SETTINGS_ALIASES_RE = re.compile(r"^\*\*Aliases\*\*:[^\n]*$", re.MULTILINE)
+SETTINGS_ALIAS_NAME_RE = re.compile(r"`(?P<alias>[A-Za-z0-9_.-]+)`")
 MARKDOWN_HEADING_RE = re.compile(
     r"^(?P<hashes>#{1,4})[ \t]+(?P<title>.+?)[ \t]*$")
 MARKDOWN_HEADING_ID_RE = re.compile(
@@ -723,6 +725,7 @@ class SettingSection:
     anchor: str
     markdown: str
     default_value: str | None = None
+    aliases: tuple[str, ...] = ()
 
     @property
     def tokens(self):
@@ -788,11 +791,23 @@ def parse_settings_page(content):
             ) or '""'
             if default_value.lower() == "empty string":
                 default_value = '""'
+        aliases_match = SETTINGS_ALIASES_RE.search(markdown)
+        aliases = (
+            tuple(
+                alias_match.group("alias")
+                for alias_match in SETTINGS_ALIAS_NAME_RE.finditer(
+                    aliases_match.group(0)
+                )
+            )
+            if aliases_match
+            else ()
+        )
         sections.append(SettingSection(
             match.group("name"),
             match.group("anchor"),
             markdown,
             default_value,
+            aliases,
         ))
     if preamble is None:
         preamble = generated_body[:matches[0].start()].strip("\n")
@@ -1143,6 +1158,21 @@ def _settings_anchor_routes(pages, preamble="", source_sections=None):
     return dict(sorted(anchor_routes.items()))
 
 
+def _settings_alias_routes(pages):
+    """Map documented setting aliases to the routes of their canonical settings."""
+    alias_routes = {}
+    for page in walk_setting_pages(pages):
+        for section in page.sections:
+            for alias in section.aliases:
+                previous = alias_routes.setdefault(alias, page.route)
+                if previous != page.route:
+                    raise ValueError(
+                        f"settings alias {alias!r} occurs on both "
+                        f"{previous} and {page.route}"
+                    )
+    return dict(sorted(alias_routes.items()))
+
+
 def _resolve_setting_anchor(anchor, routes, anchor_routes):
     for candidate in (anchor, anchor.lower()):
         if candidate in anchor_routes:
@@ -1250,7 +1280,34 @@ def _parse_settings_legacy_routes_script(script, family_name):
         raise ValueError(
             f"invalid generated {family_name} legacy routes script"
         )
-    return json.loads(route_line[len(assignment):-1])
+    routes = json.loads(route_line[len(assignment):-1])
+    aliases_assignment = (
+        "window.clickhouseSettingsLegacyAliases["
+        + json.dumps(family["base_route"])
+        + "] = "
+    )
+    aliases_line = next(
+        (line for line in script.splitlines() if line.startswith(aliases_assignment)),
+        None,
+    )
+    if aliases_line is None:
+        return routes
+    if not aliases_line.endswith(";"):
+        raise ValueError(
+            f"invalid generated {family_name} legacy aliases script"
+        )
+    aliases = json.loads(aliases_line[len(aliases_assignment):-1])
+    if not isinstance(aliases, dict):
+        raise ValueError(
+            f"invalid generated {family_name} legacy aliases script"
+        )
+    duplicates = set(routes).intersection(aliases)
+    if duplicates:
+        raise ValueError(
+            f"generated {family_name} legacy aliases duplicate anchors: "
+            + ", ".join(sorted(duplicates))
+        )
+    return dict(sorted((routes | aliases).items()))
 
 
 def _validate_settings_routing(
@@ -1564,14 +1621,20 @@ def _strip_settings_explorer(preamble, family):
     return pattern.sub("", preamble).strip()
 
 
-def _settings_legacy_routes_script(anchor_routes, family):
+def _settings_legacy_routes_script(anchor_routes, family, alias_routes=None):
     """Expose moved settings anchors to the global Mintlify redirect script."""
     base_route = json.dumps(family["base_route"])
     routes = json.dumps(
         anchor_routes, separators=(",", ":")).replace("<", "\\u003c")
+    alias_routes = alias_routes or {}
+    aliases = json.dumps(
+        alias_routes, separators=(",", ":")).replace("<", "\\u003c")
     return (
         "window.clickhouseSettingsLegacyRoutes = "
         "window.clickhouseSettingsLegacyRoutes || {};\n"
+        "window.clickhouseSettingsLegacyAliases = "
+        "window.clickhouseSettingsLegacyAliases || {};\n"
+        f"window.clickhouseSettingsLegacyAliases[{base_route}] = {aliases};\n"
         f"window.clickhouseSettingsLegacyRoutes[{base_route}] = {routes};\n"
     )
 
@@ -1629,11 +1692,21 @@ def _settings_explorer_component(pages, family=None):
 
     entries_json = json.dumps(
         [explorer_entry(page) for page in pages], separators=(",", ":"))
+    aliases_json = json.dumps(
+        dict(sorted({
+            section.name: list(section.aliases)
+            for page in walk_setting_pages(pages)
+            for section in page.sections
+            if section.aliases
+        }.items())),
+        separators=(",", ":"),
+    )
     template = '''const __COMPONENT_NAME__ = ({ href: baseRoute }) => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => (__SESSION_SETTINGS_ENTRIES__));
+  const [settingAliases] = useState(() => (__SETTINGS_ALIASES__));
   const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) => items.flatMap((entry) => {
       const key = [...path, entry.label].join("/");
@@ -1688,7 +1761,9 @@ def _settings_explorer_component(pages, family=None):
   };
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name));
+    const settings = entry.settings.filter((setting) => matchesSearch(
+      [setting.name, ...(settingAliases[setting.name] || [])].join(" "),
+    ));
     const children = entry.children.map(filterEntry).filter(Boolean);
     const count = settings.length + children.reduce(
       (total, child) => total + child.count,
@@ -1899,6 +1974,7 @@ export default __COMPONENT_NAME__;
     return (
         template
         .replace("__SESSION_SETTINGS_ENTRIES__", entries_json)
+        .replace("__SETTINGS_ALIASES__", aliases_json)
         .replace("__COMPONENT_NAME__", family["component_name"])
         .replace("__EXPLORER_ROOT__", family["explorer_root"])
     )
@@ -1921,6 +1997,7 @@ def split_settings_page(
     )
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
+    alias_routes = _settings_alias_routes(pages)
     shard_dir = Path(dest).with_suffix("")
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
@@ -1947,7 +2024,7 @@ def split_settings_page(
     ))
     artifacts.append(GeneratedArtifact(
         _settings_legacy_routes_path(docs_dir, family_name),
-        _settings_legacy_routes_script(anchor_routes, family),
+        _settings_legacy_routes_script(anchor_routes, family, alias_routes),
     ))
     if route_contract_path:
         artifacts.append(GeneratedArtifact(

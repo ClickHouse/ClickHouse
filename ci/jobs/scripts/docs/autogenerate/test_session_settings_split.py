@@ -250,6 +250,33 @@ def main():
         ),
         ("openSSL.client.caConfig", "openssl.client.caconfig"),
     ]
+
+    aliases_page = generated_page(["canonical_setting"])
+    aliases_page = aliases_page.replace(
+        "Description for canonical_setting.",
+        "**Aliases**: `legacy_setting`, `older_setting`\n\n"
+        "Description for canonical_setting.",
+    )
+    _, _, aliases_sections = mod.parse_settings_page(aliases_page)
+    assert aliases_sections[0].aliases == ("legacy_setting", "older_setting")
+    aliases_pages = mod.group_session_settings(
+        aliases_sections,
+        base_route=mod.SESSION_SETTINGS_BASE_ROUTE,
+    )
+    aliases_route_script = mod._settings_legacy_routes_script(
+        mod._settings_anchor_routes(aliases_pages),
+        mod.SETTINGS_SPLIT_FAMILIES["session-settings"],
+        mod._settings_alias_routes(aliases_pages),
+    )
+    aliases_routes = mod._parse_settings_legacy_routes_script(
+        aliases_route_script,
+        "session-settings",
+    )
+    assert aliases_routes["legacy_setting"] == \
+        "/reference/settings/session-settings/other"
+    aliases_explorer = mod._settings_explorer_component(aliases_pages)
+    assert '"canonical_setting":["legacy_setting","older_setting"]' in aliases_explorer
+    assert "...(settingAliases[setting.name] || [])" in aliases_explorer
     server_family = mod.SETTINGS_SPLIT_FAMILIES["server-settings"]
     complex_pages = mod.group_session_settings(
         complex_sections,
