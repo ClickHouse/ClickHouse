@@ -1,3 +1,7 @@
+import itertools
+import random
+import string
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -367,3 +371,239 @@ def test_tmp_metadata(started_cluster):
 # `prev` branch exercised above, and no test targets it directly - the scenarios happen to reach
 # the `prev` side because of the insertion order. Same for the `Unreadable`/`CORRUPTED_DATA` and
 # `UnknownCSN` outcomes of `read_txn_status`. Both gaps predate this module.
+
+
+# The tests above load parts through `ATTACH TABLE`, i.e. `loadDataPartsFromDisk`. `SYSTEM RESTART
+# DISK` instead re-scans an already-loaded table whose every disk is read-only, through
+# `MergeTreeData::refreshDataPartsOnce`, which seeds `PartLoadingTree` itself. The promotion of
+# committed descendants of a rolled-back or broken covering part therefore has to be asserted
+# separately there, including across two refreshes: the covering part is then either already
+# indexed non-active (a rolled-back one) or not indexed at all (a broken one), and either way the
+# seed has to reach the descendants that appeared only afterwards.
+#
+# `object_storage_type = local` with `metadata_type = plain_rewritable` is what makes a read-only
+# table's store writable from outside the server: plain_rewritable keeps every part file as a plain
+# file, so the raw `txn_version.txt` above still parses, and it maps a logical part name to a
+# directory through `__meta/<dir>/prefix.path`, so a part can be published by moving a directory in
+# and adding that one mapping file. `table_disk = true` puts the parts at the disk root rather than
+# under `store/<uuid>/`, which is what lets a fresh reader be pointed at a fabricated layout.
+REFRESH_DISK_ROOT = "/var/lib/clickhouse/plt_refresh"
+
+# Fresh disk name and directory per reader: a custom disk is cached by name for the lifetime of the
+# server (`Context::getOrCreateDisk`), so reusing a name across tests would hand the second one the
+# first one's disk object and path map. Repeated runs against the module-scoped cluster
+# (`pytest --count`, flaky check) reuse the same server, so the counter has to live here.
+reader_seq = itertools.count()
+
+
+def container_bash(command):
+    """Run `command` in the node's container as root, returning its output."""
+    return node.exec_in_container(["bash", "-c", command], privileged=True)
+
+
+def part_states(table):
+    """
+    Every part `table` has in its parts index, with its state.
+
+    `_state` has to be in the SELECT list: without that virtual column `system.parts` reports at
+    most `Active` and `Outdated` parts (`StoragesInfo::getParts`), and a rolled-back part on a
+    read-only table is in neither state - every refresh ends in `grabOldParts(true)`, which moves it
+    to `Deleting`, while nothing on a read-only table ever finishes the removal that would take it
+    out of the index.
+    """
+    rows = node.query(
+        "SELECT name, _state FROM system.parts"
+        f" WHERE database = 'default' AND table = '{table}'"
+    ).split()
+    return dict(zip(rows[::2], rows[1::2]))
+
+
+def object_dir_of(store, part):
+    """
+    The directory `plain_rewritable` mapped the logical part name `part` to, read from the
+    `__meta/<dir>/prefix.path` files that hold the mapping.
+
+    `system.parts.path` cannot answer this: it reports the logical path (`<disk root>/<part>/`),
+    which is the key of the mapping rather than the directory the files are in.
+    """
+    # `-x` still matches although the mapping files carry no trailing newline, and `|| true`
+    # keeps a missing mapping an assertion below rather than an opaque non-zero exit code.
+    found = container_bash(
+        f"grep -Fxl '{part}/' {store}__meta/*/prefix.path || true"
+    ).split()
+    assert len(found) == 1, f"expected one directory mapped to {part}, got {found}"
+    return found[0].rsplit("/", 2)[-2]
+
+
+@pytest.fixture(scope="module")
+def committed_part_copy(started_cluster):
+    """
+    A copy of one committed part directory, written by the server on a `plain_rewritable` disk.
+
+    The parts fabricated below are clones of it, so they carry the layout the server itself wrote
+    and, having no `txn_version.txt`, are classified `NoMetadata`, i.e. committed. The writer table
+    is dropped once the copy exists - the readers get their own empty layouts, and a part is
+    injected only after a reader is loaded, which is what leaves the refresh path, rather than the
+    startup loader, responsible for surfacing it.
+    """
+    container_bash(f"rm -rf {REFRESH_DISK_ROOT} && mkdir -p {REFRESH_DISK_ROOT}")
+    node.query("DROP TABLE IF EXISTS plt_refresh_writer SYNC")
+    node.query(
+        "CREATE TABLE plt_refresh_writer (x UInt32) ENGINE = MergeTree ORDER BY x"
+        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0, table_disk = true,"
+        " disk = disk(name = plt_refresh_writer, type = object_storage,"
+        " object_storage_type = local, metadata_type = plain_rewritable,"
+        f" path = '{REFRESH_DISK_ROOT}/writer/')"
+    )
+    node.query("INSERT INTO plt_refresh_writer VALUES (42)")
+    store = f"{REFRESH_DISK_ROOT}/writer/"
+    source = f"{REFRESH_DISK_ROOT}/source"
+    container_bash(f"cp -r {store}{object_dir_of(store, 'all_1_1_0')} {source}")
+    node.query("DROP TABLE plt_refresh_writer SYNC")
+    yield source
+    container_bash(f"rm -rf {REFRESH_DISK_ROOT}")
+
+
+def stage_part(source, part, rolled_back=False, broken=False):
+    """
+    Clone `source` into a staging directory as the part named `part`, ready to be injected.
+
+    `rolled_back` gives it the raw metadata of a part whose transaction never committed. `broken`
+    corrupts `columns.txt` so `loadDataPart` fails to parse it and marks the part broken - a broken
+    part is never inserted into the parts index, unlike a rolled-back one, which is indexed
+    `Outdated`.
+    """
+    object_dir = "".join(random.choices(string.ascii_lowercase, k=32))
+    staged = f"{REFRESH_DISK_ROOT}/staged/{object_dir}"
+    container_bash(f"mkdir -p {REFRESH_DISK_ROOT}/staged && cp -r {source} {staged}")
+    if rolled_back:
+        write_file(f"{staged}/txn_version.txt", ROLLED_BACK_TXN_VERSION)
+    if broken:
+        write_file(f"{staged}/columns.txt", "corrupted columns metadata")
+    return part, object_dir
+
+
+def inject_part(store, staged_part):
+    """
+    Publish a staged part into a loaded read-only reader, the way another writer process would: move
+    its directory into the store and add the one `__meta` file that maps the part name to it.
+    """
+    part, object_dir = staged_part
+    container_bash(
+        f"mv {REFRESH_DISK_ROOT}/staged/{object_dir} {store}{object_dir}"
+        f" && mkdir -p {store}__meta/{object_dir}"
+        f" && printf '%s/' '{part}' > {store}__meta/{object_dir}/prefix.path"
+    )
+
+
+def create_readonly_reader(name):
+    """
+    Create a table over a fresh, empty `plain_rewritable` layout on a read-only disk, and return its
+    name, its disk name and its store directory.
+
+    The table is loaded while the layout is still empty, so every part asserted on afterwards is one
+    that `refreshDataPartsOnce` had to surface. `data_paths[1]` is the whole store here because
+    `table_disk = true` gives the table exactly one data path.
+    """
+    suffix = f"{name}_{next(reader_seq)}"
+    table = f"plt_refresh_{suffix}"
+    disk = f"plt_refresh_disk_{suffix}"
+    container_bash(f"mkdir -p {REFRESH_DISK_ROOT}/{suffix}/__meta")
+    node.query(
+        f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x"
+        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0, table_disk = true,"
+        f" disk = disk(readonly = true, name = {disk}, type = object_storage,"
+        " object_storage_type = local, metadata_type = plain_rewritable,"
+        f" path = '{REFRESH_DISK_ROOT}/{suffix}/')"
+    )
+    store = node.query(
+        "SELECT data_paths[1] FROM system.tables"
+        f" WHERE database = 'default' AND name = '{table}'"
+    ).strip()
+    assert store
+    return table, disk, store.rstrip("/") + "/"
+
+
+def test_refresh_disk_contains(committed_part_copy):
+    """
+    A read-only refresh must promote the committed descendants of a rolled-back covering part, and
+    must not re-activate the covering part itself.
+
+    Same topology and containment arm as `test_contains`, but the parts appear after the table is
+    loaded, so they are surfaced by `refreshDataPartsOnce`, not by the startup loader:
+      all_1_4_2_1  level 2, mut 1, blocks 1-4  rolled back
+      all_1_2_1_0  level 1, mut 0, blocks 1-2  committed, contained in 1-4
+      all_3_4_1_0  level 1, mut 0, blocks 3-4  committed, contained in 1-4
+
+    Committing the rolled-back top-level node instead of skipping it puts it back into `PreActive`
+    and then throws `LOGICAL_ERROR` out of `assertHasVersionMetadata`, which accepts only a
+    non-transactional creation TID under the null transaction the refresh commits with. The refresh
+    therefore fails, the committed children stay hidden, and a debug or sanitizer build aborts.
+    """
+    table, disk, store = create_readonly_reader("contains")
+
+    inject_part(store, stage_part(committed_part_copy, "all_1_4_2_1", rolled_back=True))
+    inject_part(store, stage_part(committed_part_copy, "all_1_2_1_0"))
+    inject_part(store, stage_part(committed_part_copy, "all_3_4_1_0"))
+    node.query(f"SYSTEM RESTART DISK {disk}")
+
+    assert active_parts(table) == {"all_1_2_1_0", "all_3_4_1_0"}
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_refresh_disk_contains_across_refreshes(committed_part_copy):
+    """
+    The committed descendants must be surfaced even when they appear only after the rolled-back
+    covering part has already been indexed by an earlier refresh.
+
+    The first refresh sees only `all_1_4_2_1` and indexes it `Outdated`. A read-only table never
+    starts the old-part cleanup thread (`StorageMergeTree::startup` returns before it), so the part
+    stays in the index. The seed of the second refresh must therefore descend through a top-level
+    node that is already indexed but not active, otherwise the children that appeared in between
+    stay invisible until the table is restarted or re-attached.
+    """
+    table, disk, store = create_readonly_reader("cross_refresh")
+
+    inject_part(store, stage_part(committed_part_copy, "all_1_4_2_1", rolled_back=True))
+    node.query(f"SYSTEM RESTART DISK {disk}")
+    # In the index and not active: this is the state the next refresh has to look past, so asserting
+    # the part is still there is what keeps the second half of the test from passing vacuously.
+    assert part_states(table) == {"all_1_4_2_1": "Deleting"}
+
+    inject_part(store, stage_part(committed_part_copy, "all_1_2_1_0"))
+    inject_part(store, stage_part(committed_part_copy, "all_3_4_1_0"))
+    node.query(f"SYSTEM RESTART DISK {disk}")
+
+    assert active_parts(table) == {"all_1_2_1_0", "all_3_4_1_0"}
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_refresh_disk_broken_covering_across_refreshes(committed_part_copy):
+    """
+    A committed part must be surfaced when it appears under a broken covering part whose own child
+    is already indexed from an earlier refresh.
+
+    Topology all_1_8_3_1 (broken) > all_1_4_2_1 (rolled back) > all_1_2_1_0 (committed). A broken
+    part never reaches the parts index at all (`loadDataPart` returns through `mark_broken` before
+    the insert), so on the second refresh the top-level seed re-visits it as an unknown node - and
+    has to descend into its subtree past `all_1_4_2_1`, which the first refresh did index
+    `Outdated`, to reach the grandchild that appeared afterwards. Handling only the direct children
+    of a broken node, or stopping at any indexed node, hides the grandchild until a restart.
+    """
+    table, disk, store = create_readonly_reader("broken_covering")
+
+    inject_part(store, stage_part(committed_part_copy, "all_1_8_3_1", broken=True))
+    inject_part(store, stage_part(committed_part_copy, "all_1_4_2_1", rolled_back=True))
+    node.query(f"SYSTEM RESTART DISK {disk}")
+    # The broken covering part never reached the index; the rolled-back one is in it, not active.
+    # Both halves of that are what the next refresh has to handle, so both are asserted here.
+    assert part_states(table) == {"all_1_4_2_1": "Deleting"}
+
+    inject_part(store, stage_part(committed_part_copy, "all_1_2_1_0"))
+    node.query(f"SYSTEM RESTART DISK {disk}")
+
+    assert active_parts(table) == {"all_1_2_1_0"}
+
+    node.query(f"DROP TABLE {table} SYNC")
