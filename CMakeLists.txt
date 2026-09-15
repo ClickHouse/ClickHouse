@@ -400,16 +400,23 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # different value at every stack depth and each one takes a fresh entry in the stack depot,
     # which is never freed.
     #
-    # This covers what the compiler generates from the C and C++ sources, and nothing else.
-    # Hand-written assembly is assembled as written - the flag does not touch a `.s` input, which
-    # assembles to a byte-identical object with and without it - so `longjmp.s` and `syscall.s`
-    # under `base/glibc-compatibility/musl/aarch64` keep unsigned return addresses, as does
-    # everything in the prebuilt libraries we link. The Rust objects (`skim`, `delta-kernel`,
-    # `chdig`, `wasmtime`, ...) keep them too: `rustc` treats `-Zbranch-protection` as
-    # ABI-affecting and refuses it outright while `std` comes precompiled without it ("mixing
-    # `-Zbranch-protection` will cause an ABI mismatch"). Signing them needs either `std` built from
-    # source with the same flag - non-sanitizer builds do not use `-Zbuild-std` - or an explicit
-    # `-Cunsafe-allow-abi-mismatch=branch-protection`, so it wants its own change.
+    # What this covers is the code the compiler generates from the sources it is given, so anything
+    # compiled with a flag set of its own, assembled rather than compiled, or built by another
+    # compiler keeps unsigned return addresses:
+    #   - the in-tree `compiler-rt` runtimes. `contrib/compiler-rt-cmake` filters the inherited
+    #     flags down to an allowlist (`_compiler_rt_keep_re`) which drops the hardening ones, and
+    #     that is also why their unwinder does not strip the signature: `sanitizer_ptrauth.h` keys
+    #     stripping on `__ARM_FEATURE_PAC_DEFAULT`, which is precisely what this flag defines, so
+    #     adding it to that allowlist is what it would take to sign them and to make sanitizer
+    #     builds readable again.
+    #   - hand-written assembly. A `.s` input assembles to a byte-identical object with and without
+    #     the flag, so `longjmp.s` and `syscall.s` under `base/glibc-compatibility/musl/aarch64`
+    #     stay unsigned, as does every prebuilt library we link.
+    #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
+    #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
+    #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
+    #     needs `std` built from source with the same flag - non-sanitizer builds do not pass
+    #     `-Zbuild-std` - or an explicit `-Cunsafe-allow-abi-mismatch=branch-protection`.
     #
     # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
     # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
