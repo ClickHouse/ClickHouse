@@ -9,7 +9,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
@@ -25,24 +24,19 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-namespace FailPoints
-{
-    extern const char prepared_sets_build_ordered_set_inplace_fail[];
-}
-
 CreatingSetsTransform::~CreatingSetsTransform()
 {
     if (promise_to_build)
     {
-        /// An unfulfilled promise means the build was abandoned, not that it failed: publish the
-        /// retryable "no set" outcome. `work` resets the promise after storing a real error.
+        /// set_exception can also throw
         try
         {
-            promise_to_build->set_value(nullptr);
+            promise_to_build->set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to set_value for promise");
+            tryLogCurrentException(log, "Failed to set_exception for promise");
         }
     }
 
@@ -186,14 +180,14 @@ void CreatingSetsTransform::finishSubquery()
 
     if (set_from_cache)
     {
-        LOG_DEBUG(log, "Got set from cache in {:.3f} sec.", seconds);
+        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
     }
     else if (read_rows != 0)
     {
         if (set_and_key->set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {:.3f} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
         if (set_and_key->external_table)
-            LOG_DEBUG(log, "Created Table with {} rows in {:.3f} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
     else
     {
@@ -241,15 +235,6 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
-        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
-        /// (the same observable state as a subquery timeout with `overflow_mode = 'break'`). Fires once,
-        /// so the in-place build during primary key analysis fails while the deferred build succeeds.
-        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
-        {
-            finishSubquery();
-            return {};
-        });
-
         set_and_key->set->finishInsert();
         if (promise_to_build)
         {

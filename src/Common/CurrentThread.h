@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
-#include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -43,7 +42,7 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
  * - https://en.cppreference.com/w/cpp/language/constinit
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
-extern constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
+extern thread_local constinit ThreadStatus * current_thread;
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
@@ -107,10 +106,6 @@ public:
     static ContextPtr tryGetQueryContext();
 
     static std::string_view getQueryId();
-
-    /// Throws the real cancellation cause of the current query (`TIMEOUT_EXCEEDED`, or an exception
-    /// stored by `QueryStatus::cancelQuery`) if it has been cancelled. No-op otherwise.
-    static void checkIfNotCancelled();
 
     // For IO Scheduling
     static void attachReadResource(ResourceLink link);

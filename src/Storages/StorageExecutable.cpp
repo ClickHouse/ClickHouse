@@ -90,8 +90,7 @@ namespace
                 }
             }
 
-            auto source = std::make_shared<SourceFromSingleChunk>(
-                std::make_shared<const Block>(std::move(result_block)), /*enable_auto_progress=*/false);
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block)));
             inputs[i] = Pipe(std::move(source));
         }
     }
@@ -390,7 +389,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/engines/table-engines/mergetree-family/textindexes/#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (
@@ -616,7 +615,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/engines/table-engines/mergetree-family/textindexes/#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (

@@ -89,6 +89,7 @@ public:
         std::string_view module_name,
         std::string_view wasm_code,
         FuelMode fuel_mode) const = 0;
+    virtual bool requiresFuelSpecialization() const = 0;
     virtual ~IWasmEngine() = default;
 };
 

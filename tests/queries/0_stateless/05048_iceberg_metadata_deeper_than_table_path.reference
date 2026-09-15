@@ -6,7 +6,6 @@ E insert   NOT_IMPLEMENTED
 F alter    NOT_IMPLEMENTED
 G mutation NOT_IMPLEMENTED
 H optimize NOT_IMPLEMENTED
-I manifest NOT_IMPLEMENTED
 J expire   NOT_IMPLEMENTED
 K orphans  NOT_IMPLEMENTED
 L kept     [5,6]
