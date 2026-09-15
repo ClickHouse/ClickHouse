@@ -5,21 +5,13 @@ DROP TABLE IF EXISTS t_dow_date;
 CREATE TABLE t_dow_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_dow_date SELECT toDate('2026-08-03') + number FROM numbers(14); -- two full Monday-Sunday weeks
 
-SELECT mode, filtered, full_scan, filtered = full_scan AS same
-FROM
-(
-    SELECT 0 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d) >= 5) FROM t_dow_date) AS full_scan
-    UNION ALL
-    SELECT 1, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5), (SELECT countIf(toDayOfWeek(d, 1) >= 5) FROM t_dow_date)
-    UNION ALL
-    SELECT 2, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5), (SELECT countIf(toDayOfWeek(d, 2) >= 5) FROM t_dow_date)
-    UNION ALL
-    SELECT 3, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 3) >= 5), (SELECT countIf(toDayOfWeek(d, 3) >= 5) FROM t_dow_date)
-    UNION ALL
-    -- Only the two lowest bits of the mode are significant, so 6 is the Sunday-first mode 2.
-    SELECT 6, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 6) >= 5), (SELECT countIf(toDayOfWeek(d, 6) >= 5) FROM t_dow_date)
-)
-ORDER BY mode;
+-- One statement per mode: the old analyzer cannot resolve scalar subqueries inside a `UNION ALL` of constant rows.
+SELECT 0 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d) >= 5) FROM t_dow_date) AS full_scan, filtered = full_scan AS same;
+SELECT 1 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d, 1) >= 5) FROM t_dow_date) AS full_scan, filtered = full_scan AS same;
+SELECT 2 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d, 2) >= 5) FROM t_dow_date) AS full_scan, filtered = full_scan AS same;
+SELECT 3 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 3) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d, 3) >= 5) FROM t_dow_date) AS full_scan, filtered = full_scan AS same;
+-- Only the two lowest bits of the mode are significant, so 6 is the Sunday-first mode 2.
+SELECT 6 AS mode, (SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 6) >= 5) AS filtered, (SELECT countIf(toDayOfWeek(d, 6) >= 5) FROM t_dow_date) AS full_scan, filtered = full_scan AS same;
 
 SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) = 0;
 SELECT countIf(toDayOfWeek(d, 2) = 0) FROM t_dow_date;
