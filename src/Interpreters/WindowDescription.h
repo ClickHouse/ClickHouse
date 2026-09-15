@@ -32,6 +32,10 @@ struct WindowFrame
     enum class FrameType : uint8_t { ROWS, GROUPS, RANGE };
     enum class BoundaryType : uint8_t { Unbounded, Current, Offset };
 
+    // Which rows of the frame are left out of the calculation for the current row.
+    // NoOthers is the default and leaves the frame as it is.
+    enum class Exclusion : uint8_t { NoOthers, CurrentRow, Group, Ties };
+
     // This flag signifies that the frame properties were not set explicitly by
     // user, but the fields of this structure still have to contain proper values
     // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
@@ -54,6 +58,8 @@ struct WindowFrame
     Field end_offset = 0;
     bool end_preceding = false;
 
+    Exclusion exclusion = Exclusion::NoOthers;
+
 
     // Throws BAD_ARGUMENTS exception if the frame definition is incorrect, e.g.
     // the frame start comes later than the frame end.
@@ -73,6 +79,7 @@ struct WindowFrame
             && other.end_type == end_type
             && other.end_offset == end_offset
             && other.end_preceding == end_preceding
+            && other.exclusion == exclusion
             ;
     }
 };

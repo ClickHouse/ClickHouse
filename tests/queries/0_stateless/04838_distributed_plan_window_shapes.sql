@@ -90,5 +90,14 @@ EXPLAIN SELECT sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float);
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float) SETTINGS make_distributed_plan = 0;
 
+SELECT '-- the frame exclusion survives the trip';
+-- No EXPLAIN here: the exclusion does not change the shape of the plan, it changes the frame that is
+-- written into it, so the value is the check. A `WindowStep` that dropped the exclusion on the way
+-- would answer with the frame as if it had none, and the two lines would differ.
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
+
 DROP TABLE t_window_shapes_float;
 DROP TABLE t_window_shapes;
