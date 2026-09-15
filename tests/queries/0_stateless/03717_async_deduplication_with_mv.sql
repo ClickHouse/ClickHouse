@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS 03717_table;
 CREATE TABLE 03717_table
 (
@@ -62,9 +64,7 @@ SELECT count() as value FROM 03717_table;
 
 
 SET async_insert = 1, insert_deduplicate = 1, async_insert_deduplicate = 1, wait_for_async_insert = 0, deduplicate_blocks_in_dependent_materialized_views=1;
--- The busy timeout must outlast this test: the table-scoped flush below waits only for the jobs it
--- schedules itself, so a batch the deadline timer already drained is not waited for at all.
-set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=600000;
+set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=5000;
 
 SET max_block_size=1;
 SET max_insert_block_size=1;

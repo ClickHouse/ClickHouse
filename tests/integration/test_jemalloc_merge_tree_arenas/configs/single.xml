@@ -1,3 +1,0 @@
-<clickhouse>
-    <jemalloc_merge_tree_arenas>1</jemalloc_merge_tree_arenas>
-</clickhouse>
