@@ -1,0 +1,22 @@
+Aggregating
+Aggregating
+Filter column: RF1(a, a from default.b_rf_read_mode)
+ReadFromMergeTree (default.t_rf_read_mode)
+Read type: InOrder
+Filter column: RF1(a, a from default.b_rf_read_mode)
+ReadFromMergeTree (default.b_rf_read_mode)
+Read type: Default
+200
+runtime filter conjoined with an ordinary condition
+Read type: Default
+Prewhere filter column:  tenant = 5
+Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
+Filter column:  tenant = 5
+Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
+Filter column: a = 5
+Read type: Default
+5
+105
+205
+305
+405

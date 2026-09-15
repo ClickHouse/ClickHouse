@@ -1,0 +1,24 @@
+equality: prunes the local read, does not order it
+Read type: Default
+Prewhere filter column:  tenant = 5
+100
+equality, setting enabled: orders it as well
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+100
+the same equality inside the fragment orders it
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+100
+comparison: nothing is fixed, so nothing is withheld
+Read type: Default
+Prewhere filter column:  tenant > 90
+900
+equality off the sorting key
+Read type: Default
+Prewhere filter column:  name = \'5\'
+1
+bare boolean
+Read type: Default
+Prewhere filter column:  flag
+5000
