@@ -756,6 +756,8 @@ private:
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
+    NameSet collectLambdaArgumentNamesToDeclare(const LambdaNode & lambda_node);
+
     NodeNameAndNodeMinLevel makeSetForInFunction(const QueryTreeNodePtr & node);
 
     NodeNameAndNodeMinLevel visitIndexHintFunction(const QueryTreeNodePtr & node);
@@ -1027,6 +1029,70 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {constant_node_name, Levels(0)};
 }
 
+NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesToDeclare(const LambdaNode & lambda_node)
+{
+    const auto & argument_names = lambda_node.getArguments().getNames();
+    const auto * own_arguments = &lambda_node.getArguments();
+
+    auto is_argument_name = [&](const String & name)
+    { return std::find(argument_names.begin(), argument_names.end(), name) != argument_names.end(); };
+
+    NameSet declared;
+    NameSet contested;
+
+    QueryTreeNodes to_visit{lambda_node.getExpression()};
+    while (!to_visit.empty())
+    {
+        auto current = to_visit.back();
+        to_visit.pop_back();
+
+        auto node_type = current->getNodeType();
+
+        /// A subquery is planned in its own scope, so no name inside it is looked up here.
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (node_type == QueryTreeNodeType::COLUMN)
+        {
+            const auto & column_node = current->as<ColumnNode &>();
+
+            /// Mirrors visitColumn: a column carrying a non-constant expression is replaced by
+            /// that expression, and one sourced from another lambda's arguments is bound there.
+            bool looked_up_by_name = !column_node.hasExpression() || use_column_identifier_as_action_node_name
+                || column_node.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+            auto column_source = column_node.getColumnSourceOrNull();
+            bool bound_by_this_scope = !column_source
+                || column_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
+                || column_source.get() == own_arguments;
+
+            if (looked_up_by_name && bound_by_this_scope)
+            {
+                auto column_node_name = action_node_name_helper.calculateActionNodeName(current);
+                if (is_argument_name(column_node_name))
+                    declared.insert(column_node_name);
+            }
+        }
+        else if (node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::CONSTANT)
+        {
+            /// One name holds one node, so a name the body computes for itself cannot also
+            /// carry an argument.
+            auto contested_name = action_node_name_helper.calculateActionNodeName(current);
+            if (is_argument_name(contested_name))
+                contested.insert(contested_name);
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                to_visit.push_back(child);
+    }
+
+    for (const auto & contested_name : contested)
+        declared.erase(contested_name);
+
+    return declared;
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
 {
     auto & lambda_node = node->as<LambdaNode &>();
@@ -1047,6 +1113,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
+
+    /// A body column named after an argument resolves to the argument's type, so the argument is
+    /// declared first. Other names stay undeclared: a body node may legitimately carry them.
+    const auto argument_names_to_declare = collectLambdaArgumentNamesToDeclare(lambda_node);
+    for (const auto & lambda_argument : lambda_arguments_names_and_types)
+        if (argument_names_to_declare.contains(lambda_argument.name))
+            actions_stack.back().addInputColumnIfNecessary(lambda_argument.name, lambda_argument.type);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
