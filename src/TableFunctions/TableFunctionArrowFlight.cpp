@@ -80,6 +80,7 @@ A table object representing the remote dataset. The schema is inferred from the 
 **Settings**
 
 - `arrow_flight_request_descriptor_type` — Controls how the dataset name is sent to the Flight server. Values: `path` (default) or `command`. See the [ArrowFlight table engine](/reference/engines/table-engines/integrations/arrowflight#settings) for details.
+- `arrow_flight_request_timeout_sec` — Timeout in seconds for a single Arrow Flight request, default `300`; `0` means no timeout. See the [ArrowFlight table engine](/reference/engines/table-engines/integrations/arrowflight#settings) for details.
 
 **Examples**
 
