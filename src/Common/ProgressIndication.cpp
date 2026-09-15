@@ -242,60 +242,60 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         if (elapsed_ns > 500000000 && current_count * 2 < max_count)
             show_progress_bar = true;
 
-        /// The history is recorded while the bar may still appear or is shown. If it is not shown,
-        /// there is nothing to color, and recording would only let the history grow with the query.
-        /// (In the rare case when the bar appears later, because the total grows, the skipped
-        /// interval takes the color of the segment preceding it.)
-        if (elapsed_ns <= 500000000 || show_progress_bar)
+        /// The history is recorded from the first repaint on, even while the bar is not shown: the
+        /// bar is hidden while the query is past 50% of the total known so far, and the total can
+        /// still grow (a `MergeTree` read adds it part by part, a JOIN adds the probe side after
+        /// the build side), which shows the bar later and colors the cells of the interval that
+        /// was hidden. The history is compacted below, so recording it does not let it grow with
+        /// the duration of the query.
+
+        /// The first segment always covers the bar from its first cell, because `colored_bar`
+        /// treats each stored count as the first cell of its segment. The progress bar appears
+        /// only after some progress has been made, so seeding it with `current_count` would
+        /// drop the already-filled prefix until the stalled state flips for the first time.
+        if (bar_segments.empty())
+            bar_segments.emplace_back(0, stalled);
+        else if (bar_segments.back().second != stalled)
         {
-            /// The first segment always covers the bar from its first cell, because `colored_bar`
-            /// treats each stored count as the first cell of its segment. The progress bar appears
-            /// only after some progress has been made, so seeding it with `current_count` would
-            /// drop the already-filled prefix until the stalled state flips for the first time.
-            if (bar_segments.empty())
-                bar_segments.emplace_back(0, stalled);
-            else if (bar_segments.back().second != stalled)
-            {
-                if (bar_segments.back().first != current_count)
-                    bar_segments.emplace_back(current_count, stalled);
-                else if (bar_segments.size() > 1)
-                    /// No progress since the last flip: the last segment is empty, and the state
-                    /// flipped back to the one of the segment before it, which simply continues.
-                    bar_segments.pop_back();
-                else
-                    bar_segments.back().second = stalled;
-            }
-
-            /// The state can flip on every progress update, so the history has to be compacted, or it
-            /// would grow with the duration of the query and make every repaint slower. It is compacted
-            /// at a fixed resolution, which is finer than any terminal, rather than at the current width
-            /// of the bar: the stored counts stay independent of the terminal, so a repaint while the
-            /// terminal is temporarily narrow (or the bar is hidden by the annotation) does not discard
-            /// transitions that are visible again once it is widened. Transitions that fall into the
-            /// same virtual cell cannot be told apart at that resolution: the cell keeps the count where
-            /// it began and takes the later state, and neighbours of the same state are merged. The
-            /// total may still grow and shift older transitions into one cell: the next repaint
-            /// collapses them the same way.
-            auto virtual_cell_of = [&](UInt64 count)
-            {
-                return static_cast<size_t>(UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(bar_history_resolution)));
-            };
-
-            size_t kept = 0;
-            for (const auto & segment : bar_segments)
-            {
-                auto to_keep = segment;
-                if (kept > 0 && virtual_cell_of(bar_segments[kept - 1].first) == virtual_cell_of(to_keep.first))
-                {
-                    to_keep.first = bar_segments[kept - 1].first;
-                    --kept;
-                }
-                if (kept > 0 && bar_segments[kept - 1].second == to_keep.second)
-                    continue;
-                bar_segments[kept++] = to_keep;
-            }
-            bar_segments.resize(kept);
+            if (bar_segments.back().first != current_count)
+                bar_segments.emplace_back(current_count, stalled);
+            else if (bar_segments.size() > 1)
+                /// No progress since the last flip: the last segment is empty, and the state
+                /// flipped back to the one of the segment before it, which simply continues.
+                bar_segments.pop_back();
+            else
+                bar_segments.back().second = stalled;
         }
+
+        /// The state can flip on every progress update, so the history has to be compacted, or it
+        /// would grow with the duration of the query and make every repaint slower. It is compacted
+        /// at a fixed resolution, which is finer than any terminal, rather than at the current width
+        /// of the bar: the stored counts stay independent of the terminal, so a repaint while the
+        /// terminal is temporarily narrow (or the bar is hidden by the annotation) does not discard
+        /// transitions that are visible again once it is widened. Transitions that fall into the
+        /// same virtual cell cannot be told apart at that resolution: the cell keeps the count where
+        /// it began and takes the later state, and neighbours of the same state are merged. The
+        /// total may still grow and shift older transitions into one cell: the next repaint
+        /// collapses them the same way.
+        auto virtual_cell_of = [&](UInt64 count)
+        {
+            return static_cast<size_t>(UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(bar_history_resolution)));
+        };
+
+        size_t kept = 0;
+        for (const auto & segment : bar_segments)
+        {
+            auto to_keep = segment;
+            if (kept > 0 && virtual_cell_of(bar_segments[kept - 1].first) == virtual_cell_of(to_keep.first))
+            {
+                to_keep.first = bar_segments[kept - 1].first;
+                --kept;
+            }
+            if (kept > 0 && bar_segments[kept - 1].second == to_keep.second)
+                continue;
+            bar_segments[kept++] = to_keep;
+        }
+        bar_segments.resize(kept);
 
         if (elapsed_ns > 500000000)
         {
