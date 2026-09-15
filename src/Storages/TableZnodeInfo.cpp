@@ -275,14 +275,17 @@ TableZnodeInfo TableZnodeInfo::resolve(
             i += 1;
         res.path_prefix_for_drop = res.path.substr(0, i);
     }
-    else if (table_id.uuid == UUIDHelpers::Nil)
+    else
     {
-        /// A table without a UUID of its own (one in an `Ordinary` database) may still live under a
-        /// UUID-named znode: converting such a table to a replicated engine mints a UUID for the {uuid}
-        /// macro and stores the fully expanded path as a literal, because the metadata of the table has
-        /// no place for the UUID itself. That literal is the only record of the UUID, so the owned prefix
-        /// is recovered from the path: it ends with the last path component that is a UUID. (A component
-        /// the user wrote by hand may be picked up as well; harmless, as only emptied znodes are removed.)
+        /// A table may live under a UUID-named znode without the {uuid} macro in its metadata: converting
+        /// a table of an `Ordinary` database to a replicated engine mints a UUID for the {uuid} macro and
+        /// stores the fully expanded path as a literal, because the metadata of such a table has no place
+        /// for the UUID itself. That literal is the only record of the UUID, so the owned prefix is
+        /// recovered from the path: it ends with the last path component that is a UUID. The recovery
+        /// cannot be limited to tables with a Nil UUID: after `RENAME TABLE` from `Ordinary` into `Atomic`
+        /// the table gets a fresh UUID of its own while the literal path keeps the minted one. (A UUID
+        /// component the user wrote by hand may be picked up as well; harmless, as only emptied znodes
+        /// are removed.)
         if (const size_t i = findEndOfLastUUIDComponent(res.path); i != String::npos)
             res.path_prefix_for_drop = res.path.substr(0, i);
     }
