@@ -29,7 +29,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -126,7 +126,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
+        std::optional<ResultType> getResult(TimestampType grid_timestamp) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count < 2 || combined.m2_x == 0)
@@ -134,7 +134,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
 
             const Float64 slope = combined.c_xy / combined.m2_x;
             if (!is_predict)
-                return static_cast<ValueType>(slope * static_cast<Float64>(timestamp_scale_multiplier));
+                return slope * static_cast<Float64>(timestamp_scale_multiplier);
 
             /// Line y = slope * x + intercept with x centered on `base`; extrapolate to `grid_timestamp +
             /// predict_offset`, expressed in the same centered coordinates (subtract `base` in `Int128`).
@@ -143,7 +143,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
                 static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(base)))
                 + predict_offset;
             const Float64 predicted = slope * predict_x + intercept;
-            return static_cast<ValueType>(predicted);
+            return predicted;
         }
     };
 
