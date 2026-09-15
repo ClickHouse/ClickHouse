@@ -388,6 +388,11 @@ private:
     void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
+    /// Schedules the merge/mutate and move assignees and the cleanup thread to run now instead of
+    /// after their backoff. Used after a `table_readonly` 1 -> 0 commit, and after the rollback of a
+    /// failed 0 -> 1 commit, whose temporary `table_readonly = 1` may have sent a worker that woke
+    /// up in the commit window into its backoff with work pending. Best effort, never throws.
+    void wakeupBackgroundWorkers() noexcept;
 
     /// Whether the started background workers may do work. Every worker entry point
     /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and

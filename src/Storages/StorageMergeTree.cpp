@@ -593,6 +593,16 @@ void StorageMergeTree::alter(
                 cleanup_thread.stop();
                 finishBackgroundWorkers(started_workers);
             }
+            else
+            {
+                /// A failed 0 -> 1 toggle: the table stays writable, and its workers stayed enabled,
+                /// but `changeSettings` above made `table_readonly = 1` visible to them for the
+                /// duration of the commit. An assignee that woke up in that window found nothing to do
+                /// and went into its backoff, which grows up to minutes, with merges, mutations, or
+                /// moves possibly pending. Wake the workers up, so the pending work resumes now
+                /// rather than after the backoff or a manual `SYSTEM START MERGES`.
+                wakeupBackgroundWorkers();
+            }
             throw;
         }
     }
@@ -928,15 +938,12 @@ void StorageMergeTree::alter(
         /// (see the settings-alter branch). Now that the table is durably writable, enable them and
         /// do the disk cleanup that `startup` performs for a writable table. Both run only after the
         /// commit: an enabled worker could otherwise queue work on a table whose commit then fails,
-        /// and the cleanup modifies the disk. Enabling cannot fail. The wake-ups that follow it and
-        /// the cleanup can, but that leaves the table in a consistent writable state with every
-        /// worker running: a worker that was not woken up here wakes up by itself after its backoff.
+        /// and the cleanup modifies the disk. Enabling and the wake-up cannot fail. The cleanup can,
+        /// but that leaves the table in a consistent writable state with every worker running.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
         {
             enableBackgroundWorkers();
-            background_operations_assignee.trigger();
-            background_moves_assignee.trigger();
-            cleanup_thread.wakeup();
+            wakeupBackgroundWorkers();
             /// The loaders returned without loading while disabled; they re-arm themselves, this is faster.
             startOutdatedAndUnexpectedDataPartsLoadingTask();
 
@@ -4118,6 +4125,22 @@ void StorageMergeTree::finishBackgroundWorkers(const StartedBackgroundWorkers & 
 void StorageMergeTree::enableBackgroundWorkers() noexcept
 {
     background_workers_enabled = true;
+}
+
+void StorageMergeTree::wakeupBackgroundWorkers() noexcept
+{
+    /// Runs on a rollback path as well, so a failure here must not replace the exception being
+    /// propagated. A worker that was not woken up here wakes up by itself after its backoff.
+    try
+    {
+        background_operations_assignee.trigger();
+        background_moves_assignee.trigger();
+        cleanup_thread.wakeup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to wake up the background workers");
+    }
 }
 
 void StorageMergeTree::disableBackgroundWorkers() noexcept

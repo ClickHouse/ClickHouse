@@ -297,6 +297,7 @@ static struct InitFiu
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
+    PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
     ONCE(mt_background_jobs_assignee_throw_after_task_created) \
     ONCE(mt_alter_throw_after_mutation_registered) \
