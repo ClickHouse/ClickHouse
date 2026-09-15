@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
 }
@@ -59,6 +60,11 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+}
+
+void BaseSettingsHelpers::throwTooManySettings(std::string_view what)
+{
+    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} received (maximum: {})", String{what}, MAX_SETTINGS_IN_A_SEQUENCE);
 }
 
 void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, std::string_view type)

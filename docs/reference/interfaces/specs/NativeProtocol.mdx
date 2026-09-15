@@ -84,6 +84,25 @@ SSH challenge-response authentication is available from protocol version 54466 o
 
 For distributed query execution, servers authenticate to one another by proving knowledge of a shared secret — without putting the secret on the wire. Each Query carries a 32-byte SHA-256 `auth_hash` in [`Query`](#query) field 4, computed over a salt, nonce, the configured secret, and the query, which the receiving server recomputes and compares. This is gated by the `INTERSERVER_SECRET` feature (v54441). External clients always send an empty string here. See [Inter-server authentication](#inter-server-authentication).
 
+### Receiver-side size limits {#receiver-side-size-limits}
+
+Almost every string and collection on the wire is length-prefixed, and a receiver allocates for the declared size before the data behind it arrives. A peer therefore has to bound what it accepts by what the data can plausibly hold — in inter-server mode the server reads `ClientInfo`, the settings and the externally granted roles of a query *before* it verifies the query's `auth_hash`, so these limits apply to unauthenticated input.
+
+The limits the ClickHouse server and `clickhouse-client` enforce, and which an implementation should expect to be rejected against, are:
+
+| Field | Limit |
+|-------|-------|
+| Each `String` of [`ClientHello`](#clienthello) and of [`ClientInfo`](#clientinfo) — user, password, database, host and client names, quota key, user agent, referer, URL, tracestate, JWT | 64 KiB |
+| Number of current roles in [`ClientInfo`](#clientinfo), and the name of each | 65536 entries, 64 KiB each |
+| Number of [`Setting`](#setting) entries and of [`Parameter`](#parameter) entries in a [`Query`](#query) | 65536 each |
+| The serialized externally granted roles of a [`Query`](#query) | 1 MiB in total, 65536 role names, 64 KiB each |
+| Number of tables in a `TablesStatusRequest` / `TablesStatusResponse`, and the length of each database and table name | 100000 tables, 64 KiB per identifier |
+| Number of UUIDs in a `PartUUIDs` packet (client-side) | 1000000 |
+| Number of `password_complexity_rules` in [`ServerHello`](#serverhello) | see the [note there](#serverhello) |
+| Any other `String` or collection without a dedicated limit | 1 GiB |
+
+Exceeding a limit is answered with an [`Exception`](#exception) carrying `TOO_LARGE_ARRAY_SIZE` (128) or `TOO_LARGE_STRING_SIZE` (131). The values above are what the current server enforces; they are not negotiated, and a client should not rely on the server accepting anything close to them.
+
 ## Versioning and feature gates {#versioning-and-feature-gates}
 
 ### Version negotiation {#version-negotiation}
