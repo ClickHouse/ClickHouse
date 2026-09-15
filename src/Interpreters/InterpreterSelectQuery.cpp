@@ -1204,12 +1204,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     result_header = std::make_shared<const Block>(std::move(header));
 }
 
-/// `arrayJoin` (function or `ARRAY JOIN` clause) may need many more source rows than the LIMIT asks for.
-static bool selectHasArrayJoin(const ASTSelectQuery & query)
-{
-    return expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first;
-}
-
 bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 {
     const Settings & settings = context->getSettingsRef();
@@ -1238,7 +1232,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     /// There is a couple of instances where there might be a lower limit on the rows to be read
     /// * The max_rows_to_read setting
     /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
-    UInt64 max_rows = selectHasArrayJoin(getSelectQuery()) ? 0 : maxBlockSizeByLimit();
+    UInt64 max_rows = maxBlockSizeByLimit();
     if (settings[Setting::max_rows_to_read])
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
@@ -2800,6 +2794,14 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 
     const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
+    /// `arrayJoin` (function or `ARRAY JOIN` clause) expands one input row into several output
+    /// rows after the source has produced them. Limiting the source to `limit + offset` rows
+    /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
+    /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
+    /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
+    if (expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first)
+        return 0;
+
     if (!query.distinct
        && !query.limit_with_ties
        && !query.limitAfter()
@@ -2904,27 +2906,22 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     if (UInt64 max_block_limited = maxBlockSizeByLimit())
     {
-        const bool shrink_block = max_block_limited < max_block_size;
-        if (shrink_block)
-            max_block_size = std::max<UInt64>(1, max_block_limited);
-
-        /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
-        if (!selectHasArrayJoin(query))
+        if (max_block_limited < max_block_size)
         {
-            if (shrink_block)
-                max_threads_execute_query = max_streams = 1;
+            max_block_size = std::max<UInt64>(1, max_block_limited);
+            max_threads_execute_query = max_streams = 1;
+        }
 
-            if (local_limits.local_limits.size_limits.max_rows != 0)
-            {
-                if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
-                    query_info.trivial_limit = max_block_limited;
-                else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                    query_info.trivial_limit = 1 + local_limits.local_limits.size_limits.max_rows;
-            }
-            else
-            {
+        if (local_limits.local_limits.size_limits.max_rows != 0)
+        {
+            if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
                 query_info.trivial_limit = max_block_limited;
-            }
+            else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                query_info.trivial_limit = 1 + local_limits.local_limits.size_limits.max_rows;
+        }
+        else
+        {
+            query_info.trivial_limit = max_block_limited;
         }
     }
 
