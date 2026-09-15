@@ -1,0 +1,11 @@
+a plain column	45
+Array size0	20
+a Tuple element	45
+Map keys	10
+Map values	45
+Nullable null	4
+a JSON path	70
+a Dynamic typed subcolumn	45
+a subcolumn next to a plain column	45	20
+a subcolumn in WHERE	4
+directly	20	45	4	70	45
