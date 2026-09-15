@@ -92,6 +92,7 @@
 #include <Core/SettingsQuirks.h>
 #include <Core/UUID.h>
 #include <Access/AccessControl.h>
+#include <Access/resolveSetting.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -120,6 +121,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -603,7 +605,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
-    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text, deliberately not exposed to SQL
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
@@ -1476,6 +1478,7 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    streaming_cursor(o.streaming_cursor),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -2896,6 +2899,18 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
+SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
+{
+    /// in session context so the history persists across queries
+    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
+        return session_ctx->getSessionQueryIdsHistory();
+
+    std::lock_guard lock(mutex);
+    if (!session_query_ids_history)
+        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
+    return *session_query_ids_history;
+}
+
 HypotheticalObjectStore & Context::getHypotheticalObjectStore() const
 {
     /// in session context so the store persists across queries
@@ -3685,8 +3700,14 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);
-    for (const String & name: names)
+    for (const String & name : names)
+    {
         settings->setDefaultValue(name);
+        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
+        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+            settings->setDefaultValue(equivalent_name);
+    }
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -4453,16 +4474,31 @@ ThreadPool & Context::getBackgroundQueryPool() const
     return *shared->background_query_pool;
 }
 
+void Context::stopAcceptingNewBackupsAndRestores() const
+{
+    /// Not `if (shared->backups_worker)`: the worker is created on first use, and the flag has to
+    /// land on the instance any later caller will get.
+    getBackupsWorker().stopAcceptingNewOperations();
+}
+
 void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
 }
 
-void Context::cancelAllBackupsAndRestores() const
+bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
-        shared->backups_worker->cancelAll();
+        return shared->backups_worker->cancelAll(/* wait_= */ true, deadline);
+    return true;
+}
+
+bool Context::hasUnfinishedBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        return shared->backups_worker->hasUnfinishedOperations();
+    return false;
 }
 
 std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
@@ -4476,6 +4512,16 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
+}
+
+void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
+{
+    streaming_cursor = std::move(cursor);
+}
+
+std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
+{
+    return streaming_cursor;
 }
 
 
@@ -5476,9 +5522,9 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    /// Each cache is null-checked because some `Context` users (e.g. the
-    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
-    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
+    /// Each cache is null-checked because some `Context` users intentionally do
+    /// not initialize the full set of caches; matches the single-cache
+    /// `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
@@ -6279,12 +6325,20 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
+void Context::shutdownKeeperDispatcherBeforeConnectionsFinish() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->shutdownBeforeConnectionsFinish();
+#endif
+}
+
+void Context::shutdownKeeperDispatcherAfterConnectionsFinish([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        dispatcher->shutdown(closed_all_connections);
+        dispatcher->shutdownAfterConnectionsFinish(closed_all_connections);
         setKeeperDispatcher(nullptr);
     }
 #endif
@@ -8384,8 +8438,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
+    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -8777,7 +8831,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
+    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
     if (res.reader_executor.window_size < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",

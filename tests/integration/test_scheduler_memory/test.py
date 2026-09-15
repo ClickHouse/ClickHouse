@@ -39,6 +39,7 @@ def clear_workloads_and_resources():
         drop workload if exists vip;
         drop workload if exists all;
         drop resource if exists memory;
+        drop resource if exists query;
     """
     )
     yield
@@ -420,4 +421,149 @@ def test_cancel_query_with_memory_reservation():
         t.join()
 
     # If we got here without sanitizer alerts or crashes, the teardown order is correct.
+
+
+def test_admission_timeout_memory_reservation():
+    # 100Mi total. An 80Mi holder leaves too little for a second 80Mi reservation, but 80Mi <= max
+    # so the second query WAITS (it becomes admittable once the holder frees memory) rather than
+    # being rejected. With workload_admission_timeout_ms set it must fail after ~the timeout with the
+    # memory-reservation-specific error, instead of waiting indefinitely.
+    node.query(
+        """
+        create resource memory (memory reservation);
+        create workload all settings max_memory='100Mi';
+        create workload production in all;
+        """
+    )
+
+    def hold_the_memory():
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(30) "
+                "settings max_block_size=1, workload='production', reserve_memory='80Mi'",
+                query_id="admission_mem_holder",
+            )
+        except QueryRuntimeException:
+            pass  # expected: killed at teardown
+
+    holder = threading.Thread(target=hold_the_memory)
+    holder.start()
+    try:
+        # Presence in system.processes implies the holder's reservation was admitted
+        # (ProcessList::insert constructs and admits MemoryReservation before publishing the query).
+        while (
+            node.query(
+                "select count() from system.processes where query_id = 'admission_mem_holder'"
+            ).strip()
+            == "0"
+        ):
+            time.sleep(0.1)
+
+        # The second reservation cannot be admitted yet and must time out with
+        # MEMORY_RESERVATION_ACQUISITION_TIMEOUT.
+        start = time.time()
+        error = node.query_and_get_error(
+            "select count(*) from numbers(100) "
+            "settings workload='production', reserve_memory='80Mi', workload_admission_timeout_ms=1000",
+            query_id="admission_mem_waiter",
+        )
+        elapsed = time.time() - start
+        assert "MEMORY_RESERVATION_ACQUISITION_TIMEOUT" in error, error
+        assert "workload_admission_timeout_ms" in error, error
+        assert elapsed < 20, f"admission timeout took too long: {elapsed}s"
+    finally:
+        node.query("kill query where query_id = 'admission_mem_holder' sync")
+        holder.join()
+
+
+def test_admission_timeout_shared_budget_across_slot_and_memory():
+    # `workload_admission_timeout_ms` is ONE shared budget across both admission waits — the query
+    # slot first, then the memory reservation — via a single deadline computed once in
+    # ProcessList::insert. This proves the contract that the per-resource tests above cannot: the
+    # query burns part of the budget waiting for the query slot, then (once it holds the slot) must
+    # acquire a CONTENDED memory reservation with only the REMAINING budget, so it times out on
+    # memory near the ORIGINAL deadline (~T total). A regression that recomputed the deadline before
+    # constructing MemoryReservation would instead give the memory wait a fresh full T, so the query
+    # would fail at ~slot_wait + T — which the elapsed-time bound below rejects.
+    node.query(
+        """
+        create resource query (query);
+        create resource memory (memory reservation);
+        create workload all settings max_memory='100Mi';
+        create workload production in all settings max_concurrent_queries=1;
+        create workload development in all;
+        """
+    )
+
+    T_MS = 5000
+
+    def hold_memory():
+        try:
+            # Holds 80Mi of the shared 100Mi for the whole test (no slot limit on 'development'),
+            # so the waiter's 80Mi reservation can never be admitted before it times out.
+            node.query(
+                "select sleepEachRow(1) from numbers(30) "
+                "settings max_block_size=1, workload='development', reserve_memory='80Mi'",
+                query_id="shared_budget_mem_holder",
+            )
+        except QueryRuntimeException:
+            pass  # killed at teardown
+
+    def hold_slot():
+        try:
+            # Holds the single 'production' query slot for ~3s, then releases it (well within the 5s
+            # budget) so the waiter acquires the slot with budget to spare and reaches the memory wait.
+            node.query(
+                "select sleepEachRow(1) from numbers(3) "
+                "settings max_block_size=1, workload='production'",
+                query_id="shared_budget_slot_holder",
+            )
+        except QueryRuntimeException:
+            pass
+
+    mem = threading.Thread(target=hold_memory)
+    slot = threading.Thread(target=hold_slot)
+    mem.start()
+    try:
+        # The memory holder must own its 80Mi before the waiter reaches the memory phase.
+        while (
+            node.query(
+                "select count() from system.processes where query_id = 'shared_budget_mem_holder'"
+            ).strip()
+            == "0"
+        ):
+            time.sleep(0.1)
+
+        slot.start()
+        # The slot holder must own the single 'production' slot before the waiter enqueues for it.
+        while (
+            node.query(
+                "select count() from system.processes where query_id = 'shared_budget_slot_holder'"
+            ).strip()
+            == "0"
+        ):
+            time.sleep(0.1)
+
+        start = time.time()
+        error = node.query_and_get_error(
+            "select count(*) from numbers(100) "
+            f"settings workload='production', reserve_memory='80Mi', workload_admission_timeout_ms={T_MS}",
+            query_id="shared_budget_waiter",
+        )
+        elapsed = time.time() - start
+
+        # Reached the memory phase (the slot wait did NOT consume a separate full budget) and timed
+        # out there...
+        assert "MEMORY_RESERVATION_ACQUISITION_TIMEOUT" in error, error
+        # ...within ONE shared budget (~5s). A per-resource deadline would give ~slot_wait + T (~8s).
+        assert elapsed < 6.5, (
+            f"admission budget not shared across resources: waited {elapsed:.1f}s "
+            f"(one shared budget is ~{T_MS / 1000}s; a per-resource deadline would be ~8s)"
+        )
+        assert elapsed > 4.0, f"timed out too early to have used the shared budget: {elapsed:.1f}s"
+    finally:
+        node.query("kill query where query_id = 'shared_budget_mem_holder' sync")
+        node.query("kill query where query_id = 'shared_budget_slot_holder' sync")
+        mem.join()
+        slot.join()
 
