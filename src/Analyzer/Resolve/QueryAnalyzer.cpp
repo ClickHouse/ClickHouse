@@ -111,7 +111,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool validate_group_by_all_key_types;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -1458,11 +1458,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         return resolve_result;
 
     CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
-    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-            " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
             identifier_lookup.identifier.getFullName(),
             resolved_identifier->formatASTForErrorMessage(),
             fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
@@ -1582,7 +1582,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                   */
                 bool alias_can_take_over = can_check_aliases
                     && identifier_lookup.isExpressionLookup()
-                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
 
                 if (alias_can_take_over)
                 {

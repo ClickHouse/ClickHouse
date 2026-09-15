@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
@@ -1035,6 +1036,9 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
+    /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
+    /// rather than let the first commit build on a file the table never committed.
     auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -1046,7 +1050,7 @@ IcebergStorageSink::IcebergStorageSink(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        /* ignore_explicit_metadata_file_path */ false);
+        /* ignore_metadata_pointer_overrides */ true);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -1281,6 +1285,13 @@ bool IcebergStorageSink::initializeMetadata()
     Int64 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+
+    /// Incremental refreshable-MV write: the streaming source filled the cursor on the query context;
+    /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
+    std::optional<String> refresh_cursor;
+    if (auto streaming_cursor = context->getStreamingCursor())
+        refresh_cursor = refreshCursorToStorage(streaming_cursor->tree);
+
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
@@ -1290,7 +1301,11 @@ bool IcebergStorageSink::initializeMetadata()
         total_chunks_size,
         /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
         /* added_delete_files */ 0,
-        /* num_deleted_rows */ 0);
+        /* num_deleted_rows */ 0,
+        /* user_defined_snapshot_id */ std::nullopt,
+        /* user_defined_timestamp */ std::nullopt,
+        MetadataGenerator::SnapshotOperation::Append,
+        refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 
@@ -1352,7 +1367,7 @@ bool IcebergStorageSink::initializeMetadata()
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
-                /* ignore_explicit_metadata_file_path */ true);
+                /* ignore_metadata_pointer_overrides */ true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
