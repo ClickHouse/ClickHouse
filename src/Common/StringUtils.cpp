@@ -4,8 +4,6 @@
 
 namespace
 {
-constexpr size_t AVX512_ASCII_THRESHOLD = 16 * 1024;
-
 /// Deliberately plain: at x86-64-v3/v4 the compiler vectorizes this reduction,
 /// while the same implementation also produces a good loop on other platforms.
 MULTITARGET_FUNCTION_X86_V4(
@@ -38,6 +36,7 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 bool isAllASCII(const UInt8 * data, size_t size)
 {
 #if USE_MULTITARGET_CODE
+    constexpr size_t AVX512_ASCII_THRESHOLD = 16 * 1024;
     if (size >= AVX512_ASCII_THRESHOLD && DB::isArchSupported(DB::TargetArch::x86_64_v4))
         return isAllASCIIImpl_x86_64_v4(data, size);
 #endif
