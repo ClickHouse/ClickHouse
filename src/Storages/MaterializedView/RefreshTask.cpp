@@ -1336,6 +1336,18 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 cursor_persisted_by_target = true;
                 stream_cursor = object_storage->loadRefreshCursor(refresh_context);
             }
+            else if (target_table->isDataLake())
+            {
+                /// Any other data lake storage (e.g. `StorageObjectStorageCluster`, to which a catalog table
+                /// resolves under `parallel_replicas_for_cluster_engines`) commits the cursor with the data
+                /// but cannot be asked for it here. Resuming from the Keeper cursor would silently re-read
+                /// the source from the beginning after a restart and duplicate rows, so refuse instead.
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Incremental refresh into data lake table {} is not supported for storage {}",
+                    target_table->getStorageID().getNameForLogs(),
+                    target_table->getName());
+            }
 
             auto cursor = std::make_shared<StreamingCursor>();
             cursor->tree = std::make_shared<CursorTreeNode>();
