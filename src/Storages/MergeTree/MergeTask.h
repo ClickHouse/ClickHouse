@@ -454,7 +454,6 @@ private:
         /// Committed once, at group end, so a failed unit cannot publish parent metadata.
         SerializationInfoByName pending_tuple_leaf_infos{{}};
         String pending_tuple_parent;
-        std::unordered_map<String, size_t> parent_stream_counts;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;

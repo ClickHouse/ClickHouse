@@ -2218,38 +2218,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
-    std::optional<size_t> adaptive_buffer_stream_count;
-    if (ctx->it_name_and_type->isSubcolumn())
-    {
-        const String parent_name = ctx->it_name_and_type->getNameInStorage();
-        auto cached = ctx->parent_stream_counts.find(parent_name);
-        if (cached != ctx->parent_stream_counts.end())
-        {
-            adaptive_buffer_stream_count = cached->second;
-        }
-        else
-        {
-            const NameAndTypePair * parent = nullptr;
-            for (const auto & storage_column : global_ctx->storage_columns)
-            {
-                if (storage_column.name == parent_name)
-                {
-                    parent = &storage_column;
-                    break;
-                }
-            }
-            if (parent)
-            {
-                const size_t stream_count = countFlattenedTupleParentStreams(
-                    *parent,
-                    global_ctx->new_data_part->getSerialization(parent_name),
-                    *global_ctx->data_settings);
-                ctx->parent_stream_counts.emplace(parent_name, stream_count);
-                adaptive_buffer_stream_count = stream_count;
-            }
-        }
-    }
-
     /// The horizontal `global_ctx->to` writer owns this part's `skp_idx.packed`. Share its
     /// `PackedFilesWriter` with this per-column writer so the per-column packed substreams land
     /// in the same in-memory archive instead of racing on the on-disk file. The horizontal
@@ -2266,8 +2234,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter(),
-        adaptive_buffer_stream_count);
+        global_ctx->to->getSkipIndicesPackedWriter());
 
     ctx->column_elems_written = 0;
 }

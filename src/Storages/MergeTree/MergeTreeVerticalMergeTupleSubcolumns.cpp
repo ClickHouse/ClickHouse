@@ -446,14 +446,6 @@ ColumnsSubstreams synthesizeParentColumnsSubstreams(
 
 }
 
-size_t countFlattenedTupleParentStreams(
-    const NameAndTypePair & parent,
-    const SerializationPtr & parent_serialization,
-    const MergeTreeSettings & settings)
-{
-    return synthesizeParentColumnsSubstreams(parent, parent_serialization, settings).getTotalSubstreams();
-}
-
 void commitFlattenedTupleGroupMetadata(
     const NameAndTypePair & parent,
     const SerializationPtr & parent_serialization,

@@ -30,14 +30,6 @@ void tryFlattenGatheringColumns(
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log);
 
-/// Number of on-disk streams a whole-parent write of `parent` would open.
-/// Used so a flattened leaf writer applies the adaptive compress-buffer threshold
-/// against the group's stream count, not the leaf writer's 1–3 streams.
-size_t countFlattenedTupleParentStreams(
-    const NameAndTypePair & parent,
-    const SerializationPtr & parent_serialization,
-    const MergeTreeSettings & settings);
-
 /// Synthesize the parent `t` columns_substreams entry and fold leaf SerializationInfo::Data
 /// into the existing parent tree. Does not call `setColumns`.
 void commitFlattenedTupleGroupMetadata(

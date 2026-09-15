@@ -4,8 +4,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -28,8 +26,7 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
-        std::optional<size_t> adaptive_buffer_stream_count = {});
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
