@@ -56,9 +56,8 @@ private:
     IEJoinKind kind = IEJoinKind::Inner;
     bool swap_inputs = false;
 
-    /// The join type as written in the query. `system.query_log` is filled from it, mirrored by
-    /// `swap_inputs` to name the type that is executed, because `kind` above is an `IEJoinKind` and the
-    /// column reports the `JoinKind` and the `JoinStrictness` separately.
+    /// The join type as written in the query. `system.query_log` is filled from it, because `kind` above
+    /// is an `IEJoinKind` and the column reports the `JoinKind` and the `JoinStrictness` separately.
     JoinKind query_kind;
     JoinStrictness query_strictness;
 

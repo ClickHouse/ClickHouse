@@ -199,21 +199,9 @@ private:
 
         QueryPipelineBuilder pipeline_builder;
         {
-            /// The recursive member is planned and built again for every iteration, and all of these
-            /// builds report into the counters of the query, because they share
-            /// `recursive_query_context`. Mark the region, so that the joins of the recursive member are
-            /// counted once instead of once per iteration, which would otherwise make
-            /// `used_number_of_joins` grow with the recursion depth.
-            ///
-            /// `repeated_build_scope_name` names this recursive CTE and not the name the query gave it:
-            /// that is only an alias, and one query may hold several independent `WITH RECURSIVE` that
-            /// chose the same one. The name was taken while the pipeline that holds this CTE was
-            /// assembled, so it also stays the same when that pipeline is itself assembled again, e.g. a
-            /// recursive CTE in the `SELECT` of a materialized view.
-            ///
-            /// The non-recursive member is left outside the scope on purpose: it is built exactly once,
-            /// so it needs no deduplication, and it is a different subquery, so sharing the scope of the
-            /// recursive member would make the two sets of joins share ordinals and hide one of them.
+            /// Mark the region, so that the joins of the recursive member are counted once instead of
+            /// once per iteration. The non-recursive member stays outside: it is built once, and sharing
+            /// the scope would make the joins of both members share ordinals and hide one of them.
             std::optional<QueryExecutionCounters::RepeatedPipelineBuildScope> repeated_build_scope;
             if (is_recursive_member)
                 repeated_build_scope.emplace(repeated_build_scope_name);

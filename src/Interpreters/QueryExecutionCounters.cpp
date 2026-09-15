@@ -15,37 +15,31 @@ namespace DB
 namespace
 {
 
-/// The state below describes one assembly of one pipeline, which is thread-local, and it takes
+/// The state below describes one assembly of one pipeline, which is thread-local.
+/// This is used for counting the metrics in scenarios where the pipeline is built many times.
+/// For example: Materialized Views, Recursive CTEs.
 ///
-/// Several assemblies running on several threads at once are a different thing and are expected: that is
-/// what `parallel_view_processing` does to the `SELECT` of a materialized view. Each thread numbers its
-/// own assembly from zero, and they meet only in `joins_of_repeated_builds`, which the mutex of the
-/// counters guards.
+/// This is valid for several pipeline builds running on multiple threads, because each thread
+/// builds its own pipeline. It does assume that one build stays on one thread, as
+/// `QueryPlan::buildQueryPipeline` does today: assembling a single pipeline in parallel would
+/// interleave these counters and break them.
 
 /// The pipeline that is being built by this thread, when it is one that is built more than once for the
 /// same query, empty otherwise, which is the usual case. See `RepeatedPipelineBuildScope`.
 thread_local String repeated_pipeline_build_scope;
 
-/// How many joins the build of that pipeline that is running on this thread has registered so far. The
-/// ordinal it hands out identifies a join inside the scope: the pipeline is assembled by walking the query
-/// plan in a fixed order, and the plan is the same one every time the same `SELECT` is planned again, so
-/// the n-th join a build registers is the same physical join of the same query as the n-th join of every
-/// other build of that pipeline.
-///
-/// The ordinal is what tells two joins apart, and not the shape of their inputs: two joins of one query
-/// can have exactly the same input columns and types, for instance the joins of two identical `UNION ALL`
-/// branches, or two `Join`-engine or dictionary joins over the same stream, whose `FilledJoinStep` sees
-/// only the left side.
+/// This counter's purpose is to identify the joins of a pipeline. In the case of multiple pipelines
+/// built there is no way to identify if the join was already counted for the metrics or not. The
+/// pipeline is assembled by walking the query plan in a fixed order, and the plan is the same one every
+/// time the same `SELECT` is planned again, so the n-th join a build registers is the same physical join
+/// of the same query as the n-th join of every other build of that pipeline.
 thread_local size_t joins_registered_by_current_build = 0;
 
-/// How many pipelines that are assembled later the build running on this thread has named so far, see
-/// `makeScopeForPipelineBuiltLater`. A counter of its own, so that naming one does not move the ordinals
-/// of the joins around it.
-///
-/// It is reset by a scope, exactly like the ordinals of the joins, which is what makes the names stable
-/// when a pipeline is assembled more than once. Outside a scope it simply keeps counting: there the
-/// holding pipeline is assembled once, so the only thing the name has to do is tell the operators of
-/// that one assembly apart.
+/// Numbers the pipelines this build names for later assembly, see `makeScopeForPipelineBuiltLater`.
+/// Separate from the join ordinals, so that naming one does not shift them. A scope resets it, which is
+/// what makes a name repeat across the builds of one pipeline; outside a scope it just keeps counting,
+/// which is all it takes to tell one occurrence from another - the two `loop` of
+/// `SELECT * FROM loop(v) UNION ALL SELECT * FROM loop(v)` are two joins, not one assembled twice.
 thread_local size_t pipelines_named_by_current_build = 0;
 
 }
@@ -95,9 +89,6 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
 
     std::lock_guard lock(counters->mutex);
 
-    /// The algorithm is recorded even for a join that an earlier build of the pipeline already counted:
-    /// the algorithms are a set, and a build is free to pick another algorithm than the one before it,
-    /// in which case both of them were used.
     counters->used_join_algorithms.emplace(algorithm);
 
     if (counters->isCountedByAnEarlierBuild())

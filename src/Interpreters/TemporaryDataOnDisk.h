@@ -249,8 +249,6 @@ private:
     Stat stat;
     TemporaryDataMetrics metrics;
 
-    /// Whether `spilled_to_disk` of `system.query_log` has already been told about this buffer.
-    /// Only touched while writing, which a single thread does at a time.
     bool reported_spilled_to_disk = false;
 };
 
