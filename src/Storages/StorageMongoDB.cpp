@@ -656,6 +656,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
+        .supports_deferred_load = true,
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },
     Documentation{

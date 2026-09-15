@@ -65,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -277,7 +278,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, StorageResolution::Load))
             return true;
         /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
         /// prunes them with this predicate. The initiator's plan for such a read stops at

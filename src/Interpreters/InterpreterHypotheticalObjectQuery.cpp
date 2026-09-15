@@ -17,6 +17,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -228,9 +229,9 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
-    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, context));
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

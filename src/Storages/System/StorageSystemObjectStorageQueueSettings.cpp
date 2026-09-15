@@ -11,6 +11,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <Storages/StorageProxy.h>
 
 
 namespace DB
@@ -66,7 +67,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
-                if (auto * queue_table = dynamic_cast<StorageObjectStorageQueue *>(storage.get()))
+                if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, StorageResolution::Peek))
                 {
                     add_table(iterator, *queue_table);
                 }

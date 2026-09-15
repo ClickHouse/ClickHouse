@@ -13,6 +13,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -332,7 +333,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// MergeTree removes its data under its own locks, but the storage still must not be
             /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
-            if (std::dynamic_pointer_cast<MergeTreeData>(table))
+            /// `truncate` materializes the table anyway, and a deferred one must not end up with a
+            /// heavier lock than an eager one.
+            if (castStorage<MergeTreeData>(table, StorageResolution::Load))
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);

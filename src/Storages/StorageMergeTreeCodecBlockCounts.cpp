@@ -21,6 +21,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -313,7 +314,7 @@ void StorageMergeTreeCodecBlockCounts::checkSourceTableAccess(const StoragePtr &
     context->checkAccess(AccessType::SELECT, source_table->getStorageID(), source_metadata->getColumns().getNamesOfPhysical());
 }
 
-StoragePtr StorageMergeTreeCodecBlockCounts::resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context)
+std::shared_ptr<MergeTreeData> StorageMergeTreeCodecBlockCounts::resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context)
 {
     /// `SHOW TABLES` is the privilege that governs whether the table's existence may be learned, and it is implied
     /// by a grant on any single column of it, so this only adds a tier below the `SELECT` check on every column
@@ -324,11 +325,13 @@ StoragePtr StorageMergeTreeCodecBlockCounts::resolveSourceTable(const StorageID 
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     checkSourceTableAccess(source_table, context);
 
-    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
+    /// Reading the parts is what the function is for, so a not yet loaded source table is loaded here.
+    auto merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load);
+    if (!merge_tree)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeCodecBlockCounts expected MergeTree table, got: {}", source_table->getName());
 
-    return source_table;
+    return merge_tree;
 }
 
 void StorageMergeTreeCodecBlockCounts::read(
@@ -344,15 +347,11 @@ void StorageMergeTreeCodecBlockCounts::read(
     storage_snapshot->check(column_names);
 
     /// Under the reader's context, see the constructor.
-    auto source_table = resolveSourceTable(source_table_id, context);
-    const auto source_storage_id = source_table->getStorageID();
-
-    /// A cast to a base class, so not `assert_cast`, which asserts the exact type and would reject every
-    /// `MergeTree` table. `resolveSourceTable` has already rejected a source table that is not a `MergeTree`.
-    const auto & merge_tree = dynamic_cast<const MergeTreeData &>(*source_table);
+    auto merge_tree = resolveSourceTable(source_table_id, context);
+    const auto source_storage_id = merge_tree->getStorageID();
 
     /// `system.parts_columns` lists patch parts, so this function does too.
-    auto data_parts = merge_tree.getDataPartsVectorForInternalUsage(
+    auto data_parts = merge_tree->getDataPartsVectorForInternalUsage(
         {MergeTreeData::DataPartState::Active}, {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch});
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
@@ -374,7 +373,7 @@ void StorageMergeTreeCodecBlockCounts::read(
     }
 
     /// The parts reference the source table's MergeTreeData without owning it.
-    query_plan.addStorageHolder(source_table);
+    query_plan.addStorageHolder(merge_tree);
 
     query_plan.addStep(
         std::make_unique<ReadFromMergeTreeCodecBlockCounts>(
