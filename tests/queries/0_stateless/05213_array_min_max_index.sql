@@ -44,6 +44,43 @@ SELECT
     arrayMaxIndex([toInt256(0), toInt256(-1), toInt256(-1), toInt256(1), toInt256(1)]),
     arrayMinIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1), toUInt256(1)]),
     arrayMaxIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1), toUInt256(1)]);
+SELECT min(if(
+    arrayMinIndex(u8) = arrayMinIndex(x -> tuple(x), u8)
+        AND arrayMaxIndex(u8) = arrayMaxIndex(x -> tuple(x), u8)
+        AND arrayMinIndex(u16) = arrayMinIndex(x -> tuple(x), u16)
+        AND arrayMaxIndex(u16) = arrayMaxIndex(x -> tuple(x), u16)
+        AND arrayMinIndex(u32) = arrayMinIndex(x -> tuple(x), u32)
+        AND arrayMaxIndex(u32) = arrayMaxIndex(x -> tuple(x), u32)
+        AND arrayMinIndex(u64) = arrayMinIndex(x -> tuple(x), u64)
+        AND arrayMaxIndex(u64) = arrayMaxIndex(x -> tuple(x), u64)
+        AND arrayMinIndex(f64) = arrayMinIndex(x -> tuple(x), f64)
+        AND arrayMaxIndex(f64) = arrayMaxIndex(x -> tuple(x), f64),
+    1,
+    0))
+FROM
+(
+    SELECT
+        arrayMap(i -> if(i % 7 = 0, toUInt8(250), if(i % 11 = 0, toUInt8(0), toUInt8(i % 97))), range(n)) AS u8,
+        arrayMap(i -> if(i % 7 = 0, toUInt16(60000), if(i % 11 = 0, toUInt16(0), toUInt16(i % 97))), range(n)) AS u16,
+        arrayMap(i -> if(i % 7 = 0, toUInt32(1000000), if(i % 11 = 0, toUInt32(0), toUInt32(i % 97))), range(n)) AS u32,
+        arrayMap(i -> if(i % 7 = 0, toUInt64(1000000), if(i % 11 = 0, toUInt64(0), toUInt64(i % 97))), range(n)) AS u64,
+        arrayMap(i -> if(i % 7 = 0, toFloat64(1000000), if(i % 11 = 0, toFloat64(-1000000), toFloat64(i % 97))), range(n)) AS f64
+    FROM (SELECT arrayJoin([1, 48, 49, 64, 65, 256, 257, 1023, 1024, 16383, 16384, 16385]) AS n)
+);
+SELECT min(if(
+    arrayMinIndex(a) = arrayMinIndex(x -> tuple(x), a)
+        AND arrayMaxIndex(a) = arrayMaxIndex(x -> tuple(x), a)
+        AND arrayMinIndex(b) = arrayMinIndex(x -> tuple(x), b)
+        AND arrayMaxIndex(b) = arrayMaxIndex(x -> tuple(x), b),
+    1,
+    0))
+FROM
+(
+    SELECT
+        arrayMap(i -> if(i < 1024, nan, if(i % 2 = 0, toFloat64(0), -toFloat64(0))), range(n)) AS a,
+        arrayMap(i -> nan, range(n)) AS b
+    FROM (SELECT arrayJoin([2, 49, 64, 257, 1024, 16384, 16385]) AS n)
+);
 SELECT arrayMinIndex([nan::Float32, -inf::Float32, -inf::Float32, 0::Float32]), arrayMaxIndex([nan::Float32, inf::Float32, inf::Float32, 0::Float32]);
 SELECT arrayMinIndex([nan::Float64, -inf::Float64, -inf::Float64, 0::Float64]), arrayMaxIndex([nan::Float64, inf::Float64, inf::Float64, 0::Float64]);
 SELECT arrayMinIndex([(2, 'b'), (1, 'c'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (1, 'c'), (1, 'a')]);

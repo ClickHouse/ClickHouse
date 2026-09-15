@@ -200,6 +200,13 @@ constexpr size_t small_tournament_limit = 48;
 constexpr size_t medium_two_pass_limit = 256;
 constexpr size_t record_block_limit_64_bit_integer = 16384;
 
+/*
+ * These are measured performance cutovers for the AVX2 path. The small
+ * tournament wins up to 48 elements, the two-pass SIMD path is capped at 256
+ * to avoid an expensive second scan, and 64-bit one-pass scans stay ahead
+ * until record blocks amortize their extra lookup work at 16384 elements.
+ */
+
 template <typename T>
 constexpr size_t mediumTwoPassMinSize()
 {
