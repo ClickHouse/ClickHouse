@@ -8,6 +8,7 @@
 
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
 
@@ -25,10 +26,22 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// SET queries are standard ClickHouse SQL and must be handled normally
     /// so that settings like `dialect` and `polyglot_dialect` can be changed.
     /// This is checked before the feature gate so users can recover from
-    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
-    ParserSetQuery set_p;
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`). Only an input that
+    /// unambiguously starts a SET statement is taken from the foreign text, so that the
+    /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
+    /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
+    /// which the transpiler below can still take as foreign text.
+    if (isCommittedToSetQuery(pos))
+    {
+        /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
+        /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
+        ParserSetQuery set_p;
+        if (set_p.parse(pos, node, expected))
+            return true;
+    }
 
     if (!feature_enabled)
         throw Exception(

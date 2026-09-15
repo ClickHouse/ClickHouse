@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 
@@ -28,10 +29,18 @@ ParserPrometheusQuery::ParserPrometheusQuery(const String & database_name_, cons
 
 bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserSetQuery set_p;
-
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// The `SET <setting>` shorthand would swallow PromQL queries over a metric named `set`
+    /// (e.g. `set or up`), so SET is parsed only when the input unambiguously starts one.
+    if (isCommittedToSetQuery(pos))
+    {
+        /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
+        /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
+        ParserSetQuery set_p;
+        return set_p.parse(pos, node, expected);
+    }
 
     if (table_name.empty())
     {
