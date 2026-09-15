@@ -757,7 +757,10 @@ struct CompleteMPULostResponseThenPreconditionFailed : InjectionModel
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
         const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
+        /// Serves both conditional multipart modes: `If-None-Match: *` and `If-Match: <etag>`.
+        EXPECT_FALSE(request.GetIfNoneMatch().empty() && request.GetIfMatch().empty());
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_match.push_back(request.GetIfMatch());
 
         if (calls++ > 0)
             return makePreconditionFailedError();
@@ -773,10 +776,13 @@ struct CompleteMPULostResponseThenPreconditionFailed : InjectionModel
 
     std::shared_ptr<S3MemStrore> store;
     size_t calls = 0;
+    std::vector<std::string> seen_if_none_match;
+    std::vector<std::string> seen_if_match;
 };
 
 /// Every conditional CompleteMultipartUpload attempt fails with 412 -- a genuinely pre-existing
-/// object. Records the metadata CreateMultipartUpload stamped so a test can assert the token.
+/// object. Records the metadata CreateMultipartUpload stamped so a test can assert the token, and
+/// both conditional headers of the completion so each mode can assert the pair it sends.
 struct CompleteMPUPreconditionFailedInjection : InjectionModel
 {
     std::optional<Aws::S3::Model::CreateMultipartUploadOutcome> call(
@@ -792,16 +798,21 @@ struct CompleteMPUPreconditionFailedInjection : InjectionModel
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
         const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
+        EXPECT_FALSE(request.GetIfNoneMatch().empty() && request.GetIfMatch().empty());
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_match.push_back(request.GetIfMatch());
         return makePreconditionFailedError();
     }
 
     std::vector<BucketMemStore::Metadata> seen_create_metadata;
+    std::vector<std::string> seen_if_none_match;
+    std::vector<std::string> seen_if_match;
 };
 
 /// Reports `NO_SUCH_UPLOAD` on every CompleteMultipartUpload, optionally completing the upload
-/// server-side first -- the shape of an upload id the server has already consumed. Records the
-/// `If-None-Match` of every attempt because this injection serves conditional and unconditional arms.
+/// server-side first -- the shape of an upload id the server has already consumed. Records both
+/// conditional headers of every attempt because this injection serves the conditional and the
+/// unconditional arms, so each asserts the pair its own mode sends.
 struct CompleteMPUNoSuchUploadInjection : InjectionModel
 {
     CompleteMPUNoSuchUploadInjection(std::shared_ptr<S3MemStrore> store_, bool complete_first_attempt_)
@@ -811,6 +822,7 @@ struct CompleteMPUNoSuchUploadInjection : InjectionModel
         const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
         seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_match.push_back(request.GetIfMatch());
 
         if (complete_first_attempt && calls == 0)
         {
@@ -832,6 +844,7 @@ struct CompleteMPUNoSuchUploadInjection : InjectionModel
     bool complete_first_attempt;
     size_t calls = 0;
     std::vector<std::string> seen_if_none_match;
+    std::vector<std::string> seen_if_match;
 };
 
 struct BaseSyncPolicy
@@ -1776,7 +1789,8 @@ TEST_P(SyncAsync, SinglepartConditionalPutThrowsWhenHeadFails) {
 /// `If-None-Match` and is likewise replayed on a lost response. The token is stamped on
 /// CreateMultipartUpload and lands on the completed object.
 TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store));
+    auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
+    setInjectionModel(injection);
 
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
     getSettings()[Setting::s3_min_upload_part_size] = 1;
@@ -1794,6 +1808,14 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_lost_response"], "A");
     EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-idempotency-id").empty());
+
+    /// This mode conditions on absence, so the completion sends `If-None-Match` and no `If-Match`.
+    ASSERT_EQ(injection->seen_if_none_match.size(), 2u);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(injection->seen_if_none_match[i], "*");
+        EXPECT_TRUE(injection->seen_if_match[i].empty());
+    }
 }
 
 /// The multipart twin of the foreign-object arm: a 412 on a completion whose object somebody else
@@ -1830,6 +1852,83 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
     /// CreateMultipartUpload carried a token, so the guard had something to compare and rejected it.
     ASSERT_FALSE(injection->seen_create_metadata.empty());
     EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-idempotency-id").empty());
+
+    /// And the completion really was conditional on absence.
+    ASSERT_FALSE(injection->seen_if_none_match.empty());
+    EXPECT_EQ(injection->seen_if_none_match[0], "*");
+    EXPECT_TRUE(injection->seen_if_match[0].empty());
+}
+
+/// The multipart carrier of the `If-Match` mode: `CompleteMultipartUpload` sets the caller's etag the
+/// same way `PutObject` does, so a lost completion response leaves the replay failing its own
+/// condition. On our own object that is success, not a CAS conflict.
+TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversLostResponse) {
+    auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["conditional_mpu_if_match"], "A");
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_if_match"].at("clickhouse-idempotency-id").empty());
+
+    /// Both completions really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
+    ASSERT_EQ(injection->seen_if_match.size(), 2u);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(injection->seen_if_match[i], "some-etag");
+        EXPECT_TRUE(injection->seen_if_none_match[i].empty());
+    }
+}
+
+/// The protective half of the multipart `If-Match` mode: the same 412 over an object somebody else
+/// wrote is a real CAS conflict, so the completion must fail and leave that object alone.
+TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotMaskForeignObject) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("conditional_mpu_if_match_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
+
+    auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_if_match_foreign", conditionalReplaceWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["conditional_mpu_if_match_foreign"], "A");
+    EXPECT_EQ(
+        bStore.object_metadata["conditional_mpu_if_match_foreign"].at("clickhouse-idempotency-id"),
+        "written-by-somebody-else");
+
+    /// The 412 was refused on a completion that really was an `If-Match` CAS.
+    ASSERT_FALSE(injection->seen_if_match.empty());
+    EXPECT_EQ(injection->seen_if_match[0], "some-etag");
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 /// The other door into the same replay: a completion that already landed can come back as
@@ -1891,6 +1990,7 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
         "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
+    EXPECT_TRUE(injection->seen_if_match[0].empty());
 }
 
 /// An unconditional completion recovers too, and for the same reason as a conditional one: the token
