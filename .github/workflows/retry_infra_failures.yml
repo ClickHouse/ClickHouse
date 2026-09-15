@@ -23,28 +23,105 @@ jobs:
           MAX_RERUNS=10
           rerun_count=0
           cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          # A run awaiting approval expires after 30 days, so no attempt starts later than
+          # that after its run was created; the spare day covers clock skew.
+          LOOKBACK_DAYS=31
+          # The busiest single day observed holds ~480 failed runs, half the ceiling below.
+          PARTITION_HOURS=24
+          # The API caps a filtered search at 1000 results, so a partition returning that many
+          # was truncated. Raising this cannot lift the cap, only hide the truncation.
+          PAGE_LIMIT=1000
 
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
 
-          # Get recent failed runs for the PR workflow that have not been retried yet
-          run_ids=$(gh run list \
-            --repo "$GH_REPO" \
-            --workflow pull_request.yml \
-            --status failure \
-            --limit 50 \
-            --json databaseId,attempt,createdAt \
-            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
+          # Get recent failed runs for the PR workflow that have not been retried yet.
+          # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
+          # startedAt, not createdAt: a gated run's createdAt stays pinned to attempt 1.
 
-          if [ -z "$run_ids" ]; then
+          # The listing is ordered by createdAt, so a gated run sits arbitrarily deeper in it
+          # than its startedAt window implies: no row cap and no fixed bound exhausts it.
+          run_entries=""
+          hour=0
+          while [ "$hour" -lt $((LOOKBACK_DAYS * 24)) ]; do
+            # Timestamps, not bare dates: both endpoints of a bare-date range are inclusive
+            # whole days, so `D..D+1` spans two of them and no partition width is honoured.
+            from=$(date -u -d "$((hour + PARTITION_HOURS)) hours ago" +%Y-%m-%dT%H:%M:%SZ)
+            to=$(date -u -d "$hour hours ago" +%Y-%m-%dT%H:%M:%SZ)
+
+            # The walk makes ~140 API calls, so a single transient 502 would otherwise abort
+            # the whole tick under `set -e` and skip every remaining partition.
+            page=""
+            for attempt_no in 1 2 3; do
+              if page=$(gh run list \
+                  --repo "$GH_REPO" \
+                  --workflow pull_request.yml \
+                  --status failure \
+                  --created "$from..$to" \
+                  --limit "$PAGE_LIMIT" \
+                  --json databaseId,attempt,startedAt); then
+                break
+              fi
+              page=""
+              sleep $((attempt_no * 5))
+            done
+            # Failing closed: a partition that never answered leaves candidates unexamined,
+            # which is the blind spot this walk exists to close.
+            if [ -z "$page" ]; then
+              echo "::error::createdAt partition $from..$to could not be listed after 3 tries."
+              exit 1
+            fi
+
+            # A saturated partition is truncated silently, reopening the blind spot.
+            page_rows=$(echo "$page" | jq 'length')
+            if [ "$page_rows" -ge "$PAGE_LIMIT" ]; then
+              echo "::error::createdAt partition $from..$to returned $page_rows rows," \
+                   "at the $PAGE_LIMIT per-query ceiling: candidates may be truncated." \
+                   "Reduce PARTITION_HOURS."
+              exit 1
+            fi
+
+            matches=$(echo "$page" | jq -r \
+              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.startedAt) \(.databaseId):\(.attempt)\"")
+            if [ -n "$matches" ]; then
+              run_entries=$(printf '%s\n%s' "$run_entries" "$matches")
+            fi
+
+            hour=$((hour + PARTITION_HOURS))
+          done
+          # Both range endpoints are inclusive, so a run on a boundary is listed twice and
+          # would consume two of MAX_RERUNS. Sorting on the leading startedAt (ISO-8601 sorts
+          # chronologically) spends MAX_RERUNS nearest the 6 hour edge, where this tick is a
+          # candidate's last; the key is dropped once the order is fixed.
+          run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u | awk '{print $2}' || true)
+
+          if [ -z "$run_entries" ]; then
             echo "No recent failed runs found."
             exit 0
           fi
 
-          for run_id in $run_ids; do
+          for run_entry in $run_entries; do
             if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then
               echo "Reached maximum of $MAX_RERUNS reruns, stopping."
               break
+            fi
+
+            run_id="${run_entry%%:*}"
+            run_attempt="${run_entry##*:}"
+
+            # Eligible = exactly one attempt executed. A fork PR's approval gate
+            # concludes attempt 1 as "action_required" with zero jobs, so attempt 2 is
+            # still its first real run; any other attempt-1 conclusion means a retry.
+            if [ "$run_attempt" != "1" ]; then
+              attempt1_conclusion=$(gh api \
+                "repos/$GH_REPO/actions/runs/$run_id/attempts/1" --jq '.conclusion' \
+                2>/dev/null || echo "")
+              if [ "$attempt1_conclusion" != "action_required" ]; then
+                # An empty conclusion means the probe went unanswered, not that a retry was
+                # seen, and a fault skipping every fork candidate is invisible on a green run.
+                echo "::warning::Skipping run $run_id: attempt 1 conclusion '$attempt1_conclusion' is not the approval gate (empty = unreadable)."
+                continue
+              fi
             fi
 
             run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
@@ -177,7 +254,7 @@ jobs:
             if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))
-                echo "  Triggered rerun: $run_url/attempts/2"
+                echo "  Triggered rerun: $run_url/attempts/$((run_attempt + 1))"
               else
                 echo "  Failed to trigger rerun (may already be rerunning)"
               fi
