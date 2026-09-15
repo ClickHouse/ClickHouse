@@ -1146,6 +1146,10 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         const auto & columns_for_fallback = alias && !accessible_columns.empty() ? accessible_columns : source_columns;
 
+        if (storage && storage_snapshot)
+            if (auto column_for_row_count = storage->getColumnForRowCount(storage_snapshot))
+                required.insert(column_for_row_count->name);
+
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
@@ -1164,7 +1168,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         };
 
         std::vector<ColumnSizeTuple> columns;
-        if (storage)
+        if (required.empty() && storage)
         {
             auto column_sizes = storage->getColumnSizes();
             for (const auto & source_column : columns_for_fallback)
@@ -1177,11 +1181,14 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             }
         }
 
-        if (!columns.empty())
-            required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!columns_for_fallback.empty())
-            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
+        if (required.empty())
+        {
+            if (!columns.empty())
+                required.insert(std::min_element(columns.begin(), columns.end())->name);
+            else if (!columns_for_fallback.empty())
+                /// If we have no information about columns sizes, choose a column of minimum size of its data type.
+                required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
+        }
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {

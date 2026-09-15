@@ -4,6 +4,7 @@
 #include <shared_mutex>
 
 #include <Core/Defines.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -55,6 +56,9 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    std::optional<NameAndTypePair> getColumnForRowCount(const StorageSnapshotPtr & storage_snapshot) const override;
 
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
