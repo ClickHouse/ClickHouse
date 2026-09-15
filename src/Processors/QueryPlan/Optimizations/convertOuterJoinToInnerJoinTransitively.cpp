@@ -22,6 +22,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -114,14 +115,26 @@ NameSet remapNullRejectedColumnsThroughActions(const ActionsDAG & dag, const Nam
 {
     const auto duplicate = duplicateOutputNames(dag.getOutputs());
 
+    NameSet produced_columns;
     NameSet result;
     for (const auto * output : dag.getOutputs())
     {
+        produced_columns.insert(output->result_name);
         if (!null_rejected_columns.contains(output->result_name) || duplicate.contains(output->result_name))
             continue;
         for (const auto * input : collectNullPropagatingInputs(output))
             result.insert(input->result_name);
     }
+
+    /// `ActionsDAG::updateHeader` forwards an input column the DAG does not consume to the output header.
+    NameSet consumed_columns;
+    for (const auto * input : dag.getInputs())
+        consumed_columns.insert(input->result_name);
+
+    for (const auto & name : null_rejected_columns)
+        if (!produced_columns.contains(name) && !consumed_columns.contains(name))
+            result.insert(name);
+
     return result;
 }
 
@@ -291,11 +304,11 @@ void visit(QueryPlan::Node & node, NameSet null_rejected_columns)
         return;
     }
 
-    /// Reject duplicate names.
-    NameSet seen;
+    /// Keep only the names this header carries exactly once.
+    std::unordered_map<String, size_t> occurrences;
     for (const auto & column : *node.step->getOutputHeader())
-        if (!seen.insert(column.name).second)
-            null_rejected_columns.erase(column.name);
+        ++occurrences[column.name];
+    std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });
 
     const auto & step = *node.step;
 
