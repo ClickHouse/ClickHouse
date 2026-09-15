@@ -1,0 +1,6 @@
+-- RowBinaryWithNamesAndTypes: a reordered header is not a structure mismatch
+explanation missing
+-- RowBinaryWithNamesAndTypesAndDefaults: a reordered header is not a structure mismatch
+explanation missing
+-- RowBinaryWithNamesAndTypes: a genuine type mismatch in the header is still reported
+explanation present

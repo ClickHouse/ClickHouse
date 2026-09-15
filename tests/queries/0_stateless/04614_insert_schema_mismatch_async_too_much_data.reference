@@ -1,0 +1,4 @@
+-- HTTP interface, async insert falling back to synchronous (TOO_MUCH_DATA), type mismatch
+explanation present
+-- HTTP interface, async insert falling back to synchronous (TOO_MUCH_DATA), matching data (no false positive)
+explanation missing

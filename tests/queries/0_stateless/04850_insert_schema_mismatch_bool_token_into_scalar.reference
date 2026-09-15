@@ -1,0 +1,12 @@
+-- JSONEachRow: a bool token for a UInt16 column with input_format_json_read_bools_as_numbers = 0 is a genuine structure mismatch
+explanation present
+-- JSONEachRow: a bool token for a UInt16 column with input_format_json_read_bools_as_numbers = 1 is valid (no false positive)
+explanation missing
+-- JSONEachRow: a bool token for a UInt8 column is always valid, regardless of the setting (no false positive)
+explanation missing
+-- JSONEachRow: a bool token for a DateTime column is a genuine structure mismatch even with input_format_json_read_bools_as_numbers = 1
+explanation present
+-- TSV: the word true for a UInt16 column is a genuine structure mismatch (the flat-text numeric readers parse no word forms)
+explanation present
+-- TSV: the word true for a Bool column is valid (no false positive)
+explanation missing

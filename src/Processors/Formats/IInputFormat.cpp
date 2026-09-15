@@ -1,5 +1,6 @@
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
@@ -38,6 +39,14 @@ Chunk IInputFormat::generate()
         auto file_name = getFileNameFromReadBuffer(getReadBuffer());
         if (!file_name.empty())
             e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        /// For a genuine parse error, attach the schema-mismatch explanation if one is available.
+        if (parse_error_diagnostic_provider && isParseError(e.code()))
+        {
+            if (String diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError()); !diagnostic.empty())
+                e.addMessage(diagnostic);
+        }
+
         throw;
     }
 }

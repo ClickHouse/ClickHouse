@@ -1,0 +1,8 @@
+-- CSV, detected header with reordered names: parser maps by name, only a value fails (no false positive)
+explanation missing
+-- CSV, detected header with matching order: only a value fails (no false positive)
+explanation missing
+-- TSV, detected types row differs from the destination (exact type check applies)
+explanation present
+-- TSV, detected types row matches the destination, only a value fails (no false positive)
+explanation missing

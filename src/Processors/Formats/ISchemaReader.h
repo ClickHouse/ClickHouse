@@ -9,6 +9,16 @@
 namespace DB
 {
 
+enum class BoolValueIntoNumericColumn
+{
+    /// The format accepts a boolean value for every numeric destination type.
+    AllNumeric,
+    /// The format accepts a boolean value only for integer-backed destination types.
+    IntegerBacked,
+    /// The format does not accept a boolean value for numeric destination types.
+    None,
+};
+
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
@@ -32,6 +42,202 @@ public:
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }
+
+    /// True if the column types are declared in the data itself (e.g. the second header row of the
+    /// -WithNamesAndTypes formats) and are validated by the parser against the destination types
+    /// exactly, rather than inferred from the data values (and therefore widened). A caller that
+    /// compares an inferred schema against an expected one can use this to know when an exact type
+    /// comparison mirrors the parser and a loose (supertype-based) one would be wrong.
+    virtual bool hasExactTypesFromData() const { return false; }
+
+    /// True when the schema returned by `readSchema` describes the structure the parser actually reads
+    /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
+    /// `JSONColumnsWithMetadata`) when `input_format_json_validate_types_from_metadata` = 0: schema
+    /// inference reads the types declared in the `meta` section, but the parser then ignores those
+    /// types entirely and reads the data by value (and, for `JSONCompact`, positionally). The inferred
+    /// schema therefore does not correspond to what is parsed, and a caller comparing an inferred schema
+    /// against an expected one must not draw any conclusion from it.
+    virtual bool schemaDescribesParsedData() const { return true; }
+
+    /// True if the format legally accepts a number of columns that differs from the destination: missing
+    /// trailing columns are filled with defaults and/or extra columns are skipped, so the number of columns
+    /// present in the data is not by itself a reliable structure-mismatch signal. It is always true for the
+    /// columnar `JSONCompactColumns` format and setting-gated for `CSV` / `TSV` / `CustomSeparated` /
+    /// `JSONCompactEachRow` (their `*_allow_variable_number_of_columns` settings). It is also consulted by
+    /// `IRowSchemaReader::readSchema` to decide whether rows with a varying number of values are allowed.
+    virtual bool allowVariableNumberOfColumns() const { return false; }
+
+    /// True when the parser accepts fewer input columns than the destination, filling the missing
+    /// trailing columns with defaults. Most formats that allow a variable number of columns also
+    /// accept extra columns; `JSONCompactColumns` is the notable exception.
+    virtual bool allowsFewerColumnsThanExpected() const { return allowVariableNumberOfColumns(); }
+
+    /// True if the parser of the format reads typed JSON value tokens (a bare number, `true` / `false`,
+    /// an array, an object) and consults the `input_format_json_read_*_as_strings` settings to decide
+    /// whether such a token may be read into a `String` column. It is false for the flat-text formats
+    /// (`TSV`, `CSV`, `TSKV`, ...), which read every field verbatim into a `String` column regardless of
+    /// those settings, and for the `-Strings` JSON variants, whose values are all strings rather than
+    /// typed tokens (see `readsStringValuesAsWholeText` below). The formats with a configurable
+    /// escaping rule (`CustomSeparated`, `Regexp`, `Template`) read every field through
+    /// `deserializeFieldByEscapingRule`, so this is true for them when the configured rule is `JSON`
+    /// (for `Template`, whose rule is chosen per placeholder, only when every placeholder uses it).
+    /// A caller that compares an inferred schema against an expected one can use this to
+    /// know when an inferred non-`String` type going into a `String` destination follows the JSON
+    /// settings and when it is unconditionally accepted.
+    virtual bool readsTypedJSONValueTokens() const { return false; }
+
+    /// True if every value in the format is a string whose content the parser re-parses with the
+    /// whole-text deserializer of the destination type (the `-Strings` JSON variants,
+    /// `JSONStringsEachRow` / `JSONCompactStringsEachRow` / ...). There the destination type sees the
+    /// unquoted content of the string, so, for example, a quoted `"1"` is accepted into a `Bool`
+    /// column, while the typed-token JSON formats reject any string token there and the flat-text
+    /// formats hand the `Bool` deserializer the raw (still quoted) field. A caller that compares an
+    /// inferred schema against an expected one can use this to know when an inferred `String` says
+    /// nothing about the parsability of its content into the destination type.
+    virtual bool readsStringValuesAsWholeText() const { return false; }
+
+    /// True if the parser reads the raw representation of a field of any type verbatim into a `String`
+    /// destination column, as the flat-text formats (`TSV`, `CSV`, ...) do. It is false for formats
+    /// that store typed values and reject a non-string value for a `String` column (`BSONEachRow`,
+    /// `MsgPack`). It is not consulted for the typed-token JSON formats, which govern this per token
+    /// type via the `input_format_json_read_*_as_strings` settings (see `readsTypedJSONValueTokens`
+    /// above). A caller that compares an inferred schema against an expected one can use this to know
+    /// when an inferred non-`String` type going into a `String` destination is a genuine structure
+    /// mismatch.
+    virtual bool readsAnyValueIntoStringColumn() const { return true; }
+
+    /// True when the parser reads every field with the quoted-text deserializer
+    /// (`ISerialization::deserializeTextQuoted`), as `MySQLDump` does: there the on-wire form of a value
+    /// has to match what the destination type accepts, so an unquoted value — the only thing schema
+    /// inference can have derived a numeric type from — is rejected by every destination whose
+    /// quoted-text deserializer requires an opening quote: `String`, `FixedString`, `UUID`, `IPv4`,
+    /// `IPv6`, `Date` / `Date32` and `Enum`. (The other numeric-adjacent destinations do accept a bare
+    /// number there: `DateTime` / `DateTime64` read it as a Unix timestamp, and `Decimal` / `Time` /
+    /// `Time64` read the number itself.) Note that this is about the form of the value and not about
+    /// which types are read verbatim into a `String` column: a quoted value — from which inference
+    /// derives a `String`, a date or a `UUID` — is accepted by a `String` destination just as in the
+    /// other flat-text formats, so `readsAnyValueIntoStringColumn` stays true for such a format.
+    /// Besides `MySQLDump`, this holds for the formats with a configurable escaping rule when that
+    /// rule is `Quoted`: `CustomSeparated` / `Regexp` (`format_custom_escaping_rule` /
+    /// `format_regexp_escaping_rule`), and `Template` when every placeholder uses it. A
+    /// caller comparing an inferred schema against an expected one uses this to flag an inferred
+    /// numeric type going into one of those destinations as a structure mismatch, and likewise an
+    /// inferred `Array` / `Tuple` / `Map` / `Bool` — derived only from an unquoted bracket or word
+    /// token — going into a `String` destination, whose quoted-text deserializer also requires an
+    /// opening quote.
+    virtual bool readsQuotedTextValues() const { return false; }
+
+    /// True when the parser maps the input's fields to destination columns by name rather than by
+    /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
+    /// which also return `hasStrictOrderOfColumns() == false`), this holds for a `*WithNames*` format
+    /// whose names header the parser is configured to use (`input_format_with_names_use_header`), for
+    /// the formats that store named columns and read them by name into the destination: `Native`,
+    /// `Avro`, the external-schema `Protobuf` / `CapnProto` families, the columnar `Parquet` / `Arrow` /
+    /// `ORC`, and the named columnar JSON formats — and for `MySQLDump` when the dump provided column
+    /// names (in a `CREATE` query or in the `INSERT` column list) and
+    /// `input_format_mysql_dump_map_column_names` is enabled. Note that
+    /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` is NOT a valid proxy for this property:
+    /// `Npy` supports reading a subset of columns yet writes its single column positionally (while its
+    /// schema reader always names that column `array`), and `RowBinaryWithNamesAndTypes` maps columns
+    /// by name without advertising the subset capability. A caller comparing an inferred schema against
+    /// an expected one uses this to match columns by name (tolerating a reordered header) instead of
+    /// positionally.
+    virtual bool mapsColumnsByName() const { return false; }
+
+    /// True when the parser resolves the input's field names against the destination columns through
+    /// `CaseAwareBlockNameMap`, honoring `input_format_column_name_matching_mode` (`auto` by default:
+    /// an exact-case match first, then a case-insensitive one). This is how the `JSONEachRow` family,
+    /// `BSONEachRow`, the columnar JSON formats and the `*WithNames*` header mapping (through
+    /// `ColumnMapping`) work. It is false for the by-name parsers that look names up exactly regardless
+    /// of that setting — `TSKV` and `Form` (a plain `HashMap`), `Native` and `Avro`
+    /// (`Block::getByName`), the external-schema and columnar formats. A caller comparing an inferred
+    /// schema against an expected one uses this to resolve names the same way the parser does: treating
+    /// a case-only difference as a match for an exact-lookup parser would suppress a mismatch the
+    /// parser detects (an unknown-field error), and the reverse would invent one.
+    virtual bool honorsColumnNameMatchingMode() const { return false; }
+
+    /// True when the parser matches input column names case-insensitively through a
+    /// format-specific setting rather than `input_format_column_name_matching_mode`.
+    virtual bool usesCaseInsensitiveColumnMatching() const { return false; }
+
+    /// True when the parser accepts a bare numeric value into an `IPv4` destination column. Most formats
+    /// require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number — but the
+    /// binary formats that store typed values read an integer straight into the `UInt32`-backed `IPv4`
+    /// column (`BSONEachRow` via a BSON `Int32`, `MsgPack` via its `TypeIndex::IPv4` integer arm,
+    /// `Avro` via the `TypeIndex::IPv4` arm of `insertNumber`), and the formats that cast a decoded
+    /// source column to the requested destination type — the columnar `Parquet` / `Arrow` / `ORC`
+    /// always, `Native` when `input_format_native_allow_types_conversion` is enabled — accept a
+    /// numeric column there too, since it casts cleanly into the `UInt32`-backed `IPv4`. `Values` accepts
+    /// it as well: a value the strict quoted-text path rejects is retried as an expression, and the
+    /// literal is then converted to the destination type like `CAST` does. A caller
+    /// comparing an inferred schema against an expected one uses this to avoid flagging an inferred
+    /// numeric type going into an `IPv4` column as a structure mismatch for these formats. (`UUID`
+    /// and `IPv6` still require binary data of the exact size in every format, so they stay a
+    /// mismatch regardless of this capability.)
+    virtual bool readsNumericValueIntoIPv4Column() const { return false; }
+
+    /// True when the parser casts a decoded source `String` column to the requested destination
+    /// type. For the columnar formats this means the schema reader cannot tell whether a source
+    /// `String` column is a mismatch: individual values may cast cleanly into scalar or nested
+    /// destinations, and another column may be the one that actually caused the parse error.
+    virtual bool castsStringSourceColumns() const { return false; }
+
+    /// True when the parser may accept a numeric value other than the literal `0` / `1` into a `Bool`
+    /// destination column. The formats that read numeric values by value into the `UInt8`-backed
+    /// column — the binary formats that store typed values (`BSONEachRow`, `MsgPack`), `Avro`, and
+    /// the formats that cast a decoded source column to the destination type (the columnar `Parquet` /
+    /// `Arrow` / `ORC`, `Native` under `input_format_native_allow_types_conversion`) — accept e.g. `2`
+    /// there, as does `Values`, whose expression fallback converts the literal to the destination type
+    /// like `CAST` does. The flat-text row formats (`TSV`, `CSV`, `TSKV`, `CustomSeparated`, `Template`,
+    /// `Regexp`, `Form`) instead hand the raw field to the `Bool` deserializers
+    /// (`SerializationBool`), which accept only the configured `bool_true_representation` /
+    /// `bool_false_representation` and the fixed literal forms (`1` / `0`, `true` / `false`, ...) — so
+    /// they return false, and so does `MySQLDump`, whose `deserializeTextQuoted` accepts those forms and
+    /// a quoted representation but no other number. The typed-token JSON formats are equally strict
+    /// (`SerializationBool::deserializeTextJSON` accepts only `true` / `false` and `1` / `0`), but a
+    /// caller already identifies them via `readsTypedJSONValueTokens`, so they keep the default. A
+    /// caller comparing an inferred schema against an expected one uses this (together with the actual
+    /// sampled values) to know when a numeric value is a genuine structure mismatch for a `Bool` column.
+    virtual bool readsNumericValueIntoBoolColumn() const { return true; }
+
+    /// Describes whether the parser accepts a `Bool` value for a numeric (non-`Bool`) destination
+    /// column. The flat-text row formats hand the raw field to the numeric deserializer
+    /// of the destination type (`readText` / `readFloatText*`), which parses no word forms — so
+    /// `TSV`, `CSV`, `TSKV` and `Form` return `None`, and so does `MySQLDump` (whose
+    /// `deserializeTextQuoted` equally rejects the bare word) and `CustomSeparated` / `Regexp` /
+    /// `Template` under every non-`JSON` escaping rule. The typed-token JSON parsers accept the value
+    /// under `input_format_json_read_bools_as_numbers` — and always for the `UInt8` / `Int8` columns
+    /// (`SerializationNumber<T>::deserializeTextJSON`) — so a caller identifies them via
+    /// `readsTypedJSONValueTokens` and consults the setting itself; a `Template` with heterogeneous
+    /// escaping rules may contain a `JSON` placeholder, so it conservatively returns `AllNumeric`. The formats
+    /// that convert a decoded value to the destination type return `AllNumeric` too: `Values` retries a
+    /// rejected field as an expression and converts the boolean literal like `CAST` does. `BSONEachRow`
+    /// is more precise: it returns `IntegerBacked` because only the types handled by
+    /// `readAndInsertInteger` accept a BSON boolean. A caller comparing an inferred schema against
+    /// an expected one uses this to know when an inferred `Bool` is a genuine structure mismatch for
+    /// a numeric destination column.
+    virtual BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const { return BoolValueIntoNumericColumn::AllNumeric; }
+
+    /// True when the format stores numeric values with their on-wire numeric kind and the parser does
+    /// not convert them across the integer / floating-point family boundary. The text / JSON parsers
+    /// re-parse a numeric token with the deserializer of the destination type, so any numeric token
+    /// fits any numeric column there — but the binary formats that store typed values do not: a
+    /// `BSONEachRow` `Double` is accepted only into a `Float*` column (`readAndInsertDouble`) and an
+    /// integer only into integer-backed columns, and `MsgPack` floats likewise are accepted only into
+    /// the `Float*` columns (`insertFloat32` / `insertFloat64`) while its integers are rejected for
+    /// them. A caller comparing an inferred schema against an expected one uses this to know that an
+    /// inferred floating-point type is a genuine structure mismatch for a non-floating-point
+    /// destination (and vice versa) in such formats.
+    virtual bool storesTypedNumericValues() const { return false; }
+
+    /// True when the parser skips input fields that are absent from the destination unconditionally,
+    /// without consulting `input_format_skip_unknown_fields`. `Avro` recurses past a path with no
+    /// matching column in `AvroDeserializer::createAction`, building a skip action for it, and the
+    /// columnar formats (`Parquet`, `Arrow`, `ORC`) read only the requested columns and never touch
+    /// the rest of the file. A caller comparing an inferred schema against an expected one uses this
+    /// to know that a field present in the data but unknown to the destination is not a structure
+    /// mismatch for such a format even when `input_format_skip_unknown_fields` = 0.
+    virtual bool alwaysSkipsUnknownFields() const { return false; }
 
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
@@ -102,8 +308,6 @@ protected:
     virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
-
-    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index{};
 
