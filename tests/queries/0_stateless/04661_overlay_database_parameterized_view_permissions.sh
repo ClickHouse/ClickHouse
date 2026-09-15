@@ -48,9 +48,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
 function try
 {
     local user="$1"
-    local analyzer="$2"
-    local query="$3"
-    ${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer "${analyzer}" --query "${query}" 2>&1 \
+    local query="$2"
+    ${CLICKHOUSE_CLIENT} --user "${user}" --query "${query}" 2>&1 \
         | grep -o -m1 'UNKNOWN_FUNCTION\|ACCESS_DENIED' || true
 }
 
@@ -60,10 +59,8 @@ function try
 function explain_syntax
 {
     local user="$1"
-    local analyzer="$2"
     local out
-    out=$(${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer "${analyzer}" \
-        --query "EXPLAIN SYNTAX SELECT * FROM ${DB_OVL}.v(min = 2)" 2>&1)
+    out=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "EXPLAIN SYNTAX SELECT * FROM ${DB_OVL}.v(min = 2)" 2>&1)
     if echo "${out}" | grep -q 'ACCESS_DENIED'; then
         echo "ACCESS_DENIED"
     elif echo "${out}" | grep -q 'UNKNOWN_FUNCTION'; then
@@ -75,51 +72,39 @@ function explain_syntax
     fi
 }
 
-for analyzer in 0 1
-do
-    echo "=== enable_analyzer = ${analyzer} ==="
+echo "facade-only user: the view is indistinguishable from a missing one"
+try "${USER_OVL}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
+try "${USER_OVL}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
 
-    echo "facade-only user: the view is indistinguishable from a missing one"
-    try "${USER_OVL}" "${analyzer}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
-    try "${USER_OVL}" "${analyzer}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
+echo "source-only user: denied on the facade side"
+try "${USER_SRC}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
+try "${USER_SRC}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
 
-    echo "source-only user: denied on the facade side"
-    try "${USER_SRC}" "${analyzer}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
-    try "${USER_SRC}" "${analyzer}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
+echo "user with SHOW TABLES only on the source: sees the view, cannot read it"
+try "${USER_PEEK}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
+try "${USER_PEEK}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
 
-    echo "user with SHOW TABLES only on the source: sees the view, cannot read it"
-    try "${USER_PEEK}" "${analyzer}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
-    try "${USER_PEEK}" "${analyzer}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
+echo "dual-grant user: reads through the facade, the parameter applies"
+${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --query "SELECT * FROM ${DB_OVL}.v(min = 2) ORDER BY id"
 
-    echo "dual-grant user: reads through the facade, the parameter applies"
-    ${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --enable_analyzer "${analyzer}" \
-        --query "SELECT * FROM ${DB_OVL}.v(min = 2) ORDER BY id"
+echo "dual-grant user: DESCRIBE through the facade"
+${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --query "DESCRIBE TABLE ${DB_OVL}.v(min = 0)" | cut -f1,2
 
-    echo "dual-grant user: DESCRIBE through the facade"
-    ${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --enable_analyzer "${analyzer}" \
-        --query "DESCRIBE TABLE ${DB_OVL}.v(min = 0)" | cut -f1,2
-
-    echo "EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition"
-    explain_syntax "${USER_OVL}" "${analyzer}"
-    explain_syntax "${USER_SRC}" "${analyzer}"
-    explain_syntax "${USER_PEEK}" "${analyzer}"
-    explain_syntax "${USER_DUAL}" "${analyzer}"
-done
+echo "EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition"
+explain_syntax "${USER_OVL}"
+explain_syntax "${USER_SRC}"
+explain_syntax "${USER_PEEK}"
+explain_syntax "${USER_DUAL}"
 
 echo "=== row policies of the source view and of the facade are combined ==="
 ${CLICKHOUSE_CLIENT} -m --query "
     CREATE ROW POLICY p_src_${SUF} ON ${DB_SRC}.v FOR SELECT USING id < 100 TO ${USER_DUAL};
     CREATE ROW POLICY p_ovl_${SUF} ON ${DB_OVL}.v FOR SELECT USING id >= 2 TO ${USER_DUAL};
 "
-for analyzer in 0 1
-do
-    echo "-- direct source read applies the source policy only (analyzer = ${analyzer})"
-    ${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --enable_analyzer "${analyzer}" \
-        --query "SELECT * FROM ${DB_SRC}.v(min = 0) ORDER BY id"
-    echo "-- the facade combines both policies (analyzer = ${analyzer})"
-    ${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --enable_analyzer "${analyzer}" \
-        --query "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
-done
+echo "-- direct source read applies the source policy only"
+${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --query "SELECT * FROM ${DB_SRC}.v(min = 0) ORDER BY id"
+echo "-- the facade combines both policies"
+${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --query "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP ROW POLICY p_src_${SUF} ON ${DB_SRC}.v;

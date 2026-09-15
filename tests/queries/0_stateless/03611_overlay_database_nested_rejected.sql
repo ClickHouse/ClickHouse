@@ -10,7 +10,7 @@
 -- `top.t` with `top = Overlay('mid')` and `mid = Overlay('src')` resolves straight to `src.t`, so a
 -- check that only sees the written id (`top.t`) and the resolved storage id (`src.t`) would skip the
 -- grants and row policies defined on `mid.t`. Such nesting is therefore rejected at CREATE time.
--- A single-level facade keeps working under both the old and the current analyzer.
+-- A single-level facade keeps working.
 -- Related: https://github.com/ClickHouse/ClickHouse/pull/86768
 
 DROP DATABASE IF EXISTS ov_nested_src;
@@ -21,10 +21,9 @@ CREATE DATABASE ov_nested_src ENGINE = Atomic;
 CREATE TABLE ov_nested_src.t (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ov_nested_src.t VALUES (1), (2);
 
--- A single-level facade over a non-Overlay database works (regression guard), under both analyzers.
+-- A single-level facade over a non-Overlay database works (regression guard).
 CREATE DATABASE ov_nested_mid ENGINE = Overlay('ov_nested_src');
-SELECT count() FROM ov_nested_mid.t SETTINGS enable_analyzer = 0;
-SELECT count() FROM ov_nested_mid.t SETTINGS enable_analyzer = 1;
+SELECT count() FROM ov_nested_mid.t;
 
 -- Layering a facade on top of a facade is rejected.
 CREATE DATABASE ov_nested_top ENGINE = Overlay('ov_nested_mid'); -- { serverError BAD_ARGUMENTS }

@@ -58,12 +58,8 @@ echo 'Sanity: the default user reads through the facade'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_OVL}.t"
 
 echo 'A facade-only grant is denied without naming the source database'
-for analyzer in 0 1
-do
-    err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query \
-        "SELECT * FROM ${DB_OVL}.t SETTINGS enable_analyzer = ${analyzer}" 2>&1 >/dev/null)
-    check_hidden "SELECT with enable_analyzer = ${analyzer}" "${DB_SRC}" "${err}"
-done
+err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_OVL}.t" 2>&1 >/dev/null)
+check_hidden 'SELECT' "${DB_SRC}" "${err}"
 
 err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "DESCRIBE ${DB_OVL}.t" 2>&1 >/dev/null)
 check_hidden 'DESCRIBE' "${DB_SRC}" "${err}"

@@ -14,7 +14,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The data entrypoints through a read-only Overlay facade (SELECT under both analyzers, INSERT,
+# The data entrypoints through a read-only Overlay facade (SELECT, INSERT,
 # CHECK TABLE) must stay fail-closed even when the source database is backed by a remote
 # catalog and that catalog is unavailable: resolving the facade name loads the source table, and
 # for such sources even the existence probe connects to the remote server and throws its own
@@ -47,9 +47,8 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_LOC};
     CREATE TABLE ${DB_LOC}.l (x UInt64) ENGINE = Memory;
     INSERT INTO ${DB_LOC}.l VALUES (1);
-    -- A two-shard Distributed table: only for such a table does the old analyzer run
-    -- InJoinSubqueriesPreprocessor, which looks up every table of an IN / JOIN subquery
-    -- while rewriting it.
+    -- A two-shard Distributed table: the IN / JOIN subquery of a distributed query is
+    -- rewritten for the shards, which looks up every table it names.
     CREATE TABLE ${DB_LOC}.d (x UInt64) ENGINE = Distributed(test_cluster_two_shards, ${DB_LOC}, l);
 
     CREATE USER ${USER_OVL} NOT IDENTIFIED;
@@ -63,21 +62,17 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     GRANT SELECT ON ${DB_LOC}.* TO ${USER_DUAL};
 "
 
-echo 'Facade-only grants: SELECT is denied under both analyzers, not the connection error'
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+echo 'Facade-only grants: SELECT is denied, not the connection error'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_OVL}.t" 2>&1 | grep -o ACCESS_DENIED | uniq
 
-echo 'Facade-only grants: a JOIN with the facade on the right side is denied under both analyzers'
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+echo 'Facade-only grants: a JOIN with the facade on the right side is denied'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x" 2>&1 | grep -o ACCESS_DENIED | uniq
 
-echo 'Facade-only grants: a bare facade table on the right side of IN is denied under both analyzers'
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+echo 'Facade-only grants: a bare facade table on the right side of IN is denied'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t" 2>&1 | grep -o ACCESS_DENIED | uniq
 
-echo 'Facade-only grants: a facade table in a subquery of a distributed query is denied under both analyzers'
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHERE x GLOBAL IN (SELECT x FROM ${DB_OVL}.t) SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHERE x GLOBAL IN (SELECT x FROM ${DB_OVL}.t) SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+echo 'Facade-only grants: a facade table in a subquery of a distributed query is denied'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHERE x GLOBAL IN (SELECT x FROM ${DB_OVL}.t)" 2>&1 | grep -o ACCESS_DENIED | uniq
 
 echo 'Facade-only grants: INSERT is denied, not the connection error'
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "INSERT INTO ${DB_OVL}.t VALUES (1)" 2>&1 | grep -o ACCESS_DENIED | uniq
@@ -86,14 +81,11 @@ echo 'Facade-only grants: CHECK TABLE is denied, not the connection error'
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "CHECK TABLE ${DB_OVL}.t" 2>&1 | grep -o ACCESS_DENIED | uniq
 
 echo 'Dual grants: the source connection error is visible, the same as on direct access'
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_OVL}.t" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "INSERT INTO ${DB_OVL}.t VALUES (1)" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_PG}.t" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 1" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 0" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
-${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE ${DB_OVL};
