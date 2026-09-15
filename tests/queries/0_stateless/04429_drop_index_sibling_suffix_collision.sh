@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database
+# Tags: no-fasttest, no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database, no-ordinary-database
 #
 # `no-random-merge-tree-settings`: the test pins `escape_index_filenames` and
 # `packed_skip_index_max_bytes`, which are exactly the settings the collision
 # depends on.
+#
+# `no-ordinary-database`: the colliding fixtures are built with `ATTACH ... UUID`, which needs an
+# Atomic database. CREATE now rejects a colliding pair, and ATTACH is the escape hatch the check
+# leaves open for tables that predate it - which is exactly what these fixtures emulate.
 #
 # `no-fasttest`: the test reads on-disk part layout directly - individual `skp_idx_*` filenames and
 # the size of `skp_idx.packed` - which is only meaningful on a local disk. It performs no part-file
@@ -80,9 +84,13 @@ run_inverse_case() {
     local label="$1" escape="$2"
     local tbl="t_inv_${label}"
 
+    # ATTACH, not CREATE: with `escape_index_filenames` = 0 this pair resolves to one base stream
+    # name, which CREATE rejects. A fresh UUID per run keeps the test parallel-safe.
+    local uuid
+    uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
     ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS ${tbl} SYNC;
-    CREATE TABLE ${tbl}
+    ATTACH TABLE ${tbl} UUID '${uuid}'
     (
         k UInt64,
         s String,
@@ -241,17 +249,24 @@ run_packed_survivor_not_packed_case() {
     local tbl="t_pkw_${label}"
     local ref="${tbl}_ref"
 
+    # `default_compression_codec` is pinned because the byte comparison below needs both tables to
+    # compress identically, and the runner's own pin reaches a CREATE but not an ATTACH.
     local create_settings="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
              index_granularity = 100, replace_long_file_name_to_hash = 0,
              escape_index_filenames = 0, packed_skip_index_max_bytes = 1048576,
-             columns_and_secondary_indices_sizes_lazy_calculation = 0"
+             columns_and_secondary_indices_sizes_lazy_calculation = 0,
+             default_compression_codec = 'LZ4'"
 
     # The reference carries the same two SURVIVING indices and never had the dropped one, so after a
-    # correct drop both archives must hold exactly the same members.
+    # correct drop both archives must hold exactly the same members. Only the main table declares a
+    # colliding pair, so only it needs ATTACH; the reference stays a plain CREATE, which is also what
+    # keeps it a control.
+    local uuid
+    uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
     ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS ${tbl} SYNC;
     DROP TABLE IF EXISTS ${ref} SYNC;
-    CREATE TABLE ${tbl}
+    ATTACH TABLE ${tbl} UUID '${uuid}'
     (
         k UInt64,
         s String,
