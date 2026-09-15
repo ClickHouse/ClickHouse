@@ -23,6 +23,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -45,6 +46,9 @@
 #include <Columns/ColumnString.h>
 
 #include <fmt/format.h>
+
+#include <algorithm>
+#include <unordered_map>
 
 
 namespace DB
@@ -70,6 +74,7 @@ namespace TimeSeriesSetting
 namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
+constexpr size_t MAX_TIMESTAMP_CACHE_SIZE = 4096;
 
 Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
 {
@@ -241,6 +246,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();
 
+    bool cache_timestamps = false;
+    if (params.type == Type::Range)
+    {
+        /// The cache is useful only when the request's evaluation grid fits in it. Checking the
+        /// grid size here also covers sparse result blocks whose rows individually have fewer samples.
+        const auto timestamp_grid_size = PrometheusQueryToSQL::stepsInTimeSeriesRange(
+            *evaluation_settings.start_time, *evaluation_settings.end_time, *evaluation_settings.step);
+        cache_timestamps = timestamp_grid_size <= MAX_TIMESTAMP_CACHE_SIZE;
+    }
+
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
@@ -260,7 +275,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        writeQueryResponse(response, executor, converter.getResultType(), cache_timestamps);
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
@@ -278,7 +293,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response,
+    PullingAsyncPipelineExecutor & pulling_executor,
+    PrometheusQueryResultType result_type,
+    bool cache_timestamps)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
@@ -298,12 +316,12 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        writeQueryResponseBlock(response, result_type, block, /*first=*/ true, cache_timestamps);
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+                writeQueryResponseBlock(response, result_type, block, /*first=*/ false, cache_timestamps);
         }
     }
 
@@ -339,7 +357,12 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
     writeString("]}}", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(
+    WriteBuffer & response,
+    PrometheusQueryResultType result_type,
+    const Block & result_block,
+    bool first,
+    bool cache_timestamps)
 {
     LOG_TRACE(log, "Prometheus: Writing {} result ({} rows)", result_type, result_block.rows());
 
@@ -362,7 +385,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, 
         }
         case PrometheusQueryTree::ResultType::RANGE_VECTOR:
         {
-            writeQueryResponseRangeVectorBlock(response, result_block, first);
+            writeQueryResponseRangeVectorBlock(response, result_block, first, cache_timestamps);
             return;
         }
     }
@@ -459,7 +482,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
     }
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(
+    WriteBuffer & response, const Block & result_block, bool first, bool cache_timestamps)
 {
     const auto & time_series_column_with_type
         = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
@@ -476,6 +500,25 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
               .getElement(0);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+    /// A range query returns the same evaluation grid for every series. Cache the serialized form
+    /// of each timestamp so writeText() is not repeated for every series. The caller only enables
+    /// the cache when the request's evaluation grid fits in the bounded cache.
+    size_t max_samples_per_series = 0;
+    bool use_timestamp_cache = cache_timestamps && result_block.rows() > 1;
+    if (use_timestamp_cache)
+    {
+        size_t previous_offset = 0;
+        for (const auto offset : offsets)
+        {
+            max_samples_per_series = std::max(max_samples_per_series, static_cast<size_t>(offset - previous_offset));
+            previous_offset = offset;
+        }
+    }
+
+    std::unordered_map<DateTime64, String> timestamp_cache;
+    if (use_timestamp_cache)
+        timestamp_cache.reserve(max_samples_per_series);
 
     bool need_comma = !first;
 
@@ -504,7 +547,29 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
             writeString("[", response);
             DateTime64 timestamp = timestamp_column.getInt(j);
-            writeTimestamp(response, timestamp, timestamp_scale);
+            if (!use_timestamp_cache)
+            {
+                writeTimestamp(response, timestamp, timestamp_scale);
+            }
+            else
+            {
+                auto it = timestamp_cache.find(timestamp);
+                if (it != timestamp_cache.end())
+                {
+                    writeString(it->second, response);
+                }
+                else if (timestamp_cache.size() < MAX_TIMESTAMP_CACHE_SIZE)
+                {
+                    WriteBufferFromOwnString timestamp_buffer;
+                    writeTimestamp(timestamp_buffer, timestamp, timestamp_scale);
+                    it = timestamp_cache.emplace(timestamp, std::move(timestamp_buffer.str())).first;
+                    writeString(it->second, response);
+                }
+                else
+                {
+                    writeTimestamp(response, timestamp, timestamp_scale);
+                }
+            }
             writeString(",\"", response);
             Float64 value = value_column.getFloat64(j);
             writeScalar(response, value);
