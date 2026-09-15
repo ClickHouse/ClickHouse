@@ -174,7 +174,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
-    extern const SettingsBool allow_experimental_trino_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -2366,7 +2366,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks],
                 end,
-                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::enable_trino_dialect],
                 settings[Setting::allow_settings_after_format_in_insert],
                 settings[Setting::implicit_select]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
