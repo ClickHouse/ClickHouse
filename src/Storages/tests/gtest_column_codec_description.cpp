@@ -311,6 +311,40 @@ TEST(ColumnCodecDescription, StructuralIntrospectionPreservesSymbolicDefault)
     EXPECT_TRUE(found_array_offsets);
 }
 
+TEST(ColumnCodecDescription, PartialColumnUsesFirstExactSubcolumnMatch)
+{
+    const auto parsed = parseColumnDeclaration(
+        "payload Tuple(`a.b` UInt64 CODEC(ZSTD(3)), a Tuple(b UInt64 CODEC(LZ4)))");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+    const auto codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+
+    const auto subcolumn = logical_type->tryGetSubcolumnInfo("a.b");
+    ASSERT_TRUE(subcolumn);
+    ASSERT_TRUE(subcolumn->data.type);
+    EXPECT_EQ(getCodecPath(subcolumn->substreams_path), CodecPath{"a.b"});
+
+    const NameAndTypePair written_column(
+        declaration.name, "a.b", logical_type, subcolumn->data.type);
+    const ColumnCodecResolver resolver(codec, logical_type, written_column, nullptr);
+
+    bool found_value_stream = false;
+    subcolumn->data.type->getDefaultSerialization()->enumerateStreams(
+        [&](const ISerialization::SubstreamPath & path)
+        {
+            if (path.empty())
+                return;
+
+            found_value_stream = true;
+            const auto resolved = resolver.resolve(path);
+            ASSERT_TRUE(resolved.codec);
+            EXPECT_EQ(resolved.declaration_path, CodecPath{"a.b"});
+            EXPECT_EQ(resolved.codec->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+        },
+        subcolumn->data.type);
+    EXPECT_TRUE(found_value_stream);
+}
+
 TEST(ColumnCodecDescription, VersionedColumnsMetadata)
 {
     const auto parsed = parseColumnDeclaration(

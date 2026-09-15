@@ -61,25 +61,15 @@ CodecPath getWrittenColumnPrefix(const NameAndTypePair & written_column, const D
     if (!written_column.isSubcolumn())
         return {};
 
-    CodecPath prefix;
-    bool found = false;
-    IDataType::forEachSubcolumn(
-        [&](const auto & path, const auto & name, const auto &)
-        {
-            if (name == written_column.getSubcolumnName())
-            {
-                prefix = getCodecPath(path);
-                found = true;
-            }
-        },
-        ISerialization::SubstreamData(owning_type->getDefaultSerialization()).withType(owning_type));
-    if (!found)
+    /// Subcolumn names can collide. Use the same first exact match as normal subcolumn lookup.
+    const auto subcolumn = owning_type->tryGetSubcolumnInfo(written_column.getSubcolumnName());
+    if (!subcolumn)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot resolve subcolumn {} in type {}",
             written_column.getSubcolumnName(),
             owning_type->getName());
-    return prefix;
+    return getCodecPath(subcolumn->substreams_path);
 }
 
 }

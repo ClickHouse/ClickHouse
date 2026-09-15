@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_tuple_codec_lossy_sorting_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_partition_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_non_key_sibling;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_map_element;
+DROP TABLE IF EXISTS t_tuple_codec_lossy_colliding_subcolumn;
 
 SET enable_sz3_codec = 1;
 SET enable_tuple_element_codecs = 1;
@@ -38,6 +39,18 @@ CREATE TABLE t_tuple_codec_lossy_partition_key
 ENGINE = MergeTree
 PARTITION BY intDiv(toInt64(x.k), 100)
 ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+-- Exact subcolumn names use the first match. Here x.a.b names the literal
+-- Tuple element, not the later nested path with the same flattened name.
+CREATE TABLE t_tuple_codec_lossy_colliding_subcolumn
+(
+    x Tuple(
+        `a.b` Float64 CODEC(SZ3('ALGO_INTERP_LORENZO', 'REL', 0.01)),
+        a Tuple(b Float64 CODEC(LZ4))
+    )
+)
+ENGINE = MergeTree
+ORDER BY x.a.b; -- { serverError BAD_ARGUMENTS }
 
 -- Only streams backing the key element are checked. A lossy codec on an
 -- unrelated sibling remains valid.
