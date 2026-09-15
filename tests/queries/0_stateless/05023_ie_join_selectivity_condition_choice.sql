@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- With more than two eligible inequality conditions, the two IEJoin key conditions are chosen
 -- by their estimated selectivity from the column min/max statistics instead of the first two
 -- in syntax order. The conditions not chosen become a filter / residual condition, so any
