@@ -14,6 +14,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 truncate_error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.truncate.stderr"
+trap 'rm -f "$truncate_error"' EXIT
 
 # With the queue stopped the DROP_RANGE entry is never executed, so TRUNCATE stays inside
 # waitForLogEntryToBeProcessedIfNecessary. alter_sync is pinned because that wait is what the
@@ -39,8 +40,14 @@ timeout 30 $CLICKHOUSE_CLIENT -q "RENAME TABLE t TO t2" && echo "RENAME is not b
 # above was blocked, and starting the queues of a table that does not exist is a no-op.
 $CLICKHOUSE_CLIENT -q "SYSTEM START REPLICATION QUEUES t; SYSTEM START REPLICATION QUEUES t2"
 
-# The count below says nothing about TRUNCATE unless TRUNCATE itself succeeded.
-wait "$truncate_pid" || cat "$truncate_error"
+# The count below says nothing about TRUNCATE unless TRUNCATE itself succeeded. A client killed
+# without writing diagnostics still leaves its DROP_RANGE behind, so the count can match on its own.
+truncate_status=0
+wait "$truncate_pid" || truncate_status=$?
+if [[ "$truncate_status" != "0" ]]
+then
+    echo "TRUNCATE client failed with status $truncate_status:" >&2
+    cat "$truncate_error" >&2
+    exit 1
+fi
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t2"
-
-rm -f "$truncate_error"
