@@ -1,0 +1,81 @@
+-- The enclosing INNER JOIN rejects the NULL-extended rows of the LEFT JOIN under join_use_nulls = 1 and converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+-- A natively Nullable join key is rejected even with join_use_nulls = 0 and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- A non-Nullable key with join_use_nulls = 0 does not convert.
+20	890
+Type: INNER
+Type: LEFT
+-- IS NOT DISTINCT FROM matches NULLs and does not convert.
+20	890
+Type: INNER
+Type: LEFT
+-- A FULL enclosing join preserves non-matching rows and does not convert.
+100	4950
+Type: FULL
+Type: LEFT
+-- Inequality conditions reject NULLs and convert.
+40	1730
+40	1730
+Type: INNER
+-- The join providing the IS NOT NULL filter can be a not direct parent of the outer join and converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+Type: INNER
+-- A RIGHT outer join whose NULL-extended left side is rejected by the enclosing join converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+-- An enclosing RIGHT join drops non-matching rows of its left input and converts the LEFT join below.
+20	890
+20	890
+Type: RIGHT
+Type: INNER
+-- ANY strictness on the enclosing join also drops non-matching rows and converts.
+2	4
+2	4
+Type: INNER
+Type: INNER
+-- A LEFT SEMI join also rejects null-extended rows.
+20	890
+20	890
+Type: LEFT
+Strictness: SEMI
+Type: INNER
+-- A RIGHT SEMI join also rejects null-extended rows.
+2	4
+2	4
+Type: RIGHT
+Strictness: SEMI
+Type: INNER
+-- A RIGHT ANTI join can not use null keys to exclude an rows, null-extended rows can be dropped.
+0
+0
+Type: RIGHT
+Strictness: ANTI
+Type: INNER
+-- A LEFT ANTI join needs the rows from the preserved side, the below join does not convert.
+80	4060
+Type: LEFT
+Strictness: ANTI
+Type: LEFT
+-- An ANY join converted to SEMI makes the other side droppable, the below join converts.
+10	435
+10	435
+Type: LEFT
+Strictness: SEMI
+Type: INNER
+-- A join condition merged into the join makes a side droppable, the below join converts.
+25	1125
+25	1125
+Type: INNER
+Type: INNER
