@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Interpreters/Context.h>
@@ -106,5 +107,6 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 }

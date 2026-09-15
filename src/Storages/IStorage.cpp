@@ -2,6 +2,7 @@
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -12,11 +13,13 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/maskEngineSettingValue.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
@@ -247,6 +250,121 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+}
+
+namespace
+{
+
+/// The settings a table's stored `CREATE` query states, copied out.
+///
+/// This is the source `SHOW CREATE TABLE` renders, and the only one every engine keeps:
+/// `StorageInMemoryMetadata::settings_changes` is populated by `MergeTree`, `Memory` and
+/// `ALTER ... MODIFY SETTING` alone, despite its comment naming `Kafka` and `RabbitMQ`. `ALTER`
+/// writes its changes back into the `CREATE` query too, so this stays current.
+SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
+{
+    if (table_id.database_name.empty())
+        return {};
+
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+    if (!database)
+        return {};
+
+    const auto create_query = database->tryGetCreateTableQuery(table_id.table_name, context);
+    if (!create_query)
+        return {};
+
+    const auto & create = create_query->as<const ASTCreateQuery &>();
+    if (!create.storage || !create.storage->settings)
+        return {};
+
+    return create.storage->settings->as<const ASTSetQuery &>().changes;
+}
+
+NameSet getSettingNamesStatedInDefinition(const StorageID & table_id, ContextPtr context)
+{
+    NameSet names;
+    for (const auto & change : getSettingsStatedInDefinition(table_id, context))
+        names.insert(change.name);
+    return names;
+}
+
+}
+
+SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
+    SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize) const
+{
+    auto stated_in_definition = getSettingNamesStatedInDefinition(getStorageID(), context);
+    if (normalize)
+    {
+        NameSet normalized;
+        for (const auto & stated : stated_in_definition)
+        {
+            if (auto canonical = normalize(stated))
+                normalized.emplace(*canonical);
+            else
+                normalized.insert(stated);
+        }
+        stated_in_definition = std::move(normalized);
+    }
+    for (auto & setting : settings)
+    {
+        /// A definition may name a setting by any of its aliases - `monitor_batch_inserts` for
+        /// `background_insert_batch`, say - so matching only the canonical name would miss it and
+        /// report the value as coming from somewhere unknown.
+        const bool stated = stated_in_definition.contains(setting.name)
+            || std::any_of(setting.aliases.begin(), setting.aliases.end(),
+                           [&](std::string_view alias) { return stated_in_definition.contains(String{alias}); });
+        if (stated)
+            setting.origin = SettingOrigin::Definition;
+    }
+    return settings;
+}
+
+void IStorage::reportEffectiveValue(
+    SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin)
+{
+    const auto it = std::find_if(settings.begin(), settings.end(), [&](const SettingDescription & setting) { return setting.name == name; });
+    if (it == settings.end())
+        return;
+
+    it->value = value;
+    it->masked_value = value != it->default_value ? maskEngineSettingValue(it->name, Field(value), value) : String{};
+    if (origin)
+        it->origin = *origin;
+}
+
+void IStorage::reportEffectiveValueWithConfigFallback(
+    SettingDescriptions & settings, std::string_view name, const String & stated, const String & value)
+{
+    reportEffectiveValue(settings, name, value, stated.empty() && !value.empty() ? std::optional(SettingOrigin::Config) : std::nullopt);
+}
+
+SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
+{
+    /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
+    /// override backed by a settings struct there is no accessor to give a type-faithful rendering,
+    /// nor a default, type, description or tier to report.
+    const auto changes = getSettingsStatedInDefinition(getStorageID(), context);
+
+    SettingDescriptions result;
+    result.reserve(changes.size());
+    for (const auto & change : changes)
+    {
+        SettingDescription described;
+        described.name = change.name;
+        described.value = convertFieldToString(change.value);
+        described.origin = SettingOrigin::Definition;
+
+        /// Through the same helper the settings-struct path uses, and for the same reason: whether a
+        /// value is redacted must not depend on which of the two built the row. A definition can
+        /// state `url_base`, `s3_base` or `format_avro_schema_registry_url` with a credential in it,
+        /// and `SHOW CREATE TABLE` hides those - so this has to as well.
+        described.masked_value = maskEngineSettingValue(described.name, change.value, described.value);
+
+        result.push_back(std::move(described));
+    }
+    return result;
 }
 
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const

@@ -1,0 +1,13 @@
+<clickhouse>
+    <merge_tree>
+        <!-- Assigned the value it already has. The point of the test: an explicit assignment is
+             invisible to a comparison of values, so `system.table_settings` has to learn about it
+             while the server-level baseline is built rather than by diffing afterwards. -->
+        <merge_max_block_size>8192</merge_max_block_size>
+        <!-- Assigned a different value, which a comparison of values would also have caught. -->
+        <max_suspicious_broken_parts>7</max_suspicious_broken_parts>
+    </merge_tree>
+    <replicated_merge_tree>
+        <merge_max_block_size>8192</merge_max_block_size>
+    </replicated_merge_tree>
+</clickhouse>

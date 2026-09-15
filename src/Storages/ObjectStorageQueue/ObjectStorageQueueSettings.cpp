@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
@@ -140,10 +141,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-namespace
-{
-
-std::optional<std::string_view> adjustSettingName(std::string_view name)
+std::optional<std::string_view> ObjectStorageQueueSettings::adjustSettingName(std::string_view name)
 {
     static constexpr std::string_view s3queue_prefix = "s3queue_";
 
@@ -164,8 +162,6 @@ std::optional<std::string_view> adjustSettingName(std::string_view name)
         return name;
 
     return std::nullopt;
-}
-
 }
 
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
@@ -243,4 +239,7 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
+
 }

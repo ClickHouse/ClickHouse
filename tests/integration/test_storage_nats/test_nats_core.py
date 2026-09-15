@@ -1637,3 +1637,29 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+
+def test_nats_table_settings_report_effective_values(nats_cluster):
+    """`system.table_settings` reports the values the table works with: macros from the server config expanded,
+    and the authentication taken from the `nats` server config section when the table defines none."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{nats_subjects}_effective',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+
+    rows = instance.query(
+        "SELECT name, value, is_masked, source FROM system.table_settings "
+        "WHERE database = 'test' AND table = 'nats' "
+        "AND name IN ('nats_subjects', 'nats_username', 'nats_password') ORDER BY name"
+    )
+    assert TSV(rows) == TSV(
+        "nats_password\t[HIDDEN]\t1\tconfig\n"
+        "nats_subjects\ttest_subject_effective\t0\tdefinition\n"
+        "nats_username\tclickhouse\t0\tconfig\n"
+    )
+

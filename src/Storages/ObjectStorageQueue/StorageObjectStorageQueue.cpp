@@ -2205,4 +2205,53 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     }
 }
 
+SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
+{
+    /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
+    /// the metadata object and plain members of this storage.
+    auto settings = getSettings().enumerateSettings();
+
+    /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
+    /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
+    /// against the table metadata instead. Recover the distinction by value.
+    for (auto & setting : settings)
+        setting.origin = setting.value == setting.default_value
+            ? SettingOrigin::Default
+            : SettingOrigin::Other;
+
+    /// The definition may spell a setting the way this engine used to accept it - with the
+    /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
+    /// those rather than declaring them as aliases. Attribution has to read them the same way, or a
+    /// table created with a legacy spelling reports its settings as coming from nowhere.
+    settings = attributeSettingsStatedInDefinition(
+        std::move(settings), query_context, ObjectStorageQueueSettings::adjustSettingName);
+
+    /// Applied after the definition, because for these the shared metadata is what the table
+    /// actually uses: an `ALTER` on another replica has already changed them here, while this
+    /// replica's `CREATE` query still states whatever it was created with.
+    /// These are the fields `getSettings` reads from the table metadata serialized to Keeper, and
+    /// serialization - not the `isStoredInKeeper` name list - decides what that metadata holds. So
+    /// not `keeper_path`, which the storage keeps itself, and not `parallel_inserts`, which the table
+    /// metadata declares but never writes or reads: https://github.com/ClickHouse/ClickHouse/issues/119018.
+    static const NameSet held_in_shared_metadata{
+        "mode", "after_processing", "loading_retries", "processing_threads_num",
+        "last_processed_path", "bucketing_mode", "partitioning_mode",
+        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
+        "buckets"};
+
+    for (auto & setting : settings)
+        if (held_in_shared_metadata.contains(setting.name))
+            setting.origin = SettingOrigin::SharedMetadata;
+
+    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
+    /// so the rebuilt settings object always carries its default. Report what the table actually
+    /// does, which is what `partitioning_mode` now says - last, so that it takes that setting's final
+    /// origin. The origin is taken even when the value is the default: they are one setting after the
+    /// fold, and `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
+    if (const auto mode = std::ranges::find(settings, "partitioning_mode", &SettingDescription::name); mode != settings.end())
+        reportEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
+
+    return settings;
+}
+
 }

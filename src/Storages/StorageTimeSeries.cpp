@@ -808,6 +808,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = TimeSeriesSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -1352,6 +1353,11 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
+}
+
+SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(storage_settings.get()->enumerateSettings(), query_context);
 }
 
 }

@@ -2,9 +2,11 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -106,5 +108,15 @@ bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
 }
+
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context)
+{
+    /// The `distributed` config section is applied to these, so they can differ from the compiled
+    /// defaults, and this is the instance a new table starts from.
+    return context->getDistributedSettings().enumerateSettings();
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)
+
 }
 

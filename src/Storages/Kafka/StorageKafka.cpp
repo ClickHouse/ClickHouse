@@ -43,6 +43,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace CurrentMetrics
 {
@@ -227,6 +228,41 @@ StorageKafka::StorageKafka(
         DB::setThreadName(ThreadName::KAFKA_CLEANUP);
         cleanConsumersByTTL();
     });
+}
+
+SettingDescriptions StorageKafka::getTableSettings(ContextPtr query_context) const
+{
+    auto settings = kafka_settings->enumerateSettings();
+
+    /// The settings struct records only that a value differs from its default, not what changed it,
+    /// and for a `Kafka` table three things can have: a named collection given in the engine
+    /// arguments, the table's own `SETTINGS` clause, and this storage's constructor, which pins a
+    /// few format settings. They are applied in that order, so the later source wins.
+    ///
+    /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
+    /// guessing `named_collection` for it would be wrong, and there is no source to name.
+    if (!collection_name.empty())
+    {
+        if (const auto collection = NamedCollectionFactory::instance().tryGet(collection_name))
+            for (auto & setting : settings)
+                if (collection->has(setting.name))
+                    setting.origin = SettingOrigin::NamedCollection;
+    }
+
+    /// The `SETTINGS` clause is applied last and so wins over the collection.
+    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+
+    /// What the table works with: the constructor expands macros in these, and generates a client id when none is
+    /// given - a value nothing but the engine set.
+    reportEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(topics, ","));
+    reportEffectiveValue(settings, "kafka_broker_list", brokers);
+    reportEffectiveValue(settings, "kafka_group_name", group);
+    reportEffectiveValue(settings, "kafka_format", format_name);
+    reportEffectiveValue(settings, "kafka_schema", schema_name);
+    reportEffectiveValue(
+        settings, "kafka_client_id", client_id,
+        (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
+    return settings;
 }
 
 StorageKafka::~StorageKafka()

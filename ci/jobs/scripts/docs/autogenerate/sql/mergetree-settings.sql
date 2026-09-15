@@ -41,6 +41,7 @@ WITH
         FROM system.merge_tree_settings AS a
         LEFT OUTER JOIN settings_changes as b
         ON a.name = b.name
+        WHERE a.alias_for = ''
     ),
     merge_tree_settings AS
     (

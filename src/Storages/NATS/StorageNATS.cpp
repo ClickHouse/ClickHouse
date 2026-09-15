@@ -40,6 +40,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -1361,6 +1362,7 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = NATSSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1684,6 +1686,31 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
+}
+
+SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
+{
+    /// See `SettingOrigin::NamedCollection`.
+    auto settings = attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
+
+    /// What the table works with. The constructor expands macros in these and, when the table defines no
+    /// authentication of its own, takes it from the `nats` server config section.
+    reportEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
+    reportEffectiveValue(settings, "nats_format", format_name);
+    reportEffectiveValue(settings, "nats_schema", schema_name);
+    reportEffectiveValue(settings, "nats_url", configuration.url);
+    reportEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
+    reportEffectiveValue(settings, "nats_credentials", configuration.credentials);
+    reportEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
+    reportEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
+    reportEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
+
+    reportEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    reportEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    reportEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    reportEffectiveValueWithConfigFallback(
+        settings, "nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    return settings;
 }
 
 }

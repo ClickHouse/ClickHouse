@@ -1,0 +1,8 @@
+-- an engine that keeps nothing reports nothing, even when its definition states a setting
+0
+-- while `system.engine_settings` still advertises the engine, which is the gap
+1
+-- an engine that keeps its settings is unaffected
+index_granularity	4096	definition
+-- and an engine that keeps none but is not advertised still reports its definition
+url_base	http://host/	definition

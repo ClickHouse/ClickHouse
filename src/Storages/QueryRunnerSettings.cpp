@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -55,5 +56,7 @@ bool QueryRunnerSettings::hasBuiltin(std::string_view name)
 {
     return QueryRunnerSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(QueryRunnerSettings)
 
 }

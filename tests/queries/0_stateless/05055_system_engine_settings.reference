@@ -1,0 +1,33 @@
+engine_name	String
+name	String
+value	String
+default	String
+changed	UInt8
+description	String
+min	Nullable(String)
+max	Nullable(String)
+disallowed_values	Array(String)
+readonly	UInt8
+type	String
+is_obsolete	UInt8
+tier	Enum8(\'Production\' = 0, \'Obsolete\' = 4, \'Experimental\' = 8, \'Beta\' = 12, \'PrivatePreview\' = 16)
+alias_for	String
+1
+1
+1
+Memory	compress	0	0	0	Bool	0	Production
+0
+0
+0
+1
+1
+1
+File
+Join
+Log
+StripeLog
+TinyLog
+URL
+allow_experimental_block_number_column	enable_block_number_column
+enable_block_number_column	
+1

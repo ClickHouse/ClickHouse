@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/Settings.h>
@@ -136,4 +137,7 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
 {
     return MySQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MySQLSettings)
+
 }

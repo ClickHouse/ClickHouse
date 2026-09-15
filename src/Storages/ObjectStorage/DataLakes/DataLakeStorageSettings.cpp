@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -72,5 +73,7 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
 
     return result;
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(DataLakeStorageSettings)
 
 }

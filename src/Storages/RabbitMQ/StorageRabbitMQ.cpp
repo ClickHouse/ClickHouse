@@ -42,6 +42,7 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -1554,6 +1555,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = RabbitMQSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1768,6 +1770,36 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = RabbitMQ() SETTINGS rabbitmq_host_port = 'host:port', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'format', ...",
             .related = {"Kafka", "NATS", "FileLog"}});
+}
+
+SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) const
+{
+    /// See `SettingOrigin::NamedCollection`.
+    auto settings = attributeSettingsStatedInDefinition(rabbitmq_settings->enumerateSettings(), query_context);
+
+    /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config
+    /// section's `vhost` override the table's.
+    reportEffectiveValue(settings, "rabbitmq_exchange_name", exchange_name);
+    reportEffectiveValue(settings, "rabbitmq_format", format_name);
+    reportEffectiveValue(settings, "rabbitmq_routing_key_list", boost::algorithm::join(routing_keys, ","));
+    reportEffectiveValue(settings, "rabbitmq_schema", schema_name);
+    reportEffectiveValue(settings, "rabbitmq_queue_base", queue_base);
+    reportEffectiveValue(settings, "rabbitmq_queue_settings_list", boost::algorithm::join(queue_settings_list, ","));
+    reportEffectiveValue(settings, "rabbitmq_address", configuration.connection_string);
+    reportEffectiveValue(
+        settings, "rabbitmq_vhost", configuration.vhost,
+        getContext()->getConfigRef().has("rabbitmq.vhost") ? std::optional(SettingOrigin::Config) : std::nullopt);
+
+    /// A `rabbitmq_host_port` table takes the username and password from the server config section when it gives
+    /// none. A `rabbitmq_address` table takes them from the address, and these two settings are not used.
+    if (!configuration.host.empty())
+    {
+        reportEffectiveValueWithConfigFallback(
+            settings, "rabbitmq_username", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
+        reportEffectiveValueWithConfigFallback(
+            settings, "rabbitmq_password", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
+    }
+    return settings;
 }
 
 }

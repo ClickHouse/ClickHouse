@@ -1,0 +1,10 @@
+-- without SHOW TABLES, system.table_settings yields nothing for the table
+0
+-- nor does SHOW TABLE SETTINGS, which enables visibility settings but not privileges
+-- a granted user sees its own table
+index_granularity	4096
+-- and SHOW TABLE SETTINGS returns it too
+index_granularity	4096	1	definition
+-- but not the neighbouring table it was not granted
+0
+-- the per-table grant does not leak the neighbour through the statement either

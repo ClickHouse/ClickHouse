@@ -547,6 +547,60 @@ SHOW INDEX FROM 'tbl'
 - [`system.tables`](/reference/system-tables/tables)
 - [`system.data_skipping_indices`](/reference/system-tables/data_skipping_indices)
 
+## SHOW TABLE SETTINGS {#show-table-settings}
+
+Displays the settings a table actually uses, and where each value came from.
+
+A table's settings need not be the ones its `CREATE` query states: a value can come from the server
+configuration, from the `compatibility` setting, from a named collection, or from metadata shared
+between replicas. This statement reports the value in effect together with its origin, which
+`SHOW CREATE TABLE` cannot do.
+
+### Syntax {#syntax-27}
+
+```sql title="Syntax"
+SHOW [CHANGED] TABLE SETTINGS {FROM | IN} <table> [{[NOT] {LIKE | ILIKE} '<pattern>'}] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+The database and table name can be specified in abbreviated form as `<db>.<table>`. If no database
+is specified, the table is looked up in the current database.
+
+The `CHANGED` keyword restricts the output to settings that something other than the default set -
+that is, to rows whose `source` is not `default`. That is usually what you want, since an engine can
+accept several hundred settings and most are left alone.
+
+Note that this is not the same as "the value differs from the default". A table whose definition
+states a setting is reported as changed even when it states the default value, and a value that
+arrives from a configuration section counts as changed even when it happens to equal the default.
+What `CHANGED` answers is whether anything acted on the setting, not whether the result differs.
+
+The `SHOW TABLE SETTINGS` statement produces a result table with the following structure:
+
+| Column    | Description                                                                | Type     |
+|-----------|----------------------------------------------------------------------------|----------|
+| `name`    | The name of the setting                                                    | `String` |
+| `value`   | The value in effect, which may differ from the one the `CREATE` query states | `String` |
+| `changed` | `1` if `source` is anything other than `default`, `0` otherwise             | `UInt8`  |
+| `source`  | Where the value came from - see [`system.table_settings`](/reference/system-tables/table_settings) for the full list | `String` |
+
+### Examples {#examples-9}
+
+```sql title="Query"
+CREATE TABLE tbl (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096;
+SHOW CHANGED TABLE SETTINGS FROM tbl
+```
+
+```text title="Response"
+┌─name───────────────┬─value─┬─changed─┬─source─────┐
+│ index_granularity  │ 4096  │       1 │ definition │
+└────────────────────┴───────┴─────────┴────────────┘
+```
+
+### See also {#see-also-8}
+
+- [`system.table_settings`](/reference/system-tables/table_settings)
+- [`system.engine_settings`](/reference/system-tables/engine_settings)
+
 ## SHOW PROCESSLIST {#show-processlist}
 
 Outputs the content of the [`system.processes`](/reference/system-tables/processes) table, that contains a list of queries that are being processed at the moment, excluding `SHOW PROCESSLIST` queries.

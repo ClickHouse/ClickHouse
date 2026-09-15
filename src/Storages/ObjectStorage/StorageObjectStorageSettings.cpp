@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -54,5 +55,7 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
             impl->set(name, value);
     }
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 }

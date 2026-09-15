@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -176,4 +177,6 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
 {
     return KafkaSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(KafkaSettings)
 }

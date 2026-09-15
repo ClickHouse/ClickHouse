@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -68,4 +69,7 @@ void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
 {
     RocksDBSettingsImpl::checkCanSet(name, value);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(RocksDBSettings)
+
 }

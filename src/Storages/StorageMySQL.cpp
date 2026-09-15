@@ -648,6 +648,7 @@ void registerStorageMySQL(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::MYSQL,
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = MySQLSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -954,6 +955,12 @@ ColumnsDescription doQueryResultStructure(
 
     return columns;
 }
+}
+
+SettingDescriptions StorageMySQL::getTableSettings(ContextPtr query_context) const
+{
+    /// See `SettingOrigin::NamedCollection`.
+    return attributeSettingsStatedInDefinition(mysql_settings->enumerateSettings(), query_context);
 }
 
 }

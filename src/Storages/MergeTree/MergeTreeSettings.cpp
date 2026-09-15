@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
@@ -16,7 +18,7 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -3127,50 +3129,6 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool backgroun
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
 }
 
-void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
-{
-    const auto & constraints = params.constraints;
-    MutableColumns & res_columns = params.res_columns;
-
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        size_t col = 0;
-        res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.isValueChanged());
-        res_columns[col++]->insert(setting.getDescription());
-        Field min;
-        Field max;
-        std::vector<Field> disallowed_values;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
-
-        /// Certain merge tree settings are unconditionally read-only
-        if (isReadonlySetting(setting_name))
-            writability = SettingConstraintWritability::CONST;
-
-        /// These two columns can accept strings only.
-        if (!min.isNull())
-            min = MergeTreeSettings::valueToStringUtil(setting_name, min);
-        if (!max.isNull())
-            max = MergeTreeSettings::valueToStringUtil(setting_name, max);
-
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
-
-        res_columns[col++]->insert(min);
-        res_columns[col++]->insert(max);
-        res_columns[col++]->insert(disallowed_array);
-        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[col++]->insert(setting.getTypeName());
-        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[col++]->insert(setting.getTier());
-    }
-}
-
 void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
 {
     static constexpr const char * MERGE_TREE_SETTING_CONTEXT = "merge tree setting";
@@ -3300,4 +3258,58 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
+
+namespace
+{
+
+SettingDescriptions enumerateServerEffective(const MergeTreeSettings & settings, ContextPtr context)
+{
+    /// What the engine actually uses on this server: the `merge_tree` config section and the
+    /// `compatibility` setting are already applied to these, and it is the instance
+    /// `registerStorageMergeTree` starts a new table from.
+    auto enumerated = settings.enumerateSettings();
+    settings.applyConstraints(enumerated, context->getSettingsConstraintsAndCurrentProfiles()->constraints);
+    return enumerated;
+}
+
+}
+
+SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
+{
+    return enumerateServerEffective(context->getMergeTreeSettings(), context);
+}
+
+SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
+{
+    /// The replicated family reads an additional `replicated_merge_tree` config section, so its
+    /// settings differ from the rest of the family and it registers its own function.
+    return enumerateServerEffective(context->getReplicatedMergeTreeSettings(), context);
+}
+
+void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const
+{
+    for (auto & setting : settings)
+    {
+        Field min;
+        Field max;
+        std::vector<Field> disallowed;
+        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
+        constraints.get(*this, setting.name, min, max, disallowed, writability);
+
+        /// Some settings cannot be changed whatever a profile says.
+        if (isReadonlySetting(setting.name))
+            writability = SettingConstraintWritability::CONST;
+
+        if (!min.isNull())
+            setting.min_value = valueToStringUtil(setting.name, min);
+        if (!max.isNull())
+            setting.max_value = valueToStringUtil(setting.name, max);
+        for (const auto & value : disallowed)
+            setting.disallowed_values.push_back(valueToStringUtil(setting.name, value));
+        setting.readonly = writability == SettingConstraintWritability::CONST;
+    }
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
+
 }

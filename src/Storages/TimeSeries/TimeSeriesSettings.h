@@ -1,9 +1,12 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
 #include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -49,6 +52,7 @@ struct TimeSeriesSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

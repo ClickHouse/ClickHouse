@@ -196,6 +196,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = ObjectStorageQueueSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -790,6 +791,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = ObjectStorageQueueSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -1,3 +1,5 @@
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
@@ -14116,5 +14118,36 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
     return file_name;
 }
 
+
+SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
+{
+    const auto merge_tree_settings = getSettings();
+    auto settings = merge_tree_settings->enumerateSettings();
+
+    /// A `MergeTree` table starts from the server's settings, which `Context` builds by applying the
+    /// `compatibility` setting and then the config section. Only the context knows which names each
+    /// step assigned - see `Context::MergeTreeSettingsProvenance` for why it cannot be recovered here.
+    const auto provenance = query_context->getMergeTreeSettingsProvenance(supportsReplication());
+
+    for (auto & setting : settings)
+    {
+        if (setting.origin != SettingOrigin::Other)
+            continue;
+
+        /// Config before compatibility, because the config section is applied second and wins.
+        if (provenance.set_in_config.contains(setting.name))
+            setting.origin = SettingOrigin::Config;
+        else if (provenance.set_by_compatibility.contains(setting.name))
+            setting.origin = SettingOrigin::Compatibility;
+    }
+
+    /// The bounds a profile puts on these settings, reported exactly as
+    /// `system.merge_tree_settings` reports them.
+    const auto constraints_and_profiles = query_context->getSettingsConstraintsAndCurrentProfiles();
+    merge_tree_settings->applyConstraints(settings, constraints_and_profiles->constraints);
+
+    /// Last: the table's own `SETTINGS` clause is applied after everything above.
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+}
 
 }
