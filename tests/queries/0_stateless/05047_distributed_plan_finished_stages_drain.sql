@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer, no-flaky-check, no-asan, no-msan, no-tsan, no-ubsan, no-debug, no-parallel
+-- Tags: no-flaky-check, no-asan, no-msan, no-tsan, no-ubsan, no-debug, no-parallel
 -- Tag no-parallel: Checks a wall-clock duration bound that concurrent test load can invalidate.
 -- no-flaky-check, no-parallel and the sanitizer exclusions: the check below is a wall-clock
 -- bound, so it needs runs where machine time relates to real time; the flaky check runs many

@@ -110,7 +110,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -149,6 +149,23 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
+/// Must run for every reference: clones of one body can resolve differently.
+void checkMaterializedCTESubqueryIsNotCorrelated(
+    const QueryTreeNodePtr & subquery,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node)
+{
+    const bool is_correlated = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->isCorrelated()
+        : subquery->as<UnionNode>()->isCorrelated();
+    if (is_correlated)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Materialized CTE '{}' cannot be correlated. In scope {}",
+            cte_name,
+            scope_node->formatASTForErrorMessage());
+}
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
@@ -276,7 +293,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
     }
 
-    validateCorrelatedSubqueries(node);
+    validateCorrelatedSubqueries(node, scope.context);
     inlineMaterializedCTEIfNeeded(node, context);
 }
 
@@ -322,7 +339,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    validateCorrelatedSubqueries(node);
+    validateCorrelatedSubqueries(node, scope.context);
 }
 
 static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
@@ -1440,11 +1457,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         return resolve_result;
 
     CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
-    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-            " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
             identifier_lookup.identifier.getFullName(),
             resolved_identifier->formatASTForErrorMessage(),
             fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
@@ -1564,7 +1581,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                   */
                 bool alias_can_take_over = can_check_aliases
                     && identifier_lookup.isExpressionLookup()
-                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
 
                 if (alias_can_take_over)
                 {
@@ -3380,14 +3397,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
 
-                            const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
-                                ? mat_subquery->as<QueryNode>()->isCorrelated()
-                                : mat_subquery->as<UnionNode>()->isCorrelated();
-                            if (mat_subquery_is_correlated)
-                                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                                    "Materialized CTE '{}' cannot be correlated. In scope {}",
-                                    materialized_cte_ptr->cte_name,
-                                    scope.scope_node->formatASTForErrorMessage());
+                            checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
 
                         /// Create temp table only if no other clone has done it yet.
@@ -6122,14 +6132,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     if (cte_map_node)
                         ctes_in_resolve_process.erase(cte_map_node);
 
-                    bool is_correlated = subquery->as<QueryNode>()
-                        ? subquery->as<QueryNode>()->isCorrelated()
-                        : subquery->as<UnionNode>()->isCorrelated();
-                    if (is_correlated)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Materialized CTE '{}' cannot be correlated. In scope {}",
-                            cte_name,
-                            scope.scope_node->formatASTForErrorMessage());
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
 
                     const auto & projection_columns = subquery->as<QueryNode>()
                         ? subquery->as<QueryNode>()->getProjectionColumns()
@@ -6156,6 +6159,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    /// A clone can resolve correlated even when the storage-initializing clone did not
+                    /// (identifiers may bind to outer scope here). The first-reference branch above
+                    /// already rejects correlation; this branch must do the same.
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(

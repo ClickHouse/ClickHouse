@@ -481,13 +481,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     const WrittenOffsetSubstreams & offset_substreams)
 {
     StreamsWithMarks result;
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    UInt64 min_compress_block_size = 0;
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            min_compress_block_size = value->safeGet<UInt64>();
-    if (!min_compress_block_size)
-        min_compress_block_size = settings.min_compress_block_size;
+    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
 
     auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -578,6 +572,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+    serialize_settings.min_compress_block_size = settings.min_compress_block_size;
     return serialize_settings;
 }
 
@@ -611,6 +606,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+    serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         auto stream_name = getStreamName(name_and_type, substream_path);
