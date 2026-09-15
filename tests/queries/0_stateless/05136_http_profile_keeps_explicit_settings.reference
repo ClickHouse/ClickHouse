@@ -1,0 +1,26 @@
+-- no profile
+true	true
+-- the profile alone moves both settings
+false	5
+-- an explicit value equal to the pre-profile value survives
+true	5
+-- an explicit value different from the pre-profile value survives
+false	7
+-- both at once
+true	7
+-- a profile after the setting still wins
+false	5
+-- a profile carrying compatibility still reverts the setting on its own
+false
+-- but it does not revert a value the same request set explicitly
+true
+-- an explicit run_query_in_background=0 keeps the query in the foreground
+42
+-- SET in one statement is unaffected
+true	5
+-- a profile in a subquery's SETTINGS clause keeps the explicit values too
+true	5
+-- a setting a query may not set is not restored over the profile
+1
+-- and a genuine attempt to set it from a query is still rejected
+READONLY
