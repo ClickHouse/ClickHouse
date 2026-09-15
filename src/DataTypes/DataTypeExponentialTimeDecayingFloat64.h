@@ -56,6 +56,7 @@ public:
 
     String getName() const override;
     std::optional<Field> getDefault() const override;
+    bool useCustomNameForTypeIdentity() const override { return true; }
     Float64 getDecayLength() const { return decay_length; }
 
 private:
