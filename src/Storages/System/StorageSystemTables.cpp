@@ -61,7 +61,6 @@ namespace Setting
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
-
 namespace detail
 {
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)

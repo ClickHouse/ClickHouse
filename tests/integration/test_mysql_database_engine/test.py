@@ -112,10 +112,12 @@ def test_table_settings_for_mysql_database(started_cluster):
         )
         assert "connection_pool_size" in settings
 
-        # The statement reaches them too, and does so without the caller having to know that a
-        # setting governs whether the database is visible at all.
+        # The statement reaches them even when the caller has remote databases hidden: naming one turns
+        # `show_remote_databases_in_system_tables` on for that statement. The setting is on by default, so
+        # it is turned off for every `SHOW TABLE SETTINGS` below - otherwise they pass without that path.
         shown = clickhouse_node.query(
-            "SHOW TABLE SETTINGS FROM test_settings_database.t"
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            settings={"show_remote_databases_in_system_tables": 0},
         )
         assert "connection_pool_size" in shown
 
@@ -129,7 +131,7 @@ def test_table_settings_for_mysql_database(started_cluster):
         # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
         # That must not also hand out rows the user has no `SHOW TABLES` for: it runs on a copy of
         # the caller's context, so the grant still decides. Proven here rather than in a stateless
-        # test because only a reachable remote database exercises the enabling path at all.
+        # test because only a reachable remote database has rows for the enabling path to reveal.
         clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
         clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
         clickhouse_node.query(
@@ -145,6 +147,7 @@ def test_table_settings_for_mysql_database(started_cluster):
         denied_show = clickhouse_node.query(
             "SHOW TABLE SETTINGS FROM test_settings_database.t",
             user="mysql_settings_denied",
+            settings={"show_remote_databases_in_system_tables": 0},
         )
         assert denied_show.strip() == ""
 
@@ -154,6 +157,7 @@ def test_table_settings_for_mysql_database(started_cluster):
         granted_show = clickhouse_node.query(
             "SHOW TABLE SETTINGS FROM test_settings_database.t",
             user="mysql_settings_denied",
+            settings={"show_remote_databases_in_system_tables": 0},
         )
         assert "connection_pool_size" in granted_show
 
