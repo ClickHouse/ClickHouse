@@ -44,6 +44,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -476,8 +477,12 @@ public:
         , max_size(max_size_)
     {}
 
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        /// See `skipGroupingSpecializationState`.
+        if (grouping_state_arguments.contains(child))
+            return false;
+
         if (auto * function_node = parent->as<FunctionNode>())
         {
             /// Do not traverse into `__getScalar` - it's already been processed.
@@ -525,6 +530,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * function_node = node->as<FunctionNode>())
+            skipGroupingSpecializationState(*function_node);
+
         // Do not visit second argument of "in" functions
         if (!in_second_argument.empty() && in_second_argument.top() == node)
         {
@@ -580,8 +588,23 @@ public:
     }
 
 private:
+    /// `removeGroupingFunctionSpecializations` erases these arguments before the query text is built, but
+    /// it recognises the call by them being `ConstantNode`s, so a `__getScalar` here instead ships the
+    /// specialization and its virtual `__grouping_set` argument to a shard that cannot resolve them.
+    void skipGroupingSpecializationState(const FunctionNode & function_node)
+    {
+        const auto shape = getAnalyzerBuiltGroupingSpecialization(function_node);
+        if (!shape)
+            return;
+
+        const auto & arguments = function_node.getArguments().getNodes();
+        for (size_t i = arguments.size() - shape->num_state_arguments; i < arguments.size(); ++i)
+            grouping_state_arguments.insert(arguments[i]);
+    }
+
     Int64 max_size = 0;
     std::stack<QueryTreeNodePtr> in_second_argument;
+    std::unordered_set<QueryTreeNodePtr> grouping_state_arguments;
 };
 
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
