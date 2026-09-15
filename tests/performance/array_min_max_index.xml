@@ -26,6 +26,12 @@
                 <value>256</value>
                 <value>257</value>
                 <value>1024</value>
+                <value>4095</value>
+                <value>4096</value>
+                <value>4097</value>
+                <value>8191</value>
+                <value>8192</value>
+                <value>8193</value>
                 <value>16383</value>
                 <value>16384</value>
                 <value>16385</value>
