@@ -544,8 +544,10 @@ static void splitAndModifyMutationCommands(
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
 
-                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
+                    /// `ATTACH`/`REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` stamp the destination's
+                    /// version on a part that keeps the source's columns and require matching structures, so
+                    /// an equal version with the column absent means it is in no schema at all.
+                    if (part_metadata_version <= table_metadata_version)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
@@ -560,13 +562,12 @@ static void splitAndModifyMutationCommands(
                                         part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
 
-                    /// Without a metadata version to reason with there is nothing else to go on: the column
-                    /// is on disk, the table does not have it, and reads and merges already ignore it. This is
-                    /// what a partition that was detached before `DROP COLUMN` and re-attached after it looks
-                    /// like. Reading it would add a `READ_COLUMN` command below, whose identifier the mutation
-                    /// then resolves against the table and fails with `UNKNOWN_IDENTIFIER` - for every mutation
-                    /// of that part, so the mutation queue stays wedged until the part is merged or dropped.
-                    /// Skip the column here as well and let the rewrite drop it.
+                    /// The part is ahead of a table that has no metadata version to reason with, so there is
+                    /// nothing else to go on: the column is on disk, the table does not have it, and reads and
+                    /// merges already ignore it. Reading it would add a `READ_COLUMN` command below, whose
+                    /// identifier the mutation then resolves against the table and fails with
+                    /// `UNKNOWN_IDENTIFIER` - for every mutation of that part, so the mutation queue stays
+                    /// wedged until the part is merged or dropped. Skip the column and let the rewrite drop it.
                     LOG_WARNING(log, "Ignoring column {} from part {} because there is no such column in table {}. "
                                      "Assuming the column was dropped", column.name, part->name,
                                 part->storage.getStorageID().getNameForLogs());
