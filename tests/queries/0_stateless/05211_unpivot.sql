@@ -81,6 +81,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t UNPIVOT (v 
 
 SELECT '-- errors';
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (nope)); -- { serverError UNKNOWN_IDENTIFIER }
+-- A listed column has to be a column of the source, not something an enclosing scope happens to bind.
+WITH 42 AS jan SELECT * FROM (SELECT 1 AS x) UNPIVOT (sales FOR month IN (jan)); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN ()); -- { clientError SYNTAX_ERROR }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan + 1)); -- { clientError SYNTAX_ERROR }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month); -- { clientError SYNTAX_ERROR }

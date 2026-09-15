@@ -950,6 +950,9 @@ ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression, const A
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
     except_transformer->children = excepted->children;
+    /// Strict, so that a listed column the source does not have is an error here rather than an
+    /// identifier that goes looking for a match in an enclosing scope and unpivots an alias.
+    except_transformer->is_strict = true;
     transformers->children.push_back(except_transformer);
     asterisk->transformers = transformers;
     asterisk->children.push_back(transformers);
