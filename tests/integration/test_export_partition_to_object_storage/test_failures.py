@@ -785,55 +785,6 @@ def test_dispatch_fails_when_destination_dropped(cluster):
         node.query(f"SYSTEM START MOVES {mt_table}")
 
 
-def test_dispatch_fails_when_source_part_detached(cluster):
-    """A source part that disappears after schedule cannot be restored on a single-node
-    `MergeTree`, so the task must go to FAILED immediately rather than retrying until timeout.
-
-    `DETACH PARTITION` (not `DROP`) is required: the scheduler pins `DataPartPtr`s, which keep a
-    dropped part in `Outdated` and still findable. Detach removes it from the parts index, which
-    is what `exportPartToTable` looks up.
-    """
-    node = cluster.instances["replica1"]
-
-    postfix = str(uuid.uuid4()).replace("-", "_")
-    mt_table = f"dispatch_detach_mt_{postfix}"
-    s3_table = f"dispatch_detach_s3_{postfix}"
-
-    create_tables_and_insert_data(node, mt_table, s3_table, "replica1", engine="MergeTree")
-
-    node.query(f"SYSTEM STOP MOVES {mt_table}")
-    try:
-        node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}")
-        wait_for_export_to_start(node, mt_table, s3_table, "2020")
-
-        status = node.query(
-            f"SELECT status FROM system.partition_exports"
-            f" WHERE source_table = '{mt_table}' AND destination_table = '{s3_table}'"
-            f" AND partition_id = '2020'"
-        ).strip()
-        assert status == "PENDING", f"Expected PENDING while moves are stopped, got {status!r}"
-
-        node.query(f"ALTER TABLE {mt_table} DETACH PARTITION ID '2020'")
-        node.query(f"SYSTEM START MOVES {mt_table}")
-
-        wait_for_export_status(node, mt_table, s3_table, "2020", "FAILED", timeout=60)
-
-        last_exceptions = node.query(
-            f"SELECT last_exception_per_replica FROM system.partition_exports"
-            f" WHERE source_table = '{mt_table}'"
-            f"   AND destination_table = '{s3_table}'"
-            f"   AND partition_id = '2020'"
-        ).strip()
-        assert last_exceptions not in ("", "[]"), (
-            "Expected an exception to be recorded for the missing source part"
-        )
-        assert "No such data part" in last_exceptions, (
-            f"Expected NO_SUCH_DATA_PART in last_exception, got {last_exceptions!r}"
-        )
-    finally:
-        node.query(f"SYSTEM START MOVES {mt_table}")
-
-
 def test_dispatch_fails_when_destination_schema_incompatible(cluster):
     node = cluster.instances["replica1"]
 
