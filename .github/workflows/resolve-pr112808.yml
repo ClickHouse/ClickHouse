@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2000
+          fetch-depth: 1
           filter: blob:none
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -34,25 +34,25 @@ jobs:
           git config user.name clickhouse-gh
           git config user.email clickhouse-gh@users.noreply.github.com
           git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
-          git fetch --no-tags --filter=blob:none --depth=2000 upstream master
-          depth=2000
-          while ! git merge-base HEAD upstream/master >/dev/null 2>&1; do
-            if (( depth >= 16000 )); then
-              echo 'Unable to reach merge base with bounded shallow history.' >&2
-              exit 1
-            fi
-            git fetch --no-tags --filter=blob:none --deepen=2000 origin agent/refreshable-mv-workload
-            git fetch --no-tags --filter=blob:none --deepen=2000 upstream master
-            depth=$((depth + 2000))
-          done
-          if git merge-base --is-ancestor upstream/master HEAD; then
-            echo 'upstream/master is already merged'
-            exit 0
-          fi
+
+          head=$(git rev-parse HEAD)
+          git fetch --no-tags --filter=blob:none --depth=1 upstream master
+          master=$(git rev-parse FETCH_HEAD)
+          merge_base=79305ee77d5b450e827ac16ea1126701c3b076f2
+          git fetch --no-tags --filter=blob:none --depth=1 upstream "$merge_base"
+
+          # We already know the exact merge base from GitHub's compare API. Teach this shallow
+          # checkout only the ancestry needed for a normal recursive three-way merge; the resulting
+          # commit is still verified to have the real branch/master tips as its two parents.
+          git replace --graft "$head" "$merge_base"
+          git replace --graft "$master" "$merge_base"
+          test "$(git merge-base "$head" "$master")" = "$merge_base"
+
           set +e
-          git merge --no-commit --no-ff upstream/master
+          git merge --no-commit --no-ff "$master"
           merge_rc=$?
           set -e
+
           expected=(src/Core/Settings.cpp src/Core/SettingsChangesHistory.cpp src/Storages/MaterializedView/RefreshTask.cpp src/Storages/MaterializedView/RefreshTask.h src/Storages/StorageMaterializedView.cpp src/Storages/StorageMaterializedView.h)
           if (( merge_rc != 0 )); then
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
@@ -62,6 +62,7 @@ jobs:
             fi
             git checkout --theirs -- "${expected[@]}"
           fi
+
           python3 .github/scripts/resolve-pr112808.py
           git add "${expected[@]}"
           if git diff --name-only --diff-filter=U | grep -q .; then
@@ -70,7 +71,11 @@ jobs:
           fi
           ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' "${expected[@]}"
           git diff --check
-          git status --short
-          git diff --cached --stat
+
           git commit -m 'Merge upstream master into RMV workload branch'
+          merged=$(git rev-parse HEAD)
+          mapfile -t parents < <(git cat-file -p "$merged" | sed -n 's/^parent //p')
+          test "${#parents[@]}" -eq 2
+          test "${parents[0]}" = "$head"
+          test "${parents[1]}" = "$master"
           git push origin HEAD:agent/refreshable-mv-workload
