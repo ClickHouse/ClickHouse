@@ -1,0 +1,10 @@
+the mutation is pending	1
+the values a read sees	[10,11,100]
+the first part	1
+the first part, without pruning	1
+the second part	1
+the second part, without pruning	1
+a range	2
+a value that is really absent	0
+after the mutation materialized	1
+the statistics prune again	0
