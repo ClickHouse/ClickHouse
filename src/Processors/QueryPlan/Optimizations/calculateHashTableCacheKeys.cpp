@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Core/ProtocolDefines.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
@@ -13,7 +14,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>

@@ -107,7 +107,7 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override;
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
