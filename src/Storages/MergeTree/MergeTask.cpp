@@ -128,7 +128,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -152,7 +151,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
     extern const MergeTreeSettingsBool vertical_merge_remote_filesystem_prefetch;
-    extern const MergeTreeSettingsUInt64 vertical_merge_tuple_subcolumns_prefetch_units;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -1143,7 +1141,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end());
             MergeTreeDataPartsVector classify_patch_parts(
                 global_ctx->future_part->patch_parts.begin(), global_ctx->future_part->patch_parts.end());
-            global_ctx->tuple_subcolumns_classify_results = classifyVerticalMergeTupleSubcolumns(
+            auto classify_results = classifyVerticalMergeTupleSubcolumns(
                 *global_ctx->data_settings,
                 global_ctx->gathering_columns,
                 global_ctx->merging_columns,
@@ -1154,17 +1152,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 global_ctx->new_data_part->expired_columns,
                 ctx->log);
             applyVerticalMergeTupleSubcolumns(
-                global_ctx->tuple_subcolumns_classify_results,
+                classify_results,
                 global_ctx->gathering_columns,
-                global_ctx->gathering_units,
                 global_ctx->skip_indexes_by_column,
                 ctx->log);
-
-            if (global_ctx->gathering_units.empty() && !global_ctx->gathering_columns.empty())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Vertical merge gathering_units is empty while gathering_columns has {} entries",
-                    global_ctx->gathering_columns.size());
 
             ctx->rows_sources_temporary_file = std::make_shared<RowsSourcesTemporaryFile>(global_ctx->context->getTempDataOnDisk());
 
@@ -1172,37 +1163,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 
-            NamesAndTypesList gathering_for_progress;
-            for (const auto & unit : global_ctx->gathering_units)
+            for (const auto & column : global_ctx->gathering_columns)
             {
-                if (unit.columns.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GatherUnit {} has no columns", unit.id);
+                if (!column.isSubcolumn())
+                    continue;
 
                 UInt64 size = 0;
-                if (unit.kind == GatherUnit::Kind::StorageColumn)
-                {
-                    auto it = local_merged_column_to_size.find(unit.id);
-                    if (it != local_merged_column_to_size.end())
-                        size = it->second;
-                }
-                else
-                {
-                    for (const auto & pair : unit.columns)
-                    {
-                        UInt64 leaf_size = 0;
-                        for (const auto & part : global_ctx->future_part->parts)
-                            leaf_size = part->getSubcolumnSize(pair.name).data_compressed;
-                        size += leaf_size;
-                    }
-                }
-                local_merged_column_to_size[unit.id] = size;
-                gathering_for_progress.emplace_back(unit.id, unit.columns.front().type);
+                for (const auto & part : global_ctx->future_part->parts)
+                    size += part->getSubcolumnSize(column.name).data_compressed;
+                local_merged_column_to_size[column.name] = size;
             }
 
             ctx->column_sizes = ColumnSizeEstimator(
                 std::move(local_merged_column_to_size),
                 global_ctx->merging_columns,
-                gathering_for_progress);
+                global_ctx->gathering_columns);
 
             break;
         }
@@ -2011,7 +1986,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
                         sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
 
-    ctx->it_gather_unit = global_ctx->gathering_units.cbegin();
+    ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
     const auto & storage_settings = *global_ctx->data_settings;
 
@@ -2021,8 +1996,8 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
-    if (ctx->use_prefetch && ctx->it_gather_unit != global_ctx->gathering_units.end())
-        refillPreparedPipelines(/*include_current=*/ true);
+    if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
+        ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
 
     return false;
 }
@@ -2037,13 +2012,13 @@ public:
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
-        std::vector<UInt8> is_result_sparse_)
+        bool is_result_sparse_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
-        , is_result_sparse(std::move(is_result_sparse_))
+        , is_result_sparse(is_result_sparse_)
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -2096,21 +2071,12 @@ private:
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
-    const std::vector<UInt8> is_result_sparse;
+    const bool is_result_sparse;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
-    return createPipelineForUnit(Names{column_name});
-}
-
-MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
-MergeTask::VerticalMergeStage::createPipelineForUnit(const Names & column_names) const
-{
-    if (column_names.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create a vertical merge pipeline for an empty GatherUnit");
-
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -2131,7 +2097,7 @@ MergeTask::VerticalMergeStage::createPipelineForUnit(const Names & column_names)
             RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
-            column_names,
+            Names{column_name},
             global_ctx->input_rows_filtered,
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
@@ -2178,49 +2144,28 @@ MergeTask::VerticalMergeStage::createPipelineForUnit(const Names & column_names)
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        std::vector<UInt8> is_result_sparse;
-        is_result_sparse.reserve(column_names.size());
-        for (const auto & column_name : column_names)
-        {
-            is_result_sparse.push_back(static_cast<UInt8>(ISerialization::hasKind(
-                global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE)));
-        }
+        bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
-            std::move(is_result_sparse));
+            is_result_sparse);
 
         merge_step->setStepDescription("Gather column");
         merge_column_query_plan.addStep(std::move(merge_step));
     }
 
-    /// Add expression step for indexes.
-    /// `IMergeTreeIndex::index` is a reference into the `IndexDescription` passed to `getMany`.
-    /// Call `getMany` on the live `skip_indexes_by_column` entries (they outlive the writer).
-    /// A local `IndicesDescription` copy is only safe for `addSkipIndexesExpressionSteps`,
-    /// which clones the expression DAG.
+    /// Add expression step for indexes
     MergeTreeIndices indexes_to_recalc;
-    IndicesDescription indexes_desc;
-    for (const auto & column_name : column_names)
+    auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
+
+    if (indexes_it != global_ctx->skip_indexes_by_column.end())
     {
-        auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
-        if (indexes_it == global_ctx->skip_indexes_by_column.end())
-            continue;
-
-        for (const auto & index : indexes_it->second)
-            indexes_desc.push_back(index);
-
-        auto more = MergeTreeIndexFactory::instance().getMany(
-            global_ctx->metadata_snapshot, indexes_it->second, *global_ctx->data_settings);
-        for (auto & index_ptr : more)
-            indexes_to_recalc.push_back(std::move(index_ptr));
+        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, indexes_it->second, *global_ctx->data_settings);
+        addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
     }
-
-    if (!indexes_desc.empty())
-        addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_desc, global_ctx);
 
     /// If merge may reduce rows, rebuild text indexes and statistics for the resulting part.
     if (global_ctx->merge_may_reduce_rows)
@@ -2239,80 +2184,26 @@ MergeTask::VerticalMergeStage::createPipelineForUnit(const Names & column_names)
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc), std::move(column_build_statistics_transforms)};
 }
 
-size_t MergeTask::VerticalMergeStage::prefetchWindowSize() const
-{
-    const auto next = std::next(ctx->it_gather_unit);
-    if (next == global_ctx->gathering_units.end())
-        return 0;
-
-    const UInt64 configured = (*global_ctx->data_settings)[MergeTreeSetting::vertical_merge_tuple_subcolumns_prefetch_units];
-
-    size_t sibling_count = 0;
-    if (ctx->it_gather_unit->kind != GatherUnit::Kind::StorageColumn)
-    {
-        for (auto unit_it = next;
-             unit_it != global_ctx->gathering_units.end()
-                 && unit_it->kind != GatherUnit::Kind::StorageColumn
-                 && unit_it->parent == ctx->it_gather_unit->parent;
-             ++unit_it)
-        {
-            ++sibling_count;
-        }
-    }
-
-    size_t window = 1;
-    if (configured == 0)
-        window = std::max(sibling_count, size_t(1));
-    else
-        window = std::max(size_t(1), std::min(static_cast<size_t>(configured), std::max(sibling_count, size_t(1))));
-
-    const size_t fs_limit = global_ctx->context->getSettingsRef()[Setting::filesystem_prefetches_limit];
-    if (fs_limit)
-        window = std::min(window, fs_limit);
-
-    const size_t remaining = static_cast<size_t>(std::distance(next, global_ctx->gathering_units.cend()));
-    return std::min(window, remaining);
-}
-
-void MergeTask::VerticalMergeStage::refillPreparedPipelines(bool include_current) const
-{
-    if (!ctx->use_prefetch)
-        return;
-
-    size_t want = prefetchWindowSize();
-    auto unit_it = std::next(ctx->it_gather_unit);
-    if (include_current)
-    {
-        ++want;
-        unit_it = ctx->it_gather_unit;
-    }
-
-    std::advance(unit_it, ctx->prepared_pipelines.size());
-    while (ctx->prepared_pipelines.size() < want && unit_it != global_ctx->gathering_units.end())
-    {
-        ctx->prepared_pipelines.push_back(createPipelineForUnit(unit_it->columns.getNames()));
-        ++unit_it;
-    }
-}
-
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
-    const auto & unit = *ctx->it_gather_unit;
+    const auto & column = *ctx->it_name_and_type;
 
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
-    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(unit.id));
+    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column.name));
 
     VerticalMergeRuntimeContext::PreparedColumnPipeline column_pipepline;
-    if (!ctx->prepared_pipelines.empty())
+    if (ctx->prepared_pipeline)
     {
-        column_pipepline = std::move(ctx->prepared_pipelines.front());
-        ctx->prepared_pipelines.pop_front();
-        refillPreparedPipelines(/*include_current=*/ false);
+        column_pipepline = std::move(*ctx->prepared_pipeline);
+
+        /// Prepare next column pipeline to initiate prefetching
+        auto next_column_it = std::next(ctx->it_name_and_type);
+        if (next_column_it != global_ctx->gathering_columns.end())
+            ctx->prepared_pipeline = createPipelineForReadingOneColumn(next_column_it->name);
     }
     else
     {
-        column_pipepline = createPipelineForUnit(unit.columns.getNames());
-        refillPreparedPipelines(/*include_current=*/ false);
+        column_pipepline = createPipelineForReadingOneColumn(column.name);
     }
 
     ctx->build_statistics_transforms = std::move(column_pipepline.build_statistics_transforms);
@@ -2329,12 +2220,13 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->column_parts_pipeline.disableProfileEventUpdate();
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
-    NamesAndTypesList columns_list = unit.columns;
+    NamesAndTypesList columns_list = {column};
 
     std::optional<size_t> adaptive_buffer_stream_count;
-    if (unit.kind != GatherUnit::Kind::StorageColumn)
+    if (column.isSubcolumn())
     {
-        auto cached = ctx->parent_stream_counts.find(unit.parent);
+        const String parent_name = column.getNameInStorage();
+        auto cached = ctx->parent_stream_counts.find(parent_name);
         if (cached != ctx->parent_stream_counts.end())
         {
             adaptive_buffer_stream_count = cached->second;
@@ -2342,11 +2234,11 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         else
         {
             const NameAndTypePair * parent = nullptr;
-            for (const auto & column : global_ctx->storage_columns)
+            for (const auto & storage_column : global_ctx->storage_columns)
             {
-                if (column.name == unit.parent)
+                if (storage_column.name == parent_name)
                 {
-                    parent = &column;
+                    parent = &storage_column;
                     break;
                 }
             }
@@ -2354,9 +2246,9 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             {
                 const size_t stream_count = countFlattenedTupleParentStreams(
                     *parent,
-                    global_ctx->new_data_part->getSerialization(unit.parent),
+                    global_ctx->new_data_part->getSerialization(parent_name),
                     *global_ctx->data_settings);
-                ctx->parent_stream_counts.emplace(unit.parent, stream_count);
+                ctx->parent_stream_counts.emplace(parent_name, stream_count);
                 adaptive_buffer_stream_count = stream_count;
             }
         }
@@ -2408,9 +2300,6 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             return false;
         }
 
-        if (block.columns() > 1)
-            block.checkNumberOfRows();
-
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
     } while (watch.elapsedMilliseconds() < step_time_ms);
@@ -2425,11 +2314,11 @@ void MergeTask::VerticalMergeStage::commitPendingTupleGroupIfComplete(bool force
     if (ctx->pending_tuple_parent.empty())
         return;
 
-    auto next = std::next(ctx->it_gather_unit);
+    auto next = std::next(ctx->it_name_and_type);
     const bool group_complete = force
-        || next == global_ctx->gathering_units.end()
-        || next->kind == GatherUnit::Kind::StorageColumn
-        || next->parent != ctx->pending_tuple_parent;
+        || next == global_ctx->gathering_columns.end()
+        || !next->isSubcolumn()
+        || next->getNameInStorage() != ctx->pending_tuple_parent;
 
     if (!group_complete)
         return;
@@ -2474,8 +2363,8 @@ void MergeTask::VerticalMergeStage::commitPendingTupleGroupIfComplete(bool force
 
 void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
-    const auto & unit = *ctx->it_gather_unit;
-    const String & column_name = unit.id;
+    const auto & column = *ctx->it_name_and_type;
+    const String & column_name = column.name;
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
@@ -2483,19 +2372,20 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     ctx->column_to->finalizeIndexGranularity();
 
-    const bool flattened_leaf = unit.kind != GatherUnit::Kind::StorageColumn;
+    const bool flattened_leaf = column.isSubcolumn();
     if (flattened_leaf)
     {
         auto changed_checksums = ctx->column_to->collectChecksums(global_ctx->new_data_part->checksums);
         global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
 
+        const String parent_name = column.getNameInStorage();
         if (ctx->pending_tuple_parent.empty())
-            ctx->pending_tuple_parent = unit.parent;
-        else if (ctx->pending_tuple_parent != unit.parent)
+            ctx->pending_tuple_parent = parent_name;
+        else if (ctx->pending_tuple_parent != parent_name)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Flattened Tuple units must be consecutive, got parent {} after {}",
-                unit.parent,
+                parent_name,
                 ctx->pending_tuple_parent);
 
         for (const auto & [name, info] : ctx->column_to->getNewSerializationInfos())
@@ -2549,7 +2439,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
         commitPendingTupleGroupIfComplete(/*force=*/ false);
 
     /// This is the external loop increment.
-    ++ctx->it_gather_unit;
+    ++ctx->it_name_and_type;
 }
 
 
@@ -2572,9 +2462,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 {
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
-        const size_t gathered_count = global_ctx->gathering_units.empty()
-            ? global_ctx->gathering_columns.size()
-            : global_ctx->gathering_units.size();
+        const size_t gathered_count = global_ctx->gathering_columns.size();
         ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
         ProfileEvents::increment(ProfileEvents::GatheredColumns, gathered_count);
 
@@ -2791,8 +2679,8 @@ void MergeTask::VerticalMergeStage::cancel() noexcept
     if (ctx->column_to)
         ctx->column_to->cancel();
 
-    for (auto & prepared : ctx->prepared_pipelines)
-        prepared.pipeline.cancel();
+    if (ctx->prepared_pipeline.has_value())
+        ctx->prepared_pipeline->pipeline.cancel();
 
     for (auto & stream : ctx->delayed_streams)
         stream->cancel();
@@ -2996,7 +2884,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
         return false;
 
     /// This is the external cycle condition
-    if (ctx->it_gather_unit == global_ctx->gathering_units.end())
+    if (ctx->it_name_and_type == global_ctx->gathering_columns.end())
         return false;
 
     switch (ctx->vertical_merge_one_column_state)
@@ -3930,7 +3818,9 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
+    bool enough_ordinary_cols
+        = countGatheringColumnsForVerticalActivation(global_ctx->gathering_columns, *merge_tree_settings)
+            >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
 
     bool enough_total_rows = total_rows_count >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate];
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <list>
 #include <memory>
 
@@ -243,8 +242,6 @@ private:
         bool is_explicit_recompression{false};
 
         NamesAndTypesList gathering_columns{};
-        std::vector<GatherUnit> gathering_units;
-        std::vector<TupleSubcolumnsClassifyResult> tuple_subcolumns_classify_results;
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
@@ -418,7 +415,7 @@ private:
         /// Begin dependencies from previous stage
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
-        std::vector<GatherUnit>::const_iterator it_gather_unit;
+        std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
@@ -434,8 +431,8 @@ private:
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
 
-        /// Used for prefetching. Pipelines for the current unit and a window of upcoming
-        /// sibling units; creating a pipeline initiates prefetch of its first range.
+        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
+        /// and it initiates prefetching of the first range of that column.
         struct PreparedColumnPipeline
         {
             QueryPipeline pipeline;
@@ -443,7 +440,7 @@ private:
             BuildStatisticsTransformMap build_statistics_transforms;
         };
 
-        std::deque<PreparedColumnPipeline> prepared_pipelines;
+        std::optional<PreparedColumnPipeline> prepared_pipeline;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
@@ -496,9 +493,6 @@ private:
         void finalizeVerticalMergeForOneColumn() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
-        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForUnit(const Names & column_names) const;
-        size_t prefetchWindowSize() const;
-        void refillPreparedPipelines(bool include_current) const;
         void commitPendingTupleGroupIfComplete(bool force) const;
 
         VerticalMergeRuntimeContextPtr ctx;

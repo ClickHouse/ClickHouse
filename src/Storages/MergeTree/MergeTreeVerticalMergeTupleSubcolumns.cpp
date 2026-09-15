@@ -2,9 +2,6 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -18,7 +15,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <optional>
 
 #include <fmt/format.h>
@@ -35,34 +31,10 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_vertical_merge_tuple_subcolumns;
-    extern const MergeTreeSettingsUInt64 vertical_merge_tuple_subcolumns_fat_threshold_bytes;
 }
 
 namespace
 {
-
-String gatherUnitKindToString(GatherUnit::Kind kind)
-{
-    switch (kind)
-    {
-        case GatherUnit::Kind::StorageColumn:
-            return "StorageColumn";
-        case GatherUnit::Kind::FatLeaf:
-            return "FatLeaf";
-        case GatherUnit::Kind::TinyLeafBatch:
-            return "TinyLeafBatch";
-    }
-}
-
-GatherUnit makeStorageColumnUnit(const NameAndTypePair & column)
-{
-    GatherUnit unit;
-    unit.id = column.name;
-    unit.parent = column.getNameInStorage();
-    unit.columns = NamesAndTypesList{column};
-    unit.kind = GatherUnit::Kind::StorageColumn;
-    return unit;
-}
 
 NameSet namesOf(const NamesAndTypesList & columns)
 {
@@ -179,153 +151,6 @@ bool anySourceOrPatchCannotReadLeaves(
     return check_parts(parts) || check_parts(patch_parts);
 }
 
-size_t maxMarkRows(const IMergeTreeDataPart & part)
-{
-    if (!part.index_granularity)
-        return 0;
-
-    const auto & granularity = *part.index_granularity;
-    const size_t marks = granularity.getMarksCountWithoutFinal();
-    size_t max_rows = 0;
-    for (size_t i = 0; i < marks; ++i)
-        max_rows = std::max(max_rows, granularity.getMarkRows(i));
-    return max_rows;
-}
-
-bool tryFixedWidthChunk(const DataTypePtr & type, size_t max_mark_rows, UInt64 & chunk)
-{
-    if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
-    {
-        chunk = static_cast<UInt64>(max_mark_rows) * fixed_string->getN();
-        return true;
-    }
-
-    if (type->isValueRepresentedByNumber() && !type->haveSubtypes())
-    {
-        chunk = static_cast<UInt64>(max_mark_rows) * type->getSizeOfValueInMemory();
-        return true;
-    }
-
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        UInt64 nested_chunk = 0;
-        if (!tryFixedWidthChunk(nullable->getNestedType(), max_mark_rows, nested_chunk))
-            return false;
-        chunk = static_cast<UInt64>(max_mark_rows) + nested_chunk;
-        return true;
-    }
-
-    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        const auto & dictionary_type = low_cardinality->getDictionaryType();
-        DataTypePtr nested = dictionary_type;
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(dictionary_type.get()))
-            nested = nullable->getNestedType();
-
-        if (!nested->isValueRepresentedByNumber() || nested->haveSubtypes())
-            return false;
-
-        chunk = static_cast<UInt64>(max_mark_rows) * nested->getSizeOfValueInMemory()
-            + static_cast<UInt64>(max_mark_rows) * sizeof(UInt64);
-        return true;
-    }
-
-    return false;
-}
-
-bool collectLeafStreamUncompressedSize(
-    const NameAndTypePair & leaf,
-    const IMergeTreeDataPart & part,
-    const MergeTreeSettings & settings,
-    UInt64 & uncompressed_size)
-{
-    auto serialization = leaf.type->getDefaultSerialization();
-    ISerialization::EnumerateStreamsSettings enumerate_settings;
-    enumerate_settings.enumerate_dynamic_streams = false;
-
-    ISerialization::StreamFileNameSettings file_name_settings(settings);
-    bool missing = false;
-    UInt64 sum = 0;
-
-    serialization->enumerateStreams(
-        enumerate_settings,
-        [&](const ISerialization::SubstreamPath & path)
-        {
-            if (ISerialization::isEphemeralSubcolumn(path, path.size()))
-                return;
-
-            const String stream_name = ISerialization::getFileNameForStream(leaf, path, file_name_settings);
-            const String file_name = stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION;
-            auto it = part.checksums.files.find(file_name);
-            if (it == part.checksums.files.end())
-            {
-                missing = true;
-                return;
-            }
-            sum += it->second.uncompressed_size;
-        },
-        ISerialization::SubstreamData(serialization).withType(leaf.type));
-
-    if (missing)
-        return false;
-
-    uncompressed_size = sum;
-    return true;
-}
-
-/// Per-granule working set for one leaf on one Wide part. Returns false if it cannot be estimated.
-bool tryLeafWorkingSetOnPart(
-    const NameAndTypePair & leaf,
-    const IMergeTreeDataPart & part,
-    const MergeTreeSettings & settings,
-    UInt64 & working_set)
-{
-    const size_t mark_rows = maxMarkRows(part);
-    if (mark_rows == 0)
-        return false;
-
-    UInt64 fixed_chunk = 0;
-    if (tryFixedWidthChunk(leaf.type, mark_rows, fixed_chunk))
-    {
-        working_set = fixed_chunk;
-        return true;
-    }
-
-    UInt64 uncompressed_size = 0;
-    if (!collectLeafStreamUncompressedSize(leaf, part, settings, uncompressed_size))
-        return false;
-
-    working_set = uncompressed_size;
-    return true;
-}
-
-bool tryLeafWorkingSet(
-    const NameAndTypePair & leaf,
-    const MergeTreeDataPartsVector & parts,
-    const MergeTreeSettings & settings,
-    UInt64 & working_set)
-{
-    UInt64 max_chunk = 0;
-    bool any = false;
-    for (const auto & part : parts)
-    {
-        if (isCompactPart(part))
-            continue;
-
-        UInt64 chunk = 0;
-        if (!tryLeafWorkingSetOnPart(leaf, *part, settings, chunk))
-            return false;
-        max_chunk = std::max(max_chunk, chunk);
-        any = true;
-    }
-
-    if (!any)
-        return false;
-
-    working_set = max_chunk;
-    return true;
-}
-
 std::optional<NameAndTypePair> buildLeafPair(
     const ColumnsDescription & columns,
     const NameAndTypePair & parent,
@@ -357,18 +182,10 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     const NameSet & expired_columns)
 {
     TupleSubcolumnsClassifyResult result;
-    result.units = {makeStorageColumnUnit(column)};
 
     if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
     {
         result.reason = "setting_off";
-        return result;
-    }
-
-    const UInt64 fat_threshold = settings[MergeTreeSetting::vertical_merge_tuple_subcolumns_fat_threshold_bytes];
-    if (fat_threshold == 0)
-    {
-        result.reason = "fat_threshold_zero";
         return result;
     }
 
@@ -438,111 +255,56 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
         return result;
     }
 
-    struct ClassifiedLeaf
-    {
-        NameAndTypePair pair;
-        UInt64 working_set = 0;
-        bool fat = false;
-    };
-
-    std::vector<ClassifiedLeaf> classified;
-    classified.reserve(leaves.size());
-    UInt64 tiny_sum = 0;
-    bool has_fat = false;
-
-    for (const auto & leaf : leaves)
-    {
-        UInt64 working_set = 0;
-        if (!tryLeafWorkingSet(leaf, parts, settings, working_set))
-        {
-            result.reason = "cannot_estimate_working_set";
-            return result;
-        }
-
-        ClassifiedLeaf item{leaf, working_set, working_set >= fat_threshold};
-        if (item.fat)
-            has_fat = true;
-        else
-            tiny_sum += working_set;
-        classified.push_back(std::move(item));
-    }
-
-    if (!has_fat)
-    {
-        result.reason = "no_fat_leaf";
-        return result;
-    }
-
-    if (tiny_sum >= fat_threshold)
-    {
-        result.reason = "tiny_batch_at_least_fat_threshold";
-        return result;
-    }
-
     result.flatten = true;
     result.reason = "flatten";
-    result.units.clear();
-
-    NamesAndTypesList tiny_columns;
-    UInt64 tiny_working_set = 0;
-    for (const auto & item : classified)
-    {
-        if (item.fat)
-        {
-            GatherUnit unit;
-            unit.id = item.pair.name;
-            unit.parent = column.name;
-            unit.columns = NamesAndTypesList{item.pair};
-            unit.kind = GatherUnit::Kind::FatLeaf;
-            unit.working_set_bytes = item.working_set;
-            result.units.push_back(std::move(unit));
-        }
-        else
-        {
-            tiny_columns.push_back(item.pair);
-            tiny_working_set += item.working_set;
-        }
-    }
-
-    if (!tiny_columns.empty())
-    {
-        GatherUnit unit;
-        unit.id = column.name + ".#tiny";
-        unit.parent = column.name;
-        unit.columns = std::move(tiny_columns);
-        unit.kind = GatherUnit::Kind::TinyLeafBatch;
-        unit.working_set_bytes = tiny_working_set;
-        result.units.push_back(std::move(unit));
-    }
-
+    result.leaves = std::move(leaves);
     return result;
 }
 
 void logClassifyResult(LoggerPtr log, const NameAndTypePair & column, const TupleSubcolumnsClassifyResult & result)
 {
-    std::vector<String> unit_descriptions;
-    unit_descriptions.reserve(result.units.size());
-    for (const auto & unit : result.units)
-    {
-        Names names;
-        for (const auto & pair : unit.columns)
-            names.push_back(pair.name);
-        unit_descriptions.push_back(fmt::format(
-            "{}:{}:{}",
-            gatherUnitKindToString(unit.kind),
-            fmt::join(names, ","),
-            unit.working_set_bytes));
-    }
+    Names leaf_names;
+    leaf_names.reserve(result.leaves.size());
+    for (const auto & leaf : result.leaves)
+        leaf_names.push_back(leaf.name);
 
     LOG_DEBUG(
         log,
-        "Vertical merge tuple subcolumns classify: column='{}' flatten={} reason='{}' units=[{}]",
+        "Vertical merge tuple subcolumns classify: column='{}' flatten={} reason='{}' leaves=[{}]",
         column.name,
         result.flatten,
         result.reason,
-        fmt::join(unit_descriptions, "; "));
+        fmt::join(leaf_names, ", "));
 }
 
+}
+
+size_t countGatheringColumnsForVerticalActivation(
+    const NamesAndTypesList & gathering_columns,
+    const MergeTreeSettings & settings)
+{
+    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
+        return gathering_columns.size();
+
+    size_t count = 0;
+    for (const auto & column : gathering_columns)
+    {
+        const auto * tuple_type = Nested::tryGetFlattenableTuple(column.type);
+        if (!tuple_type)
+        {
+            ++count;
+            continue;
+        }
+
+        for (const auto & element : tuple_type->getElements())
+        {
+            if (Nested::tryGetFlattenableTuple(element) || element->hasDynamicSubcolumns())
+                return gathering_columns.size();
+
+            ++count;
+        }
+    }
+    return count;
 }
 
 std::vector<TupleSubcolumnsClassifyResult> classifyVerticalMergeTupleSubcolumns(
@@ -588,7 +350,7 @@ namespace
 
 bool canApplyFlatten(const TupleSubcolumnsClassifyResult & result)
 {
-    return result.flatten && !result.units.empty();
+    return result.flatten && !result.leaves.empty();
 }
 
 void rerouteSkipIndexesOntoLeaves(
@@ -703,19 +465,11 @@ ColumnsSubstreams synthesizeParentColumnsSubstreams(
 void applyVerticalMergeTupleSubcolumns(
     const std::vector<TupleSubcolumnsClassifyResult> & results,
     NamesAndTypesList & gathering_columns,
-    std::vector<GatherUnit> & gathering_units,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log)
 {
-    gathering_units.clear();
-
     if (results.empty() || results.size() != gathering_columns.size())
-    {
-        gathering_units.reserve(gathering_columns.size());
-        for (const auto & column : gathering_columns)
-            gathering_units.push_back(makeStorageColumnUnit(column));
         return;
-    }
 
     NamesAndTypesList new_gathering;
     auto result_it = results.begin();
@@ -725,28 +479,22 @@ void applyVerticalMergeTupleSubcolumns(
         if (!canApplyFlatten(result))
         {
             new_gathering.push_back(column);
-            gathering_units.push_back(makeStorageColumnUnit(column));
             continue;
         }
 
         NameSet leaf_names;
-        for (const auto & unit : result.units)
+        for (const auto & leaf : result.leaves)
         {
-            gathering_units.push_back(unit);
-            for (const auto & pair : unit.columns)
-            {
-                leaf_names.insert(pair.name);
-                new_gathering.push_back(pair);
-            }
+            leaf_names.insert(leaf.name);
+            new_gathering.push_back(leaf);
         }
 
         rerouteSkipIndexesOntoLeaves(column.name, leaf_names, skip_indexes_by_column);
 
         LOG_DEBUG(
             log,
-            "Vertical merge tuple subcolumns apply: column='{}' units={} leaves=[{}]",
+            "Vertical merge tuple subcolumns apply: column='{}' leaves=[{}]",
             column.name,
-            result.units.size(),
             fmt::join(leaf_names, ", "));
     }
 

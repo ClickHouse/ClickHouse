@@ -1801,20 +1801,11 @@ the TTL filter is evaluated and passed to the merging algorithm which sets skip 
 )", 0) \
     DECLARE(Bool, allow_experimental_vertical_merge_tuple_subcolumns, false, R"(
 When enabled, flattenable `Tuple` leaves may participate in Vertical gather as
-stream-scheduling tasks of their parent storage column. The output part schema
-does not change: `columns.txt` still lists one column. Default is disabled.
-)", 0) \
-    DECLARE(UInt64, vertical_merge_tuple_subcolumns_fat_threshold_bytes, 10 * 1024 * 1024, R"(
-Per-granule working-set cutoff that splits flattened `Tuple` leaves into
-`FatLeaf` and `TinyLeaf` units during Vertical merge. Zero disables flatten
-entirely. This setting is not a fallback for `merge_max_block_size_bytes`
-or `index_granularity_bytes`.
-)", 0) \
-    DECLARE(UInt64, vertical_merge_tuple_subcolumns_prefetch_units, 1, R"(
-How many upcoming flattened `Tuple` gather units of the same parent to prefetch
-on remote disks during Vertical merge. `1` is today's next-unit prefetch.
-`0` prefetches every remaining sibling of the current parent, capped by
-`filesystem_prefetches_limit` when that limit is non-zero.
+stream-scheduling tasks of their parent storage column. Top-level expandable
+`Tuple` fields also count toward `vertical_merge_algorithm_min_columns_to_activate`.
+A nested flattenable `Tuple` or a dynamic-subcolumn leaf falls back to counting
+storage columns. The output part schema does not change: `columns.txt` still
+lists one column. Default is disabled.
 )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.

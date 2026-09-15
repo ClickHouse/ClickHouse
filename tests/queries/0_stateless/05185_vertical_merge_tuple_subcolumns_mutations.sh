@@ -44,7 +44,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         index_granularity = 1;
 
     INSERT INTO t_text VALUES (1, ('hello', 1)), (2, ('world', 2));
@@ -69,7 +68,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         enable_block_number_column = 1,
         enable_block_offset_column = 1,
         apply_patches_on_merge = 1;
@@ -99,8 +97,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(x String, y String, z String)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_drop VALUES (1, ('a', 'b', 'c'));
     INSERT INTO t_drop VALUES (2, ('d', 'e', 'f'));
@@ -120,8 +117,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(x String, y String)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_mod VALUES (1, ('a', '10'));
     INSERT INTO t_mod VALUES (2, ('b', '20'));
@@ -144,8 +140,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(s String, n UInt8)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_ren VALUES (1, ('a', 1));
     INSERT INTO t_ren VALUES (2, ('b', 2));
@@ -169,8 +164,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(s String, n UInt8) TTL now() - INTERVAL 1 DAY
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_ttl VALUES (1, ('keep', 7));
     INSERT INTO t_ttl VALUES (2, ('gone', 8));
@@ -192,8 +186,7 @@ ${CLICKHOUSE_CLIENT} -q "
         PROJECTION p (SELECT k, t ORDER BY k)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_proj VALUES (1, ('a', 1)), (2, ('b', 2));
     INSERT INTO t_proj VALUES (3, ('c', 3)), (4, ('d', 4));
@@ -218,7 +211,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY t
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         index_granularity = 1,
         packed_skip_index_max_bytes = 0;
 
@@ -243,7 +235,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY t
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         index_granularity = 1,
         packed_skip_index_max_bytes = 1048576;
 
@@ -270,7 +261,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         vertical_merge_optimize_lightweight_delete = 1;
 
     INSERT INTO t_lwd VALUES (1, ('a', 1)), (2, ('b', 2)), (3, ('c', 3));

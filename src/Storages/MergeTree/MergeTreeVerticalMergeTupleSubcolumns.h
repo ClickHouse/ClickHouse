@@ -15,29 +15,21 @@ namespace DB
 
 struct MergeTreeSettings;
 
-/// Stream-scheduling task of a storage column.
-struct GatherUnit
-{
-    enum class Kind
-    {
-        StorageColumn,
-        FatLeaf,
-        TinyLeafBatch,
-    };
-
-    String id;
-    String parent;
-    NamesAndTypesList columns;
-    Kind kind = Kind::StorageColumn;
-    UInt64 working_set_bytes = 0;
-};
-
 struct TupleSubcolumnsClassifyResult
 {
     bool flatten = false;
     String reason;
-    std::vector<GatherUnit> units;
+    std::vector<NameAndTypePair> leaves;
 };
+
+/// Column count for `vertical_merge_algorithm_min_columns_to_activate`.
+/// When the experimental setting is off, this is `gathering_columns.size()`.
+/// When it is on, a flattenable `Tuple` contributes its top-level elements
+/// (nested flattenable `Tuple` is not expanded). Any nested flattenable `Tuple`
+/// or dynamic-subcolumn leaf falls back to `gathering_columns.size()`.
+size_t countGatheringColumnsForVerticalActivation(
+    const NamesAndTypesList & gathering_columns,
+    const MergeTreeSettings & settings);
 
 /// Classify flattenable `Tuple` gathering columns after Vertical has been chosen.
 /// Does not replace `gathering_columns`. Logs one line per gathering column.
@@ -52,19 +44,17 @@ std::vector<TupleSubcolumnsClassifyResult> classifyVerticalMergeTupleSubcolumns(
     const NameSet & expired_columns,
     LoggerPtr log);
 
-/// Replace a flattenable gathering parent with its FatLeaf pairs and at most one TinyLeafBatch.
-/// Also fills `gathering_units` (one StorageColumn unit per unflattened parent). Re-keys skip
+/// Replace a flattenable gathering parent with its leaf pairs. Re-keys skip
 /// indexes that were stored under the parent name onto the exact leaf they require.
 void applyVerticalMergeTupleSubcolumns(
     const std::vector<TupleSubcolumnsClassifyResult> & results,
     NamesAndTypesList & gathering_columns,
-    std::vector<GatherUnit> & gathering_units,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log);
 
 /// Number of on-disk streams a whole-parent write of `parent` would open.
-/// Used so a FatLeaf / TinyLeafBatch writer applies the adaptive compress-buffer
-/// threshold against the group's stream count, not the leaf writer's 1–3 streams.
+/// Used so a flattened leaf writer applies the adaptive compress-buffer threshold
+/// against the group's stream count, not the leaf writer's 1–3 streams.
 size_t countFlattenedTupleParentStreams(
     const NameAndTypePair & parent,
     const SerializationPtr & parent_serialization,

@@ -4,9 +4,8 @@
 # no-random-merge-tree-settings: pins flatten settings and Vertical activation.
 # no-object-storage / no-shared-merge-tree: reads part files from a local directory.
 #
-# Step 2 of vertical Tuple-subcolumn merge: an all-FatLeaf tuple is flattened.
-# The Fat + Tiny mix case is still correct after Step 3 (it flattens); files match
-# an unflattened Tuple write because leaves are streams of parent `t`.
+# Flattenable Tuple leaves are gathered as FatLeaf units of parent `t`.
+# Output files stay streams of the parent column.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,13 +54,11 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(x String, inner Tuple(c String, d String))
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     CREATE TABLE t_fat_h AS t_fat_v
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         enable_vertical_merge_algorithm = 0;
 
     INSERT INTO t_fat_v VALUES
@@ -148,7 +145,7 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_fat_v; DROP TABLE t_fat_h;"
 
 echo
-echo '=== Fat+Tiny mix (String + UInt8) ==='
+echo '=== String + UInt8 flatten ==='
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_mix;
@@ -159,7 +156,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 10000,
         index_granularity = 8192;
 
     INSERT INTO t_mix SELECT number, (repeat('a', 1000), number % 256) FROM numbers(20);
@@ -176,28 +172,6 @@ print_part_files "$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_mix;"
 
 echo
-echo '=== fat_threshold=0 does not flatten ==='
-
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS t_zero;
-    CREATE TABLE t_zero
-    (
-        k UInt64,
-        t Tuple(x String, y String)
-    )
-    ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 0;
-
-    INSERT INTO t_zero VALUES (1, ('a', 'b'));
-    INSERT INTO t_zero VALUES (2, ('c', 'd'));
-    OPTIMIZE TABLE t_zero FINAL;
-    SELECT k, t FROM t_zero ORDER BY k;
-    CHECK TABLE t_zero SETTINGS check_query_single_value_result = 1;
-    DROP TABLE t_zero;
-"
-
-echo
 echo '=== JSON leaf does not flatten ==='
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -209,8 +183,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(x String, j JSON)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_json VALUES (1, ('a', '{\"p\":1}'));
     INSERT INTO t_json VALUES (2, ('b', '{\"p\":2}'));
@@ -232,7 +205,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         min_rows_for_wide_part = 100000,
         min_bytes_for_wide_part = 100000000,
         allow_vertical_merges_from_compact_to_wide_parts = 1;
@@ -261,7 +233,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         index_granularity = 1;
 
     INSERT INTO t_idx SELECT number, (toString(number), 'y') FROM numbers(10);
@@ -283,8 +254,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple(x String, y String)
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_add VALUES (1, ('a', 'b'));
     INSERT INTO t_add VALUES (2, ('c', 'd'));
