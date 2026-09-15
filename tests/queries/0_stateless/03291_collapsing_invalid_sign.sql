@@ -1,6 +1,3 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
--- The vertical cases below pin the merge algorithm, which randomized merge-tree settings flip.
-
 SET send_logs_level = 'fatal';
 SET optimize_on_insert = 1;
 
