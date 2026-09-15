@@ -9404,6 +9404,82 @@ if (main_container && typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(refreshPinnedLayout).observe(main_container);
 }
 
+/// Logins whose last successful authentication used an empty password, as `[server, user]` keys (see
+/// `passwordlessLoginKey`), persisted in `localStorage`.
+///
+/// The browser's password manager is offered the login after each Run (`storeCredentials`), but the
+/// Credential Management API cannot express an empty password: `PasswordCredential` rejects it with a
+/// `TypeError`, and there is no API to delete a saved login. So once a password was saved for a
+/// server/user and that user later authenticates with an empty password (the account was switched to
+/// `no_password`, or its password was removed), the browser keeps the stale entry and autofills it on
+/// every visit — and the page would send the stale secret with every request. The page cannot fix the
+/// browser's store, but it can remember on its own that the last successful login of this server/user
+/// was passwordless, and drop the autofilled password the next time one shows up
+/// (`dropAutofilledStalePassword`). Only an autofilled value is dropped (recognised by the `:autofill`
+/// pseudo-class): a password typed by the user is always kept, and a successful login with it forgets
+/// the entry again, so giving the account a password back is a single ordinary login. Picking the saved
+/// login from the browser's suggestions while the entry exists drops it too; the authentication then
+/// fails visibly and typing the password once resolves it.
+const PASSWORDLESS_LOGINS_KEY = 'passwordless_logins';
+const MAX_PASSWORDLESS_LOGINS = 100;
+
+/// The identity of a login for this purpose: the endpoint as `sameServerAddress` compares it (the
+/// root-path spelling and the URL userinfo do not make a different server) and the effective user
+/// (`effectiveConnectionUser`, so a user given in the userinfo and the same user typed in the field
+/// are one login).
+function passwordlessLoginKey(server_address, user) {
+    let endpoint = server_address;
+    try {
+        const u = new URL(server_address, location.href);
+        endpoint = u.protocol + '//' + u.host + ((u.pathname === '' || u.pathname === '/') ? '/' : u.pathname) + u.search;
+    } catch (e) {
+        /// Not a parsable URL: keyed by its raw text, it can only ever match itself.
+    }
+    return JSON.stringify([endpoint, effectiveConnectionUser(server_address, user)]);
+}
+
+function loadPasswordlessLogins() {
+    let parsed = null;
+    try { parsed = JSON.parse(window.localStorage.getItem(PASSWORDLESS_LOGINS_KEY) ?? '[]'); } catch (e) { /* malformed: start over */ }
+    return new Set(Array.isArray(parsed) ? parsed.filter(k => typeof k === 'string') : []);
+}
+
+/// Record a successful authentication as `server_address`/`user` with `password`: an empty password
+/// remembers the login as passwordless, a non-empty one forgets it.
+function rememberLoginPassword(server_address, user, password) {
+    const key = passwordlessLoginKey(server_address, user);
+    const logins = loadPasswordlessLogins();
+    if (password) {
+        if (!logins.delete(key)) return;
+    } else {
+        if (logins.has(key)) return;
+        logins.add(key);
+        /// A `Set` iterates in insertion order, so the oldest entries go first.
+        while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
+    }
+    window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins]));
+}
+
+/// Whether the browser filled the field itself (its password manager), as opposed to the user typing
+/// or the page setting it. Reported by the standard `:autofill` pseudo-class, or its `-webkit-` form in
+/// older engines; a browser supporting neither never reports a field as autofilled, which leaves the
+/// stale-password handling inert there.
+const AUTOFILL_SELECTOR = [':autofill', ':-webkit-autofill'].find(s => CSS.supports(`selector(${s})`)) ?? null;
+function isAutofilled(elem) {
+    return AUTOFILL_SELECTOR !== null && elem.matches(AUTOFILL_SELECTOR);
+}
+
+/// Drop a browser-autofilled password for a login remembered as passwordless (see
+/// `PASSWORDLESS_LOGINS_KEY`). Called wherever an autofilled value can first show up or first be
+/// sent: from the `input` event autofill raises, and from the points that read the field to build a
+/// request, since autofill does not always raise `input`. Returns whether the field was cleared.
+function dropAutofilledStalePassword() {
+    if (!password_elem.value || !isAutofilled(password_elem)) return false;
+    if (!loadPasswordlessLogins().has(passwordlessLoginKey(url_elem.value, user_elem.value))) return false;
+    password_elem.value = '';
+    return true;
+}
+
 let check_credentials_request_num = 0;
 /// The connection tuple the credential indication was last checked against, or `null` while nothing
 /// has been checked yet. The commit on leaving the connection surface is licensed by the
@@ -9428,11 +9504,18 @@ function connectionNeedsCheck() {
 function checkCredentials() {
     ++check_credentials_request_num;
     const current_check_credentials_request_num = check_credentials_request_num;
+    /// An autofilled password for a login remembered as passwordless must not be sent, or shown as
+    /// checked (see `dropAutofilledStalePassword`).
+    dropAutofilledStalePassword();
     /// The indication this request is about to produce belongs to the tuple it is sent with.
     checked_connection = connectionTuple();
-    getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
+    const [server_address, user, password] = [url_elem.value, user_elem.value, password_elem.value];
+    getServerStatus(server_address, user, password).then(json => {
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {
+                /// These credentials were accepted: recorded from the values the request was sent with,
+                /// not the live fields (an autofill raising no `input` could have changed them since).
+                rememberLoginPassword(server_address, user, password);
                 [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
                 document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
                 updateServerInfoVisibility();
@@ -9546,6 +9629,9 @@ let connection_edited = false;
 /// as the replay intends; they just do not arm a commit. The restored connection's credentials are
 /// reported once the user re-enters the password, which is a real edit.
 function onCredentialInput(event) {
+    /// Browser autofill raises `input` too (when it raises anything): a filled-in password for a login
+    /// remembered as passwordless is dropped right here, before it can be shown or sent.
+    dropAutofilledStalePassword();
     if (event.isTrusted) { connection_edited = true; }
     ++connection_generation;
     resetCredentialsStatus();
@@ -10759,6 +10845,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
+
+        /// Authentication precedes the query, so a successful response means the snapshotted credentials
+        /// were accepted (see `rememberLoginPassword`). A failure is not recorded either way: it may be
+        /// the query's own error as well as a rejected login.
+        if (response.ok) rememberLoginPassword(connection.url, connection.user, connection.password);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
@@ -14857,6 +14948,7 @@ async function postOne()
     /// reason: these inputs are shared, and re-reading them after the preflight await (as
     /// `postImpl` used to) would let a tab switch + connection edit during it send this run's
     /// snapshotted query to the newly entered server or identity.
+    dropAutofilledStalePassword();
     const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value };
     /// Snapshot the selected database at launch too (see the connection above): the panel selection
     /// is shared, so re-reading it after the preflight await would let a mid-await database change
@@ -14977,6 +15069,7 @@ async function postAll()
     const param_sources = Object.assign({}, tab.params || {}, param_values_at_launch);
     /// See `postOne`: the connection context and selected database are snapshotted at launch so a tab
     /// switch + connection/database edit during the preflight await cannot reroute this run.
+    dropAutofilledStalePassword();
     const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value };
     const query_database = selected_database;
     ++activation_num;
@@ -17219,6 +17312,7 @@ function wasmAvailable() {
 
 /// Build the request URL the same way `postImpl` does, but for the completion query.
 function buildCompletionUrl() {
+    dropAutofilledStalePassword();
     const user = user_elem.value;
     const password = password_elem.value;
     const server_address = url_elem.value;
