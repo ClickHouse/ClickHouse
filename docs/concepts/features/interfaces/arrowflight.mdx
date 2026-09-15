@@ -292,6 +292,11 @@ For query statements, the response may include:
 
 If schema inference fails for a valid query (for example, when replacing placeholders with `NULL` is not valid for that query), ClickHouse still creates the prepared statement and returns the handle without `dataset_schema`.
 
+`dataset_schema` is a best guess, as the Flight SQL specification intends — it states that the result schema may depend on the parameters, that the server should give its best guess, and that clients must not assume the schema is accurate. Do not rely on it; execute the statement to obtain the schema that describes the data. In ClickHouse it can differ from what is served for two reasons:
+
+- Inference replaces each `?` with `NULL`, so a placeholder that determines a result column is typed from that `NULL` rather than from the value you later bind. `SELECT ? AS x` infers a column of type `Nothing`, but binding `5` serves a `UInt8`. A placeholder used only in a predicate, as in `SELECT id, name FROM t WHERE id = ?`, does not have this problem, because the result types come from the table.
+- A column with no Arrow equivalent takes its Arrow type from [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format), which every call resolves from the session that makes it. Because a handle belongs to the user rather than to one session, a later call may resolve it differently and serve `binary` where `utf8` was advertised, or the reverse. Setting the mode inside the prepared query itself pins it for both.
+
 Prepared statements are owned by the authenticated user, not by a single session. If you open multiple sessions as the same user, you can execute, re-bind, and close the same statement handle from any of those sessions.
 
 Other users cannot execute, bind, or close a statement handle they did not create.
