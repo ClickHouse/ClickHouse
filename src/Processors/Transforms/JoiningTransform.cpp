@@ -3,6 +3,7 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
@@ -282,7 +283,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
-    spillable = typeid_cast<GraceHashJoin *>(join.get());
+    spillable = typeid_cast<GraceHashJoin *>(join.get()) || typeid_cast<SpillingHashJoin *>(join.get());
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -420,6 +421,29 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
             return true;
         }
     }
+    return false;
+}
+
+const void * FillingRightJoinSideTransform::getMemoryReservationSpillTarget() const
+{
+    return join.get();
+}
+
+bool FillingRightJoinSideTransform::spillForMemoryReservation()
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+        return grace_join->spillForMemoryReservation();
+    if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
+        return spilling_join->spillForMemoryReservation();
+    return false;
+}
+
+bool FillingRightJoinSideTransform::hasPendingSpill() const
+{
+    if (const auto * grace_join = typeid_cast<const GraceHashJoin *>(join.get()))
+        return grace_join->hasPendingSpill();
+    if (const auto * spilling_join = typeid_cast<const SpillingHashJoin *>(join.get()))
+        return spilling_join->hasPendingMemoryReservationSpill();
     return false;
 }
 
