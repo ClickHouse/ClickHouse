@@ -498,9 +498,7 @@ void RemoteQueryExecutor::openFragmentSpan()
         .attributes = getFragmentSpanAttributes(),
     });
 
-    /// The read context fiber is seeded with this context, so the spans it opens (e.g. the CLIENT
-    /// span of the send) nest under the fragment span. It also keeps the span log reachable from a
-    /// thread without a tracing context of its own, e.g. the one running `KILL QUERY`.
+    /// The read context fiber is seeded with this context, so the spans it opens nest under the fragment span.
     fragment_trace_context = trace_context;
     fragment_trace_context.span_id = fragment_span->span_id;
 }
@@ -513,7 +511,6 @@ void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute 
 
 void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
 {
-    /// The first outcome wins: a finished span is gone, so the later backstops find nothing to do.
     if (!fragment_span)
         return;
 
@@ -526,6 +523,7 @@ void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, S
 
     try
     {
+        // now we write the span to the local table
         if (auto span_log = fragment_trace_context.span_log.lock())
             span_log->add([&](OpenTelemetrySpanLogElement & element) { element.span = *span; });
     }
@@ -575,7 +573,7 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     }
     catch (...)
     {
-        /// A failure to establish the connections or to send the query is this fragment's failure.
+        /// A failure to establish the connections or to send the query is this fragment's failure. Log and throw.
         finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         throw;
     }
@@ -902,8 +900,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             const bool replica_unavailable = isReplicaUnavailable();
             if (replica_unavailable || needToSkipUnavailableShard())
             {
-                /// We need to tell the coordinator not to wait for this replica.
-                /// But at this point it may lead to an incomplete result set, because
+                /// We need to tell the coordinator not to wait for this replica, but at this point it may lead to an incomplete result set, because
                 /// this replica committed to read some part of there data and then died.
                 if (extension && extension->parallel_reading_coordinator)
                 {
@@ -935,8 +932,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
     }
     catch (...)
     {
-        /// The lock taken inside the loop is gone by now (released while unwinding), so take it
-        /// again: a concurrent cancel() reads the recorded outcome under the same lock.
         LockAndBlocker lock(was_cancelled_mutex);
         /// A local failure while processing this fragment's packets on the consumer thread is this fragment's failure,
         /// so record it on the span instead of letting the destructor mark it cancelled.
@@ -973,8 +968,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
-            /// A local, non-`Server::Exception` failure raised on the consumer thread while
-            /// processing a packet (as opposed to inside the read context fiber).
+            /// A local, non-`Server::Exception` failure raised on the consumer thread while processing a packet.
             fiu_do_on(FailPoints::remote_query_executor_local_packet_processing_error,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while processing a data packet");
