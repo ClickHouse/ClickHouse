@@ -49,6 +49,23 @@ protected:
     /// Restore from backup.
     void restore();
 
+    /** The names, relative to `path`, of the files the swap of a mutation goes through: the
+      * replacement is written into `mutation_data_file_name`, and `mutation_commit_file_name` marks
+      * the window in which the old files are being removed and the replacement is not in place yet.
+      * See `finishInterruptedMutation`.
+      */
+    static constexpr auto mutation_data_file_name = "tmp/mut.bin";
+    static constexpr auto mutation_commit_file_name = "tmp/mut.commit";
+
+    /** A mutation replaces every persisted file with one that holds the rows it kept, which cannot be
+      * done in one step: a crash in between would leave the table with whichever of the old files
+      * happened to survive - rows the mutation never even matched would be gone - and the
+      * replacement, staged outside the directory the load reads, would be ignored. The mutation
+      * therefore marks that window, and this finishes what it was doing before anything is loaded:
+      * the replacement is put in place when it is still staged, and the marker is cleared once it is.
+      */
+    void finishInterruptedMutation();
+
 private:
     void restoreFromFile(const String & file_path);
 

@@ -13,6 +13,7 @@
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -49,10 +50,16 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_join;
 }
 
+namespace FailPoints
+{
+    extern const char storage_join_mutate_interrupt_before_replacing_file[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DEADLOCK_AVOIDED;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
@@ -188,10 +195,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
 
-    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
 
-    auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
+    auto backup_buf = disk->writeFile(path + mutation_data_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
@@ -226,6 +232,16 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         compressed_backup_buf.finalize();
         backup_buf->finalize();
 
+        /** Removing the files the mutation replaces and putting the replacement in their place is
+          * more than one step, and a server that dies in between - a kill, an OOM, a crash - used to
+          * leave the table with whichever of the old files happened to survive, while the
+          * replacement, staged in a directory the load does not read, was ignored: rows the mutation
+          * never matched were silently gone. The marker names that window, and `restore` finishes
+          * the swap when it finds one.
+          */
+        auto commit_buf = disk->writeFile(path + mutation_commit_file_name);
+        commit_buf->finalize();
+
         std::vector<std::string> files;
         disk->listFiles(path, files);
         for (const auto & file_name: files)
@@ -234,7 +250,13 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
                 disk->removeFileIfExists(path + file_name);
         }
 
-        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
+        fiu_do_on(FailPoints::storage_join_mutate_interrupt_before_replacing_file,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the replacement file of the mutation is put in place");
+        });
+
+        disk->replaceFile(path + mutation_data_file_name, path + std::to_string(increment) + ".bin");
+        disk->removeFileIfExists(path + mutation_commit_file_name);
     }
     else
     {
