@@ -308,3 +308,71 @@ TEST(ProjectionIndexBitmapTest, DuplicateValues)
     EXPECT_EQ(bitmap->cardinality(), 1); // Should still have cardinality 1
     EXPECT_TRUE(bitmap->contains<UInt32>(10));
 }
+
+// Test appendToFilter with all ones (full bitmap) for 32-bit
+TEST(ProjectionIndexBitmapTest, AppendToFilterAllOnes32)
+{
+    auto bitmap = ProjectionIndexBitmap::create32();
+
+    // Define range [100, 110)
+    UInt32 start = 100;
+    size_t size = 10;
+
+    // Add all values in the range
+    for (UInt32 i = start; i < start + size; ++i)
+    {
+        bitmap->add<UInt32>(i);
+    }
+
+    // Verify all values are present
+    EXPECT_EQ(bitmap->cardinality(), size);
+
+    PaddedPODArray<UInt8> buffer;
+
+    // Append to filter
+    bool has_values = bitmap->appendToFilter(buffer, start, size);
+
+    // Check result
+    EXPECT_TRUE(has_values);
+    EXPECT_EQ(buffer.size(), size);
+
+    // All values should be 1
+    for (size_t i = 0; i < size; ++i)
+    {
+        EXPECT_EQ(buffer[i], 1) << "Expected all ones at position " << i;
+    }
+}
+
+// Test appendToFilter with all ones (full bitmap) for 64-bit
+TEST(ProjectionIndexBitmapTest, AppendToFilterAllOnes64)
+{
+    auto bitmap = ProjectionIndexBitmap::create64();
+
+    // Define range with large 64-bit values
+    UInt64 start = 10000000000000ULL;
+    size_t size = 10;
+
+    // Add all values in the range
+    for (UInt64 i = start; i < start + size; ++i)
+    {
+        bitmap->add<UInt64>(i);
+    }
+
+    // Verify all values are present
+    EXPECT_EQ(bitmap->cardinality(), size);
+
+    PaddedPODArray<UInt8> buffer;
+
+    // Append to filter
+    bool has_values = bitmap->appendToFilter(buffer, start, size);
+
+    // Check result
+    EXPECT_TRUE(has_values);
+    EXPECT_EQ(buffer.size(), size);
+
+    // All values should be 1
+    for (size_t i = 0; i < size; ++i)
+    {
+        EXPECT_EQ(buffer[i], 1) << "Expected all ones at position " << i;
+    }
+}
