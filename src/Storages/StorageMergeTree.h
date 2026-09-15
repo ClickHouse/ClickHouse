@@ -372,6 +372,8 @@ private:
     ///
     /// `started` receives which assignees the call created, as opposed to found already running,
     /// updated after each one so that it is accurate even when the call throws partway through.
+    /// `BackgroundJobsAssignee::start` itself is all or nothing, so an assignee whose activation
+    /// threw has no task left behind and is correctly not recorded here.
     /// The rollback of the `ALTER` passes it to `finishBackgroundWorkers`, which tears down exactly
     /// those assignees: a table that had no workers before the failed `ALTER` has none after it,
     /// while the workers of a table that started writable are left as they were.
