@@ -25,6 +25,7 @@
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <fstream>
@@ -52,6 +53,52 @@ namespace ErrorCodes
 #if USE_SSL
     extern const int BAD_ARGUMENTS;
 #endif
+}
+
+/// Escape special XML characters in a string so it can be safely embedded as text content in an XML document.
+///
+/// Uses the text/attribute-value escaping, which also escapes '>'. Escaping '>' is not optional here:
+/// the XML grammar (the `CharData` production) forbids the literal sequence `]]>` in character data,
+/// so a value such as `]]>` would otherwise produce `<from_env>]]></from_env>`, which the parser
+/// rejects as not well-formed before the substitution is read. Escaping '>' turns `]]>` into `]]&gt;`,
+/// which parses and decodes back to the exact original bytes. The extra escaping of `"` and `'` is
+/// harmless for text content — they round-trip to the same characters.
+///
+/// A carriage return is additionally emitted as the numeric character reference `&#13;`. XML end-of-line
+/// handling (XML 1.0, section 2.11) rewrites a literal `\r` or the sequence `\r\n` to a single `\n` when
+/// the synthetic `<from_env>`/`<from_zk>` document is reparsed. That would silently corrupt a literal
+/// substitution — for example a multi-line secret or a setting copied with Windows line endings. A
+/// character reference is resolved after end-of-line normalization, so `&#13;` round-trips to the exact
+/// original `\r` byte.
+///
+/// Limitation: the escaped value must still be valid XML 1.0 text. Control characters that XML 1.0
+/// cannot represent at all — `0x00`–`0x08`, `0x0B`, `0x0C`, `0x0E`–`0x1F` (XML 1.0, section 2.2; they
+/// are forbidden even as numeric character references, section 4.1) — are passed through verbatim and
+/// rejected by the parser when the synthetic document is reparsed. No escaping scheme can carry them
+/// through XML, so the documented contract is "exact bytes for any XML-1.0-legal text", not "any bytes".
+static std::string escapeForXMLText(const std::string & s)
+{
+    WriteBufferFromOwnString buf;
+    writeXMLStringForTextElementOrAttributeValue(s, buf);
+    std::string escaped = buf.str();
+
+    /// `writeXMLStringForTextElementOrAttributeValue` does not escape '\r', so do it here to keep the
+    /// exact original bytes across the reparse. Any '\r' remaining in `escaped` is a genuine carriage
+    /// return from the input: the escaping above only emits the entities `&lt; &amp; &gt; &quot; &apos;`
+    /// and copies every other byte verbatim.
+    if (!escaped.contains('\r'))
+        return escaped;
+
+    std::string result;
+    result.reserve(escaped.size() + 4);
+    for (char c : escaped)
+    {
+        if (c == '\r')
+            result += "&#13;";
+        else
+            result += c;
+    }
+    return result;
 }
 
 /// For cutting preprocessed path to this base
@@ -100,7 +147,7 @@ void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view 
 
 
 /// Vector containing the name of the element and a sorted list of attribute names and values
-/// (except "remove" and "replace" attributes).
+/// (except substitution and substitution-format attributes, and "remove" and "replace" attributes).
 /// Serves as a unique identifier of the element contents for comparison.
 using ElementIdentifier = std::vector<std::string>;
 
@@ -117,7 +164,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
     {
         std::string name = node->nodeName();
         const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
-        if (name == "replace" || name == "remove" ||
+        if (name == "replace" || name == "remove" || name == "yaml" ||
             subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
         std::string value = node->nodeValue();
@@ -479,6 +526,16 @@ void ConfigProcessor::doIncludesRecursive(
     bool replace = attributes->getNamedItem("replace");
     /// Merge with the original contents
     bool merge = attributes->getNamedItem("merge");
+    const auto * yaml_attr = attributes->getNamedItem("yaml");
+
+    if (yaml_attr)
+    {
+        if (!attr_nodes["from_zk"] || node->nodeName() != "include")
+            throw Poco::Exception("Attribute 'yaml' is allowed only on <include from_zk=...>");
+
+        if (yaml_attr->getNodeValue() != "true")
+            throw Poco::Exception("Attribute 'yaml' for <include from_zk=...> must be 'true'");
+    }
 
     bool included_something = false;
 
@@ -590,8 +647,56 @@ void ConfigProcessor::doIncludesRecursive(
                 if (!znode.exists)
                     return nullptr;
 
-                /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                /// Unlike `from_env` (which is always plain text), the contents of a ZooKeeper
+                /// node may be a whole subtree. The format is autodetected the same way as for
+                /// configuration files, based on whether the value begins with '<':
+                ///
+                ///  - A value that begins with '<' is parsed as an XML fragment. This is how a
+                ///    subtree is spliced into ANY element, both a structural `<include from_zk=.../>`
+                ///    and an ordinary container such as `<profiles from_zk=.../>` or
+                ///    `<http_handlers from_zk=.../>`. This is kept for backward compatibility:
+                ///    earlier versions always interpreted a `from_zk` value as XML.
+                ///  - A value that does not begin with '<' is parsed as a YAML subtree only for
+                ///    `<include from_zk="..." yaml="true"/>`. This explicitly opts in to YAML
+                ///    parsing wherever the generic `<include>` form is used, including inside a
+                ///    leaf element; it must not be used for a literal secret or setting. In a build
+                ///    without `yaml-cpp` (`ENABLE_YAML_CPP=0`, so `USE_YAML_CPP` is 0), an opted-in
+                ///    YAML substitution reports that YAML parsing is unavailable.
+                ///  - Any other value that does not begin with '<' is kept as literal text using
+                ///    its exact original bytes. YAML autodetection is deliberately NOT applied
+                ///    here, even for an ordinary container element such as
+                ///    `<profiles from_zk=.../>`: such an element may just as well be a leaf holding
+                ///    a scalar — for example `<password from_zk=.../>` or `<some_setting from_zk=.../>`
+                ///    — whose exact bytes must be preserved. So a non-`<` value is never reinterpreted
+                ///    by the YAML parser: a value such as `abc: def` is not turned into an
+                ///    `<abc>def</abc>` sub-element, and `abc # rotated` keeps its `# rotated` suffix
+                ///    instead of being treated as a YAML comment. To splice a subtree into an ordinary
+                ///    element, provide it as XML (a value beginning with '<'). XML special characters
+                ///    (for example `&`, `<` or `>`) are escaped the same way as for `from_env`, so a
+                ///    literal value can contain any XML-1.0-representable text (see the note on
+                ///    `escapeForXMLText` about control characters that XML cannot represent).
+                const size_t pos = firstNonWhitespacePos(znode.contents);
+                if (pos != std::string::npos && znode.contents[pos] == '<')
+                {
+                    /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
+                    zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                }
+                else if (yaml_attr)
+                {
+                    /// An explicitly opted-in YAML subtree is expanded the same way as a
+                    /// configuration file. Parsing errors intentionally propagate: `yaml="true"`
+                    /// identifies this as a structural substitution rather than a leaf value.
+                    /// `DummyYAMLParser::parseString` reports that YAML parsing is unavailable in
+                    /// builds without `yaml-cpp`, instead of silently treating the subtree as text.
+                    zk_document = YAMLParser::parseString(znode.contents);
+                }
+                else
+                {
+                    /// A leaf value, ordinary element, or an `<include>` without the explicit
+                    /// YAML opt-in: keep the value as literal text using its exact original bytes.
+                    /// A subtree must be provided as XML or use `<include ... yaml="true"/>`.
+                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
+                }
                 return getRootNode(zk_document.get());
             };
 
@@ -612,7 +717,19 @@ void ConfigProcessor::doIncludesRecursive(
             if (env_val == nullptr)
                 return nullptr;
 
-            env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+            if (node->nodeName() == "include")
+            {
+                /// Keep the established `<include from_env=.../>` behavior: its value is an XML
+                /// fragment whose children are spliced into the parent element. Direct `from_env`
+                /// substitutions remain literal text, so an XML-looking scalar is not reinterpreted.
+                env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+            }
+            else
+            {
+                /// A direct environment substitution is always a plain-text value. Escape XML
+                /// special characters so the scalar remains literal even when it resembles XML.
+                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+            }
 
             return getRootNode(env_document.get());
         };
