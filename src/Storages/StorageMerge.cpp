@@ -2174,7 +2174,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 
