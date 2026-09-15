@@ -31,27 +31,11 @@ namespace Setting
     extern const SettingsBool formatdatetime_e_with_space_padding;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
     extern const SettingsBool parsedatetime_e_requires_space_padding;
-    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
-    extern const SettingsBool least_greatest_legacy_null_behavior;
-    extern const SettingsBool h3togeo_lon_lat_result_order;
-    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
-    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
-    extern const SettingsBool count_matches_stop_at_empty_match;
-    extern const SettingsUInt64 function_visible_width_behavior;
-    extern const SettingsBool function_json_value_return_type_allow_complex;
-    extern const SettingsBool functions_h3_default_if_invalid;
-    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
 {
-    /// Registration rule: a setting belongs here when a function captures it at build time (in its constructor
-    /// or `build`), it changes the value the function returns, and nothing about it reaches
-    /// `ActionsDAG::Node::updateHash` (which sees only the function name, the result type name, the children and
-    /// the constant values). A setting that changes the result *type* is already covered by the type name in the
-    /// hash and does not need an entry.
     SipHash hash;
-    /// `formatDateTime` / `parseDateTime`.
     hash.update(settings[Setting::formatdatetime_f_prints_single_zero].value);
     hash.update(settings[Setting::formatdatetime_f_prints_scale_number_of_digits].value);
     hash.update(settings[Setting::formatdatetime_parsedatetime_m_is_month_name].value);
@@ -59,22 +43,6 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::formatdatetime_e_with_space_padding].value);
     hash.update(settings[Setting::parsedatetime_parse_without_leading_zeros].value);
     hash.update(settings[Setting::parsedatetime_e_requires_space_padding].value);
-    /// `locate` swaps its haystack and needle arguments.
-    hash.update(settings[Setting::function_locate_has_mysql_compatible_argument_order].value);
-    /// `least` / `greatest` propagate or skip NULL arguments.
-    hash.update(settings[Setting::least_greatest_legacy_null_behavior].value);
-    /// `h3ToGeo` swaps the tuple elements, `geoToH3` swaps the arguments.
-    hash.update(settings[Setting::h3togeo_lon_lat_result_order].value);
-    hash.update(static_cast<UInt64>(settings[Setting::geotoh3_argument_order].value));
-    /// `splitBy*` with `max_substrings`, `countMatches`, `visibleWidth`, `JSON_VALUE`.
-    hash.update(settings[Setting::splitby_max_substrings_includes_remaining_string].value);
-    hash.update(settings[Setting::count_matches_stop_at_empty_match].value);
-    hash.update(settings[Setting::function_visible_width_behavior].value);
-    hash.update(settings[Setting::function_json_value_return_type_allow_complex].value);
-    /// Return a default instead of throwing: a verdict written by the lenient session must not be served to a
-    /// session that is supposed to see the exception.
-    hash.update(settings[Setting::functions_h3_default_if_invalid].value);
-    hash.update(settings[Setting::cast_ipv4_ipv6_default_on_conversion_error].value);
     return hash.get64();
 }
 
