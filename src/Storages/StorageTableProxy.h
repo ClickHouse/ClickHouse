@@ -335,7 +335,7 @@ private:
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
-    StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
+    mutable StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
     LoggerPtr log;
 };
 
