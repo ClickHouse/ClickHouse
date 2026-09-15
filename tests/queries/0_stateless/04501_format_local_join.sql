@@ -20,6 +20,10 @@ SELECT formatQuerySingleLine('SELECT * FROM ta LOCAL CROSS JOIN tb');
 SELECT formatQuerySingleLine('SELECT * FROM ta local INNER JOIN tb ON ta.a = tb.b');
 SELECT formatQuerySingleLine('SELECT * FROM ta LOCAL ANY LEFT JOIN tb ON ta.a = tb.b');
 SELECT formatQuerySingleLine('SELECT * FROM (t1 CROSS JOIN t2) LOCAL CROSS JOIN t3');
+-- A bare `JOIN` and a leading `NATURAL` each occupy their own position in the join grammar, so the
+-- rows above reach neither. `ON` is mandatory for the bare kind, `NATURAL` needs none.
+SELECT formatQuerySingleLine('SELECT * FROM ta LOCAL JOIN tb ON ta.a = tb.b');
+SELECT formatQuerySingleLine('SELECT * FROM ta LOCAL NATURAL JOIN tb');
 
 -- `GLOBAL` controls: the same two carriers must be untouched.
 WITH 'SELECT * FROM (ta GLOBAL CROSS JOIN tb)' AS q SELECT formatQuerySingleLine(q) = formatQuerySingleLine(formatQuerySingleLine(q)) AS stable, formatQuerySingleLine(q) AS canonical;
@@ -31,12 +35,19 @@ SELECT formatQuerySingleLine('SELECT * FROM ta OUTER JOIN tb ON ta.a = tb.b');
 SELECT formatQuerySingleLine('SELECT * FROM (ta LEFT OUTER JOIN tb ON ta.a = tb.b)');
 
 -- Compatibility: `local` stays a valid implicit alias, column name and table name everywhere a join
--- clause cannot follow it. Each row below detects an over-broad rule.
+-- clause cannot follow it. Each row below detects an over-broad rule. `ARRAY JOIN` is a sibling of
+-- the join clause and takes an optional `LEFT`/`INNER` prefix, so all three of its spellings keep the
+-- alias even though the prefix is a join keyword.
 SELECT formatQuerySingleLine('SELECT 1 local');
 SELECT formatQuerySingleLine('SELECT * FROM ta local');
 SELECT formatQuerySingleLine('SELECT * FROM ta local WHERE local.a = 1');
 SELECT formatQuerySingleLine('SELECT * FROM ta local, tb');
 SELECT formatQuerySingleLine('SELECT * FROM ta local ARRAY JOIN [1] AS e');
+SELECT formatQuerySingleLine('SELECT * FROM ta local LEFT ARRAY JOIN [1] AS e');
+SELECT formatQuerySingleLine('SELECT * FROM ta local INNER ARRAY JOIN [1] AS e');
+-- Discriminator for the two rows above: the same `LEFT` peek in front of a real join clause must take
+-- the other branch, so they cannot be satisfied by dropping `LEFT`/`INNER` from the join keywords.
+SELECT formatQuerySingleLine('SELECT * FROM ta local LEFT JOIN tb ON ta.a = tb.b');
 SELECT formatQuerySingleLine('SELECT * FROM ta local ORDER BY local.a');
 SELECT formatQuerySingleLine('SELECT 1 AS local');
 SELECT formatQuerySingleLine('SELECT 1 `local`');

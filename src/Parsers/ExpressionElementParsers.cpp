@@ -1853,9 +1853,19 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                    Keyword::FULL,    Keyword::CROSS, Keyword::PASTE, Keyword::JOIN};
 
             Expected peek_expected;
-            for (Keyword keyword : join_continuations)
-                if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
-                    return false;
+
+            /// `LEFT` and `INNER` also introduce `ARRAY JOIN`, which is a sibling of the join clause
+            /// and carries no locality, so the alias stands in front of it.
+            Pos after_inner = pos;
+            ParserKeyword(Keyword::INNER).ignore(after_inner, peek_expected);
+            const bool array_join_follows
+                = ParserKeyword(Keyword::LEFT_ARRAY_JOIN).checkWithoutMoving(pos, peek_expected)
+                || ParserKeyword(Keyword::ARRAY_JOIN).checkWithoutMoving(after_inner, peek_expected);
+
+            if (!array_join_follows)
+                for (Keyword keyword : join_continuations)
+                    if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
+                        return false;
         }
 
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
