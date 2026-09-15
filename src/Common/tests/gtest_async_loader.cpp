@@ -821,8 +821,15 @@ TEST(AsyncLoader, WaitersDecrementDoesNotMaskJobFailure)
     };
     auto waiters_inc = [] (const LoadJobPtr &) {};
     // A real handler refuses the waiter when it cannot take its resource back. The failure of the job
-    // that the thread actually waited for is the more useful of the two, so it must win.
-    auto waiters_dec = [] (const LoadJobPtr &) { throw std::runtime_error("the waiter was refused"); };
+    // that the thread actually waited for is the more useful of the two, so it must win. The handler
+    // still has to run: it is what unregisters the waiter, and a failed job is no reason to leave it
+    // registered.
+    std::atomic<bool> decremented{false};
+    auto waiters_dec = [&] (const LoadJobPtr &)
+    {
+        decremented = true;
+        throw std::runtime_error("the waiter was refused");
+    };
 
     auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
     auto task = t.schedule({job});
@@ -846,6 +853,7 @@ TEST(AsyncLoader, WaitersDecrementDoesNotMaskJobFailure)
 
     EXPECT_NE(message.find("the job itself failed"), String::npos) << message;
     EXPECT_EQ(message.find("the waiter was refused"), String::npos) << message;
+    EXPECT_TRUE(decremented.load()) << "the job failure swallowed the decrement handler as well";
     EXPECT_EQ(job->status(), LoadStatus::FAILED);
 
     t.loader.wait();

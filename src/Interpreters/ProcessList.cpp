@@ -1242,16 +1242,13 @@ void ProcessList::stopWaitingAndReacquireSlot(const QueryStatusPtr & status, con
     /// counters, so the query leaves the waiting set even if taking a slot back throws.
     SCOPE_EXIT_SAFE(decreaseWaitingQueryAmount(status));
 
-    /// Another query was admitted in place of this one while it was waiting, so the slot it gave up
-    /// has to be taken back before it runs again. Until then it stays counted as waiting, which keeps
-    /// its own discount in place, so no third query takes the slot in the meantime. Waiting for the
-    /// slot cannot be unbounded: the query that took it can be blocked on a lock this one holds, so
-    /// resuming uses the same bound and the same refusal as admission does.
-    /// A query whose job failed has nothing to resume, only that failure to report, so it does not
-    /// queue for a slot it would give straight back.
+    /// A query whose job failed has only that failure to report, so it does not queue for a slot.
     if (status->isUnlimited() || wait_failed)
         return;
 
+    /// The query stays counted as waiting until it holds a slot again, so its own discount keeps a
+    /// third query out of that slot meanwhile. The wait is bounded and refuses exactly as admission
+    /// does, because the query now holding the slot can be blocked on a lock this one holds.
     auto full_limit = limitWithoutRoomToResume(status, settings);
     const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
     if (full_limit && queue_max_wait_ms)

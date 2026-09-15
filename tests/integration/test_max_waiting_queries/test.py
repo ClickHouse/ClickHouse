@@ -15,6 +15,12 @@ node = cluster.add_instance(
 CONFIG_PATH = "/etc/clickhouse-server/config.d/config.xml"
 FAILPOINT = "database_replicated_startup_pause"
 STARTUP_JOB = "startup Replicated database re"
+# Statements that drive a test with `max_concurrent_queries` lowered wait for a slot instead of being
+# refused: the server's own config reloader applies the file on a timer, so a lowered limit can be in
+# effect before the reload statement runs, and a query that has answered its client can hold its slot
+# for an instant longer. The probes that assert on a refusal pass 0 instead, so nothing waits for a
+# slot where the refusal is the measurement.
+WAIT_FOR_SLOT = {"queue_max_wait_ms": 60000}
 
 
 @pytest.fixture(scope="module")
@@ -37,15 +43,24 @@ def pause_failpoint(enabled):
     )
 
 
-def server_setting(name):
+def server_setting(name, settings=None):
     return node.query(
-        f"SELECT value FROM system.server_settings WHERE name = '{name}'"
+        f"SELECT value FROM system.server_settings WHERE name = '{name}'", settings=settings
     ).strip()
 
 
 def waiters_on_startup_job():
     return node.query(
         f"SELECT sum(waiters) FROM system.asynchronous_loader WHERE job = '{STARTUP_JOB}'"
+    ).strip()
+
+
+def processes(query_ids):
+    ids = ", ".join(f"'{query_id}'" for query_id in query_ids)
+    # Reading `system.processes` is exempt from the concurrency limits, so this is one of the few
+    # probes that still answers while they are full.
+    return node.query(
+        f"SELECT count() FROM system.processes WHERE query_id IN ({ids})"
     ).strip()
 
 
@@ -256,20 +271,20 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
                 )
 
         # Lower max_concurrent_queries to exactly the number of queries in the process list. Both the
-        # reload and every query after it run while that one query is waiting; the reload itself is
-        # admitted because the limit it installs is not in effect yet when it starts.
+        # reload and every query after it run while that one query is waiting, which is what keeps
+        # them admitted at a limit of 1.
         set_config(
             "<max_concurrent_queries>0</max_concurrent_queries>",
             "<max_concurrent_queries>1</max_concurrent_queries>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.query("SYSTEM RELOAD CONFIG", settings=WAIT_FOR_SLOT)
 
         # max_waiting_queries documents that waiting queries are not counted against the
         # max_concurrent_* limits. Without that, the waiter holds the only slot and this is refused
         # with "Too many simultaneous queries. Maximum: 1".
         assert node.query("SELECT 1", settings={"queue_max_wait_ms": 0}).strip() == "1"
         # Proves the reload took effect, so the query above was not admitted vacuously.
-        assert server_setting("max_concurrent_queries") == "1"
+        assert server_setting("max_concurrent_queries", WAIT_FOR_SLOT) == "1"
 
         # Lift the limit before releasing the waiter: the Replicated DDL worker runs the statement
         # again as a nested query, so the resumed CREATE TABLE needs a second process list slot.
@@ -277,7 +292,7 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
             "<max_concurrent_queries>1</max_concurrent_queries>",
             "<max_concurrent_queries>0</max_concurrent_queries>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.query("SYSTEM RELOAD CONFIG", settings=WAIT_FOR_SLOT)
 
         unpin_and_join(handles)
         wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
@@ -301,9 +316,7 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
         )
         try:
             wait_for(
-                lambda: node.query(
-                    "SELECT count() FROM system.processes WHERE query_id = 'occupancy'"
-                ).strip(),
+                lambda: processes(["occupancy"]),
                 "1",
                 "the occupancy query to enter the process list",
             )
@@ -316,23 +329,42 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
                     f"Too many simultaneous queries {whose}. Current: 1, maximum: 1" in error
                 ), error
                 assert ", waiting:" not in error, error
+        finally:
+            node.query("KILL QUERY WHERE query_id = 'occupancy' SYNC", ignore_error=True)
+            occupancy.get_answer_and_error()
 
-            # `max_concurrent_queries` is a server setting, so its own negative control installs the
-            # limit from the config while the occupancy query already holds the only slot. The reload
-            # is admitted because the limit it installs is not in effect yet when it starts, and
-            # `Maximum: 1` proves the check ran against the value it installed. Nothing else runs
-            # after this: the limit is in effect until the occupancy query is killed below, and the
-            # `KILL QUERY` that does it is exempt from it.
-            set_config(
-                "<max_concurrent_queries>0</max_concurrent_queries>",
-                "<max_concurrent_queries>1</max_concurrent_queries>",
+        # `max_concurrent_queries` is a server setting, so its own negative control installs the limit
+        # from the config, and every statement issued afterwards is subject to it. Install it with no
+        # slot taken and read it back: that pins the value the refusal below is measured against
+        # without assuming which reload applied the file. Only then does a query take the one slot,
+        # which is observed through `system.processes` because that is exempt from the limit it fills.
+        set_config(
+            "<max_concurrent_queries>0</max_concurrent_queries>",
+            "<max_concurrent_queries>1</max_concurrent_queries>",
+        )
+        node.query("SYSTEM RELOAD CONFIG", settings=WAIT_FOR_SLOT)
+        assert server_setting("max_concurrent_queries", WAIT_FOR_SLOT) == "1"
+
+        occupancy = node.get_query_request(
+            "SELECT sleepEachRow(1) FROM numbers(120) SETTINGS "
+            "function_sleep_max_microseconds_per_block = 0, max_block_size = 1",
+            query_id="occupancy_at_limit",
+            settings=WAIT_FOR_SLOT,
+        )
+        try:
+            wait_for(
+                lambda: processes(["occupancy_at_limit"]),
+                "1",
+                "the occupancy query to take the only slot the installed limit allows",
             )
-            node.query("SYSTEM RELOAD CONFIG")
             error = node.query_and_get_error("SELECT 1", settings={"queue_max_wait_ms": 0})
             assert "Too many simultaneous queries. Maximum: 1" in error, error
             assert ", waiting:" not in error, error
         finally:
-            node.query("KILL QUERY WHERE query_id = 'occupancy' SYNC", ignore_error=True)
+            # `KILL QUERY` is exempt from the limit, so it is admitted while the slot is still full.
+            node.query(
+                "KILL QUERY WHERE query_id = 'occupancy_at_limit' SYNC", ignore_error=True
+            )
             occupancy.get_answer_and_error()
     finally:
         set_config(
@@ -340,15 +372,6 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
             "<max_concurrent_queries>0</max_concurrent_queries>",
         )
         cleanup(handles)
-
-
-def processes(query_ids):
-    ids = ", ".join(f"'{query_id}'" for query_id in query_ids)
-    # Reading `system.processes` is exempt from the concurrency limits, so this is one of the few
-    # probes that still answers while they are full.
-    return node.query(
-        f"SELECT count() FROM system.processes WHERE query_id IN ({ids})"
-    ).strip()
 
 
 def test_resuming_query_takes_its_concurrency_slot_back(started_cluster):
@@ -371,20 +394,31 @@ def test_resuming_query_takes_its_concurrency_slot_back(started_cluster):
         # stops waiting: the default refuses at once, a nonzero value waits for a slot.
         for_user = {"max_concurrent_queries_for_user": 2}
         for_all_users = {"max_concurrent_queries_for_all_users": 2, "queue_max_wait_ms": 120000}
+        # One at a time, each waiting until it is counted: a query holds a slot from the moment it is
+        # admitted but is discounted only once it blocks on the load job, so starting all three at
+        # once means undiscounted arrivals, and a limit of 2 then refuses one before it ever waits.
         refused = node.get_query_request(
             "CREATE TABLE re.w0 (a Int) ENGINE = MergeTree ORDER BY a", settings=for_user
+        )
+        handles.append(refused)
+        wait_for(
+            waiters_on_startup_job, "1", "the first query to block on the startup job", timeout=180
         )
         killed = node.get_query_request(
             "CREATE TABLE re.w1 (a Int) ENGINE = MergeTree ORDER BY a",
             query_id="killed",
             settings=for_all_users,
         )
+        handles.append(killed)
+        wait_for(
+            waiters_on_startup_job, "2", "the second query to block on the startup job", timeout=180
+        )
         # A `Replicated` database drop runs no further non-internal query once it resumes, so its
         # success does not depend on a second slot being free at that moment.
         resumed = node.get_query_request(
             "DROP DATABASE re SYNC", query_id="resumed", settings=for_all_users
         )
-        handles.extend([refused, killed, resumed])
+        handles.append(resumed)
         wait_for(
             waiters_on_startup_job,
             "3",
@@ -477,6 +511,10 @@ def test_resuming_query_takes_its_concurrency_slot_back(started_cluster):
             "<max_waiting_queries>3</max_waiting_queries>",
             "<max_waiting_queries>2</max_waiting_queries>",
         )
+        # Release the startup job before the kills. A `KILL ... SYNC` for a query still parked in the
+        # load wait returns only once that job finishes, so a failure landing before the release makes
+        # cleanup take minutes instead of seconds.
+        node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}", ignore_error=True)
         for query_id in ["killed", "resumed"] + ["occupancy0", "occupancy1"]:
             node.query(
                 f"KILL QUERY WHERE query_id = '{query_id}' SYNC", ignore_error=True
