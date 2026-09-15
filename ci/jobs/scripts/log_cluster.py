@@ -28,6 +28,10 @@ class MetaColumn:
     index: str = ""
 
 
+class TransientReadFailure(Exception):
+    """Every attempt of a read failed with a server error or a timeout."""
+
+
 class LogCluster:
     URL_SECRET = "clickhouse_ci_logs_host"
     PASSWD_SECRET = "clickhouse_ci_logs_password"
@@ -311,6 +315,9 @@ class LogCluster:
         result text. Retries transient (>=500 and connection) errors with a
         growing backoff: the shared cluster goes through minutes-long
         server-wide memory-pressure spikes (Code 241 for every query).
+
+        Raises TransientReadFailure instead of returning None when every
+        observed failure was a server error or a timeout.
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -320,10 +327,17 @@ class LogCluster:
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
         response = None
+        # Only a 5xx or a timeout may be reported as a read that did not run;
+        # any other observed failure keeps the caller's fail-closed path.
+        transient = False
+        unapproved = False
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
             if not self.is_ready():
+                # False here also answers a refused `SELECT 1`, so a readiness
+                # failure cannot be attributed to pressure.
+                unapproved = True
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -343,16 +357,26 @@ class LogCluster:
                     f"WARNING: LogCluster select failed with code {response.status_code}"
                 )
                 if response.status_code >= 500:
+                    transient = True
                     time.sleep(5 * (retry + 1))
                     continue
+                unapproved = True
                 break
-            except Exception:
+            except Exception as ex:
+                if isinstance(ex, requests.exceptions.Timeout):
+                    transient = True
+                else:
+                    unapproved = True
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
                 time.sleep(5 * (retry + 1))
         if response is not None:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
+            )
+        if transient and not unapproved:
+            raise TransientReadFailure(
+                "every attempt of the read failed with a server error or a timeout"
             )
         return None
 

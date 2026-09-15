@@ -69,7 +69,7 @@ import subprocess
 import traceback
 from typing import Dict, List, Optional
 
-from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster
+from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster, TransientReadFailure
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1492,14 +1492,19 @@ def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], war
     return "\n".join(lines)
 
 
-def update_comment(body: str, only_update: bool = False) -> None:
-    """Post or update the tagged PR comment. A GH hiccup must not fail the check."""
+def update_comment(body: str, only_update: bool = False) -> bool:
+    """Post or update the tagged PR comment, and say whether it is in place.
+
+    A GH hiccup must not fail the check, so a failure is a False rather than an
+    exception; a caller whose contract depends on the comment checks the value.
+    """
     try:
-        GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body}, only_update=only_update)
+        return bool(GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body}, only_update=only_update))
     except Exception:
         # The comparison result is still in the job report.
         print("WARNING: failed to post/update the PR comment")
         traceback.print_exc()
+        return False
 
 
 def run_comparison(db, info, args, pr_number: int, pr_sha: str):
@@ -1579,6 +1584,23 @@ def main():
     try:
         db = Db()
         comparison = run_comparison(db, info, args, pr_number, pr_sha)
+    except TransientReadFailure as e:
+        # The read-only cluster, not this commit: presenting it as a failed
+        # comparison points the reader at the wrong subject.
+        if args.local:
+            raise
+        posted = update_comment(
+            f"### Build profile diff ({CHECK_NAME})\n\n"
+            f"The comparison did not run: {e}. "
+            f"Commit `{pr_sha}` was not compared with master.\n\n"
+            "See the job log for details."
+        )
+        if not posted:
+            # The skip is only legitimate while the comment says the comparison
+            # did not run, so an unposted comment stays a failure.
+            raise
+        Result.create_from(status=Result.Status.SKIPPED, info=f"Comparison skipped: {e}").complete_job()
+        return
     except Exception as e:
         # The tagged comment is pinned to the pull request, not to a commit, so
         # every exit path has to refresh it: the cluster handle, any of the
