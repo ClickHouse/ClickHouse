@@ -116,6 +116,32 @@ ClickHouse では、クエリのパース時に、演算子の優先度・優先
 
 `a ILIKE b` – `ilike(a, b)` 関数と同等です。
 
+<div id="match-function">
+  ### match 関数
+</div>
+
+`a REGEXP b` – `match(a, b)` 関数。
+
+`a ~ b` – `match(a, b)` 関数 (PostgreSQL スタイルの正規表現マッチ) 。
+
+<div id="notmatch-function">
+  ### notMatch 関数
+</div>
+
+`a !~ b` – `notMatch(a, b)` 関数 (`a` が正規表現 `b` に一致しないかを確認します) 。
+
+<div id="matchcaseinsensitive-function">
+  ### matchCaseInsensitive 関数
+</div>
+
+`a ~* b` – `matchCaseInsensitive(a, b)` 関数 (大文字と小文字を区別しない正規表現に一致) 。
+
+<div id="notmatchcaseinsensitive-function">
+  ### notMatchCaseInsensitive 関数
+</div>
+
+`a !~* b` – `notMatchCaseInsensitive(a, b)` 関数 (`a` が正規表現 `b` に大文字と小文字を区別せずに一致しないかどうかを確認します) 。
+
 <div id="between-function">
   ### BETWEEN 関数
 </div>
