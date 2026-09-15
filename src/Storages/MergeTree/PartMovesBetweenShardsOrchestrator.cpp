@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_DATA_PART;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -475,6 +476,14 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
             auto part = storage.getActiveContainingPart(entry.part_name);
+            if (!part)
+            {
+                /// Any replica of the source shard can pick the entry up, including one that does not have the part
+                /// (it could still be fetching it, for instance). Let the step fail, so that it is retried later,
+                /// possibly by another replica.
+                throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                    "Part {} is not found on this replica, cannot move it to shard {}", entry.part_name, entry.to_shard);
+            }
 
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.
