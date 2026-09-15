@@ -27,7 +27,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -643,3 +643,63 @@ def test_mutate_mixed_legacy_idx_minmax(started_cluster):
     assert node.query("CHECK TABLE t_mixed_minmax_drop SETTINGS check_query_single_value_result = 1") == "1\n"
 
     node.query("DROP TABLE t_mixed_minmax_drop SYNC")
+
+
+def test_attach_part_without_metadata_version(started_cluster):
+    # A part detached before a metadata-only ALTER (here RENAME COLUMN) still has to apply the
+    # conversions of the versions it missed, and its `metadata_version.txt` is the only record of how
+    # far it got. That file carries no checksum, so its absence is not corruption that anything
+    # detects: ATTACH fell back to the table's current version, the rename conversion was skipped and
+    # the renamed column silently read as its default for every row. The attach is refused instead.
+    #
+    # A crash during the detach clone is one way to reach that on-disk state (the clone hard-links the
+    # files one at a time under the final name), and it is emulated here by removing the file.
+    for table, keep_file in (
+        ("t_metadata_version_kept", True),
+        ("t_metadata_version_removed", False),
+    ):
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, a UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', '1')
+            ORDER BY id
+            SETTINGS min_bytes_for_wide_part = 0, storage_policy = 'default'
+            """
+        )
+        node.query(f"INSERT INTO {table} SELECT number, number FROM numbers(1000)")
+        node.query(f"ALTER TABLE {table} DETACH PARTITION tuple()")
+        node.query(f"ALTER TABLE {table} RENAME COLUMN a TO b")
+
+        part_path = (
+            node.query(
+                f"SELECT path FROM system.detached_parts WHERE database = 'default' AND table = '{table}'"
+            )
+            .strip()
+            .rstrip("/")
+        )
+        # The part was written before the rename, so it is one version behind the table.
+        assert exec_root(f"cat {part_path}/metadata_version.txt").strip() == "0"
+
+        if keep_file:
+            node.query(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
+            assert node.query(f"SELECT count(), sum(b) FROM {table}") == "1000\t499500\n"
+        else:
+            exec_root(f"rm {part_path}/metadata_version.txt")
+
+            error = node.query_and_get_error(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
+            assert "has no metadata_version.txt" in error
+            assert node.query(f"SELECT count() FROM {table}") == "0\n"
+            assert (
+                node.query(
+                    f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'"
+                )
+                == "1\n"
+            )
+
+            # Writing the version the part was detached at back into the file makes it attachable.
+            exec_root(f"echo -n 0 > {part_path}/metadata_version.txt")
+            node.query(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
+            assert node.query(f"SELECT count(), sum(b) FROM {table}") == "1000\t499500\n"
+
+        node.query(f"DROP TABLE {table} SYNC")
