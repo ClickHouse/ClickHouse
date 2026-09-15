@@ -679,7 +679,7 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
             return true;
 
         /// Metadata mutations must be included into the snapshot regardless of the parameters.
-        if (AlterConversions::isSupportedMetadataMutation(command))
+        if (AlterConversions::isSupportedMetadataMutation(command.type))
             return true;
     }
 
@@ -743,7 +743,7 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
 {
     for (const auto & command : commands | std::views::reverse)
     {
-        bool is_supported = AlterConversions::isSupportedMetadataMutation(command)
+        bool is_supported = AlterConversions::isSupportedMetadataMutation(command.type)
             || (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
 
@@ -14230,7 +14230,7 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
             has_alter_mutation = true;
         }
 
-        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command))
+        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
         {
             mutation_counters.num_metadata += increment;
             has_metadata_mutation = true;

@@ -48,7 +48,7 @@ public:
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
-    static bool isSupportedMetadataMutation(const MutationCommand & command);
+    static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
