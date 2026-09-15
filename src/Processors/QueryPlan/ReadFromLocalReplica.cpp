@@ -31,13 +31,18 @@ QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
     return qp;
 }
 
-void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
+void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter, bool security_barrier)
 {
     output_header = std::make_shared<const Block>(
         FilterTransform::transformHeader(*output_header, &filter.actions, filter.column_name, filter.do_remove_column));
 
     auto filter_step = std::make_unique<FilterStep>(
         query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
+    if (security_barrier)
+    {
+        filter_step->setSecurityBarrier();
+        setSecurityBarrier();
+    }
     query_plan->addStep(std::move(filter_step));
 }
 

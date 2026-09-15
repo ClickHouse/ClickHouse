@@ -469,6 +469,15 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     if (child_node->children.size() != 1)
         return 0;
 
+    /// The pushed part of the parent is evaluated below the child, on every row the child would
+    /// drop. When the child decides which rows a `SQL SECURITY` view exposes, that runs the
+    /// invoker's expression on the hidden rows, which is exactly the side channel the barrier
+    /// closes: the result is still filtered out, but the payload is scanned before the barrier.
+    /// A barrier parent is refused as well, so that nothing of a sealing step ever moves below
+    /// it. See IQueryPlanStep::isSecurityBarrier.
+    if (parent_node->step->isSecurityBarrier() || child_node->step->isSecurityBarrier())
+        return 0;
+
     NameSet columns_pinned_by_child;
     if (!canPushBelowStep(child_node->step.get(), columns_pinned_by_child))
         return 0;

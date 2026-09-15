@@ -1,0 +1,22 @@
+===== a definer profile of pure execution tuning keeps the view transparent =====
+same
+same
+same
+===== a definer profile read limit that breaks instead of throwing fails closed =====
+different
+different
+different
+===== a definer profile final plans like the same final in the view's own SETTINGS =====
+same
+same
+same
+===== the version hidden by a definer profile final is never observed =====
+2
+0
+2
+0
+2
+0
+===== results through the transparent view are correct =====
+other
+visible

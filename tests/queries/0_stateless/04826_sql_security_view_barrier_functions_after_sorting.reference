@@ -1,0 +1,4 @@
+invoker wrapper view sorts by a prefix of the source order:	1
+definer wrapper view reads in order:	0
+definer wrapper view gets a top-K filter:	0
+definer wrapper view results:	1

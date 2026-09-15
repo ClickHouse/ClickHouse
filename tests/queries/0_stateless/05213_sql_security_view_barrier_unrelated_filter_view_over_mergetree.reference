@@ -1,0 +1,44 @@
+--- uatf_definer_view (serialize_query_plan = 0) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	0
+filter on an unrelated bare name, aggregation on the replicas:	0
+filter on the view, aggregation on the replicas:	0
+filter on the alias, aggregation on the replicas:	0
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6
+--- uatf_none_view (serialize_query_plan = 0) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	0
+filter on an unrelated bare name, aggregation on the replicas:	0
+filter on the view, aggregation on the replicas:	0
+filter on the alias, aggregation on the replicas:	0
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6
+--- uatf_invoker_view (serialize_query_plan = 0) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	0
+filter on an unrelated bare name, aggregation on the replicas:	0
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6
+--- uatf_definer_view (serialize_query_plan = 1) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	1
+filter on an unrelated bare name, aggregation on the replicas:	1
+filter on the view, aggregation on the replicas:	0
+filter on the alias, aggregation on the replicas:	0
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6
+--- uatf_none_view (serialize_query_plan = 1) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	1
+filter on an unrelated bare name, aggregation on the replicas:	1
+filter on the view, aggregation on the replicas:	0
+filter on the alias, aggregation on the replicas:	0
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6
+--- uatf_invoker_view (serialize_query_plan = 1) ---
+no filter, aggregation on the replicas:	1
+filter on an unrelated table, aggregation on the replicas:	1
+filter on an unrelated bare name, aggregation on the replicas:	1
+rows with the filter on an unrelated table:	6
+rows with the filter on an unrelated bare name:	6

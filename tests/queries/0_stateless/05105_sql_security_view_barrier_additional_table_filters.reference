@@ -1,0 +1,30 @@
+--- atf_definer_view (serialize_query_plan = 0) ---
+no filter, parallel replicas reads:	1
+filter on the view, parallel replicas reads:	0
+filter on the alias, parallel replicas reads:	0
+rows through the filter on the view:	3
+rows through the filter on the alias:	3
+--- atf_none_view (serialize_query_plan = 0) ---
+no filter, parallel replicas reads:	1
+filter on the view, parallel replicas reads:	0
+filter on the alias, parallel replicas reads:	0
+rows through the filter on the view:	3
+rows through the filter on the alias:	3
+--- atf_invoker_view (serialize_query_plan = 0) ---
+no filter, parallel replicas reads:	1
+rows through the filter on the view:	3
+--- atf_definer_view (serialize_query_plan = 1) ---
+no filter, parallel replicas reads:	1
+filter on the view, parallel replicas reads:	0
+filter on the alias, parallel replicas reads:	0
+rows through the filter on the view:	3
+rows through the filter on the alias:	3
+--- atf_none_view (serialize_query_plan = 1) ---
+no filter, parallel replicas reads:	1
+filter on the view, parallel replicas reads:	0
+filter on the alias, parallel replicas reads:	0
+rows through the filter on the view:	3
+rows through the filter on the alias:	3
+--- atf_invoker_view (serialize_query_plan = 1) ---
+no filter, parallel replicas reads:	1
+rows through the filter on the view:	3

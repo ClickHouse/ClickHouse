@@ -42,6 +42,15 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     auto & parent = parent_node->step;
     auto & child = child_node->step;
 
+    /// Merging moves the parent's expressions below the child, which must not happen when the
+    /// child decides which rows a `SQL SECURITY` view exposes. See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
+        return 0;
+
+    /// The merged step takes over the child's position, so it inherits the parent's role as the
+    /// step that must not be crossed.
+    const bool security_barrier = parent->isSecurityBarrier();
+
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
@@ -74,6 +83,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         expr->setStepDescription(mergeStepDescriptions(parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
+        if (security_barrier)
+            expr->setSecurityBarrier();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -104,6 +115,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             filter->setPreventInputRemoval();
+        if (security_barrier)
+            filter->setSecurityBarrier();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -121,6 +134,12 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
+    /// `and`-ing the two conditions together drops any guarantee that the child's condition
+    /// decides first, so the parent must stay a separate step above a security barrier.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
+        return 0;
 
     auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
     auto * child_filter = typeid_cast<FilterStep *>(child.get());
@@ -157,6 +176,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    condition_name,
                                                    true);
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
+        if (parent_filter->isSecurityBarrier())
+            filter->setSecurityBarrier();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

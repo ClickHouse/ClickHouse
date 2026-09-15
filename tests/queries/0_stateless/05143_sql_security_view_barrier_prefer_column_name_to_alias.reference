@@ -1,0 +1,12 @@
+--- --enable_analyzer 0 ---
+public_value
+leaked: 0
+HIDDEN_value
+--- --enable_analyzer 1 ---
+public_value
+leaked: 0
+HIDDEN_value
+--- --enable_analyzer 1 --analyzer_inline_views 1 ---
+public_value
+leaked: 0
+HIDDEN_value

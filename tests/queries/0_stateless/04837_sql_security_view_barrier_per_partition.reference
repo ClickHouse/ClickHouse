@@ -1,0 +1,16 @@
+invoker twin, outer DISTINCT:	Skip stream merging: 1
+invoker twin, outer DISTINCT:	Read each partition through separate port: 1
+definer, outer DISTINCT does not reach the reading:	0
+invoker twin, outer LIMIT BY:	Skip stream merging: 1
+invoker twin, outer LIMIT BY:	Read each partition through separate port: 1
+definer, outer LIMIT BY does not reach the reading:	0
+definer view results:	1	1
+old analyzer, invoker twin, outer DISTINCT:	Skip stream merging: 1
+old analyzer, invoker twin, outer DISTINCT:	Read each partition through separate port: 1
+old analyzer, definer, outer DISTINCT does not reach the reading:	0
+invoker twin, outer GROUP BY over a distinct view:	Skip merging: 1
+invoker twin, outer GROUP BY over a distinct view:	Skip stream merging: 1
+invoker twin, outer GROUP BY over a distinct view:	Read each partition through separate port: 1
+definer, disjointness does not cross the seal:	0
+definer, disjointness does not cross the seal, outer LIMIT BY:	0
+definer view results:	1	1

@@ -1,0 +1,8 @@
+invoker, outer LIMIT:	1
+invoker, outer ORDER BY LIMIT:	1
+invoker, follow-up JOIN:	1
+definer, outer LIMIT:	0
+definer, outer ORDER BY LIMIT:	0
+definer, follow-up JOIN:	0
+definer results:	1	1
+definer results through a follow-up JOIN:	100	1

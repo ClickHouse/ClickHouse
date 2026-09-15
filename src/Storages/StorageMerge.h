@@ -221,7 +221,10 @@ public:
     /// plans are moved out of this step, which the caller then replaces.
     QueryPlan expandForParallelReplicas();
 
-    void addFilter(FilterDAGInfo filter);
+    /// Adds a filter on top of every child plan. A filter that is a `SQL SECURITY` barrier keeps
+    /// that role inside the child plans, and this step, which now hides the rows the filter drops,
+    /// becomes a barrier itself. See IQueryPlanStep::isSecurityBarrier.
+    void addFilter(FilterDAGInfo filter, bool security_barrier);
 
 private:
     const size_t required_max_block_size;
@@ -305,7 +308,13 @@ private:
     std::optional<std::vector<ChildPlan>> child_plans;
 
     /// Store filters pushed down from query plan optimization. Filters are added on top of child plans.
-    std::vector<FilterDAGInfo> pushed_down_filters;
+    struct PushedDownFilter
+    {
+        FilterDAGInfo info;
+        /// See IQueryPlanStep::isSecurityBarrier.
+        bool security_barrier = false;
+    };
+    std::vector<PushedDownFilter> pushed_down_filters;
 
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
 

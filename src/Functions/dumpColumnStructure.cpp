@@ -30,6 +30,9 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
+    /// Show a `ColumnReplicated` (a lazily replicated or indexed join output) as it is, instead of
+    /// materializing it first, like the other non-default column representations above.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isDeterministic() const override { return false; }
