@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -172,7 +173,7 @@ void validateCustomDataTypeColumnImpl(
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        const auto & nullable_column = typeid_cast<const ColumnNullable &>(*full_column);
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(*full_column);
         validateCustomDataTypeColumnImpl(
             nullable_column.getNestedColumn(), nullable_type->getNestedType(), operation);
         return;
@@ -186,7 +187,7 @@ void validateCustomDataTypeColumnImpl(
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        const auto & array_column = typeid_cast<const ColumnArray &>(*full_column);
+        const auto & array_column = assert_cast<const ColumnArray &>(*full_column);
         validateCustomDataTypeColumnImpl(
             array_column.getData(), array_type->getNestedType(), operation);
         return;
@@ -194,7 +195,7 @@ void validateCustomDataTypeColumnImpl(
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        const auto & tuple_column = typeid_cast<const ColumnTuple &>(*full_column);
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*full_column);
         const auto & element_types = tuple_type->getElements();
         for (size_t i = 0; i < element_types.size(); ++i)
             validateCustomDataTypeColumnImpl(
@@ -204,7 +205,7 @@ void validateCustomDataTypeColumnImpl(
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        const auto & map_column = typeid_cast<const ColumnMap &>(*full_column);
+        const auto & map_column = assert_cast<const ColumnMap &>(*full_column);
         validateCustomDataTypeColumnImpl(
             map_column.getNestedColumn(), map_type->getNestedType(), operation);
         return;
@@ -212,7 +213,7 @@ void validateCustomDataTypeColumnImpl(
 
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
     {
-        const auto & variant_column = typeid_cast<const ColumnVariant &>(*full_column);
+        const auto & variant_column = assert_cast<const ColumnVariant &>(*full_column);
         for (size_t i = 0; i < variant_type->getVariants().size(); ++i)
             validateCustomDataTypeColumnImpl(
                 variant_column.getVariantByGlobalDiscriminator(i), variant_type->getVariant(i), operation);
