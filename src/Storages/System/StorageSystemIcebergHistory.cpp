@@ -95,18 +95,36 @@ void StorageSystemIcebergHistory::fillData(
     if (!access->isGranted(AccessType::SHOW_TABLES))
         return;
 
-    auto add_history_record = [&](const String & database_name, const String & table_name, StorageObjectStorage * object_storage)
+    auto try_add_history_record = [&](const String & database_name, const String & table_name)
     {
-        if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-            return;
-
-        if (!object_storage->isIcebergStorage())
-            return;
-
         /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
+            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                return;
+
+            DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+            if (!database)
+                return;
+
+            StoragePtr storage = database->tryGetTable(table_name, context_copy);
+            if (!storage)
+                return;
+
+            TableLockHolder lock
+                = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
+            if (!lock)
+                // Table was dropped while acquiring the lock, skipping table
+                return;
+
+            auto * object_storage = dynamic_cast<StorageObjectStorage *>(storage.get());
+            if (!object_storage)
+                return;
+
+            if (!object_storage->isIcebergStorage())
+                return;
+
             if (auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage->getExternalMetadata(context_copy));
                 iceberg_metadata)
             {
@@ -140,7 +158,7 @@ void StorageSystemIcebergHistory::fillData(
         {
             tryLogCurrentException(
                 getLogger("SystemIcebergHistory"),
-                fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
+                fmt::format("Ignoring broken table {}.{}", database_name, table_name));
         }
     };
 
@@ -191,24 +209,7 @@ void StorageSystemIcebergHistory::fillData(
         const String database_name{databases_to_read.getDataAt(i)};
         const String table_name{tables_to_read.getDataAt(i)};
 
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        if (!database)
-            continue;
-
-        StoragePtr storage = database->tryGetTable(table_name, context_copy);
-        if (!storage)
-            continue;
-
-        TableLockHolder lock
-            = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
-        if (!lock)
-            // Table was dropped while acquiring the lock, skipping table
-            continue;
-
-        if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
-        {
-            add_history_record(database_name, table_name, object_storage_table);
-        }
+        try_add_history_record(database_name, table_name);
     }
 #endif
 }
