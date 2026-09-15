@@ -390,7 +390,7 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
+void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
@@ -447,7 +447,7 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
         const ASTPtr create_query = getCreateDatabaseQueryImpl();
         if (!create_query)
             throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query, query_context);
     }
     catch (...)
     {
