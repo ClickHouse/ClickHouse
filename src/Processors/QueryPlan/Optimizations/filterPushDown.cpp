@@ -1350,15 +1350,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
-        /// This rewrite forces every union branch input header to the pushed-down filter's
-        /// output header, which assumes the union forwards each branch unchanged. Skip it
-        /// when the union normalizes a branch (its output differs from some input header),
-        /// e.g. it drops a Const that diverged across branches. Otherwise a branch still
-        /// outputting Const would get a full input header and the mismatch would move here.
-        const auto & union_output = *union_step->getOutputHeader();
-        for (const auto & input_header : union_step->getInputHeaders())
-            if (!blocksHaveEqualStructure(*input_header, union_output))
-                return 0;
+        /// Cloning the filter into each branch assumes the union forwards every branch
+        /// unchanged. Bail out when a branch diverges from the union output either physically
+        /// (e.g. it drops a Const that diverged across branches, which would otherwise get a
+        /// full input header here and move the mismatch into the optimizer) or only loosely by
+        /// type name (same state representation, different type name) -- see canPushStepThroughUnion.
+        if (!canPushStepThroughUnion(*union_step))
+            return 0;
 
         /// Union does not change header.
         /// We can push down filter and update header.
