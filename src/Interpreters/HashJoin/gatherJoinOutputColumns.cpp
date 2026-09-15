@@ -1,35 +1,22 @@
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
-#include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace DB
@@ -117,6 +104,23 @@ void gatherFixedStride(
     chassert(out == out_span.data() + out_span.size());
 }
 
+/// Calls `f.operator()<STRIDE>()` with `stride` as a compile-time width, or 0 for one the kernels
+/// only know at run time.
+template <typename F>
+ALWAYS_INLINE void withStride(size_t stride, F && f)
+{
+    switch (stride)
+    {
+        case 1: f.template operator()<1>(); break;
+        case 2: f.template operator()<2>(); break;
+        case 4: f.template operator()<4>(); break;
+        case 8: f.template operator()<8>(); break;
+        case 16: f.template operator()<16>(); break;
+        case 32: f.template operator()<32>(); break;
+        default: f.template operator()<0>(); break;
+    }
+}
+
 template <bool from_row_list>
 void gatherFixedDispatch(
     IColumn & dst,
@@ -127,23 +131,10 @@ void gatherFixedDispatch(
     size_t rows_to_add,
     const char * default_pattern)
 {
-    switch (stride)
-    {
-#define M(STRIDE) \
-    case (STRIDE): \
-        gatherFixedStride<from_row_list, (STRIDE)>(dst, sources, stride, row_refs_begin, row_refs_end, rows_to_add, default_pattern); \
-        break;
-        M(1)
-        M(2)
-        M(4)
-        M(8)
-        M(16)
-        M(32)
-#undef M
-        default:
-            gatherFixedStride<from_row_list, 0>(dst, sources, stride, row_refs_begin, row_refs_end, rows_to_add, default_pattern);
-            break;
-    }
+    withStride(
+        stride,
+        [&]<size_t STRIDE>
+        { gatherFixedStride<from_row_list, STRIDE>(dst, sources, stride, row_refs_begin, row_refs_end, rows_to_add, default_pattern); });
 }
 
 /// `row' = indexes[row]`, so the word addresses the replicated block's nested column. An identity
@@ -284,23 +275,7 @@ void gatherRawRanges(
     size_t total_rows,
     const char * default_pattern)
 {
-    switch (stride)
-    {
-#define M(STRIDE) \
-    case (STRIDE): \
-        gatherRawRangesStride<(STRIDE)>(dst, bases, stride, ranges, total_rows, default_pattern); \
-        break;
-        M(1)
-        M(2)
-        M(4)
-        M(8)
-        M(16)
-        M(32)
-#undef M
-        default:
-            gatherRawRangesStride<0>(dst, bases, stride, ranges, total_rows, default_pattern);
-            break;
-    }
+    withStride(stride, [&]<size_t STRIDE> { gatherRawRangesStride<STRIDE>(dst, bases, stride, ranges, total_rows, default_pattern); });
 }
 
 void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count);
@@ -314,6 +289,16 @@ void insertRowsDefault(IColumn & dst, const GatherNode & node)
         node.type->insertDefaultInto(dst);
     else
         dst.insertDefault();
+}
+
+/// A run of one goes through `insertFrom`, because `LowCardinality`'s range form builds a used-keys
+/// mapping that costs far more than translating one key.
+void copyRows(IColumn & dst, const IColumn & src, size_t begin, size_t length)
+{
+    if (length == 1)
+        dst.insertFrom(src, begin);
+    else
+        dst.insertRangeFrom(src, begin, length);
 }
 
 /// `Nullable` over a fixed-width column in one pass: each word is read once and serves both planes,
@@ -368,19 +353,8 @@ void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UIn
     const GatherNode & nested = node.children[0];
     if (nested.kind == GatherNode::Kind::Fixed)
     {
-        switch (nested.stride)
-        {
-#define M(STRIDE) \
-    case (STRIDE): gatherNullableFixedStride<(STRIDE)>(dst, node, words, count); return;
-            M(1)
-            M(2)
-            M(4)
-            M(8)
-            M(16)
-            M(32)
-#undef M
-            default: gatherNullableFixedStride<0>(dst, node, words, count); return;
-        }
+        withStride(nested.stride, [&]<size_t STRIDE> { gatherNullableFixedStride<STRIDE>(dst, node, words, count); });
+        return;
     }
     gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, words, words + count, count, &null_map_default);
     gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
@@ -388,9 +362,8 @@ void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UIn
 
 /// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`
 /// is in the low bits of the encoding, so the next row of one block is exactly `word + 1`. A scattered
-/// selection degrades to runs of one for one compare per row, which measures within noise of a
-/// per-row loop, so there is no separate per-row specialization. Only one key's rows ever form a
-/// run, and only if the build side stored them next to each other.
+/// selection degrades to runs of one for one compare per row. Only one key's rows ever form a run,
+/// and only if the build side stored them next to each other.
 void gatherStringChars(
     UInt8 * out_chars, [[maybe_unused]] const UInt8 * chars_end, const UInt64 * words, size_t count,
     const void * const * offsets_by_block, const void * const * chars_by_block)
@@ -630,7 +603,7 @@ void gatherRowsByRuns(IColumn & dst, const GatherNode & node, const UInt64 * wor
     auto flush_run = [&]
     {
         if (run_length)
-            node.copy_rows(dst, *static_cast<const IColumn *>(sources[run_block]), run_begin, run_length);
+            copyRows(dst, *static_cast<const IColumn *>(sources[run_block]), run_begin, run_length);
         run_length = 0;
     };
 
@@ -772,7 +745,7 @@ void gatherRowsByRanges(IColumn & dst, const GatherNode & node, const GatherRang
             for (UInt64 i = 0; i < range.length; ++i)
                 insertRowsDefault(dst, node);
         else
-            node.copy_rows(dst, *static_cast<const IColumn *>(node.data_by_block[range.block_no]), range.begin, range.length);
+            copyRows(dst, *static_cast<const IColumn *>(node.data_by_block[range.block_no]), range.begin, range.length);
     }
 }
 
@@ -815,9 +788,8 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
     }
 }
 
-/// Every encoding a stored right column can have is bound above, and `ColumnConst` and
-/// `ColumnSparse` are normalized away at the build boundary, so getting here means the plan
-/// disagrees with the stored data - not that a slower path is wanted.
+/// `ColumnConst` and `ColumnSparse` are normalized away at the build boundary, so getting here means
+/// the plan disagrees with the stored data - not that a slower path is wanted.
 [[noreturn]] void throwNoGatherKernel(const IDataType & type, const IColumn & column, std::string_view reason)
 {
     throw Exception(
@@ -834,58 +806,22 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
     throwNoGatherKernel(type, column, "the emitted type and the stored column are different shapes");
 }
 
-/// A run of one goes through `insertFrom`, because `LowCardinality`'s range form builds a used-keys
-/// mapping that costs far more than translating one key.
-template <typename Column>
-void copyRowsConcrete(IColumn & dst, const IColumn & src, size_t begin, size_t length)
+/// The declared types of the columns `ColumnPlanes::children` holds for a column of `type`.
+DataTypes childTypes(ColumnPlanes::Shape shape, const IDataType & type)
 {
-    auto & typed_dst = assert_cast<Column &>(dst);
-    const auto & typed_src = assert_cast<const Column &>(src);
-    if (length == 1)
-        typed_dst.insertFrom(typed_src, begin);
-    else
-        typed_dst.insertRangeFrom(typed_src, begin, length);
+    using enum ColumnPlanes::Shape;
+    switch (shape)
+    {
+        case Nullable: return {assert_cast<const DataTypeNullable &>(type).getNestedType()};
+        case Array: return {assert_cast<const DataTypeArray &>(type).getNestedType()};
+        case Map: return {assert_cast<const DataTypeMap &>(type).getNestedType()};
+        case Tuple: return assert_cast<const DataTypeTuple &>(type).getElements();
+        case Variant: return assert_cast<const DataTypeVariant &>(type).getVariants();
+        case Fixed:
+        case String:
+        case Rows: return {};
+    }
 }
-
-/// One resolve step, so that the `Kind::Rows` encodings can be listed one per line. Declared-type
-/// equality is the whole check they need: whatever varies between stored blocks, a `LowCardinality`
-/// dictionary or a `JSON` path set, is what `insertRangeFrom` exists to reconcile.
-struct RowsBinding
-{
-    GatherNode & node;
-    const DataTypePtr & type;
-    const IColumn & column;
-    size_t block_no;
-    size_t num_blocks;
-    bool first;
-    bool default_from_type;
-
-    /// For a caller that has already established that both sides are `Column`.
-    template <typename Column>
-    void bind() const
-    {
-        if (first)
-        {
-            node.kind = GatherNode::Kind::Rows;
-            node.data_by_block.resize(num_blocks);
-            node.copy_rows = &copyRowsConcrete<Column>;
-            node.type = default_from_type ? type : nullptr;
-        }
-        node.data_by_block[block_no] = &column;
-    }
-
-    template <typename Column, typename Type>
-    bool tryBind() const
-    {
-        if (!typeid_cast<const Column *>(&column))
-            return false;
-        if (!typeid_cast<const Type *>(type.get()))
-            throwTypeDisagrees(*type, column);
-        bind<Column>();
-        return true;
-    }
-};
-
 }
 
 void resolveGatherNode(
@@ -900,184 +836,76 @@ void resolveGatherNode(
 
     const bool first = !node.column_type;
     if (first)
+    {
+        /// The emit writes into the type's own column class, so the stored class has to be it.
+        const MutableColumnPtr emit_column = type->createColumn();
+        const IColumn & emit_column_ref = *emit_column;
+        if (typeid(emit_column_ref) != typeid(column))
+            throwTypeDisagrees(*type, column);
         node.column_type = &typeid(column);
+    }
     else if (typeid(column) != *node.column_type)
         throwNoGatherKernel(*type, column, "the stored blocks hold it as different column classes");
 
-    const RowsBinding rows{node, type, column, block_no, num_blocks, first, default_from_type};
+    const ColumnPlanes planes = column.getPlanes();
+    const DataTypes child_types = childTypes(planes.shape, *type);
+    if (child_types.size() != planes.children.size())
+        throwTypeDisagrees(*type, column);
 
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-    {
-        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get());
-        if (!nullable_type)
-            throwTypeDisagrees(*type, column);
-        if (first)
-        {
-            node.kind = Nullable;
-            node.data_by_block.resize(num_blocks);
-            node.children.resize(1);
-        }
-        node.data_by_block[block_no] = nullable->getNullMapData().data();
-        /// `ColumnNullable::insertDefault` leaves the nested planes at the nested *column*'s
-        /// default, not the type's. They differ for an `Enum`, and `assumeNotNull` sees it.
-        resolveGatherNode(node.children[0], nullable_type->getNestedType(), nullable->getNestedColumn(), block_no, num_blocks, false);
-        return;
-    }
-
-    if (const auto * string = typeid_cast<const ColumnString *>(&column))
-    {
-        if (type->getTypeId() != TypeIndex::String)
-            throwTypeDisagrees(*type, column);
-        if (first)
-        {
-            node.kind = String;
-            node.data_by_block.resize(num_blocks);
-            node.aux_by_block.resize(num_blocks);
-        }
-        node.data_by_block[block_no] = string->getOffsets().data();
-        node.aux_by_block[block_no] = string->getChars().data();
-        return;
-    }
-
-    if (const auto * array = typeid_cast<const ColumnArray *>(&column))
-    {
-        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-        if (!array_type)
-            throwTypeDisagrees(*type, column);
-        if (first)
-        {
-            node.kind = Array;
-            node.data_by_block.resize(num_blocks);
-            node.children.resize(1);
-        }
-        node.data_by_block[block_no] = array->getOffsets().data();
-        /// An unmatched row is the empty array, so no default ever reaches the nested plane.
-        resolveGatherNode(node.children[0], array_type->getNestedType(), array->getData(), block_no, num_blocks, false);
-        return;
-    }
-
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-        if (!tuple_type || tuple_type->getElements().size() != tuple->tupleSize())
-            throwTypeDisagrees(*type, column);
-        /// An element-less tuple keeps an explicit row count, so copying a row is a size bump.
-        if (tuple->tupleSize() == 0)
-        {
-            rows.bind<ColumnTuple>();
-            return;
-        }
-        if (first)
-        {
-            node.kind = Tuple;
-            node.children.resize(tuple->tupleSize());
-        }
-        for (size_t i = 0; i < node.children.size(); ++i)
-            resolveGatherNode(
-                node.children[i], tuple_type->getElements()[i], tuple->getColumn(i), block_no, num_blocks, default_from_type);
-        return;
-    }
-
-    if (const auto * variant = typeid_cast<const ColumnVariant *>(&column))
-    {
-        const size_t num_variants = variant->getNumVariants();
-        const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get());
-        if (!variant_type || variant_type->getVariants().size() != num_variants)
-            throwTypeDisagrees(*type, column);
-        if (num_variants == 0 || num_variants >= ColumnVariant::NULL_DISCRIMINATOR)
-            throwNoGatherKernel(*type, column, "the local discriminator does not fit beside the NULL one");
-        /// A ref word's row field is 32 bits, and below an `Array` it names an element index, which
-        /// `addBlockToJoin`'s per-block row limit does not cover. This is that limit in elements.
-        if (variant->size() > std::numeric_limits<UInt32>::max())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "Too many Variant elements in right table block for HashJoin: {}", variant->size());
-        if (first)
-        {
-            node.kind = Variant;
-            node.data_by_block.resize(num_blocks);
-            node.aux_by_block.resize(num_blocks);
-            node.children.resize(num_variants);
-            node.local_to_global_by_block.resize(num_blocks * num_variants);
-        }
-        node.data_by_block[block_no] = variant->getLocalDiscriminators().data();
-        node.aux_by_block[block_no] = variant->getOffsets().data();
-        for (size_t local = 0; local < num_variants; ++local)
-            node.local_to_global_by_block[block_no * num_variants + local]
-                = variant->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
-        /// `getVariants` is ordered by global discriminator, like `node.children`.
-        for (size_t g = 0; g < num_variants; ++g)
-            resolveGatherNode(
-                node.children[g],
-                variant_type->getVariants()[g],
-                variant->getVariantByGlobalDiscriminator(g),
-                block_no,
-                num_blocks,
-                false);
-        return;
-    }
-
-    if (const auto * map = typeid_cast<const ColumnMap *>(&column))
-    {
-        const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
-        if (!map_type)
-            throwTypeDisagrees(*type, column);
-        if (first)
-        {
-            node.kind = Map;
-            node.children.resize(1);
-        }
-        /// A `Map` is its nested `Array(Tuple(key, value))` and nothing besides.
-        resolveGatherNode(node.children[0], map_type->getNestedType(), map->getNestedColumn(), block_no, num_blocks, false);
-        return;
-    }
-
-    /// The plane-less encodings: their rows are not an array of values, so only their own
-    /// `insertRangeFrom` can copy them. `AggregateFunction` is here for ownership, not layout - a row
-    /// is a pointer to a state owned by one source column, and that call is what keeps every source
-    /// arena alive behind an output spanning many of them.
-    if (rows.tryBind<ColumnLowCardinality, DataTypeLowCardinality>())
-        return;
-    if (rows.tryBind<ColumnObject, DataTypeObject>())
-        return;
-    if (rows.tryBind<ColumnDynamic, DataTypeDynamic>())
-        return;
-    if (rows.tryBind<ColumnAggregateFunction, DataTypeAggregateFunction>())
-        return;
-    if (rows.tryBind<ColumnQBit, DataTypeQBit>())
-        return;
-    if (rows.tryBind<ColumnNothing, DataTypeNothing>())
-        return;
-
-    /// The fixed-width leaf, and the end of the line. `isFixedAndContiguous` keeps `getRawData`
-    /// from throwing; a `ColumnConst` forwards that test to its one-element data column, so it must
-    /// not pass - its buffer would be read out of bounds above row zero.
     if (first)
     {
-        if (isColumnConst(column) || !column.isFixedAndContiguous())
-            throwNoGatherKernel(*type, column, "no kernel is bound for this column class");
-        node.kind = Fixed;
-        node.stride = column.sizeOfValueIfFixed();
+        node.kind = planes.shape;
+        node.stride = planes.stride;
+        node.children.resize(planes.children.size());
         node.data_by_block.resize(num_blocks);
-
-        /// Doubles as the check that the type and the column are the same fixed-width shape.
-        MutableColumnPtr default_row = type->createColumn();
-        if (default_from_type)
-            type->insertDefaultInto(*default_row);
-        else
-            default_row->insertDefault();
-        if (!default_row->isFixedAndContiguous() || default_row->sizeOfValueIfFixed() != node.stride
-            || default_row->getRawData().size() != node.stride)
-            throwTypeDisagrees(*type, column);
-        const std::string_view default_bytes = default_row->getRawData();
-        node.default_pattern.assign(default_bytes.begin(), default_bytes.end());
+        switch (planes.shape)
+        {
+            case Fixed: {
+                MutableColumnPtr default_row = column.cloneEmpty();
+                if (default_from_type)
+                    type->insertDefaultInto(*default_row);
+                else
+                    default_row->insertDefault();
+                const std::string_view default_bytes = default_row->getRawData();
+                chassert(default_bytes.size() == node.stride);
+                node.default_pattern.assign(default_bytes.begin(), default_bytes.end());
+                break;
+            }
+            case String: node.aux_by_block.resize(num_blocks); break;
+            case Variant:
+                if (planes.children.empty() || planes.children.size() >= ColumnVariant::NULL_DISCRIMINATOR)
+                    throwNoGatherKernel(*type, column, "the local discriminator does not fit beside the NULL one");
+                node.aux_by_block.resize(num_blocks);
+                node.local_to_global_by_block.resize(num_blocks * planes.children.size());
+                break;
+            case Rows: node.type = default_from_type ? type : nullptr; break;
+            case Nullable:
+            case Array:
+            case Tuple:
+            case Map: break;
+        }
     }
-    if (column.sizeOfValueIfFixed() != node.stride)
+    else if (planes.stride != node.stride || planes.children.size() != node.children.size())
         throwNoGatherKernel(*type, column, "the stored blocks hold it at different widths");
-    const std::string_view raw_data = column.getRawData();
-    /// A column delegating `getRawData` hands back a buffer that does not hold its own rows.
-    if (raw_data.size() != column.size() * node.stride)
-        throwNoGatherKernel(*type, column, "its raw data does not hold exactly its own rows");
-    node.data_by_block[block_no] = raw_data.data();
+
+    node.data_by_block[block_no] = planes.data;
+    if (!node.aux_by_block.empty())
+        node.aux_by_block[block_no] = planes.aux;
+    if (planes.shape == Variant)
+    {
+        /// A ref word's row field is 32 bits, and below an `Array` it names an element index, which
+        /// `addBlockToJoin`'s per-block row limit does not cover. This is that limit in elements.
+        if (column.size() > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many Variant elements in right table block for HashJoin: {}", column.size());
+        std::ranges::copy(planes.local_to_global, node.local_to_global_by_block.begin() + block_no * planes.children.size());
+    }
+
+    /// `ColumnNullable::insertDefault` leaves the nested planes at the nested *column*'s default, not
+    /// the type's; they differ for an `Enum`, and `assumeNotNull` sees it. An array's or a variant's
+    /// unmatched row has no nested rows at all. Only a tuple's elements keep writing the type's default.
+    for (size_t i = 0; i < planes.children.size(); ++i)
+        resolveGatherNode(
+            node.children[i], child_types[i], *planes.children[i], block_no, num_blocks, default_from_type && planes.shape == Tuple);
 }
 
 void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch)

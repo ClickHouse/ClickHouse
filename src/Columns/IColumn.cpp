@@ -1028,4 +1028,10 @@ void intrusive_ptr_release(const IColumn * c)
     boost::sp_adl_block::intrusive_ptr_release<IColumn, boost::thread_safe_counter>(c);
 }
 
+ColumnPlanes IColumn::getPlanes() const
+{
+    if (!isFixedAndContiguous())
+        return ColumnPlanes(ColumnPlanes::Shape::Rows, this);
+    return ColumnPlanes(ColumnPlanes::Shape::Fixed, getRawData().data(), nullptr, sizeOfValueIfFixed());
+}
 }

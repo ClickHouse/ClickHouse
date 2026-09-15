@@ -9,6 +9,8 @@
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 
+#include <span>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -150,6 +152,24 @@ private:
     void dispatchOutputs(F && f) const;
 };
 
+/// What one emit's output columns read: the access index of each saved-block column in `positions`
+/// and, for the columnar ones, the gather source, resolved once per probe. Only the requested
+/// positions are built, so `StorageJoin` queries selecting different right-column subsets each get
+/// their own columns built rather than reusing another query's table.
+struct EmitPlan
+{
+    ColumnAccessIndexes access_indexes;
+    /// Parallel to `access_indexes`; empty for a row-store column, and for every column when not resolved.
+    std::vector<GatherColumn> gather;
+    bool has_row_store = false;
+    bool has_columns = false;
+};
+
+/// `type_name` is parallel to `positions`. `with_gather` is false for joinGet, whose output type may
+/// wrap the stored one in `Nullable` and which emits row by row through `buildJoinGetOutput`.
+EmitPlan
+planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
+
 /// Records the probe's matches as encoded ref words. Every strictness records rather than emits:
 /// the output columns are built later, by the emit kernels, from the words this collects.
 class AddedColumns
@@ -226,49 +246,11 @@ public:
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
-        const auto & access_indexes = join.getJoinedData()->column_access_indexes;
-        const bool row_store_initialized = join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized;
-        /// The columnar (non-row-store) output columns, by position in `StoredBlock::columns`.
-        std::vector<EmitColumnRequest> columnar_requests;
-        lazy_output.output_access_indexes.reserve(right_indexes.size());
-        columnar_requests.reserve(right_indexes.size());
-        for (size_t dst_idx = 0; dst_idx < right_indexes.size(); ++dst_idx)
-        {
-            const ColumnAccessIndex access_index = row_store_initialized
-                ? access_indexes[right_indexes[dst_idx]]
-                : ColumnAccessIndex{ColumnAccessIndex::Type::Columns, right_indexes[dst_idx]};
-            lazy_output.output_access_indexes.push_back(access_index);
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                lazy_output.has_row_store = true;
-            else
-            {
-                lazy_output.has_columns = true;
-                columnar_requests.push_back({access_index.index, lazy_output.type_name[dst_idx].type});
-            }
-        }
-
-        /// Cache, per output column, the per-block plane pointers of its source. Only the requested
-        /// positions are built, so StorageJoin queries selecting different right-column subsets each
-        /// get their own columns built rather than reusing another query's table.
-        if (!is_join_get)
-        {
-            const size_t columnar_columns_count = row_store_initialized
-                ? static_cast<size_t>(std::ranges::count_if(
-                      access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
-                : saved_block_sample.columns();
-
-            std::vector<GatherColumn> gather_by_position;
-            join.getJoinedData()->stored_columns_index->resolveEmitColumns(
-                columnar_columns_count, columnar_requests, gather_by_position);
-
-            lazy_output.emit_gather.assign(lazy_output.output_access_indexes.size(), {});
-            for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
-            {
-                const auto & access_index = lazy_output.output_access_indexes[dst_idx];
-                if (access_index.type == ColumnAccessIndex::Type::Columns)
-                    lazy_output.emit_gather[dst_idx] = gather_by_position[access_index.index];
-            }
-        }
+        EmitPlan plan = planJoinEmit(*join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get);
+        lazy_output.output_access_indexes = std::move(plan.access_indexes);
+        lazy_output.emit_gather = std::move(plan.gather);
+        lazy_output.has_row_store = plan.has_row_store;
+        lazy_output.has_columns = plan.has_columns;
     }
 
     size_t size() const { return columns.size(); }

@@ -2,6 +2,8 @@
 #include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
 #include <DataTypes/NullableUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -354,6 +356,46 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 
     fillRowStoreOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, type_name);
     return added_rows;
+}
+
+EmitPlan
+planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather)
+{
+    const bool row_store_initialized = data.row_store_state == HashJoin::RowStoreState::Initialized;
+    EmitPlan plan;
+    plan.access_indexes.reserve(positions.size());
+    std::vector<EmitColumnRequest> columnar_requests;
+    columnar_requests.reserve(positions.size());
+    for (size_t dst_idx = 0; dst_idx < positions.size(); ++dst_idx)
+    {
+        const ColumnAccessIndex access_index = row_store_initialized
+            ? data.column_access_indexes[positions[dst_idx]]
+            : ColumnAccessIndex{ColumnAccessIndex::Type::Columns, positions[dst_idx]};
+        plan.access_indexes.push_back(access_index);
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            plan.has_row_store = true;
+        else
+        {
+            plan.has_columns = true;
+            columnar_requests.push_back({access_index.index, type_name[dst_idx].type});
+        }
+    }
+    if (!with_gather)
+        return plan;
+
+    /// The emit table is indexed by columnar position, which the row store compacts.
+    const size_t columnar_columns_count = row_store_initialized
+        ? static_cast<size_t>(std::ranges::count_if(
+              data.column_access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
+        : data.sample_block.columns();
+    std::vector<GatherColumn> gather_by_position;
+    data.stored_columns_index->resolveEmitColumns(columnar_columns_count, columnar_requests, gather_by_position);
+
+    plan.gather.assign(plan.access_indexes.size(), {});
+    for (size_t dst_idx = 0; dst_idx < plan.access_indexes.size(); ++dst_idx)
+        if (plan.access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
+            plan.gather[dst_idx] = gather_by_position[plan.access_indexes[dst_idx].index];
+    return plan;
 }
 
 void AddedColumns::appendFromBlock(UInt64 ref_word)

@@ -8,14 +8,14 @@
 #include <typeinfo>
 #include <vector>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Core/Joins.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <base/defines.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -367,9 +367,8 @@ struct RowRefList
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
-        /// Range mode: `range_word` is the current ref, `range_remaining` the count. The count is
-        /// as wide as `rows` on purpose - `Batch::total_rows` is 56 bits, and a narrower counter
-        /// would stop early and leave the tail of the destination unwritten.
+        /// Range mode: `range_word` is the current ref, `range_remaining` the count, as wide as
+        /// `rows` because `Batch::total_rows` is 56 bits and a narrower counter would stop early.
         UInt64 range_word = 0;
         size_t range_remaining = 0;
     };
@@ -421,43 +420,26 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
 
 struct GatherNode;
 
-/// Appends `length` consecutive rows of `src` starting at `begin`. Both sides are bound to one
-/// concrete column class at plan construction, so this is a function pointer, not a virtual call.
-using GatherRowsCopy = void (*)(IColumn & dst, const IColumn & src, size_t begin, size_t length);
-
-/// One level of a gather source descriptor: the raw per-block base pointers of a stored column,
+/// One level of a gather source descriptor: the `ColumnPlanes` of a stored column, per block,
 /// mirroring the column's own nesting. Every `*_by_block` vector below is indexed by `block_no`; a
 /// cleared block's entry stays null and is never dereferenced, as no live ref points at it. The
 /// pointers hold only for the current emit-table generation.
 struct GatherNode
 {
-    enum class Kind : UInt8
-    {
-        Fixed, /// contiguous fixed-width leaf: `data_by_block` is the value base, `stride` the value width
-        Nullable, /// `data_by_block` is the null map base (1 byte per row); `children[0]` is the nested column
-        String, /// `data_by_block` is the offsets base (UInt64 per row); `aux_by_block` is the chars base
-        Array, /// `data_by_block` is the offsets base (UInt64 per row); `children[0]` is the nested column
-        Tuple, /// no planes of its own; `children` are the elements, all sharing the row numbers
-        Variant, /// `data_by_block` is the local discriminators base (1 byte per row); `aux_by_block` is the
-        /// offsets base (UInt64 per row); `children[g]` is the variant with GLOBAL discriminator `g`;
-        /// block `b`'s local discriminator `d` maps to global `local_to_global_by_block[b * children.size() + d]`
-        Map, /// no planes of its own; `children[0]` is the nested `Array(Tuple(key, value))`, which is the
-        /// whole of a `Map`
-        Rows, /// no planes: `data_by_block` holds the source column itself and `copy_rows` appends runs
-        /// of its rows. The shape of every encoding whose rows are not an array of values.
-    };
+    using Kind = ColumnPlanes::Shape;
 
     Kind kind = Kind::Fixed;
     size_t stride = 0;
-    /// One entry per stored block: sized by the data, so they use the throwing memory tracker like
+    /// Block `b`'s `ColumnPlanes::data` and `aux`; for `Rows`, `data_by_block[b]` is the source column
+    /// itself. Sized by the data, so they use the throwing memory tracker like
     /// `StoredColumnsIndex::blocks` does, and a huge build fails the query rather than the process.
     VectorWithMemoryTracking<const void *> data_by_block;
     VectorWithMemoryTracking<const void *> aux_by_block;
     std::vector<GatherNode> children;
+    /// `Variant` only: block `b`'s local discriminator `d` is global `[b * children.size() + d]`.
     VectorWithMemoryTracking<UInt8> local_to_global_by_block;
-    /// `Rows` only: the bound copy, and the output type whose `insertDefaultInto` writes an
-    /// unmatched row. Null below a `Nullable`, where `insertDefault` fills the nested column.
-    GatherRowsCopy copy_rows = nullptr;
+    /// `Rows` only: the output type whose `insertDefaultInto` writes an unmatched row. Null below a
+    /// `Nullable`, where `insertDefault` fills the nested column.
     DataTypePtr type;
     /// `Fixed` only: the `stride` bytes an unmatched row writes. Held as data rather than derived,
     /// because a fixed-width default is not always bitwise zero - an `Enum`'s is its first value.

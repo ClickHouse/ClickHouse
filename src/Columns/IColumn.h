@@ -53,6 +53,40 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
+/// The planes a column's rows live in, for a reader that copies rows by number straight from
+/// memory. `shape` says how `data` and `aux` are read and what `children` are.
+struct ColumnPlanes
+{
+    enum class Shape : UInt8
+    {
+        Fixed, /// `data` holds the values, `stride` bytes each
+        Nullable, /// `data` is the null map, one byte per row; `children[0]` is the nested column
+        String, /// `data` is the offsets, one UInt64 per row; `aux` is the chars
+        Array, /// `data` is the offsets, one UInt64 per row; `children[0]` is the nested column
+        Tuple, /// `children` are the elements, all sharing the row numbers
+        Variant, /// `data` is the local discriminators, one byte per row; `aux` is the offsets, one UInt64
+        /// per row; `children[g]` is the variant with global discriminator `g`, and local
+        /// discriminator `d` is global `local_to_global[d]`
+        Map, /// `children[0]` is the nested `Array(Tuple(key, value))`, which is the whole of a `Map`
+        Rows, /// no planes: `data` is the column itself, whose rows only `insertRangeFrom` can copy
+    };
+
+    explicit ColumnPlanes(Shape shape_, const void * data_ = nullptr, const void * aux_ = nullptr, size_t stride_ = 0)
+        : shape(shape_)
+        , data(data_)
+        , aux(aux_)
+        , stride(stride_)
+    {
+    }
+
+    Shape shape = Shape::Rows;
+    const void * data = nullptr;
+    const void * aux = nullptr;
+    size_t stride = 0;
+    VectorWithMemoryTracking<const IColumn *> children;
+    VectorWithMemoryTracking<UInt8> local_to_global;
+};
+
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -904,6 +938,10 @@ public:
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
+
+    /// Where this column's rows live, for a reader that copies them by number straight from memory.
+    /// The default covers a fixed-width contiguous column; everything else reports `Rows`.
+    [[nodiscard]] virtual ColumnPlanes getPlanes() const;
 
     /// Appends n elements with unspecified values and returns a span pointing to their memory range.
     /// Can be used to decompress or deserialize data directly into the column.

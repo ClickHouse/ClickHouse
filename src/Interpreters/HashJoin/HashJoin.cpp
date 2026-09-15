@@ -49,6 +49,8 @@
 #include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 
+#include <numeric>
+
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
@@ -1601,48 +1603,19 @@ public:
         if (parent.data == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-        const auto & access_indexes = parent.data->column_access_indexes;
         const Block & saved_block_sample = parent.savedBlockSample();
 
         type_name.reserve(saved_block_sample.columns());
         for (const auto & column : saved_block_sample)
             type_name.emplace_back(column.name, column.type);
 
-        const bool row_store_initialized = parent.data->row_store_state == HashJoin::RowStoreState::Initialized;
-        output_access_indexes.reserve(saved_block_sample.columns());
-        /// The columnar (non-row-store) output columns, by position in `StoredBlock::columns`.
-        std::vector<EmitColumnRequest> columnar_requests;
-        columnar_requests.reserve(saved_block_sample.columns());
-        for (size_t dst_idx = 0; dst_idx < saved_block_sample.columns(); ++dst_idx)
-        {
-            const ColumnAccessIndex access_index
-                = row_store_initialized ? access_indexes[dst_idx] : ColumnAccessIndex{ColumnAccessIndex::Type::Columns, dst_idx};
-            output_access_indexes.push_back(access_index);
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                has_row_store = true;
-            else
-            {
-                has_columns = true;
-                columnar_requests.push_back({access_index.index, type_name[dst_idx].type});
-            }
-        }
-
-        /// The not-joined scan emits ref words like the probe, so it runs the same kernels.
-        const size_t columnar_columns_count = row_store_initialized
-            ? static_cast<size_t>(std::ranges::count_if(
-                  access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
-            : saved_block_sample.columns();
-
-        std::vector<GatherColumn> gather_by_position;
-        parent.data->stored_columns_index->resolveEmitColumns(columnar_columns_count, columnar_requests, gather_by_position);
-
-        emit_gather.assign(output_access_indexes.size(), {});
-        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
-        {
-            const auto & access_index = output_access_indexes[dst_idx];
-            if (access_index.type == ColumnAccessIndex::Type::Columns)
-                emit_gather[dst_idx] = gather_by_position[access_index.index];
-        }
+        std::vector<size_t> positions(saved_block_sample.columns());
+        std::iota(positions.begin(), positions.end(), 0);
+        EmitPlan plan = planJoinEmit(*parent.data, positions, type_name, /*with_gather=*/true);
+        output_access_indexes = std::move(plan.access_indexes);
+        emit_gather = std::move(plan.gather);
+        has_row_store = plan.has_row_store;
+        has_columns = plan.has_columns;
     }
 
     Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
