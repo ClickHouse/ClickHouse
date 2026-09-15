@@ -22,7 +22,7 @@
 #include <optional>
 #include <type_traits>
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 #    include <immintrin.h>
 #endif
 
@@ -35,8 +35,8 @@ enum class ArrayMinMaxIndexStrategy : uint8_t
     Max,
 };
 
-#if USE_MULTITARGET_CODE
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+#if defined(__AVX2__)
+DECLARE_DEFAULT_CODE(
 
 template <typename T>
 size_t findFirstEqualSIMD(const T * data, size_t size, const T & value)
@@ -255,7 +255,7 @@ size_t findFirstNaNSIMD(const T * data, size_t size)
     return size;
 }
 
-)
+) // DECLARE_DEFAULT_CODE
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
 
@@ -634,7 +634,7 @@ size_t findIndexAVX512(const T * data, size_t size)
 
     return best_index;
 }
-)
+) // DECLARE_X86_64_V4_SPECIFIC_CODE
 #endif
 
 namespace ArrayMinMaxIndexImpl
@@ -742,8 +742,8 @@ static std::optional<T> findExtremeValue(const T * data, size_t begin, size_t en
 
 static bool useAVX2()
 {
-#if USE_MULTITARGET_CODE
-    return isArchSupported(TargetArch::x86_64_v3);
+#if defined(__AVX2__)
+    return true;
 #else
     return false;
 #endif
@@ -761,9 +761,9 @@ static bool useAVX512()
 template <typename T>
 static size_t findFirstEqual(const T * data, size_t size, const T & value, bool use_simd)
 {
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
     if (use_simd)
-        return TargetSpecific::x86_64_v3::findFirstEqualSIMD(data, size, value);
+        return TargetSpecific::Default::findFirstEqualSIMD(data, size, value);
 #else
     (void)use_simd;
 #endif
@@ -780,9 +780,9 @@ template <typename T>
 requires(std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
 static size_t findFirstNaN(const T * data, size_t size, bool use_simd)
 {
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
     if (use_simd)
-        return TargetSpecific::x86_64_v3::findFirstNaNSIMD(data, size);
+        return TargetSpecific::Default::findFirstNaNSIMD(data, size);
 #else
     (void)use_simd;
 #endif
@@ -816,11 +816,15 @@ static size_t findIndexPackedMask(const T * data, size_t size, bool use_simd, bo
 #if USE_MULTITARGET_CODE
     if (use_avx512)
         return TargetSpecific::x86_64_v4::findFirstEqualPackedMaskSIMD(data, size, *extreme);
+#else
+    (void)use_avx512;
+#endif
+
+#if defined(__AVX2__)
     if (use_simd)
-        return TargetSpecific::x86_64_v3::findFirstEqualPackedMaskSIMD(data, size, *extreme);
+        return TargetSpecific::Default::findFirstEqualPackedMaskSIMD(data, size, *extreme);
 #else
     (void)use_simd;
-    (void)use_avx512;
 #endif
 
     return findFirstEqual(data, size, *extreme, false);
