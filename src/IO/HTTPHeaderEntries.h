@@ -18,11 +18,8 @@ struct HTTPHeaderEntry
 
 using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-/// Header names lower-cased on insertion.
-///
-/// S3 reserves the `x-amz-` family and expects it in lower case. The client picks those headers out
-/// by that literal prefix, so a name spelled `X-Amz-Meta-Owner` is treated as an ordinary header and
-/// is neither signed nor translated.
+/// Header names lower-cased on insertion. The S3 client picks the reserved `x-amz-` family out by
+/// that literal lower-case prefix.
 class NormalizedHTTPHeaderEntries
 {
 public:
@@ -35,8 +32,7 @@ public:
     void append(const HTTPHeaderEntries & headers);
     void append(const NormalizedHTTPHeaderEntries & headers);
 
-    /// Remove every entry with this name. The name is normalized first, so the caller may spell it
-    /// in any case.
+    /// The name is normalized first, so the caller may spell it in any case.
     void eraseByName(std::string_view name);
 
     void clear() { entries.clear(); }
@@ -49,8 +45,7 @@ public:
     const_iterator end() const { return entries.end(); }
 
 private:
-    /// `HTTPHeaderFilter` strips control characters from a name in place, then restores the
-    /// invariant. It is the only code that edits an entry already held here.
+    /// `HTTPHeaderFilter` edits a name in place, then restores the invariant.
     friend class HTTPHeaderFilter;
 
     HTTPHeaderEntries entries;

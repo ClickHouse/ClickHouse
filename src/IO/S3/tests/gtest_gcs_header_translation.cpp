@@ -315,11 +315,9 @@ TEST(GCSHeaderTranslation, RequestLeavesInTheGoogleSpelling)
     EXPECT_FALSE(headers.has("x-amz-api-version"));
 }
 
-/// The same boundary for a header an operator configured, which is what `NormalizedHTTPHeaderEntries`
-/// exists for. The client picks the `x-amz-` family out by the lower-case prefix, so the spelling
-/// `X-Amz-Meta-Owner` would be attached as an ordinary header after signing and never reach the
-/// rename. Giving `create` the name unnormalized fails here: the mock sees the `x-amz-` spelling and
-/// no `x-goog-` one, while every helper test above still passes.
+/// The same boundary for a header an operator configured. Dropping the lower-casing from
+/// `NormalizedHTTPHeaderEntries` fails here -- the mock sees the `x-amz-` spelling and no `x-goog-`
+/// one -- while every helper test above still passes.
 TEST(GCSHeaderTranslation, ConfiguredHeaderLeavesInTheGoogleSpellingInAnyCase)
 {
     MockGCSServer mock_gcs;

@@ -77,8 +77,6 @@ struct S3AuthSettings
     /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
-    /// S3 reads a reserved header name by its lower-case spelling, so the names are held normalized
-    /// from the moment they are read out of the config or the query.
     NormalizedHTTPHeaderEntries headers;
     NormalizedHTTPHeaderEntries access_headers;
 
