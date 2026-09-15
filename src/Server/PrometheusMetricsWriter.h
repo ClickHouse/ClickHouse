@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 
@@ -32,11 +33,16 @@ public:
     /// Label names this writer emits itself for the sections enabled by the given flags (the "le" label
     /// of histogram buckets, the "ClickHouse_Info" labels, the asynchronous metric key labels, and the
     /// per-sample labels of the exposed histogram/dimensional families). A constant label must not reuse
-    /// any of them, or an exported sample would carry two labels with the same name. The default reflects
-    /// the full server surface;
+    /// any of them, or an exported sample would carry two labels with the same name. `async_metrics_mode`
+    /// is needed because it decides whether the asynchronous metric keys are exposed as labels at all.
+    /// The default reflects the full server surface;
     /// derived writers override to reflect their own (e.g. Keeper exposes only keeper_* families).
     virtual std::unordered_set<std::string> getReservedLabelNames(
-        bool expose_info, bool expose_asynchronous_metrics, bool expose_histograms, bool expose_dimensional_metrics) const;
+        bool expose_info,
+        bool expose_asynchronous_metrics,
+        AsynchronousMetricsKeyValuesMode async_metrics_mode,
+        bool expose_histograms,
+        bool expose_dimensional_metrics) const;
 
     /// `extra_labels` must be either empty or rendered as `name="value",...` (without braces);
     /// they are written before the family's own labels.
@@ -63,7 +69,11 @@ public:
     void writeHistogramMetrics(WriteBuffer & wb) const override;
     void writeDimensionalMetrics(WriteBuffer & wb) const override;
     std::unordered_set<std::string> getReservedLabelNames(
-        bool expose_info, bool expose_asynchronous_metrics, bool expose_histograms, bool expose_dimensional_metrics) const override;
+        bool expose_info,
+        bool expose_asynchronous_metrics,
+        AsynchronousMetricsKeyValuesMode async_metrics_mode,
+        bool expose_histograms,
+        bool expose_dimensional_metrics) const override;
 };
 
 }

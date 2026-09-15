@@ -16,11 +16,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
 }
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 namespace
 {
 
@@ -34,35 +29,18 @@ String describeSet(const FutureSetFromSubquery & future_set)
 
 }
 
-void validateSetsForDistributedPlan(QueryPlan::Node & root)
+
+std::optional<PreformattedMessage> getReasonSetsCannotBeShipped(const DelayedCreatingSetsStep & step)
 {
-    std::vector<QueryPlan::Node *> stack;
-    stack.push_back(&root);
-    while (!stack.empty())
+    for (const auto & future_set : step.getSets())
     {
-        auto * node = stack.back();
-        stack.pop_back();
-        if (!node || !node->step)
-            continue;
-
-        if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
-        {
-            for (const auto & future_set : delayed->getSets())
-            {
-                if (future_set && future_set->hasExternalTable())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "make_distributed_plan does not support sets backed by an external table "
-                        "(`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
-            }
-        }
-
-        for (auto * child : node->children)
-            stack.push_back(child);
-
-        for (auto * child_plan : node->step->getChildPlans())
-            if (child_plan && child_plan->getRootNode())
-                stack.push_back(child_plan->getRootNode());
+        if (future_set && future_set->hasExternalTable())
+            return PreformattedMessage::create(
+                "make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): "
+                "IN-subquery {}",
+                describeSet(*future_set));
     }
+    return std::nullopt;
 }
 
 PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
@@ -134,8 +112,12 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
         std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
+    /// An unsupported set source (e.g. `WITH TOTALS` inside the subquery) builds the set locally
+    /// on the initiator; the flipped settings also skip the conversion below.
+    source_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     source_plan.optimize(optimization_settings);
-    source_plan.convertToDistributed(optimization_settings);
+    if (optimization_settings.make_distributed_plan)
+        source_plan.convertToDistributed(optimization_settings);
 }
 
 }

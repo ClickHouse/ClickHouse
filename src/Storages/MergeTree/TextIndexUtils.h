@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -163,8 +165,12 @@ private:
     PaddedPODArray<UInt32> row_ids_buffer;
     /// Reusable buffer for position entries of one token read from a source.
     PODArray<RoaringishEntry> position_entries_buffer;
+    /// Row ids of the current token in pre-remap order, pairing its positions with their ranks.
+    PaddedPODArray<UInt32> token_row_ids;
     /// Positions accumulated for the current token (phrase query support).
     PaddedPODArray<RoaringishEntry> output_positions;
+    /// Reused across tokens to keep position decode allocation-free during merge.
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_decode_scratch;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

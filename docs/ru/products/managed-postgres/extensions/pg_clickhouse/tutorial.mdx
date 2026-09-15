@@ -14,6 +14,12 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка сторонних �
 Это руководство следует [руководству по ClickHouse], но все запросы в нем выполняются через
 pg&#95;clickhouse.
 
+Выберите способ настройки `pg_clickhouse`:
+
+* [Из консоли](#from-console), если вы используете ClickHouse Managed Postgres.
+* [Из PSQL](#from-psql), если вы самостоятельно устанавливаете и настраиваете
+  расширение.
+
 <div id="start-clickhouse">
   ## Запустите ClickHouse
 </div>
@@ -162,6 +168,43 @@ SELECT * FROM s3(
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+<div id="from-console">
+  ## Через консоль
+</div>
+
+Если вы используете ClickHouse Managed Postgres, вы можете настроить
+`pg_clickhouse` и подключиться к сервису ClickHouse через консоль ClickHouse Cloud.
+Откройте сервис Managed Postgres, выберите **Настройки** и найдите раздел
+**ClickHouse integration**. Нажмите **Включить pg&#95;clickhouse**.
+
+В форме настройки укажите имя внешнего сервера. Выберите сервис ClickHouse,
+базу данных и пользователя для подключения. Введите пароль ClickHouse, затем
+выберите базу данных Postgres и целевую схему, в которую нужно импортировать
+таблицы ClickHouse. Нажмите **Подключить**, чтобы создать внешний сервер и
+импортировать схему.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+
+После завершения настройки консоль отобразит подтверждение, а внешний сервер
+появится в списке серверов.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Список внешних серверов с подключением pg_clickhouse для taxi" size="lg" border />
+
+Теперь вы можете открыть **SQL консоль** Postgres и выполнять запросы к импортированным таблицам:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+Чтобы выполнить примеры с данными такси из этого руководства, выберите базу данных ClickHouse `taxi`
+и импортируйте её в целевую схему `taxi`.
+
+<div id="from-psql">
+  ## Из PSQL
+</div>
 
 <div id="install-pg_clickhouse">
   ### Установите pg_clickhouse
