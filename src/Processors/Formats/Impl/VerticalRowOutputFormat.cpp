@@ -81,7 +81,20 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
     if (is_json[field_number])
     {
         constexpr size_t indent = 0;
-        serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
+        if (color && format_settings.pretty.highlight_json)
+        {
+            String serialized_value;
+            {
+                WriteBufferFromString buf(serialized_value);
+                serialization.serializeTextJSONPretty(column, row_num, buf, format_settings, indent);
+            }
+            serialized_value = highlightJSON(serialized_value);
+            out.write(serialized_value.data(), serialized_value.size());
+        }
+        else
+        {
+            serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
+        }
     }
     /// If we need highlighting.
     else if (color
