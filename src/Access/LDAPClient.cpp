@@ -95,6 +95,7 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
 
     ::updateHash(hash, static_cast<int>(follow_referrals));
 
+    ::updateHash(hash, user_dn_detection.has_value());
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
 }
