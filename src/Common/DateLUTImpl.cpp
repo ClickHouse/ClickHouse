@@ -31,7 +31,8 @@ std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-l
 namespace
 {
 
-UInt8 getDayOfWeek(const cctz::civil_day & date)
+// Only used for assertion - hence maybe_unused
+[[maybe_unused]] UInt8 getDayOfWeek(const cctz::civil_day & date)
 {
     cctz::weekday day_of_week = cctz::get_weekday(date);
     switch (day_of_week)
@@ -215,13 +216,14 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.year = static_cast<UInt16>(date.year());
         values.month = static_cast<UInt8>(date.month());
         values.day_of_month = static_cast<UInt8>(date.day());
-        values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
         chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
         chassert(values.month >= 1 && values.month <= 12);
         chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
-        chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
+        /// The day of week is derived arithmetically rather than stored, so check it against cctz for every
+        /// day the table can represent.
+        chassert(getDayOfWeek(date) == dayOfWeekFromDayIndex(i));
 
         if (values.day_of_month == 1)
         {
@@ -231,16 +233,18 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         else
             values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
-        if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
-            offset_is_whole_number_of_hours_during_epoch = false;
-
-        if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
-            offset_is_whole_number_of_minutes_during_epoch = false;
-
-        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point;
-        /// west of UTC that day starts before the epoch.
+        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point.
+        /// Either side of UTC that day begins before the epoch, so the bound cannot be tightened to zero: west
+        /// of UTC it is local 1969-12-31 (`America/New_York`'s starts at -68400), east of UTC the day holding
+        /// the epoch itself (`Asia/Kolkata`'s local 1970-01-01 starts at -19800).
         if (start_of_day > -86400)
         {
+            if (offset_is_whole_number_of_hours_during_epoch && start_of_day % 3600)
+                offset_is_whole_number_of_hours_during_epoch = false;
+
+            if (offset_is_whole_number_of_minutes_during_epoch && start_of_day % 60)
+                offset_is_whole_number_of_minutes_during_epoch = false;
+
             Time time_of_day = start_of_day % 86400;
             if (time_of_day < 0)
                 time_of_day += 86400;
@@ -365,7 +369,6 @@ DateLUTImpl::Values DateLUTImpl::valuesForOutOfRangeDayIndex(Int64 day_index) co
     values.year = static_cast<UInt16>(date.year());
     values.month = static_cast<UInt8>(date.month());
     values.day_of_month = static_cast<UInt8>(date.day());
-    values.day_of_week = getDayOfWeek(date);
     values.date = std::chrono::system_clock::to_time_t(lookupTz(*cctz_time_zone, date));
 
     const cctz::civil_month month(date);
