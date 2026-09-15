@@ -1,0 +1,29 @@
+-- The derived NOT NULL filter on a natively Nullable column with a high fraction of NULLs is promoted to an executable filter.
+40
+40
+Filter column: isNotNull(__table1.val) (removed)
+-- Promotion is disabled, no filter is applied even with a high fraction of NULLs.
+-- A user predicate on the same column already rejects NULLs: the derived filter is subsumed and dropped.
+Filter column: greaterOrEquals(__table1.val, 6_UInt8) (removed)
+-- A user predicate on a different column cannot subsume the derived filter, it is still promoted.
+36
+36
+Prewhere filter column: and(isNotNull(__table1.val), less(__table1.id, 90_UInt8)) (removed)
+-- A low fraction of NULLs does not clear the selectivity gate, no filter is applied.
+-- Increasing the maximum selectivity allows filters over columns with a low fraction of NULLs.
+90
+90
+Filter column: isNotNull(__table1.val) (removed)
+-- Two joins on different Nullable columns, both derived filters are promoted.
+20
+20
+Prewhere filter column: and(isNotNull(__table1.val1), isNotNull(__table1.val2)) (removed)
+-- Two joins on the same column derive duplicate filters, only one is promoted.
+40
+40
+Filter column: isNotNull(__table1.val) (removed)
+-- The filter derived at the enclosing join travels through the converted outer join to the scan and is promoted.
+400
+400
+Prewhere filter column: isNotNull(__table2.val) (removed)
+-- The filter derived over a non-Nullable column when join_use_nulls is true does not have a filtering effect, no filter is applied.
